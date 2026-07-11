@@ -23,6 +23,7 @@ import (
 
 	"github.com/muthuishere/ctx-optimize/internal/analyze"
 	"github.com/muthuishere/ctx-optimize/internal/dashboard"
+	"github.com/muthuishere/ctx-optimize/internal/export"
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/feedback"
@@ -744,7 +745,9 @@ func cmdMerge(args []string, stdout io.Writer) error {
 	return nil
 }
 
-// cmdExport dumps the graph for other tools: json (default) or dot (Graphviz).
+// cmdExport dumps the graph for other tools: json (default), dot (Graphviz),
+// graphml (yEd/Gephi/networkx), csv (nodes.csv + edges.csv), obsidian (a
+// wikilinked vault — requires --out DIR), or all (every format under --out DIR).
 func cmdExport(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	s, err := openStore(f)
@@ -759,32 +762,134 @@ func cmdExport(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	var w io.Writer = stdout
-	if out := f.strs["out"]; out != "" {
-		file, err := os.Create(out)
+	out := f.strs["out"]
+	format := f.strs["format"]
+	if format == "" {
+		format = "json"
+	}
+	switch format {
+	case "json", "dot", "graphml":
+		var w io.Writer = stdout
+		if out != "" {
+			file, err := os.Create(out)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			w = file
+		}
+		switch format {
+		case "json":
+			return emit(w, map[string]any{"nodes": nodes, "edges": edges})
+		case "dot":
+			return writeDOT(w, nodes, edges)
+		default:
+			return export.GraphML(w, nodes, edges)
+		}
+	case "csv":
+		if out == "" {
+			// No --out: both tables to stdout as labeled sections.
+			fmt.Fprintln(stdout, "# nodes.csv")
+			var eb bytes.Buffer
+			if err := export.CSV(stdout, &eb, nodes, edges); err != nil {
+				return err
+			}
+			fmt.Fprintln(stdout, "# edges.csv")
+			_, err := eb.WriteTo(stdout)
+			return err
+		}
+		if err := os.MkdirAll(out, 0o755); err != nil {
+			return err
+		}
+		if err := writeCSVFiles(out, nodes, edges); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "wrote %s\nwrote %s\n", filepath.Join(out, "nodes.csv"), filepath.Join(out, "edges.csv"))
+		return nil
+	case "obsidian":
+		if out == "" {
+			return fmt.Errorf("export --format obsidian requires --out DIR (the vault directory)")
+		}
+		files, err := export.Obsidian(out, nodes, edges)
 		if err != nil {
 			return err
 		}
-		defer file.Close()
-		w = file
-	}
-	switch format := f.strs["format"]; format {
-	case "", "json":
-		return emit(w, map[string]any{"nodes": nodes, "edges": edges})
-	case "dot":
-		fmt.Fprintln(w, "digraph ctxoptimize {")
-		fmt.Fprintln(w, "  rankdir=LR; node [shape=box];")
-		for _, n := range nodes {
-			fmt.Fprintf(w, "  %q [label=%q];\n", n.ID, n.Label+"\n("+n.Kind+")")
+		fmt.Fprintf(stdout, "wrote %s (obsidian vault, %d files)\n", out, files)
+		return nil
+	case "all":
+		if out == "" {
+			return fmt.Errorf("export --format all requires --out DIR")
 		}
-		for _, e := range edges {
-			fmt.Fprintf(w, "  %q -> %q [label=%q];\n", e.Source, e.Target, e.Relation)
+		if err := os.MkdirAll(out, 0o755); err != nil {
+			return err
 		}
-		fmt.Fprintln(w, "}")
+		writeArtifact := func(name string, render func(io.Writer) error) error {
+			p := filepath.Join(out, name)
+			file, err := os.Create(p)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			if err := render(file); err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "wrote %s\n", p)
+			return nil
+		}
+		if err := writeArtifact("graph.json", func(w io.Writer) error {
+			return emit(w, map[string]any{"nodes": nodes, "edges": edges})
+		}); err != nil {
+			return err
+		}
+		if err := writeArtifact("graph.dot", func(w io.Writer) error { return writeDOT(w, nodes, edges) }); err != nil {
+			return err
+		}
+		if err := writeArtifact("graph.graphml", func(w io.Writer) error { return export.GraphML(w, nodes, edges) }); err != nil {
+			return err
+		}
+		if err := writeCSVFiles(out, nodes, edges); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "wrote %s\nwrote %s\n", filepath.Join(out, "nodes.csv"), filepath.Join(out, "edges.csv"))
+		vault := filepath.Join(out, "obsidian")
+		files, err := export.Obsidian(vault, nodes, edges)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "wrote %s (obsidian vault, %d files)\n", vault, files)
 		return nil
 	default:
-		return fmt.Errorf("unknown export format %q (json | dot)", format)
+		return fmt.Errorf("unknown export format %q (json | dot | graphml | csv | obsidian | all)", format)
 	}
+}
+
+// writeDOT renders the Graphviz form (unchanged from the original inline export).
+func writeDOT(w io.Writer, nodes []schema.Node, edges []schema.Edge) error {
+	fmt.Fprintln(w, "digraph ctxoptimize {")
+	fmt.Fprintln(w, "  rankdir=LR; node [shape=box];")
+	for _, n := range nodes {
+		fmt.Fprintf(w, "  %q [label=%q];\n", n.ID, n.Label+"\n("+n.Kind+")")
+	}
+	for _, e := range edges {
+		fmt.Fprintf(w, "  %q -> %q [label=%q];\n", e.Source, e.Target, e.Relation)
+	}
+	_, err := fmt.Fprintln(w, "}")
+	return err
+}
+
+// writeCSVFiles writes nodes.csv + edges.csv under dir.
+func writeCSVFiles(dir string, nodes []schema.Node, edges []schema.Edge) error {
+	nf, err := os.Create(filepath.Join(dir, "nodes.csv"))
+	if err != nil {
+		return err
+	}
+	defer nf.Close()
+	ef, err := os.Create(filepath.Join(dir, "edges.csv"))
+	if err != nil {
+		return err
+	}
+	defer ef.Close()
+	return export.CSV(nf, ef, nodes, edges)
 }
 
 // cmdServe hosts the local dashboard — embedded single-file UI + read-only
@@ -1079,7 +1184,11 @@ commands:
                               reflections/LESSONS.md  [--half-life-days N]
                               [--min-corroboration N] [--json]
   merge <module>... --into N  combine module stores into one merged view
-  export [--format json|dot]  dump the graph  [--out FILE]
+  export [--format json|dot|graphml|csv|obsidian|all]
+                              dump the graph  [--out FILE|DIR]
+                              csv: --out DIR → nodes.csv + edges.csv (stdout
+                              sections without); obsidian + all REQUIRE --out DIR
+                              (all → graph.{json,dot,graphml} + csvs + obsidian/)
   serve|dashboard             local dashboard over the whole store
                               [--port 4747] [--host 127.0.0.1]
   languages add <name|url>    add a language: known name (kotlin, ruby, lua…)

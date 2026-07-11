@@ -374,3 +374,42 @@ func TestAddPositionalPathKeysStoreByTarget(t *testing.T) {
 		t.Fatalf("store not keyed by target: %v", err)
 	}
 }
+
+// export --format all fans the graph out to every artifact under --out DIR.
+func TestExportAllOut(t *testing.T) {
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+	repo := t.TempDir()
+	os.WriteFile(filepath.Join(repo, "a.md"), []byte("# Service A\n\n## Setup\n"), 0o644)
+
+	var out, errb bytes.Buffer
+	if code := Run([]string{"add", "--path", repo}, &out, &errb); code != 0 {
+		t.Fatalf("add: %s", errb.String())
+	}
+
+	// Without --out, all fails loudly.
+	out.Reset()
+	errb.Reset()
+	if code := Run([]string{"export", "--format", "all", "--path", repo}, &out, &errb); code != 1 {
+		t.Fatalf("all without --out: exit %d", code)
+	}
+	if !strings.Contains(errb.String(), "--out") {
+		t.Fatalf("error should name --out: %s", errb.String())
+	}
+
+	dir := t.TempDir()
+	out.Reset()
+	errb.Reset()
+	if code := Run([]string{"export", "--format", "all", "--path", repo, "--out", dir}, &out, &errb); code != 0 {
+		t.Fatalf("export all: %s", errb.String())
+	}
+	for _, name := range []string{"graph.json", "graph.dot", "graph.graphml", "nodes.csv", "edges.csv", filepath.Join("obsidian", "_index.md")} {
+		p := filepath.Join(dir, name)
+		if st, err := os.Stat(p); err != nil || st.Size() == 0 {
+			t.Fatalf("artifact %s missing or empty: %v", name, err)
+		}
+		if !strings.Contains(out.String(), "wrote ") {
+			t.Fatalf("no artifact lines printed: %s", out.String())
+		}
+	}
+}
