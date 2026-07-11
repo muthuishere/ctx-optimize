@@ -56,6 +56,9 @@ ctx-optimize query "where is the refund flow" --json
 ctx-optimize merge api worker billing --into everything
 ctx-optimize export --format dot --out graph.dot
 
+# see it: local dashboard (embedded single file, zero external requests)
+ctx-optimize serve          # → http://127.0.0.1:4747 — graph, search, details
+
 # share the store: sync-only remotes (S3-compatible or any folder)
 ctx-optimize remote init s3://team-bucket/ctx/myrepo   # writes .ctxoptimize/config.json — commit it
 ctx-optimize remote push          # incremental — only changed artifacts move

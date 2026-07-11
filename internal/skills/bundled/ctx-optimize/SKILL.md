@@ -82,6 +82,7 @@ top.** Never call a model API on the CLI's behalf — if semantic work is needed
 | Store status | `ctx-optimize status --path <path> --json` |
 | Combine modules into one view | `ctx-optimize merge <module\|path>... --into <name>` |
 | Dump the graph for other tools | `ctx-optimize export --format json\|dot --path <path>` |
+| Show the store visually (user asks "show me the graph") | `ctx-optimize serve --path <path>` → open the printed http://127.0.0.1:4747 link |
 | Set the repo's remote (writes .ctxoptimize/config.json) | `ctx-optimize remote init <s3://… or file:///…> --path <path>` |
 | Machine-only remote (nothing in the repo) | `ctx-optimize remote init <url> --local --path <path>` |
 | Publish changes | `ctx-optimize remote push --path <path> --json` |

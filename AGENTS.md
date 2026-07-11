@@ -14,6 +14,7 @@ the validated `add --json` door.
 - `internal/remote` — sync-only remotes: `file://` + `s3://` (stdlib SigV4, no SDK); push/pull take NO url — remote comes from `.ctxoptimize/config.json` (or store config via `remote init --local`)
 - `internal/extract/markdown` — tier-1 producer (code langs via tree-sitter WASM: next)
 - `internal/query` — lexical IDF + prefix tier + budget; complete hits (S1e: no pointer lists)
+- `internal/dashboard` — `serve|dashboard` verb: embedded single-file UI (go:embed, ZERO external requests — no CDN ever) + read-only JSON API (/api/modules|graph|query); binds 127.0.0.1:4747; read path must never create store dirs
 - `internal/skills` — embedded SKILL.md, `install --skills` fans to claude+codex
 - `npm/` — optionalDependencies wrapper (5 platform pkgs, thin launcher, no postinstall)
 

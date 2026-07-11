@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/muthuishere/ctx-optimize/internal/dashboard"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/query"
@@ -51,6 +54,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdMerge(rest, stdout)
 	case "export":
 		err = cmdExport(rest, stdout)
+	case "serve", "dashboard":
+		err = cmdServe(rest, stdout)
 	case "remote":
 		err = cmdRemote(rest, stdout)
 	case "install":
@@ -502,6 +507,45 @@ func cmdExport(args []string, stdout io.Writer) error {
 	}
 }
 
+// cmdServe hosts the local dashboard — embedded single-file UI + read-only
+// JSON API over the store root. Localhost by default: it is a window onto
+// your store, not a service (pass --host to expose deliberately, e.g. behind
+// a tunnel you control).
+func cmdServe(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	root, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	host := f.strs["host"]
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := f.strs["port"]
+	if port == "" {
+		port = "4747"
+	}
+	addr := net.JoinHostPort(host, port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	// If a repo path was given, land the browser on that module directly.
+	link := "http://" + addr + "/"
+	if p := f.strs["path"]; p != "" {
+		pc, _ := project.Load(p)
+		key := store.SanitizeKey(pc.Name)
+		if key == "" {
+			key, _ = store.ModuleKey(p)
+		}
+		if key != "" {
+			link += "?module=" + key
+		}
+	}
+	fmt.Fprintf(stdout, "dashboard: %s  (store root: %s) — Ctrl-C to stop\n", link, root)
+	return http.Serve(ln, dashboard.NewHandler(root))
+}
+
 func cmdRemote(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: ctx-optimize remote <init URL|push|pull>")
@@ -644,6 +688,8 @@ commands:
   status                      store facts  [--json]
   merge <module>... --into N  combine module stores into one merged view
   export [--format json|dot]  dump the graph  [--out FILE]
+  serve|dashboard             local dashboard over the whole store
+                              [--port 4747] [--host 127.0.0.1]
   remote init <url> [--local] write remote to .ctxoptimize/config.json
                               (committable; --local = this machine's store only)
   remote push|pull            incremental sync with the configured remote (no url —
