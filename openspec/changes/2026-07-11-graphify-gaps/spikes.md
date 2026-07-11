@@ -16,6 +16,25 @@ external is an adapter.
   only; Agent B answers via `graphify query` only (graphify as proxy for our
   product). Count real agent tokens + judge answer quality.
 - **Pass:** >50% token reduction at equal quality. **Fail ⇒ stop the product.**
+- **Result (2026-07-11): ❌ FAIL on a mid-size repo — only ~11% reduction.**
+  brain repo (~350 files; graph 662 nodes / 1,252 edges / 38 communities, no-LLM
+  lane). Grep agent: 56,114 tok / 15 calls / 10-10 correct (sharpest). Graph
+  agent: 49,826 tok / 22 calls / 10-10 correct, 1–2 minor imprecisions.
+  **Why:** mechanism questions still require reading code bodies — the graph
+  locates but doesn't explain, so the agent pays for queries AND reads; modern
+  grep agents are already efficient at this scale; the wiki layer (the actual
+  pre-distilled understanding) wasn't present.
+  **Surviving hypotheses → S1b:** (a) large repos (10k+ files) where grep
+  flails; (b) the LLM wiki as the token-saver (bare graph is just the index);
+  (c) relationship queries (`affected`/`path`) grep cannot do at all — impact
+  analysis may be the real product, not Q&A.
+  **Implication for the product:** do NOT lead with "graph query saves tokens on
+  your repo." Lead with what grep can't do + the wiki. Re-test before building.
+
+### S1b · Token economics at scale + wiki layer (follow-up, REQUIRED)
+- **Method:** repeat S1 on a genuinely large repo (10k+ files); and separately
+  test Q&A against a distilled wiki (pages pre-built) vs grep.
+- **Pass:** same >50% bar, on either the scale axis or the wiki axis.
 - **Result:** _pending_
 
 ### S2 · Pure-Go extraction (single-binary promise)
