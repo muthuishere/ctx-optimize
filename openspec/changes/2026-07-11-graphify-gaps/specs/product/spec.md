@@ -10,6 +10,16 @@ covering everything graphify does.
 
 ## Design principles
 
+- **NO DB, NO AI for most of everything (the identity).** The core runtime is
+  plain files + deterministic code: extract, graph, query, path, merge all run
+  with zero models, zero databases, zero services. The ONLY AI touchpoint is the
+  optional, injected wiki distiller. Nothing in the product requires a database.
+- **Everything external is an adapter (graphify-style).** Two kinds:
+  *producer adapters* read FROM systems to build the graph (SQL files, live DB
+  introspection, messaging queues, Redis keyspace); *sync adapters* push/pull the
+  artifact folder to a remote (S3 or others) **for sync and reuse only** — the
+  working store is always the local folder; queries run locally, never live
+  against a remote. All optional, all pluggable — never a required service.
 - **Targeted, not broad.** A small, coherent core + a curated set of adapters —
   not graphify's 40-language / docs / images / video sprawl.
 - **Expandable.** One emit schema is the contract; new producers/adapters plug in
@@ -22,17 +32,31 @@ covering everything graphify does.
   dispatch, `--json`, deterministic, DI, offline default. Spec-driven, one target
   at a time.
 
-## citenexus-Go reuse map (verified 2026-07-11)
+## citenexus-Go reuse map (verified 2026-07-11; revised after no-embeddings decision)
 
-- **Reuse from citenexus-Go:** deterministic kernel (`answer`, `gate`, `bm25`,
-  `rrf`, `chunker`, `ingest`, `tokenize`, `lang`), `graph.BuildComentionGraph`
-  (build-only), `models.*` (LLM wire clients), vector store (`LanceVectorStore`
-  → folder/`s3://` via CGo, or pure-Go `PostgresVectorStore`).
+- **Reuse from citenexus-Go:** `models.*` (LLM wire clients, for the wiki
+  distiller only); optionally `bm25`, `chunker`, `tokenize`, `lang` from the
+  deterministic kernel.
+- **NOT used (owner decision 2026-07-11 — no embeddings):** all vector storage
+  (`LanceVectorStore` cgo adapter, `PostgresVectorStore`). No vector search
+  engine anywhere in the product.
 - **Build ourselves (NOT in citenexus-Go — Python-only today):** LLM-wiki
   generation + incremental integration; folder/S3 **artifact** storage
-  (`StorageBackend`/local/S3 + manifest + parquet); graph query/path/persist.
-  Port from citenexus-Python (`wiki/store.py::integrate_document`, `graph/store.py`)
-  or write fresh on `models.*`.
+  (local/S3 backend + manifest; columnar *file formats* — parquet or Lance-as-
+  file-format — for large tables, with no query engine attached); graph
+  build/query/path/persist. Port ideas from citenexus-Python
+  (`wiki/store.py::integrate_document`) and graphify (lexical query).
+
+## Retrieval model (owner decision — NO embeddings)
+
+Three layers, all model-free at query time:
+1. **Lexical scoring** — IDF + trigram matching over node labels/text
+   (graphify-proven).
+2. **Graph traversal** — path / neighborhood / token-budgeted BFS/DFS.
+3. **LLM wiki as the semantic layer** — pre-distilled community pages the agent
+   navigates via the light manifest; the agent supplies the semantics.
+No embeddings, no vector store, no Postgres. This also removes the last
+non-tree-sitter cgo pressure from the binary.
 
 ## Requirements
 
@@ -56,24 +80,33 @@ name, never baked in.
 - **WHEN** the user runs `add` / `query` / `path` / `explain`
 - **THEN** they succeed against local artifacts with no outbound call
 
-### Requirement: No MCP; consumption via agent skill over the store (owner decision)
+### Requirement: No MCP; consumption via agent skill over the local store (owner decision)
 ctx-optimize SHALL NOT ship or require an MCP server. Consumption is an agent skill
-that drives CLI subcommands reading the stored artifacts (folder or S3 URL + token).
+that drives CLI subcommands against the **local** artifact folder (after an optional
+pull from a remote).
 
 #### Scenario: shared graph over a token URL
-- **GIVEN** a graph+wiki published to `s3://…` with an access token
+- **GIVEN** a graph+wiki pushed to `s3://…` with an access token
 - **WHEN** a teammate's agent loads the skill configured with that URL + `--token-env`
-- **THEN** it answers queries from the store with no server running anywhere
+- **THEN** ctx-optimize pulls the artifacts once and answers all queries from the
+  local folder — no server running anywhere, no live remote reads
 
-### Requirement: Syncable, shareable folder/S3 artifact store (addresses G1; owner #1751)
-Graph + wiki artifacts SHALL persist to a folder or S3 as syncable files (parquet/
-columnar where it helps), shareable by handing over the URL + token. A manifest
-SHALL record what is current so sync and incremental work are possible.
+### Requirement: Local folder store + sync adapters for reuse (addresses G1; owner #1751)
+The working store SHALL be a **local folder** of plain, diffable artifacts
+(columnar files where scale needs it). Remotes (S3 or others) SHALL be **sync
+adapters only** — push/pull for sync and reuse, never a live query target. A
+manifest SHALL record what is current so sync and incremental work move only
+changed artifacts.
 
 #### Scenario: sync instead of rebuild
-- **GIVEN** a store already built and pushed to S3
-- **WHEN** another machine points ctx-optimize at that URL
-- **THEN** it reads the existing graph+wiki without re-extracting from source
+- **GIVEN** a store already built and pushed to a remote
+- **WHEN** another machine pulls from that remote
+- **THEN** it reuses the existing graph+wiki locally without re-extracting source
+
+#### Scenario: incremental push
+- **GIVEN** a local store where one community's page changed
+- **WHEN** the user pushes
+- **THEN** only the changed artifacts upload (manifest-driven), not the whole store
 
 ### Requirement: Configurable output layout (addresses G5)
 The output location and layout SHALL be configurable (folder vs S3, path template).

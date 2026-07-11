@@ -1,0 +1,85 @@
+# Spikes — prove/kill assumptions BEFORE architecture
+
+Throwaway experiments (scratch code lives outside the repo; only RESULTS land
+here). Order: **S1 alone first** (validates the thesis), then S2–S5 in parallel,
+Tier B before design lock, Tier C during build. Architecture discussion happens
+AFTER Tier A reports.
+
+Context: no embeddings · no DB · no AI in the core · S3 = sync only · everything
+external is an adapter.
+
+## Tier A — existential
+
+### S1 · Token economics (THE thesis)
+- **Question:** does a graph+wiki actually beat grep/read for agent questions?
+- **Method:** 10 real questions on a known repo. Agent A answers via grep/read
+  only; Agent B answers via `graphify query` only (graphify as proxy for our
+  product). Count real agent tokens + judge answer quality.
+- **Pass:** >50% token reduction at equal quality. **Fail ⇒ stop the product.**
+- **Result:** _pending_
+
+### S2 · Pure-Go extraction (single-binary promise)
+- **Question:** can we extract without cgo?
+- **Method:** same 2 grammars three ways — official go-tree-sitter (cgo) vs
+  wazero+WASM grammars (pure Go) vs subprocess SCIP indexer. Build for
+  mac/linux/windows; measure binary size + parse speed.
+- **Pass:** 6 launch languages feasible with a sane release matrix.
+- **Result:** _pending_
+
+### S3 · Precise edges (the wedge)
+- **Question:** does LSP/SCIP fix the 2,487-reliable-vs-7,718-guessed problem?
+- **Method:** drive `gopls` call-hierarchy + parse `scip-go` on the same repo as
+  the owner's spike; compare edge precision vs tree-sitter name-resolution.
+- **Pass:** ≥90% precision on sampled edges; runs headless.
+- **Result:** _pending_
+
+### S4 · Community stability (incremental design lives/dies here)
+- **Question:** does a one-file edit repartition the whole graph?
+- **Method:** build graph on a mid repo, partition (Louvain), edit 5 files one at
+  a time with community-ID remapping; measure % pages whose member_hash flips.
+- **Pass:** single-file edit touches ≤10% of communities.
+- **Result:** _pending_
+
+### S5 · Lexical query engine (it IS the engine — no embeddings)
+- **Question:** does IDF+trigram+budget-BFS in Go match graphify's answers?
+- **Method:** port graphify's scoring to a Go prototype; same questions, same
+  repo; compare selected nodes + latency.
+- **Pass:** comparable node selection; <100ms local.
+- **Result:** _pending_
+
+## Tier B — architecture-shaping
+
+### S6 · Louvain/Leiden in Go
+gonum/graph/community deterministic with seed control? **Pass:** identical
+partition across runs. **Result:** _pending_
+
+### S7 · Per-community distill
+One community → one useful wiki page; prompt fit; deterministic fallback with no
+LLM. **Pass:** useful pages, clean degradation. **Result:** _pending_
+
+### S8 · Incremental reconcile + ripple
+Evict+re-resolve incl. new-symbol-makes-old-name-ambiguous. **Pass:** incremental
+graph ≡ full rebuild. **Result:** _pending_
+
+### S9 · Sync + share UX
+Push to R2/S3; teammate pulls with scoped token; queries locally. **Pass:** fresh
+machine answering in <5 min. **Result:** _pending_
+
+### S10 · Manifest/columnar at scale
+100k-node store: JSON vs parquet locally; incremental push moves only changed
+artifacts. **Pass:** local query <100ms; push = changed files only.
+**Result:** _pending_
+
+## Tier C — during build (adapters + integration)
+
+- **S11** SQL adapter (tree-sitter-sql / pg_query_go on DDL) — _pending_
+- **S12** Live DB introspection (pgx → information_schema) — _pending_
+- **S13** Messaging-queue schemas (pick protobuf/Avro/AsyncAPI first) — _pending_
+- **S14** Redis keyspace adapter (SCAN+TYPE → shape) — _pending_
+- **S15** SKILL.md drive test (agent drives subcommands cleanly) — _pending_
+- **S16** toolnexus headless (`run --once`, model-free binary) — _pending_
+
+## Killed by decisions (no spike needed)
+- Vector store / embeddings comparisons — owner: no embeddings, ever.
+- Lance/Postgres query engines — owner: no DB.
+- S3 live-read latency — owner: S3 is sync-only, queries are local.
