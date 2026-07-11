@@ -30,6 +30,11 @@ extern const TSLanguage *tree_sitter_c(void);
 extern const TSLanguage *tree_sitter_cpp(void);
 extern const TSLanguage *tree_sitter_c_sharp(void);
 extern const TSLanguage *tree_sitter_rust(void);
+extern const TSLanguage *tree_sitter_kotlin(void);
+extern const TSLanguage *tree_sitter_dart(void);
+extern const TSLanguage *tree_sitter_zig(void);
+extern const TSLanguage *tree_sitter_swift(void);
+extern const TSLanguage *tree_sitter_sql(void);
 
 // Order is the ABI: keep in sync with langs.go.
 static const TSLanguage *lang_by_id(int id) {
@@ -44,6 +49,11 @@ static const TSLanguage *lang_by_id(int id) {
   case 7: return tree_sitter_cpp();
   case 8: return tree_sitter_c_sharp();
   case 9: return tree_sitter_rust();
+  case 10: return tree_sitter_kotlin();
+  case 11: return tree_sitter_dart();
+  case 12: return tree_sitter_zig();
+  case 13: return tree_sitter_swift();
+  case 14: return tree_sitter_sql();
   default: return NULL;
   }
 }

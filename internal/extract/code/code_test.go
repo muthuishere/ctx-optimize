@@ -24,6 +24,11 @@ func TestExtractAllLanguages(t *testing.T) {
 		"geo.cpp":   "#include <vector>\n\nnamespace geo {\nclass Shape {\npublic:\n  int area() { return compute(); }\n};\nint compute() { return 42; }\n}\n",
 		"Svc.cs":    "using System;\n\nnamespace App {\n  public class Svc {\n    public void Run() { Helper(); }\n    static void Helper() {}\n  }\n}\n",
 		"lib.rs":    "use std::io;\n\npub struct Ledger { pub id: u64 }\n\npub trait Post { fn post(&self); }\n\npub fn settle(l: &Ledger) -> u64 { check(l.id) }\n\nfn check(v: u64) -> u64 { v }\n",
+		"App.kt":    "import java.util.List\n\nclass Cart {\n    fun total(): Int { return tax(10) }\n}\n\nfun tax(v: Int): Int = v\n",
+		"main.dart": "import 'dart:io';\n\nclass Order {\n  int total() { return 1; }\n}\n\nint price(int v) { return v; }\n",
+		"main.zig":  "const std = @import(\"std\");\n\nfn add(a: i32, b: i32) i32 {\n    return a + b;\n}\n\npub fn main() void {\n    _ = add(1, 2);\n}\n",
+		"App.swift": "import Foundation\n\nprotocol Payable { func pay() }\n\nclass Invoice {\n    func total() -> Int { return round2(3) }\n}\n\nfunc round2(_ v: Int) -> Int { return v }\n",
+		"db.sql":    "CREATE TABLE refunds (id INT PRIMARY KEY, amount INT);\n\nCREATE VIEW big_refunds AS SELECT * FROM refunds WHERE amount > 100;\n",
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
@@ -68,6 +73,17 @@ func TestExtractAllLanguages(t *testing.T) {
 		"module://react":          "module",
 		"module://stdio.h":        "module",
 		"module://java.util.List": "module",
+		"App.kt::Cart":            "class",
+		"App.kt::Cart.total":      "function",
+		"App.kt::tax":             "function",
+		"main.dart::Order":        "class",
+		"main.dart::price":        "function",
+		"main.zig::add":           "function",
+		"App.swift::Payable":      "interface",
+		"App.swift::Invoice":      "class",
+		"App.swift::round2":       "function",
+		"db.sql::refunds":         "table",
+		"db.sql::big_refunds":     "view",
 	}
 	for id, kind := range wantNodes {
 		n, ok := byID[id]

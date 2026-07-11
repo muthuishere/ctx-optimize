@@ -134,6 +134,68 @@ var Languages = []Lang{
 		Calls:   set("call_expression"),
 		Imports: set("use_declaration"),
 	},
+	{
+		ID: 10, Name: "kotlin", Exts: []string{".kt", ".kts"},
+		Decls: map[string]string{
+			"class_declaration": "class", "object_declaration": "class",
+			"function_declaration": "function",
+		},
+		Names:   set("simple_identifier", "type_identifier", "identifier"),
+		Calls:   set("call_expression"),
+		Imports: set("import_header"),
+	},
+	{
+		ID: 11, Name: "dart", Exts: []string{".dart"},
+		Decls: map[string]string{
+			"class_definition": "class", "mixin_declaration": "class",
+			"enum_declaration": "enum", "extension_declaration": "class",
+			"function_signature": "function", "method_signature": "method",
+			"getter_signature": "method", "setter_signature": "method",
+		},
+		Names: set("identifier"),
+		// dart call sites are selector chains, not a single node type —
+		// call edges wait for a finer pass; imports still land.
+		Calls:   set(),
+		Imports: set("library_import"),
+	},
+	{
+		ID: 12, Name: "zig", Exts: []string{".zig"},
+		// zig struct/enum/union literals are anonymous (named by the const
+		// they're assigned to) — v1 takes functions and tests; containers
+		// need parent-aware naming, later.
+		Decls: map[string]string{
+			"function_declaration": "function", "test_declaration": "function",
+		},
+		Names:   set("identifier"),
+		Calls:   set("call_expression"),
+		Imports: set(),
+	},
+	{
+		ID: 13, Name: "swift", Exts: []string{".swift"},
+		Decls: map[string]string{
+			// class_declaration covers class/struct/enum/actor/extension in
+			// this grammar; the keyword is a child, the kind stays "class".
+			"class_declaration": "class", "protocol_declaration": "interface",
+			"function_declaration": "function", "init_declaration": "method",
+			"typealias_declaration": "type",
+		},
+		Names:   set("simple_identifier", "type_identifier", "identifier"),
+		Calls:   set("call_expression"),
+		Imports: set("import_declaration"),
+	},
+	{
+		ID: 14, Name: "sql", Exts: []string{".sql"},
+		Decls: map[string]string{
+			"create_table": "table", "create_view": "view",
+			"create_materialized_view": "view", "create_function": "function",
+			"create_procedure": "function", "create_index": "index",
+			"create_schema": "module", "create_type": "type",
+			"create_trigger": "function", "create_sequence": "type",
+		},
+		Names:   set("identifier", "object_reference"),
+		Calls:   set("invocation"),
+		Imports: set(),
+	},
 }
 
 // LangForFile picks a language by extension (nil = not a code file we parse).
