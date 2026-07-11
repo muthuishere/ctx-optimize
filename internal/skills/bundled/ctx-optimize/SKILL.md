@@ -43,6 +43,7 @@ one.** The binary is deterministic; you supply all semantics.
 | Asked to share / get the team's store | `remote push` / `remote pull` (config-driven, no URL args) |
 | Combining several repos/modules | `ctx-optimize merge <mod>... --into <name>` |
 | Exporting for other tools | `ctx-optimize export --format json|dot` |
+| Asked for a language we don't cover | `ctx-optimize grammar build <github-url-of-tree-sitter-grammar>` then review the suggested .json mapping |
 
 Fast path, imperative: **if `ctx-optimize status --json` shows nodes > 0 and
 the request is a question — query. Do not rebuild. Do not grep. Do not read

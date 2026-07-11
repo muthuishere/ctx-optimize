@@ -123,9 +123,18 @@ cover the mainstream; anything else is a **pack**: `<name>.wasm` +
 `<name>.json` dropped into `~/ctxoptimize/grammars/` (machine-wide) or
 `.ctxoptimize/grammars/` (travels with the repo). Next `add` picks it up;
 pack extensions override embedded ones. kotlin, swift and dart ship as packs
-in `grammars/` — copy the pair in to enable. Build your own from any
-tree-sitter grammar: `scripts/wasm/build-grammar.sh <grammar-dir> <symbol>
-<out.wasm>` plus a JSON mapping (see `grammars/kotlin.json`).
+in `grammars/` — copy the pair in to enable.
+
+Build your own from ANY tree-sitter grammar with one command — no toolchain
+to install (zig auto-downloads once, sha256-verified; grammar fetched as a
+tarball, no git):
+
+```sh
+ctx-optimize grammar build https://github.com/tree-sitter-grammars/tree-sitter-lua
+# → ~/ctxoptimize/grammars/lua.wasm + lua.json (mapping auto-suggested from
+#   the grammar's node-types.json — review it, then `add` just works)
+ctx-optimize grammar list
+```
 
 ## Adapters — the open door
 

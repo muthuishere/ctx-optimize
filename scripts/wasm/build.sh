@@ -56,7 +56,7 @@ cc_unit() { # src, extra includes...
   local o="$OBJ/$((n++))-$(basename "$src").o"
   "${CC[@]}" "$@" "$src" -o "$o" &
 }
-cc_unit "$REPO_ROOT/scripts/wasm/shim.c" "${RUNTIME_INC[@]}"
+cc_unit "$REPO_ROOT/internal/grammar/assets/shim.c" "${RUNTIME_INC[@]}"
 cc_unit "$REPO_ROOT/scripts/wasm/langs-embedded.c" "${RUNTIME_INC[@]}"
 cc_unit "tree-sitter/lib/src/lib.c" "${RUNTIME_INC[@]}"
 for g in tree-sitter-go tree-sitter-python tree-sitter-javascript tree-sitter-java \

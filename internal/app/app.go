@@ -23,6 +23,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/dashboard"
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
+	"github.com/muthuishere/ctx-optimize/internal/grammar"
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/query"
 	"github.com/muthuishere/ctx-optimize/internal/remote"
@@ -66,6 +67,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdExport(rest, stdout)
 	case "serve", "dashboard":
 		err = cmdServe(rest, stdout)
+	case "grammar":
+		err = cmdGrammar(rest, stdout)
 	case "remote":
 		err = cmdRemote(rest, stdout)
 	case "install":
@@ -784,6 +787,69 @@ func cmdRemote(args []string, stdout io.Writer) error {
 	}
 }
 
+// cmdGrammar manages language packs. build: any tree-sitter grammar (local
+// dir or github URL) → <name>.wasm + suggested <name>.json in the grammars
+// dir — no shell script, no preinstalled toolchain (zig auto-downloads once,
+// sha256-verified). list: embedded languages + discovered packs.
+func cmdGrammar(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: ctx-optimize grammar <build <dir|github-url> [--name N] [--out DIR] | list>")
+	}
+	sub, rest := args[0], args[1:]
+	f := parseFlags(rest)
+	switch sub {
+	case "build":
+		if len(f.args) != 1 {
+			return fmt.Errorf("usage: ctx-optimize grammar build <grammar-dir | https://github.com/owner/repo> [--name N] [--out DIR]")
+		}
+		wasmPath, cfgPath, err := grammar.Build(grammar.Options{
+			Source: f.args[0], Name: f.strs["name"], OutDir: f.strs["out"],
+		}, stdout)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "pack ready: %s + %s — next `ctx-optimize add` picks it up\n", wasmPath, cfgPath)
+		return nil
+	case "list":
+		path, err := resolvePath(f)
+		if err != nil {
+			return err
+		}
+		packs, err := code.LoadPacks(path)
+		if err != nil {
+			return err
+		}
+		if f.bools["json"] {
+			names := []string{}
+			for _, l := range code.Languages {
+				names = append(names, l.Name)
+			}
+			pnames := []map[string]string{}
+			for _, p := range packs {
+				pnames = append(pnames, map[string]string{"name": p.Lang.Name, "wasm": p.WasmPath})
+			}
+			return emit(stdout, map[string]any{"embedded": names, "packs": pnames})
+		}
+		fmt.Fprint(stdout, "embedded: ")
+		for i, l := range code.Languages {
+			if i > 0 {
+				fmt.Fprint(stdout, ", ")
+			}
+			fmt.Fprint(stdout, l.Name)
+		}
+		fmt.Fprintln(stdout)
+		for _, p := range packs {
+			fmt.Fprintf(stdout, "pack:     %s (%s)\n", p.Lang.Name, p.WasmPath)
+		}
+		if len(packs) == 0 {
+			fmt.Fprintln(stdout, "packs:    (none — `ctx-optimize grammar build <github-url>` adds one)")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown grammar subcommand %q (build | list)", sub)
+	}
+}
+
 func cmdInstall(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if !f.bools["skills"] {
@@ -850,6 +916,9 @@ commands:
   export [--format json|dot]  dump the graph  [--out FILE]
   serve|dashboard             local dashboard over the whole store
                               [--port 4747] [--host 127.0.0.1]
+  grammar build <dir|gh-url>  compile ANY tree-sitter grammar into a drop-in
+                              language pack (zig auto-downloads once) [--name N]
+  grammar list                embedded languages + discovered packs
   remote init <url> [--local] write remote to .ctxoptimize/config.json
                               (committable; --local = this machine's store only)
   remote push|pull            incremental sync with the configured remote (no url —
