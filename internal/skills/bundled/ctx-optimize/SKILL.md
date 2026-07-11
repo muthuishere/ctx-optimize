@@ -42,7 +42,8 @@ one.** The binary is deterministic; you supply all semantics.
 | Asked to add docs/PDF/DB/queue/logs | see "Adding content" below — each source type is different |
 | Asked to share / get the team's store | `remote push` / `remote pull` (config-driven, no URL args) |
 | Combining several repos/modules | `ctx-optimize merge <mod>... --into <name>` |
-| Exporting for other tools | `ctx-optimize export --format json|dot` |
+| Wanting a readable map of the module | open the store's `wiki/index.md` (regenerated on every `add`; `ctx-optimize wiki` to force) |
+| Exporting for other tools | `ctx-optimize export --format json|dot|graphml|csv|obsidian|all` |
 | Asked for a language we don't cover | `ctx-optimize languages add <name>` (kotlin, ruby, lua, swift, …— `languages list` shows all) or `languages add <github-url>`; then review the suggested .json mapping |
 | Just answered a question from the store | `ctx-optimize save-result --question Q --answer A --type T --nodes "id1,id2" --outcome useful` |
 | Starting a session in a repo with a store | `ctx-optimize reflect` — then read `reflections/LESSONS.md` in the store |
