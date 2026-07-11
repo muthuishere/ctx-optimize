@@ -91,7 +91,19 @@ loses to grep.
   edges / 133 communities in **2.1s**, zero LLM. (Fresh 0.9.12 `update` builds
   still emit pre-#1504 colliding node IDs — their own fix isn't wired into the
   no-LLM lane.)
-- **A/B result:** _pending_
+- **A/B result (2026-07-11): ⚠️ FIRST GRAPH WIN — ~23% cheaper on kernel C.**
+  Grep: 45,775 tok / 18 calls / 10-10. Graph: 35,414 tok / 13 calls / 10-10
+  (self-diagnosed the ambiguous submit_bio node and traced around it).
+  **The terrain law (across all three A/Bs):** graph value is inversely
+  proportional to greppability — brain (clean Go): graph −11%; k8s (hyper-
+  greppable): graph +31% WORSE; kernel C (opaque naming): graph −23%. It's not
+  size, it's whether names betray structure. Owner's Linux observation
+  CONFIRMED directionally.
+  **But 23% < the 50% bar even on best terrain.** The bare pointer-list query
+  is a modest win, not a product-carrying one. Identified lever: symbol-grade
+  COMPLETE answers (signature + body snippet + verified lines in the query
+  output) to eliminate the follow-up pointer-chase reads — S1e quantifies how
+  much of B's residual cost those reads are.
 
 ### S2 · Pure-Go extraction (single-binary promise)
 - **Question:** can we extract without cgo?
