@@ -32,7 +32,7 @@ func writeGrammarFixture(t *testing.T, root string) string {
 
 func TestSuggest(t *testing.T) {
 	dir := writeGrammarFixture(t, t.TempDir())
-	out, err := Suggest("mylang", dir)
+	out, err := Suggest("mylang", dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

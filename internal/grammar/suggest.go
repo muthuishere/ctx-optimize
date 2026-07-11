@@ -13,8 +13,9 @@ import (
 	"strings"
 )
 
-// Suggest builds a pack config draft for the grammar in srcDir.
-func Suggest(name, srcDir string) ([]byte, error) {
+// Suggest builds a pack config draft for the grammar in srcDir. exts seeds
+// the extension list (registry-known); empty defaults to ".<name>".
+func Suggest(name, srcDir string, exts []string) ([]byte, error) {
 	data, err := os.ReadFile(filepath.Join(srcDir, "src", "node-types.json"))
 	if err != nil {
 		return nil, err
@@ -35,12 +36,15 @@ func Suggest(name, srcDir string) ([]byte, error) {
 		}
 		t := nt.Type
 		switch {
-		case strings.Contains(t, "identifier"):
+		case strings.Contains(t, "identifier") || t == "constant":
+			// "constant" is ruby-style class names; harmless elsewhere.
 			names = append(names, t)
 		case strings.Contains(t, "import") || strings.Contains(t, "include") || t == "use_declaration" || t == "using_directive":
 			imports = append(imports, t)
 		case strings.Contains(t, "call") || strings.Contains(t, "invocation"):
 			calls = append(calls, t)
+		case exactKinds[t] != "":
+			decls[t] = exactKinds[t]
 		case isDeclLike(t):
 			decls[t] = kindFor(t)
 		}
@@ -49,10 +53,13 @@ func Suggest(name, srcDir string) ([]byte, error) {
 	sort.Strings(calls)
 	sort.Strings(imports)
 
+	if len(exts) == 0 {
+		exts = []string{"." + name}
+	}
 	out := map[string]any{
 		"_review": "DRAFT generated from node-types.json — verify decls/names/calls/imports against real code before trusting the graph",
 		"name":    name,
-		"exts":    []string{"." + name},
+		"exts":    exts,
 		"decls":   decls,
 		"names":   names,
 		"calls":   calls,
@@ -63,6 +70,15 @@ func Suggest(name, srcDir string) ([]byte, error) {
 		return nil, err
 	}
 	return append(b, '\n'), nil
+}
+
+// exactKinds catches grammars whose decl types are bare words (ruby: method,
+// class, module; elixir: call-based, won't match — reviewed by hand).
+var exactKinds = map[string]string{
+	"class": "class", "module": "module", "method": "function",
+	"singleton_method": "function", "function": "function",
+	"interface": "interface", "struct": "struct", "enum": "enum",
+	"trait": "trait", "protocol": "interface",
 }
 
 func isDeclLike(t string) bool {

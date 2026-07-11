@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -67,8 +68,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdExport(rest, stdout)
 	case "serve", "dashboard":
 		err = cmdServe(rest, stdout)
-	case "grammar":
-		err = cmdGrammar(rest, stdout)
+	case "languages", "grammar": // `grammar` kept as an alias
+		err = cmdLanguages(rest, stdout)
 	case "remote":
 		err = cmdRemote(rest, stdout)
 	case "install":
@@ -787,28 +788,54 @@ func cmdRemote(args []string, stdout io.Writer) error {
 	}
 }
 
-// cmdGrammar manages language packs. build: any tree-sitter grammar (local
-// dir or github URL) → <name>.wasm + suggested <name>.json in the grammars
-// dir — no shell script, no preinstalled toolchain (zig auto-downloads once,
-// sha256-verified). list: embedded languages + discovered packs.
-func cmdGrammar(args []string, stdout io.Writer) error {
+// cmdLanguages manages language packs. add: a known name ("kotlin"), any
+// tree-sitter grammar dir, or a github URL → <name>.wasm + suggested
+// <name>.json in the grammars dir — no shell script, no preinstalled
+// toolchain (zig auto-downloads once, sha256-verified). list: embedded
+// languages + discovered packs. remove: delete a pack.
+func cmdLanguages(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ctx-optimize grammar <build <dir|github-url> [--name N] [--out DIR] | list>")
+		return fmt.Errorf("usage: ctx-optimize languages <add <name|dir|github-url> [--name N] [--ref R] [--out DIR] | list | remove <name>>")
 	}
 	sub, rest := args[0], args[1:]
 	f := parseFlags(rest)
 	switch sub {
-	case "build":
+	case "add", "build": // build = the original verb, same thing
 		if len(f.args) != 1 {
-			return fmt.Errorf("usage: ctx-optimize grammar build <grammar-dir | https://github.com/owner/repo> [--name N] [--out DIR]")
+			return fmt.Errorf("usage: ctx-optimize languages add <name | grammar-dir | https://github.com/owner/repo> [--name N] [--ref R] [--out DIR]")
 		}
 		wasmPath, cfgPath, err := grammar.Build(grammar.Options{
-			Source: f.args[0], Name: f.strs["name"], OutDir: f.strs["out"],
+			Source: f.args[0], Name: f.strs["name"], OutDir: f.strs["out"], Ref: f.strs["ref"],
 		}, stdout)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "pack ready: %s + %s — next `ctx-optimize add` picks it up\n", wasmPath, cfgPath)
+		return nil
+	case "remove":
+		if len(f.args) != 1 {
+			return fmt.Errorf("usage: ctx-optimize languages remove <name> [--out DIR]")
+		}
+		dir := f.strs["out"]
+		if dir == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return err
+			}
+			dir = filepath.Join(home, "ctxoptimize", "grammars")
+		}
+		name := f.args[0]
+		removed := false
+		for _, file := range []string{name + ".wasm", name + ".json"} {
+			p := filepath.Join(dir, file)
+			if err := os.Remove(p); err == nil {
+				fmt.Fprintf(stdout, "removed %s\n", p)
+				removed = true
+			}
+		}
+		if !removed {
+			return fmt.Errorf("no pack %q in %s", name, dir)
+		}
 		return nil
 	case "list":
 		path, err := resolvePath(f)
@@ -842,11 +869,18 @@ func cmdGrammar(args []string, stdout io.Writer) error {
 			fmt.Fprintf(stdout, "pack:     %s (%s)\n", p.Lang.Name, p.WasmPath)
 		}
 		if len(packs) == 0 {
-			fmt.Fprintln(stdout, "packs:    (none — `ctx-optimize grammar build <github-url>` adds one)")
+			fmt.Fprintln(stdout, "packs:    (none)")
 		}
+		known := make([]string, 0, len(grammar.KnownGrammars))
+		for name := range grammar.KnownGrammars {
+			known = append(known, name)
+		}
+		sort.Strings(known)
+		fmt.Fprintf(stdout, "addable by name (`ctx-optimize languages add <name>`): %s\n", strings.Join(known, ", "))
+		fmt.Fprintln(stdout, "anything else: `ctx-optimize languages add <github-url-of-tree-sitter-grammar>`")
 		return nil
 	default:
-		return fmt.Errorf("unknown grammar subcommand %q (build | list)", sub)
+		return fmt.Errorf("unknown languages subcommand %q (add | list | remove)", sub)
 	}
 }
 
@@ -916,9 +950,11 @@ commands:
   export [--format json|dot]  dump the graph  [--out FILE]
   serve|dashboard             local dashboard over the whole store
                               [--port 4747] [--host 127.0.0.1]
-  grammar build <dir|gh-url>  compile ANY tree-sitter grammar into a drop-in
-                              language pack (zig auto-downloads once) [--name N]
-  grammar list                embedded languages + discovered packs
+  languages add <name|url>    add a language: known name (kotlin, ruby, lua…)
+                              or any tree-sitter grammar dir/github url —
+                              compiles a drop-in pack, no toolchain to install
+  languages list              embedded + packs + names addable by name
+  languages remove <name>     delete a pack
   remote init <url> [--local] write remote to .ctxoptimize/config.json
                               (committable; --local = this machine's store only)
   remote push|pull            incremental sync with the configured remote (no url —

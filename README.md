@@ -130,10 +130,12 @@ to install (zig auto-downloads once, sha256-verified; grammar fetched as a
 tarball, no git):
 
 ```sh
-ctx-optimize grammar build https://github.com/tree-sitter-grammars/tree-sitter-lua
-# → ~/ctxoptimize/grammars/lua.wasm + lua.json (mapping auto-suggested from
-#   the grammar's node-types.json — review it, then `add` just works)
-ctx-optimize grammar list
+ctx-optimize languages add kotlin        # known names resolve to the right repo/branch/exts
+ctx-optimize languages add https://github.com/tree-sitter-grammars/tree-sitter-lua
+# → ~/ctxoptimize/grammars/<name>.wasm + <name>.json (mapping auto-suggested
+#   from the grammar's node-types.json — review it, then `add` just works)
+ctx-optimize languages list              # embedded + packs + addable names
+ctx-optimize languages remove <name>
 ```
 
 ## Adapters — the open door
@@ -153,7 +155,12 @@ Evidence-first: every product decision traces to a measured spike
 benchmarks against a real agent baseline (not corpus-stuffing strawmen), the
 terrain law (graph value is inverse to a codebase's greppability), and the
 symbol-card finding (agents' reads are pointer-chases a complete answer
-eliminates). Vision: `docs/VISION.md`. Standing critique: `docs/CRITIQUE.md`.
+eliminates). Extensibility is a verified differentiator, not a slogan: a
+source audit of graphify (2026-07-11) found its languages, data-source lanes
+and exporters are all fork-required static registries (only its remote hooks
+are user-pluggable); here languages are drop-in packs, adapters are dropped
+scripts, and the batch door takes any producer. Vision: `docs/VISION.md`.
+Standing critique: `docs/CRITIQUE.md`.
 
 ## License
 

@@ -29,13 +29,25 @@ var shimC []byte
 const runtimeTarball = "https://codeload.github.com/tree-sitter/tree-sitter/tar.gz/refs/tags/v0.26.0"
 
 type Options struct {
-	Source string // local grammar dir OR https://github.com/<owner>/<repo>[...]
-	Name   string // pack name; default: grammar.json "name"
-	OutDir string // default ~/ctxoptimize/grammars
+	Source string   // known name, local grammar dir, or https://github.com/<owner>/<repo>
+	Name   string   // pack name; default: grammar.json "name"
+	OutDir string   // default ~/ctxoptimize/grammars
+	Ref    string   // git ref for GitHub tarballs (default HEAD)
+	Exts   []string // seed extensions for the suggested mapping
 }
 
 // Build produces <out>/<name>.wasm and, if absent, a suggested <name>.json.
 func Build(opts Options, stdout io.Writer) (wasmPath, cfgPath string, err error) {
+	// A bare known name resolves through the registry.
+	if k, ok := KnownGrammars[opts.Source]; ok {
+		if opts.Ref == "" {
+			opts.Ref = k.Ref
+		}
+		if len(opts.Exts) == 0 {
+			opts.Exts = k.Exts
+		}
+		opts.Source = k.URL
+	}
 	zig, err := EnsureZig(stdout)
 	if err != nil {
 		return "", "", err
@@ -47,7 +59,7 @@ func Build(opts Options, stdout io.Writer) (wasmPath, cfgPath string, err error)
 	}
 	defer os.RemoveAll(work)
 
-	srcDir, err := resolveGrammarDir(opts.Source, work, stdout)
+	srcDir, err := resolveGrammarDir(opts.Source, opts.Ref, work, stdout)
 	if err != nil {
 		return "", "", err
 	}
@@ -118,7 +130,7 @@ const TSLanguage *co_lang_by_id(int id) { return id == 0 ? tree_sitter_%s() : 0;
 	// node-types.json when absent.
 	cfgPath = filepath.Join(outDir, name+".json")
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-		cfg, serr := Suggest(name, srcDir)
+		cfg, serr := Suggest(name, srcDir, opts.Exts)
 		if serr != nil {
 			fmt.Fprintf(stdout, "note: could not suggest a mapping (%v) — write %s yourself\n", serr, cfgPath)
 		} else if err := os.WriteFile(cfgPath, cfg, 0o644); err != nil {
@@ -134,7 +146,7 @@ const TSLanguage *co_lang_by_id(int id) { return id == 0 ? tree_sitter_%s() : 0;
 
 // resolveGrammarDir accepts a local dir or a GitHub URL (tarball download, no
 // git). Returns the directory containing src/parser.c.
-func resolveGrammarDir(source, work string, stdout io.Writer) (string, error) {
+func resolveGrammarDir(source, ref, work string, stdout io.Writer) (string, error) {
 	if fi, err := os.Stat(source); err == nil && fi.IsDir() {
 		return findParserDir(source)
 	}
@@ -146,7 +158,12 @@ func resolveGrammarDir(source, work string, stdout io.Writer) (string, error) {
 		return "", fmt.Errorf("github url needs owner/repo: %s", source)
 	}
 	owner, repo := parts[0], strings.TrimSuffix(parts[1], ".git")
-	url := fmt.Sprintf("https://codeload.github.com/%s/%s/tar.gz/HEAD", owner, repo)
+	if ref == "" {
+		ref = "HEAD"
+	} else {
+		ref = "refs/heads/" + ref
+	}
+	url := fmt.Sprintf("https://codeload.github.com/%s/%s/tar.gz/%s", owner, repo, ref)
 	fmt.Fprintf(stdout, "downloading %s/%s…\n", owner, repo)
 	data, err := httpGet(url)
 	if err != nil {
