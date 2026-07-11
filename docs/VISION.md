@@ -60,6 +60,30 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
 - PDFs/docx: DEFERRED; when needed the SKILL converts (tiny bundled python
   script or the host agent) → markdown → same producer.
 
+### Product qualities (owner, 2026-07-11) — fast · answers · zero ceremony · refresh-the-world
+1. **graphify-fast is a HARD budget, not a nice-to-have.** Reference numbers to
+   meet or beat on the same corpus: kernel block/ (73k lines C) ≈ 2s; k8s (17.5k
+   files) ≈ 7min full build. S2 route: parallel wasm workers (~220–540 files/s
+   per worker single-threaded — parallelize to close the cgo gap). Incremental
+   refresh of a typical edit: sub-second.
+2. **It must ANSWER, not point.** The query primitive is the symbol card /
+   wiki page — complete, citation-grade, one call (S1e). Pointer lists are the
+   graphify mistake we measured.
+3. **Zero ceremony.** `ctx-optimize add .` = auto-detect modules + languages,
+   build, done. No config file required to start; config only to customize.
+4. **`refresh` re-runs the WORLD, incrementally.** The store manifest keeps an
+   adapter registry (adapter id, source, last-run, content fingerprint). One
+   `ctx-optimize refresh` re-runs every registered producer — tier-1 code/md
+   (stat-index + content-hash: only changed files) AND tier-2 adapters (each
+   declares its refresh strategy: hash-diff / snapshot-diff / since-timestamp —
+   e.g. re-introspect postgres information_schema, diff, update only changed
+   tables). Nothing unchanged is recomputed, ever.
+5. **The store is the gathered world.** Agents GATHER from the store — code,
+   DB schema, messaging topics, log shapes, docs — instead of going to every
+   live system every time. Queries never touch live systems; `refresh` keeps
+   the store current. One-liner: **gather once, refresh cheaply, answer from
+   the store — never go everywhere every time.**
+
 ### The open adapter door (owner, 2026-07-11) — two producer tiers, one contract
 - **Tier 1, compiled into the Go binary (deterministic, zero-dep):** code langs
   (wasm tree-sitter), markdown/txt, exact edges. NOTHING else — no DB drivers,
