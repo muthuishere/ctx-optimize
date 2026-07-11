@@ -4,114 +4,81 @@ description: >
   Answer codebase and system questions from a pre-built local knowledge store
   instead of grepping and reading files — optimize the context an agent spends
   on code. Backed by the `ctx-optimize` CLI (Go, deterministic, no LLM, no DB,
-  no network at query time); YOU (the agent) are the only intelligence. Trigger
-  on: "use ctx-optimize", "build the code graph", "query the graph", "what is
-  in this codebase", "gather this repo", "add this repo to the store",
-  "refresh the store", "push/pull the store", "share the graph with the team",
-  "add the database schema / kafka topics / logs to the store", or when a repo
-  question can be answered from an existing store instead of searching files.
+  no network at query time); YOU (the agent) are the only intelligence. When a
+  store exists for the repo (`ctx-optimize status` succeeds with nodes > 0),
+  treat ANY codebase question as a store query FIRST, before Grep/Read.
+  Trigger on: "use ctx-optimize", "build the code graph", "query the graph",
+  "what is in this codebase", "gather this repo", "add this repo to the
+  store", "refresh the store", "push/pull the store", "share the graph with
+  the team", "what breaks if I change X", "how are X and Y connected",
+  "add the database schema / kafka topics / logs / docs to the store".
 ---
 
 # ctx-optimize
 
-Turns a repo (and, via adapters, DB schemas, messaging topics, log shapes,
-documents) into ONE local knowledge store you answer from. **Gather once,
-refresh cheaply, answer from the store — never go everywhere every time.**
+One local knowledge store per repo — code (15 languages via built-in
+tree-sitter: go, python, js, ts/tsx, java, c, c++, c#, rust, kotlin, dart,
+zig, swift, sql), markdown/txt docs, and anything else via adapters — that
+you answer from. **Gather once, refresh cheaply, answer from the store.**
 
-Built-in code extraction (tree-sitter, no setup): Go, Python, JavaScript,
-TypeScript/TSX, Java, C, C++, C#, Rust — functions/methods/classes/structs/
-interfaces/enums/traits with locations, contains + imports edges, and
-name-resolved call edges (INFERRED). Markdown/txt docs land in the same
-graph. `add` on a 4k-file repo takes well under a second.
+**ctx-optimize needs no API key, no model, no database — never prompt for
+one.** The binary is deterministic; you supply all semantics.
 
-Division of labor: the `ctx-optimize` CLI does ALL deterministic work (extract,
-graph, store, sync) with zero LLM/network calls; **you are the reasoning LLM on
-top.** Never call a model API on the CLI's behalf — if semantic work is needed
-(summaries, naming, writing an adapter), you do it yourself.
+## Routing — pick the verb from the intent (huddle style: route first, then act)
 
-## Store model
-
-- Central store: `~/ctxoptimize/<repo-name>/` (override root: `--store` or
-  `$CTX_OPTIMIZE_STORE`; override folder name: `"name"` in config). The ONLY
-  thing that lives in the repo is the committable `.ctxoptimize/` directory.
-- Everything is plain files (ndjson/json/md) — diffable, syncable.
-- Remotes are for **sync only** (S3 or a shared folder); queries always run on
-  the local store. Share by pushing; a teammate who clones the repo gets the
-  remote from `.ctxoptimize/config.json` and just runs `remote pull` — no setup.
-
-## .ctxoptimize/ (repo config — commit the whole directory)
-
-```
-.ctxoptimize/
-  config.json     name + remote (see below)
-  adapters/       drop scripts here; every .js/.py/.sh runs on `add`
-```
-
-`config.json`:
-
-```json
-{
-  "name": "my-module",
-  "remote": {
-    "type": "s3",
-    "url": "s3://team-bucket/ctx/my-module",
-    "credentials": {
-      "access_key_id": "${TEAM_R2_KEY_ID}",
-      "secret_access_key": "${TEAM_R2_SECRET}",
-      "region": "auto",
-      "endpoint": "${R2_ENDPOINT}"
-    }
-  }
-}
-```
-
-- `remote` may also be a plain string URL. `${VAR}` placeholders (in url or
-  credentials) resolve from the environment at sync time — **commit variable
-  NAMES, never values**; omitted credentials fall back to the standard `AWS_*`
-  env vars. Never echo or write a resolved value.
-- **Adapters:** dropping a script into `.ctxoptimize/adapters/` IS the
-  registration — `.js`/`.mjs` run via node, `.py` via python3, `.sh` via sh;
-  other extensions are inert (the scaffold ships `example.js.sample` as a
-  template). Each script prints ONE batch JSON to stdout, validated
-  fail-closed. `ctx-optimize add` = built-in extractors + every adapter
-  script: one command refreshes the whole world. When you write a new adapter
-  for the user, save it there so every future `add` re-gathers it.
-
-## Commands (always prefer `--json` when consuming output)
-
-| Intent | Command |
+| The user (or your own next step) is… | Run |
 |---|---|
-| First time in a repo (scaffolds .ctxoptimize/) | `ctx-optimize init --path <path>` |
-| Gather everything (built-ins + adapter scripts) | `ctx-optimize add <path>` |
-| Feed one-off adapter output (ANY external system) | `<adapter> \| ctx-optimize add --json - --path <path>` |
-| Ask the store | `ctx-optimize query "<question>" --path <path> --json` |
-| How are A and B connected? | `ctx-optimize path "A" "B" --path <path> --json` |
-| What is X? (node + neighborhood) | `ctx-optimize explain "X" --path <path> --json` |
-| What breaks if X changes? (blast radius) | `ctx-optimize affected "X" --depth 2 --path <path> --json` |
-| Most important nodes (god nodes) | `ctx-optimize hubs --top 10 --path <path> --json` |
-| Store status | `ctx-optimize status --path <path> --json` |
-| Combine modules into one view | `ctx-optimize merge <module\|path>... --into <name>` |
-| Dump the graph for other tools | `ctx-optimize export --format json\|dot --path <path>` |
-| Show the store visually (user asks "show me the graph") | `ctx-optimize serve --path <path>` → open the printed http://127.0.0.1:4747 link |
-| Set the repo's remote (writes .ctxoptimize/config.json) | `ctx-optimize remote init <s3://… or file:///…> --path <path>` |
-| Machine-only remote (nothing in the repo) | `ctx-optimize remote init <url> --local --path <path>` |
-| Publish changes | `ctx-optimize remote push --path <path> --json` |
-| Fetch teammate's store | `ctx-optimize remote pull --path <path> --json` |
-| Install/refresh this skill | `ctx-optimize install --skills` |
+| Asking anything about the codebase, and a store exists | `ctx-optimize query "<question>" --json` — BEFORE any Grep/Read |
+| Asking "what is X / explain X" | `ctx-optimize explain "X" --json` |
+| Asking "what breaks if X changes / blast radius / impact" | `ctx-optimize affected "X" --depth 2 --json` |
+| Asking "how are A and B connected / trace A to B" | `ctx-optimize path "A" "B" --json` |
+| Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |
+| Asking to see it visually | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link |
+| In a repo with NO store yet | `ctx-optimize init && ctx-optimize add .` (seconds, even on huge repos) |
+| Told code changed / store looks stale | `ctx-optimize add .` (incremental: prunes deleted, re-emits changed) |
+| Asked to add docs/PDF/DB/queue/logs | see "Adding content" below — each source type is different |
+| Asked to share / get the team's store | `remote push` / `remote pull` (config-driven, no URL args) |
+| Combining several repos/modules | `ctx-optimize merge <mod>... --into <name>` |
+| Exporting for other tools | `ctx-optimize export --format json|dot` |
 
-Notes:
-- `--path` defaults to the current directory.
-- Re-running `add` REPLACES each producer's world: nodes whose source is gone
-  are pruned automatically. A shrink to under half a producer's nodes is
-  refused (broken-run guard) — pass `--force` when it's a real mass deletion.
-- `path`/`explain`/`affected` accept a node id, exact label, or fuzzy name.
-- `remote push`/`pull` take NO URL — the remote always comes from
-  `.ctxoptimize/config.json` (or the `--local` store config). To change the
-  remote, edit the file (or re-run `remote init`), never pass a URL to sync.
+Fast path, imperative: **if `ctx-optimize status --json` shows nodes > 0 and
+the request is a question — query. Do not rebuild. Do not grep. Do not read
+files speculatively.** Only open a file when a hit's `location` demands
+verbatim code, and then read only that range.
 
-## Writing an adapter (the open door)
+## Answering discipline (cite or abstain)
 
-Any system can be gathered. Emit this JSON to stdout and pipe into the door:
+1. `query` returns COMPLETE hits: id, label, kind, source, location,
+   neighbors. Cite `source location` in your answer.
+2. Answer from what the store returned. Never invent a node or an edge. Edge
+   `confidence` matters: EXTRACTED is parsed fact, INFERRED is name-matched —
+   say which when it matters.
+3. No hits? Say so, then try: different terms (the matcher does prefix +
+   trigram, typos are OK), `hubs` for orientation, `explain` on a nearby
+   node — or `add` if the store is stale. Never pad an answer from priors.
+4. Stay in budget: `--budget N` caps output tokens (default 2000).
+
+## Adding content — each source works differently (know the lanes)
+
+- **Code + markdown/txt: automatic.** `ctx-optimize add .` — nothing to
+  configure, no API key. Re-running refreshes: deleted files leave the graph
+  (a >50% producer shrink is refused; add `--force` for real mass deletions).
+- **Other documents (PDF, docx, URLs, wikis): YOU convert, then add.**
+  There is no LLM lane and no fetcher in the binary — you are the converter.
+  Turn the content into markdown (write it into the repo, e.g. `docs/`), then
+  `ctx-optimize add .`. If the source must stay external, emit batch JSON
+  through the door instead (below).
+- **External systems (Postgres schema, Kafka topics, Redis, log shapes):
+  write an adapter.** Introspect the system yourself, print ONE batch JSON to
+  stdout, pipe it in: `python3 pg_schema.py | ctx-optimize add --json -`.
+  The door validates fail-closed; a bad batch is rejected whole.
+- **Make it repeatable — always.** A one-off pipe dies with your session.
+  Save the working script as `.ctxoptimize/adapters/<name>.py` (or .js/.sh —
+  extension picks the runner: node/python3/sh). Dropping the file IS the
+  registration: every future `add` re-runs it. That's the refresh-the-world
+  loop; leave the store refreshable, not hand-fed.
+
+Adapter batch schema (the universal door):
 
 ```json
 {
@@ -123,19 +90,34 @@ Any system can be gathered. Emit this JSON to stdout and pipe into the door:
 }
 ```
 
-Rules the door enforces (it rejects the whole batch otherwise): `producer`
-required (provenance); every node needs `id/label/kind/file_type/source`;
-edge `confidence` ∈ `EXTRACTED|INFERRED|AMBIGUOUS`. **Write new adapters
-yourself when asked** ("add the kafka topics to the store") — you can
-introspect anything and emit this schema. Then make it repeatable: save the
-script as `.ctxoptimize/adapters/<name>.js` (or .py/.sh) so every future
-`add` refreshes it automatically. Secrets inside adapter scripts follow the
-same rule: read env vars by name, never hardcode values.
+Rules the door enforces: `producer` required; every node needs
+`id/label/kind/file_type/source`; edge `confidence` ∈
+`EXTRACTED|INFERRED|AMBIGUOUS`. Secrets in adapter scripts: read env vars by
+NAME (`process.env.X` / `os.environ`), never hardcode or print values.
 
-## Answering questions
+## Store & sync model
 
-1. `ctx-optimize query "<question>" --json` first — it returns complete hits
-   (id, label, kind, source, location, neighbors) you can cite directly.
-2. Only open a file if the hit's location needs verbatim code — read the
-   specific range, never the whole file.
-3. If the store looks stale or empty for the question, `add`/`pull` first.
+- Store: `~/ctxoptimize/<repo-name>/` — plain files, outside the repo.
+  Override root with `--store`/`$CTX_OPTIMIZE_STORE`; folder name via
+  `"name"` in config. `--path` (default cwd) picks the module.
+- The ONLY thing inside the repo: committable `.ctxoptimize/` —
+  `config.json` (name + remote) and `adapters/`.
+- `config.json` remote: plain URL or `{"type":"s3","url":…,"credentials":
+  {"access_key_id":"${TEAM_KEY_ID}", …}}`. `${VAR}` resolves from env at
+  sync time — commit variable NAMES, never values; never echo resolved
+  values. Omitted credentials fall back to `AWS_*` env (endpoint override
+  covers R2/Hetzner/MinIO).
+- `remote init <url>` writes the config (commit it — teammates clone and
+  bare `remote pull` just works). `--local` keeps it per-machine instead.
+- `remote push`/`pull` take NO URL — the config file is the single source of
+  truth. Sync is incremental (content-hash manifest). Queries never touch
+  the remote.
+
+## Honesty rules
+
+- Never claim a node/edge/path the CLI didn't output.
+- Report counts as the CLI printed them (added/pruned/transferred).
+- If the store can't answer, say what's missing and which lane would gather
+  it — don't silently fall back to grepping the world.
+- `path`/`explain`/`affected` accept id, exact label, or fuzzy name; if
+  resolution surprises you, show the resolved node id you actually used.
