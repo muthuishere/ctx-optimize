@@ -111,9 +111,21 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
 
 ## Store layout (owner, default) — central, file-based, multi-module
 ```
-~/.ctx-optimize/store/<module-key>/   # user-home central store, keyed by module
+~/.ctx-optimize/store/<module-key>/       # user-home central store, keyed by module
   graph/ … wiki/ … cards/ … manifest.json
+  hooks/                                  # per-store DYNAMIC adapters (owner, 2026-07-11)
+    custom_adapter1.py                    #   any executable emitting the node/edge
+    postgres_schema.sh                    #   JSON schema on stdout → the validated
+    kafka_topics.py                       #   `add --json` door; discovered by `refresh`
 ```
+- **Hooks travel WITH the store** — push/pull shares the adapters too, so a
+  teammate pulling the store gets the same gather surface (the #1752 sync-hooks
+  idea, made core). Global fallback: `~/.ctx-optimize/hooks/` for all stores.
+- **Registered = present:** `refresh` discovers hooks/, runs each (its declared
+  refresh strategy), validates output at the door. No registration ceremony.
+- **Security (fail-closed):** hooks pulled from a remote are INERT until the
+  user approves them (trust-on-first-use, like git hooks never auto-run) —
+  pulling a store must never mean executing someone's code silently.
 - **Multi-module by default:** detect modules (go.mod / package.json / pom / …)
   → per-module graphs + merged repo view; cross-repo merge on top.
 - **Repo stays git-clean** — nothing written into the repo (the #1751/#1752
