@@ -192,3 +192,41 @@ func TestReplacePrunesAndGuards(t *testing.T) {
 		t.Fatalf("force should override: %v", err)
 	}
 }
+
+// A --json upsert re-asserting another producer's artifact must not re-own
+// it — otherwise the upserter's next Replace prunes the original's data.
+func TestMergeDoesNotStealProvenance(t *testing.T) {
+	s, err := Open(t.TempDir(), "m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := schema.Node{ID: "x", Label: "x", Kind: "k", FileType: "f", Source: "x"}
+	e := schema.Edge{Source: "x", Target: "x", Relation: "self", Confidence: "EXTRACTED"}
+	if _, _, err := s.Merge(&schema.Batch{Producer: "code", Nodes: []schema.Node{n}, Edges: []schema.Edge{e}}); err != nil {
+		t.Fatal(err)
+	}
+	// adapter re-asserts the same node+edge…
+	if _, _, err := s.Merge(&schema.Batch{Producer: "adapter", Nodes: []schema.Node{n}, Edges: []schema.Edge{e}}); err != nil {
+		t.Fatal(err)
+	}
+	// …then Replaces with an empty world: code's artifacts must survive.
+	if _, _, err := s.Replace(&schema.Batch{Producer: "adapter", Nodes: []schema.Node{{ID: "a", Label: "a", Kind: "k", FileType: "f", Source: "a"}}}, true); err != nil {
+		t.Fatal(err)
+	}
+	nodes, _ := s.Nodes()
+	edges, _ := s.Edges()
+	foundN, foundE := false, false
+	for _, x := range nodes {
+		if x.ID == "x" && x.Metadata["producer"] == "code" {
+			foundN = true
+		}
+	}
+	for _, x := range edges {
+		if x.Source == "x" && x.Metadata["producer"] == "code" {
+			foundE = true
+		}
+	}
+	if !foundN || !foundE {
+		t.Fatalf("provenance stolen: node kept=%v edge kept=%v", foundN, foundE)
+	}
+}

@@ -13,14 +13,23 @@ import (
 )
 
 type Lang struct {
-	ID       int
-	Name     string
-	Exts     []string
-	Decls    map[string]string // AST node type → node kind we emit
-	Names    map[string]bool   // node types that carry identifiers
-	Calls    map[string]bool   // call-site node types
-	Imports  map[string]bool   // import node types
-	SkipDirs []string          // extra per-language noise dirs
+	ID      int
+	Name    string
+	Exts    []string
+	Decls   map[string]string // AST node type → node kind we emit
+	Names   map[string]bool   // node types that carry identifiers
+	Calls   map[string]bool   // call-site node types
+	Imports map[string]bool   // import node types
+	// NameStrategy overrides how a decl type finds its name (default:
+	// shallowest-first name node). "declarator" = first name inside a
+	// *declarator subtree (C/C++: the name hides behind the return type);
+	// "lastBeforeParams" = last shallow name before the parameter list
+	// (C#: a user-typed return type is also a bare identifier).
+	NameStrategy map[string]string
+	// ReceiverQualify: decl types whose qualified name comes from a receiver
+	// type before the name (Go methods: Store.Merge, not a nesting parent).
+	ReceiverQualify map[string]bool
+	SkipDirs        []string // extra per-language noise dirs
 }
 
 func set(ss ...string) map[string]bool {
@@ -38,9 +47,10 @@ var Languages = []Lang{
 			"function_declaration": "function", "method_declaration": "method",
 			"type_spec": "type",
 		},
-		Names:   set("identifier", "type_identifier", "field_identifier"),
-		Calls:   set("call_expression"),
-		Imports: set("import_spec"),
+		Names:           set("identifier", "type_identifier", "field_identifier"),
+		Calls:           set("call_expression"),
+		Imports:         set("import_spec"),
+		ReceiverQualify: map[string]bool{"method_declaration": true},
 	},
 	{
 		ID: 1, Name: "python", Exts: []string{".py"},
@@ -103,9 +113,10 @@ var Languages = []Lang{
 			"function_definition": "function", "struct_specifier": "struct",
 			"enum_specifier": "enum", "union_specifier": "struct", "type_definition": "type",
 		},
-		Names:   set("identifier", "field_identifier", "type_identifier"),
-		Calls:   set("call_expression"),
-		Imports: set("preproc_include"),
+		Names:        set("identifier", "field_identifier", "type_identifier"),
+		Calls:        set("call_expression"),
+		Imports:      set("preproc_include"),
+		NameStrategy: map[string]string{"function_definition": "declarator", "type_definition": "lastBeforeParams"},
 	},
 	{
 		ID: 7, Name: "cpp", Exts: []string{".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"},
@@ -114,9 +125,10 @@ var Languages = []Lang{
 			"struct_specifier": "struct", "enum_specifier": "enum",
 			"namespace_definition": "module", "type_definition": "type",
 		},
-		Names:   set("identifier", "field_identifier", "type_identifier", "namespace_identifier"),
-		Calls:   set("call_expression"),
-		Imports: set("preproc_include"),
+		Names:        set("identifier", "field_identifier", "type_identifier", "namespace_identifier"),
+		Calls:        set("call_expression"),
+		Imports:      set("preproc_include"),
+		NameStrategy: map[string]string{"function_definition": "declarator", "type_definition": "lastBeforeParams"},
 	},
 	{
 		ID: 8, Name: "csharp", Exts: []string{".cs"},
@@ -126,9 +138,10 @@ var Languages = []Lang{
 			"record_declaration": "class", "method_declaration": "method",
 			"constructor_declaration": "method", "namespace_declaration": "module",
 		},
-		Names:   set("identifier"),
-		Calls:   set("invocation_expression"),
-		Imports: set("using_directive"),
+		Names:        set("identifier"),
+		Calls:        set("invocation_expression"),
+		Imports:      set("using_directive"),
+		NameStrategy: map[string]string{"method_declaration": "lastBeforeParams", "constructor_declaration": "lastBeforeParams"},
 	},
 	{
 		ID: 9, Name: "rust", Exts: []string{".rs"},

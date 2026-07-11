@@ -19,11 +19,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
 //go:embed assets/shim.c
 var shimC []byte
+
+var nameRe = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
 
 // runtimeTarball pins the tree-sitter runtime the pack is compiled against.
 const runtimeTarball = "https://codeload.github.com/tree-sitter/tree-sitter/tar.gz/refs/tags/v0.26.0"
@@ -68,6 +71,10 @@ func Build(opts Options, stdout io.Writer) (wasmPath, cfgPath string, err error)
 		if name, err = grammarName(srcDir); err != nil {
 			return "", "", err
 		}
+	}
+	// The name reaches file paths AND generated C — it must be an identifier.
+	if !nameRe.MatchString(name) {
+		return "", "", fmt.Errorf("grammar name %q is not a plain identifier ([A-Za-z0-9_]) — pass --name", name)
 	}
 
 	runtimeDir, err := ensureRuntime(stdout)

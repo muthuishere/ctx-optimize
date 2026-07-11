@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -191,12 +190,28 @@ func hmacSHA256(key []byte, data string) []byte {
 	return mac.Sum(nil)
 }
 
-// escapePath encodes each path segment per S3's canonical URI rules
-// (segments escaped, slashes preserved).
+// escapePath encodes each path segment per SigV4's canonical URI rules:
+// strict RFC-3986 — everything but unreserved chars is percent-encoded
+// (url.PathEscape leaves sub-delims like '+' and '=' alone, which makes S3
+// reject the signature).
 func escapePath(p string) string {
 	parts := strings.Split(p, "/")
 	for i, part := range parts {
-		parts[i] = url.PathEscape(part)
+		parts[i] = escapeSegment(part)
 	}
 	return strings.Join(parts, "/")
+}
+
+func escapeSegment(s string) string {
+	var sb strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' ||
+			c == '-' || c == '.' || c == '_' || c == '~' {
+			sb.WriteByte(c)
+		} else {
+			fmt.Fprintf(&sb, "%%%02X", c)
+		}
+	}
+	return sb.String()
 }

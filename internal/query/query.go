@@ -39,15 +39,23 @@ type Result struct {
 var tokenRe = regexp.MustCompile(`[A-Za-z0-9]+`)
 
 // Tokenize lower-cases and splits camelCase/snake_case — code identifiers are
-// the corpus, so "BlkMqSubmitBio" must match "submit bio".
+// the corpus, so "BlkMqSubmitBio" must match "submit bio" and "HTTPServer"
+// must yield both "http" and "server" (acronym runs stay whole).
 func Tokenize(s string) []string {
-	// Split camelCase boundaries first.
+	// Boundary before an uppercase rune when the previous rune is not
+	// uppercase, or when it starts a new word after an acronym run
+	// (…P│Server). ASCII scan is fine — identifiers are the corpus.
 	var sb strings.Builder
-	for i, r := range s {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			sb.WriteByte(' ')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' && i > 0 {
+			prevUpper := s[i-1] >= 'A' && s[i-1] <= 'Z'
+			nextLower := i+1 < len(s) && s[i+1] >= 'a' && s[i+1] <= 'z'
+			if !prevUpper || nextLower {
+				sb.WriteByte(' ')
+			}
 		}
-		sb.WriteRune(r)
+		sb.WriteByte(c)
 	}
 	var out []string
 	for _, m := range tokenRe.FindAllString(strings.ToLower(sb.String()), -1) {

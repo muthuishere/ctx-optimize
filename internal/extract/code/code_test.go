@@ -3,6 +3,7 @@ package code
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/muthuishere/ctx-optimize/internal/schema"
@@ -14,15 +15,15 @@ import (
 func TestExtractAllLanguages(t *testing.T) {
 	root := t.TempDir()
 	files := map[string]string{
-		"main.go":   "package main\n\nimport \"fmt\"\n\nfunc Greet(name string) string {\n\treturn fmt.Sprintf(\"hi %s\", name)\n}\n\nfunc main() {\n\tGreet(\"x\")\n}\n",
-		"app.py":    "import os\n\nclass Billing:\n    def refund(self, amount):\n        return validate(amount)\n\ndef validate(amount):\n    return amount > 0\n",
+		"main.go":   "package main\n\nimport \"fmt\"\n\ntype Store struct{}\n\nfunc (s *Store) Merge(v int) int {\n\treturn v\n}\n\nfunc Greet(name string) string {\n\treturn fmt.Sprintf(\"hi %s\", name)\n}\n\nfunc main() {\n\ts := &Store{}\n\ts.Merge(1)\n\tGreet(\"x\")\n}\n",
+		"app.py":    "import os\n\nclass Billing:\n    def refund(self, amount):\n        self.audit(amount)\n        return validate(amount)\n    def audit(self, amount):\n        pass\n\ndef validate(amount):\n    return amount > 0\n",
 		"ui.js":     "import React from 'react';\n\nclass Widget {\n  render() { return draw(); }\n}\n\nfunction draw() { return 1; }\n",
 		"svc.ts":    "import {x} from './x';\n\nexport interface Refund { id: string }\n\nexport class RefundService {\n  process(r: Refund) { return audit(r); }\n}\n\nfunction audit(r: Refund) { return r.id; }\n",
 		"App.tsx":   "import React from 'react';\n\nexport function App() {\n  return <div/>;\n}\n",
 		"Main.java": "import java.util.List;\n\npublic class Main {\n    public void run() { helper(); }\n    static void helper() {}\n}\n",
-		"lib.c":     "#include <stdio.h>\n\nstruct point { int x; };\n\nint area(int w, int h) { return w * h; }\n\nint main(void) { return area(2, 3); }\n",
+		"lib.c":     "#include <stdio.h>\n\ntypedef int MyInt;\n\nstruct point { int x; };\n\nMyInt area(MyInt w, MyInt h) { return w * h; }\n\nint main(void) { return area(2, 3); }\n",
 		"geo.cpp":   "#include <vector>\n\nnamespace geo {\nclass Shape {\npublic:\n  int area() { return compute(); }\n};\nint compute() { return 42; }\n}\n",
-		"Svc.cs":    "using System;\n\nnamespace App {\n  public class Svc {\n    public void Run() { Helper(); }\n    static void Helper() {}\n  }\n}\n",
+		"Svc.cs":    "using System;\n\nnamespace App {\n  public class Svc {\n    public Svc Run() { Helper(); return this; }\n    static void Helper() {}\n  }\n}\n",
 		"lib.rs":    "use std::io;\n\npub struct Ledger { pub id: u64 }\n\npub trait Post { fn post(&self); }\n\npub fn settle(l: &Ledger) -> u64 { check(l.id) }\n\nfn check(v: u64) -> u64 { v }\n",
 		"main.zig":  "const std = @import(\"std\");\n\nfn add(a: i32, b: i32) i32 {\n    return a + b;\n}\n\npub fn main() void {\n    _ = add(1, 2);\n}\n",
 		"db.sql":    "CREATE TABLE refunds (id INT PRIMARY KEY, amount INT);\n\nCREATE VIEW big_refunds AS SELECT * FROM refunds WHERE amount > 100;\n",
@@ -47,8 +48,11 @@ func TestExtractAllLanguages(t *testing.T) {
 	}
 	wantNodes := map[string]string{ // id → kind
 		"main.go::Greet":          "function",
+		"main.go::Store":          "type",
+		"main.go::Store.Merge":    "method",
 		"app.py::Billing":         "class",
 		"app.py::Billing.refund":  "function",
+		"app.py::Billing.audit":   "function",
 		"app.py::validate":        "function",
 		"ui.js::Widget":           "class",
 		"ui.js::Widget.render":    "method",
@@ -58,11 +62,13 @@ func TestExtractAllLanguages(t *testing.T) {
 		"Main.java::Main":         "class",
 		"Main.java::Main.run":     "method",
 		"lib.c::area":             "function",
+		"lib.c::MyInt":            "type",
 		"lib.c::point":            "struct",
 		"geo.cpp::geo":            "module",
 		"geo.cpp::geo.Shape":      "class",
 		"Svc.cs::App":             "module",
 		"Svc.cs::App.Svc":         "class",
+		"Svc.cs::App.Svc.Run":     "method",
 		"lib.rs::Ledger":          "struct",
 		"lib.rs::Post":            "trait",
 		"lib.rs::settle":          "function",
@@ -85,8 +91,8 @@ func TestExtractAllLanguages(t *testing.T) {
 		}
 	}
 	// Locations are ranges.
-	if n := byID["main.go::Greet"]; n.Location != "L5-L7" {
-		t.Errorf("Greet location = %q", n.Location)
+	if n := byID["main.go::Store.Merge"]; !strings.HasPrefix(n.Location, "L7-") {
+		t.Errorf("Store.Merge location = %q", n.Location)
 	}
 
 	// Calls resolve module-wide by unique name as INFERRED.
@@ -96,7 +102,9 @@ func TestExtractAllLanguages(t *testing.T) {
 	}
 	wantCalls := []string{
 		"main.go::main→main.go::Greet/calls",
+		"main.go::main→main.go::Store.Merge/calls", // s.Merge: callee = Merge, not s
 		"app.py::Billing.refund→app.py::validate/calls",
+		"app.py::Billing.refund→app.py::Billing.audit/calls", // self.audit: callee = audit
 		"ui.js::Widget.render→ui.js::draw/calls",
 		"lib.rs::settle→lib.rs::check/calls",
 	}

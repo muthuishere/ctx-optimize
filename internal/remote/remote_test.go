@@ -199,3 +199,10 @@ func TestS3Integration(t *testing.T) {
 		t.Fatalf("pulled store empty: %v", err)
 	}
 }
+
+// SigV4 canonical URIs must be strict RFC-3986: sub-delims get encoded.
+func TestEscapePathStrict(t *testing.T) {
+	if got := escapePath("pre+fix/a=b c/ok-._~"); got != "pre%2Bfix/a%3Db%20c/ok-._~" {
+		t.Fatalf("got %q", got)
+	}
+}

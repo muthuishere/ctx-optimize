@@ -228,6 +228,11 @@ func cmdInit(args []string, stdout io.Writer) error {
 // world enters here, strictly validated.
 func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	f := parseFlags(args)
+	// A positional target IS the module: `add ~/other-repo` must open
+	// other-repo's store, never Replace the cwd's graph with foreign code.
+	if f.strs["path"] == "" && len(f.args) > 0 {
+		f.strs["path"] = f.args[0]
+	}
 	s, err := openStore(f)
 	if err != nil {
 		return err

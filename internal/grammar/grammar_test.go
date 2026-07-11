@@ -124,3 +124,16 @@ func TestBuildIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A hostile grammar name (path traversal / C injection) is rejected.
+func TestHostileGrammarNameRejected(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	os.MkdirAll(src, 0o755)
+	os.WriteFile(filepath.Join(src, "parser.c"), []byte("/*x*/"), 0o644)
+	os.WriteFile(filepath.Join(src, "grammar.json"), []byte(`{"name":"../../evil"}`), 0o644)
+	_, _, err := Build(Options{Source: dir, OutDir: t.TempDir()}, os.Stderr)
+	if err == nil || !strings.Contains(err.Error(), "identifier") {
+		t.Fatalf("hostile name not rejected: %v", err)
+	}
+}

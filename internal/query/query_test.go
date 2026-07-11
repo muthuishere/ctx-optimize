@@ -71,3 +71,18 @@ func TestTrigramCatchesTypo(t *testing.T) {
 		t.Fatalf("typo not caught: %+v", res.Hits)
 	}
 }
+
+// Acronym runs survive camelCase splitting.
+func TestTokenizeAcronyms(t *testing.T) {
+	got := Tokenize("HTTPServer blkMqSubmitBio parseURL")
+	want := map[string]bool{"http": true, "server": true, "blk": true, "mq": true,
+		"submit": true, "bio": true, "parse": true, "url": true}
+	if len(got) != len(want) {
+		t.Fatalf("tokens: %v", got)
+	}
+	for _, tk := range got {
+		if !want[tk] {
+			t.Fatalf("unexpected token %q in %v", tk, got)
+		}
+	}
+}

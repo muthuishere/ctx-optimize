@@ -154,8 +154,13 @@ func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error) {
 		if n.Metadata["producer"] == "" {
 			n.Metadata["producer"] = b.Producer
 		}
-		if _, ok := byID[n.ID]; !ok {
+		if old, ok := byID[n.ID]; !ok {
 			nodesAdded++
+		} else if op := old.Metadata["producer"]; op != "" {
+			// Upserting an existing node never re-owns it — otherwise a
+			// later Replace by the upserter would prune the original
+			// producer's artifact.
+			n.Metadata["producer"] = op
 		}
 		byID[n.ID] = n
 	}
@@ -181,8 +186,10 @@ func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error) {
 		if e.Metadata["producer"] == "" {
 			e.Metadata["producer"] = b.Producer
 		}
-		if _, ok := byKey[edgeKey(e)]; !ok {
+		if old, ok := byKey[edgeKey(e)]; !ok {
 			edgesAdded++
+		} else if op := old.Metadata["producer"]; op != "" {
+			e.Metadata["producer"] = op
 		}
 		byKey[edgeKey(e)] = e
 	}

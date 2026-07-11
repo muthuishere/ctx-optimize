@@ -243,18 +243,36 @@ func Extract(root string) (*schema.Batch, error) {
 		decls = append(decls, res.decls...)
 	}
 
-	// Module-wide call resolution: unique name → INFERRED edge; ambiguous →
-	// dropped. Self-calls and unknown names are dropped too.
+	// Call resolution: same-FILE unique match wins (self.audit resolves in
+	// its own file even when the name repeats elsewhere), else module-wide
+	// unique. Ambiguous and unknown names are dropped, never guessed.
 	byName := map[string][]declRef{}
 	for _, d := range decls {
 		byName[d.label] = append(byName[d.label], d)
 	}
+	pick := func(c callSite) *declRef {
+		cands := byName[c.callee]
+		var inFile []*declRef
+		for k := range cands {
+			if cands[k].file == c.file {
+				inFile = append(inFile, &cands[k])
+			}
+		}
+		if len(inFile) == 1 {
+			return inFile[0]
+		}
+		if len(inFile) == 0 && len(cands) == 1 {
+			return &cands[0]
+		}
+		return nil
+	}
 	seen := map[string]bool{}
 	for _, c := range calls {
-		targets := byName[c.callee]
-		if len(targets) != 1 || targets[0].id == c.callerID {
+		t := pick(c)
+		if t == nil || t.id == c.callerID {
 			continue
 		}
+		targets := []declRef{*t}
 		key := c.callerID + "\x00" + targets[0].id
 		if seen[key] {
 			continue
@@ -306,17 +324,85 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		Source: rel, Metadata: map[string]string{"lang": lang.Name},
 	})
 
-	// nameFor finds the declaration's identifier: first Names-typed node in
-	// the subtree within 3 levels, before anything else claims it.
-	nameFor := func(i int) (string, bool) {
+	// declName finds a declaration's identifier. Default: the SHALLOWEST
+	// name-typed node in the subtree (first at that depth) — a Go method's
+	// name (field_identifier, depth+1) beats its receiver variable (inside
+	// parameter_list, depth+2). Strategies fix grammars where that lies:
+	// "declarator" (C/C++: the name hides inside *_declarator, behind the
+	// return type), "lastBeforeParams" (C#: a user-typed return type is
+	// also a bare identifier — the name is the last one before params).
+	declName := func(i int) (string, bool) {
 		d := raw[i].Depth
+		switch lang.NameStrategy[typeOf(raw[i])] {
+		case "declarator":
+			declDepth := -1
+			for j := i + 1; j < len(raw) && raw[j].Depth > d; j++ {
+				if declDepth >= 0 && int(raw[j].Depth) <= declDepth {
+					declDepth = -1
+				}
+				t := typeOf(raw[j])
+				if declDepth < 0 && strings.Contains(t, "declarator") {
+					declDepth = int(raw[j].Depth)
+					continue
+				}
+				if declDepth >= 0 && lang.Names[t] {
+					return text(raw[j]), true
+				}
+			}
+			return "", false
+		case "lastBeforeParams":
+			last := -1
+			for j := i + 1; j < len(raw) && raw[j].Depth > d; j++ {
+				if raw[j].Depth != d+1 {
+					continue
+				}
+				t := typeOf(raw[j])
+				if strings.Contains(t, "parameter") {
+					break
+				}
+				if lang.Names[t] {
+					last = j
+				}
+			}
+			if last >= 0 {
+				return text(raw[last]), true
+			}
+			return "", false
+		default:
+			best, bestDepth := -1, uint32(1<<31)
+			for j := i + 1; j < len(raw) && raw[j].Depth > d; j++ {
+				dep := raw[j].Depth - d
+				if dep > 4 {
+					continue
+				}
+				if lang.Names[typeOf(raw[j])] && dep < bestDepth {
+					best, bestDepth = j, dep
+				}
+			}
+			if best >= 0 {
+				return text(raw[best]), true
+			}
+			return "", false
+		}
+	}
+
+	// calleeName resolves a call site: the LAST name-typed node of the
+	// callee expression, stopping at the arguments — `s.Merge(a)` is a call
+	// to Merge, not to s; `self.bar()` is bar, not self.
+	calleeName := func(i int) (string, bool) {
+		d := raw[i].Depth
+		last := -1
 		for j := i + 1; j < len(raw) && raw[j].Depth > d; j++ {
-			if raw[j].Depth > d+3 {
-				continue
+			t := typeOf(raw[j])
+			if strings.Contains(t, "argument") {
+				break
 			}
-			if lang.Names[typeOf(raw[j])] {
-				return text(raw[j]), true
+			if raw[j].Depth-d <= 3 && lang.Names[t] {
+				last = j
 			}
+		}
+		if last >= 0 {
+			return text(raw[last]), true
 		}
 		return "", false
 	}
@@ -344,7 +430,7 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		t := typeOf(n)
 
 		if kind, ok := lang.Decls[t]; ok {
-			name, found := nameFor(i)
+			name, found := declName(i)
 			if !found || name == "" {
 				continue
 			}
@@ -353,6 +439,18 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 				parentID := stack[len(stack)-1].id
 				if idx := strings.LastIndex(parentID, "::"); idx >= 0 {
 					qual = parentID[idx+2:] + "." + name
+				}
+			} else if lang.ReceiverQualify[t] {
+				// Go method: the receiver type (first type_identifier before
+				// the name) is the qualifier — Store.Merge, not Merge.
+				for j := i + 1; j < len(raw) && raw[j].Depth > n.Depth; j++ {
+					if txt := text(raw[j]); typeOf(raw[j]) == "type_identifier" {
+						if txt == name {
+							break
+						}
+						qual = txt + "." + name
+						break
+					}
 				}
 			}
 			id := rel + "::" + qual
@@ -372,7 +470,7 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		}
 
 		if lang.Calls[t] {
-			if callee, ok := nameFor(i); ok && callee != "" {
+			if callee, ok := calleeName(i); ok && callee != "" {
 				res.calls = append(res.calls, callSite{callerID: callerAt(), callee: callee, file: rel})
 			}
 			continue

@@ -274,3 +274,21 @@ func TestVersion(t *testing.T) {
 		t.Fatalf("version output: %s", out.String())
 	}
 }
+
+// `add <path>` keys the store by the TARGET, never the cwd module — a
+// positional gather must not Replace the current repo's graph.
+func TestAddPositionalPathKeysStoreByTarget(t *testing.T) {
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+	other := filepath.Join(t.TempDir(), "other-repo")
+	os.MkdirAll(other, 0o755)
+	os.WriteFile(filepath.Join(other, "doc.md"), []byte("# Other\n"), 0o644)
+
+	var out, errb bytes.Buffer
+	if code := Run([]string{"add", other}, &out, &errb); code != 0 {
+		t.Fatalf("add: %s", errb.String())
+	}
+	if _, err := os.Stat(filepath.Join(storeRoot, "other-repo", "graph", "nodes.ndjson")); err != nil {
+		t.Fatalf("store not keyed by target: %v", err)
+	}
+}
