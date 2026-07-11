@@ -1,0 +1,9 @@
+{
+  "name": "@muthuishere/ctx-optimize-darwin-x64",
+  "version": "0.1.0",
+  "description": "ctx-optimize prebuilt binary for darwin-x64",
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin/"]
+}

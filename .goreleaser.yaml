@@ -1,0 +1,48 @@
+# goreleaser — cross-compiles the pure-Go binary and stages each platform's
+# build into npm/platforms/<os>-<arch>/bin/ for the optionalDependencies npm
+# wrapper (house pattern: no postinstall download, ever).
+version: 2
+
+project_name: ctx-optimize
+
+builds:
+  - id: ctx-optimize
+    main: ./cmd/ctx-optimize
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/muthuishere/ctx-optimize/internal/version.Version={{.Version}}
+      - -X github.com/muthuishere/ctx-optimize/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/muthuishere/ctx-optimize/internal/version.Date={{.Date}}
+    hooks:
+      post:
+        # amd64 → x64 to match npm platform-package naming.
+        - sh -c 'arch="{{ .Arch }}"; [ "$arch" = "amd64" ] && arch=x64; dst="npm/platforms/{{ .Os }}-$arch/bin"; mkdir -p "$dst" && cp "{{ .Path }}" "$dst/"'
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+
+release:
+  github:
+    owner: muthuishere
+    name: ctx-optimize

@@ -1,0 +1,141 @@
+package store
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/muthuishere/ctx-optimize/internal/schema"
+)
+
+func testStore(t *testing.T) *Store {
+	t.Helper()
+	s, err := Open(t.TempDir(), "test-module")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func batch(producer string, nodeIDs ...string) *schema.Batch {
+	b := &schema.Batch{Producer: producer}
+	for _, id := range nodeIDs {
+		b.Nodes = append(b.Nodes, schema.Node{
+			ID: id, Label: id, Kind: "function", FileType: "code", Source: "a.go",
+		})
+	}
+	return b
+}
+
+func TestMergeUpsertsAndDedupes(t *testing.T) {
+	s := testStore(t)
+	b := batch("p1", "a", "b")
+	b.Edges = []schema.Edge{{Source: "a", Target: "b", Relation: "calls", Confidence: schema.Extracted}}
+	na, ea, err := s.Merge(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if na != 2 || ea != 1 {
+		t.Fatalf("first merge: got %d nodes %d edges added", na, ea)
+	}
+	// Re-merging the identical batch adds nothing (idempotent).
+	na, ea, err = s.Merge(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if na != 0 || ea != 0 {
+		t.Fatalf("re-merge should be idempotent, got %d/%d added", na, ea)
+	}
+	nodes, err := s.Nodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("want 2 nodes, got %d", len(nodes))
+	}
+	if nodes[0].Metadata["producer"] != "p1" {
+		t.Fatalf("provenance tag missing: %v", nodes[0].Metadata)
+	}
+}
+
+func TestMergeRejectsInvalid(t *testing.T) {
+	s := testStore(t)
+	if _, _, err := s.Merge(&schema.Batch{Producer: ""}); err == nil {
+		t.Fatal("invalid batch accepted — the door must fail closed")
+	}
+}
+
+func TestManifestTracksContent(t *testing.T) {
+	s := testStore(t)
+	if _, _, err := s.Merge(batch("p1", "a")); err != nil {
+		t.Fatal(err)
+	}
+	m1, err := s.UpdateManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h1 := m1.Files["graph/nodes.ndjson"].Hash
+	if h1 == "" {
+		t.Fatal("nodes.ndjson not in manifest")
+	}
+	if _, _, err := s.Merge(batch("p1", "b")); err != nil {
+		t.Fatal(err)
+	}
+	m2, err := s.UpdateManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m2.Files["graph/nodes.ndjson"].Hash == h1 {
+		t.Fatal("content changed but hash did not")
+	}
+}
+
+func TestModuleKeyStable(t *testing.T) {
+	k, err := ModuleKey("/Users/x/proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k != "Users-x-proj" {
+		t.Fatalf("got %q", k)
+	}
+}
+
+func TestRootPrecedence(t *testing.T) {
+	t.Setenv("CTX_OPTIMIZE_STORE", "/env/store")
+	r, err := Root("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r != "/env/store" {
+		t.Fatalf("env should win over default, got %q", r)
+	}
+	r, _ = Root("/flag/store")
+	if r != "/flag/store" {
+		t.Fatalf("flag should win over env, got %q", r)
+	}
+}
+
+func TestConfigRoundtrip(t *testing.T) {
+	s := testStore(t)
+	if err := s.SaveConfig(&Config{Remote: "file:///tmp/r"}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Remote != "file:///tmp/r" {
+		t.Fatalf("got %q", c.Remote)
+	}
+	// config.json must be excluded from the manifest (machine-local).
+	m, err := s.UpdateManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Files["config.json"]; ok {
+		t.Fatal("config.json must not be in the manifest")
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, "hooks")); err != nil {
+		t.Fatal("hooks/ dir must exist in layout")
+	}
+}

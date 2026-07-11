@@ -1,0 +1,24 @@
+{
+  "name": "@muthuishere/ctx-optimize",
+  "version": "0.1.0",
+  "description": "Gather a codebase (and its world) into one local knowledge store an AI agent answers from — deterministic, no LLM API, no DB.",
+  "bin": {
+    "ctx-optimize": "bin/ctx-optimize.js"
+  },
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/muthuishere/ctx-optimize.git"
+  },
+  "optionalDependencies": {
+    "@muthuishere/ctx-optimize-darwin-arm64": "0.1.0",
+    "@muthuishere/ctx-optimize-darwin-x64": "0.1.0",
+    "@muthuishere/ctx-optimize-linux-arm64": "0.1.0",
+    "@muthuishere/ctx-optimize-linux-x64": "0.1.0",
+    "@muthuishere/ctx-optimize-windows-x64": "0.1.0"
+  }
+}

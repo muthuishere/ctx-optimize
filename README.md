@@ -1,77 +1,87 @@
 # ctx-optimize
 
-**Optimize the context an AI coding agent spends on a codebase.** Turn any repo
-into a queryable knowledge graph + wiki so an agent can find the right code in a
-few precise hops instead of burning tokens searching and reading files.
+**Gather a codebase — and its world — into one local knowledge store an AI agent answers from. Deterministic. No LLM API. No DB. Gather once, refresh cheaply, never go everywhere every time.**
 
-> ⚠️ **Status: early — architecture under active discussion.** This README
-> captures the intent and the principles. Nothing is built yet, and the design
-> is still being shaped. Do not treat anything here as final.
+ctx-optimize turns a repo (plus, via adapters, database schemas, messaging
+topics, log shapes, documents) into a queryable graph stored as plain files in
+a central per-module store. Your agent (Claude Code, Codex, Devin — any
+skill-capable harness) answers from the store instead of burning tokens on
+grep-and-read. The binary never calls a model, a database, or the network —
+the only intelligence in the system is the agent you already run.
 
----
+> ⚠️ **Status: v0 under construction.** The store, the universal adapter door,
+> markdown extraction, lexical query, and remote init/push/pull work today.
+> Code-language extraction (tree-sitter/WASM), symbol cards, the deterministic
+> wiki, and exact call edges are landing next — see `openspec/` for the
+> spike-measured plan.
 
-## What it is
+## Install
 
-Same job as [graphify](https://github.com/Graphify-Labs/graphify) — code (and
-docs) → a knowledge graph you can `query` / `path` / `explain`, plus a browsable
-wiki — but built around a different set of principles:
+npm (recommended — thin JS launcher resolves a prebuilt platform binary via
+`optionalDependencies`; no postinstall script, no download):
 
-- **Go, single binary.** One implementation, no Python runtime, no package-name
-  friction. Easy to install and ship.
-- **All languages via one common interface.** Extraction producers conform to a
-  single node/edge schema, so support is broad and the producer (tree-sitter /
-  LSP / SCIP / whatever is available) is swappable behind the same contract.
-- **Configurable output — no hardcoded `graphify-out/`.** The export layout is
-  yours to configure; we don't impose a fixed directory structure.
-- **Agent-skill first, never LLM-API-direct.** The tool itself does the
-  deterministic work (build graph, query, wiki). The reasoning LLM is *your
-  agent* — invoked through an **agent skill**, not through an LLM API baked into
-  this binary. This keeps it agent-agnostic.
-- **Headless? Use toolnexus.** For non-interactive / headless runs we ship a
-  [toolnexus](#) example (toolnexus loads agent skills by default) rather than
-  wiring a direct model client. Same agnostic posture, no lock-in.
-
-## The stack it leans on
-
-- **[citenexus](https://github.com/muthuishere/citenexus) (Go)** — used as a
-  library for the **LLM-wiki** generation and for **injecting documents** (its
-  RAG/citation side). ctx-optimize consumes citenexus; it does not modify or
-  pollute it.
-- **toolnexus** — the headless path: an example that loads ctx-optimize's agent
-  skill so the same capability works outside an interactive agent.
-
-## Principles (the "why we're different")
-
-1. **Agent-skill first.** Direct LLM-API usage is discouraged by design. The
-   agent is the model; we give it a fast, deterministic graph to reason over.
-2. **Agnostic.** Works with any agent that can load a skill. Headless is served
-   by a toolnexus example, not a hardcoded provider.
-3. **Deterministic core.** Graph build + query stay reproducible and diffable;
-   LLM-flavored steps (wiki phrasing, naming) are the agent's job, kept out of
-   the deterministic path.
-4. **One interface, many producers.** The emit schema is the contract; language
-   support and extraction mechanism plug in behind it.
-5. **Don't pollute the dependencies.** citenexus stays a focused RAG library;
-   ctx-optimize is its own thing and merely consumes it.
-
-## Command surface (intended, not yet built)
-
-```
-ctx-optimize add <path>         # ingest code/docs into the graph
-ctx-optimize query "<question>" # answer within a token budget
-ctx-optimize path <a> <b>       # relation path between two symbols
-ctx-optimize explain <symbol>   # a symbol + its neighborhood
-ctx-optimize export             # emit graph/wiki in a configurable layout
+```sh
+npm install -g @muthuishere/ctx-optimize
 ```
 
-Consumed primarily **through an agent skill**; a **toolnexus** example covers the
-headless case.
+Go:
 
-## Prior art / credit
+```sh
+go install github.com/muthuishere/ctx-optimize/cmd/ctx-optimize@latest
+```
 
-Design and scope informed by graphify (MIT, © Safi Shamsi) — read as reference,
-reimplemented in Go with our own principles. See `docs/VISION.md` for the running
-design notes and open architecture questions.
+Then install the agent skill (writes to `~/.claude/skills`, and
+`~/.agents/skills` when codex is present):
+
+```sh
+ctx-optimize install --skills
+```
+
+## Usage
+
+```sh
+# gather a repo into the central store (~/.ctx-optimize/store/<module-key>/)
+ctx-optimize add .
+
+# ask the store — complete, citable hits under a token budget
+ctx-optimize query "where is the refund flow" --json
+
+# feed ANY system through the universal adapter door (strictly validated)
+./my-postgres-adapter | ctx-optimize add --json -
+
+# share the store: sync-only remotes (S3-compatible or any folder)
+ctx-optimize remote init s3://team-bucket/ctx/myrepo
+ctx-optimize remote push          # incremental — only changed artifacts move
+ctx-optimize remote pull          # teammate pulls, queries locally
+
+ctx-optimize status --json
+```
+
+- The store is **plain files** (ndjson/json/md) — diffable, portable; your repo
+  is never written to.
+- **Remotes are for sync only.** Queries always run on the local folder.
+- S3 credentials come from the standard env vars at call time
+  (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`,
+  `AWS_ENDPOINT_URL` for R2/Hetzner/MinIO) — never stored.
+
+## Adapters — the open door
+
+Everything external is an adapter emitting one JSON schema into
+`ctx-optimize add --json -`: nodes (`id`, `label`, `kind`, `file_type`,
+`source`, `location`) and edges (`source`, `target`, `relation`,
+`confidence` ∈ `EXTRACTED|INFERRED|AMBIGUOUS`). The door validates strictly and
+tags provenance per producer. Adapters live in the store's `hooks/` dir and
+travel with push/pull. Your agent can write a new adapter on demand — point it
+at any system with the schema and it gathers it.
+
+## Design
+
+Evidence-first: every product decision traces to a measured spike
+(`openspec/changes/2026-07-11-graphify-gaps/spikes.md`) — including honest
+benchmarks against a real agent baseline (not corpus-stuffing strawmen), the
+terrain law (graph value is inverse to a codebase's greppability), and the
+symbol-card finding (agents' reads are pointer-chases a complete answer
+eliminates). Vision: `docs/VISION.md`. Standing critique: `docs/CRITIQUE.md`.
 
 ## License
 

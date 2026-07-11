@@ -1,0 +1,9 @@
+{
+  "name": "@muthuishere/ctx-optimize-windows-x64",
+  "version": "0.1.0",
+  "description": "ctx-optimize prebuilt binary for windows-x64",
+  "license": "MIT",
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["bin/"]
+}

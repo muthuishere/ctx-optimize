@@ -1,0 +1,43 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build the CLI
+    cmds:
+      - go build -o bin/ctx-optimize ./cmd/ctx-optimize
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: go vet the module
+    cmds:
+      - go vet ./...
+
+  ci:
+    desc: The gate — same as CI runs
+    cmds:
+      - task: lint
+      - task: test
+      - task: build
+      - ./bin/ctx-optimize version
+      - ./bin/ctx-optimize help
+
+  snapshot:
+    desc: goreleaser snapshot build (no publish)
+    cmds:
+      - goreleaser release --snapshot --clean --skip=publish
+
+  local-install:
+    desc: Symlink bin/ctx-optimize into /usr/local/bin
+    deps: [build]
+    cmds:
+      - ln -sf "$(pwd)/bin/ctx-optimize" /usr/local/bin/ctx-optimize
+
+  install-skills:
+    desc: Install the agent skill via the built binary
+    deps: [build]
+    cmds:
+      - ./bin/ctx-optimize install --skills
