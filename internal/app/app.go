@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -46,6 +47,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdQuery(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
+	case "merge":
+		err = cmdMerge(rest, stdout)
+	case "export":
+		err = cmdExport(rest, stdout)
 	case "remote":
 		err = cmdRemote(rest, stdout)
 	case "install":
@@ -174,6 +179,20 @@ func openBackend(r *project.Remote) (remote.Backend, error) {
 
 func cmdInit(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
+	path, err := resolvePath(f)
+	if err != nil {
+		return err
+	}
+	// Scaffold the committable .ctxoptimize/ (config.json + adapters/ with an
+	// inert template) before opening the store, so the store key can honor a
+	// pre-existing "name".
+	name, err := store.ModuleKey(path)
+	if err != nil {
+		return err
+	}
+	if err := project.Scaffold(path, name); err != nil {
+		return err
+	}
 	s, err := openStore(f)
 	if err != nil {
 		return err
@@ -181,7 +200,7 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if _, err := s.UpdateManifest(); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "store ready: %s\n", s.Dir)
+	fmt.Fprintf(stdout, "store ready: %s\n%s/ scaffolded — commit it (config.json + adapters/)\n", s.Dir, project.Dir)
 	return nil
 }
 
@@ -227,15 +246,30 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 		}
 		batches = append(batches, b)
 
-		// Declared adapters from the repo's ctx-optimize.json: run each
-		// command, treat stdout as a batch through the same fail-closed door.
-		// This is `add` = refresh the world — one command re-gathers all
-		// declared sources.
+		// Adapters: scripts dropped in .ctxoptimize/adapters/ (discovered by
+		// extension) plus any commands declared in config.json — a config
+		// entry wins on a name clash. Each runs with stdout as a batch
+		// through the same fail-closed door. This is `add` = refresh the
+		// world: one command re-gathers all declared sources.
 		pc, err := project.Load(target)
 		if err != nil {
 			return err
 		}
-		for _, a := range pc.Adapters {
+		adapters := append([]project.Adapter{}, pc.Adapters...)
+		declared := map[string]bool{}
+		for _, a := range adapters {
+			declared[a.Name] = true
+		}
+		discovered, err := project.DiscoverAdapters(target)
+		if err != nil {
+			return err
+		}
+		for _, a := range discovered {
+			if !declared[a.Name] {
+				adapters = append(adapters, a)
+			}
+		}
+		for _, a := range adapters {
 			b, err := runAdapter(target, a)
 			if err != nil {
 				return fmt.Errorf("adapter %s: %w", a.Name, err)
@@ -358,6 +392,114 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintln(stdout)
 	return nil
+}
+
+// cmdMerge combines module stores into one merged view — the multi-module
+// answer: per-module graphs stay canonical, a merged store is derived and
+// re-derivable. Sources are store keys (folder names under the root) or
+// repo paths.
+func cmdMerge(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	into := store.SanitizeKey(f.strs["into"])
+	if into == "" || len(f.args) == 0 {
+		return fmt.Errorf("usage: ctx-optimize merge <module|path>... --into <name>")
+	}
+	root, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	target, err := store.Open(root, into)
+	if err != nil {
+		return err
+	}
+	totalN, totalE := 0, 0
+	for _, src := range f.args {
+		key := store.SanitizeKey(src)
+		if fi, err := os.Stat(src); err == nil && fi.IsDir() {
+			// A path resolves like openStore does: config name > basename.
+			pc, err := project.Load(src)
+			if err != nil {
+				return err
+			}
+			key = store.SanitizeKey(pc.Name)
+			if key == "" {
+				if key, err = store.ModuleKey(src); err != nil {
+					return err
+				}
+			}
+		}
+		if _, err := os.Stat(filepath.Join(root, key, "graph")); err != nil {
+			return fmt.Errorf("no module %q in %s — run `ctx-optimize add` there first", key, root)
+		}
+		ss, err := store.Open(root, key)
+		if err != nil {
+			return err
+		}
+		nodes, err := ss.Nodes()
+		if err != nil {
+			return err
+		}
+		edges, err := ss.Edges()
+		if err != nil {
+			return err
+		}
+		// Original producer metadata survives — Merge only stamps when absent.
+		n, e, err := target.Merge(&schema.Batch{Producer: "merge:" + key, Nodes: nodes, Edges: edges})
+		if err != nil {
+			return err
+		}
+		totalN += n
+		totalE += e
+		fmt.Fprintf(stdout, "merged %s: %d new nodes, %d new edges\n", key, n, e)
+	}
+	if _, err := target.UpdateManifest(); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "merged → %s (%d nodes, %d edges added)\n", target.Dir, totalN, totalE)
+	return nil
+}
+
+// cmdExport dumps the graph for other tools: json (default) or dot (Graphviz).
+func cmdExport(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	s, err := openStore(f)
+	if err != nil {
+		return err
+	}
+	nodes, err := s.Nodes()
+	if err != nil {
+		return err
+	}
+	edges, err := s.Edges()
+	if err != nil {
+		return err
+	}
+	var w io.Writer = stdout
+	if out := f.strs["out"]; out != "" {
+		file, err := os.Create(out)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		w = file
+	}
+	switch format := f.strs["format"]; format {
+	case "", "json":
+		return emit(w, map[string]any{"nodes": nodes, "edges": edges})
+	case "dot":
+		fmt.Fprintln(w, "digraph ctxoptimize {")
+		fmt.Fprintln(w, "  rankdir=LR; node [shape=box];")
+		for _, n := range nodes {
+			fmt.Fprintf(w, "  %q [label=%q];\n", n.ID, n.Label+"\n("+n.Kind+")")
+		}
+		for _, e := range edges {
+			fmt.Fprintf(w, "  %q -> %q [label=%q];\n", e.Source, e.Target, e.Relation)
+		}
+		fmt.Fprintln(w, "}")
+		return nil
+	default:
+		return fmt.Errorf("unknown export format %q (json | dot)", format)
+	}
 }
 
 func cmdRemote(args []string, stdout io.Writer) error {
@@ -495,14 +637,17 @@ func usage(w io.Writer) {
 usage: ctx-optimize <command> [flags]
 
 commands:
-  init                        prepare the store for --path (default: cwd)
-  add [<path>] [--json -|F]   gather built-ins + adapters from ctx-optimize.json;
-                              --json is the universal adapter door
+  init                        scaffold .ctxoptimize/ + prepare the store (--path, default: cwd)
+  add [<path>] [--json -|F]   gather built-ins + every adapter script in
+                              .ctxoptimize/adapters/; --json is the universal door
   query|ask "<question>"      answer from the local store  [--budget N] [--json]
   status                      store facts  [--json]
-  remote init <url> [--local] write remote to the repo's ctx-optimize.json
+  merge <module>... --into N  combine module stores into one merged view
+  export [--format json|dot]  dump the graph  [--out FILE]
+  remote init <url> [--local] write remote to .ctxoptimize/config.json
                               (committable; --local = this machine's store only)
-  remote push|pull            incremental sync with the configured remote
+  remote push|pull            incremental sync with the configured remote (no url —
+                              the config file is the single source of truth)
   install --skills            install the agent skill (~/.claude, +~/.agents with codex)
   uninstall --skills          remove the agent skill
   version                     print version
@@ -510,19 +655,18 @@ commands:
 flags:  --path DIR   module the store is keyed by (default: cwd)
         --store DIR  store root (default: $CTX_OPTIMIZE_STORE or ~/ctxoptimize)
 
-The store lives at ~/ctxoptimize/<repo-name>/ (name: in ctx-optimize.json
-overrides the folder name).
+The store lives at ~/ctxoptimize/<repo-name>/ ("name" in config.json overrides).
 
-ctx-optimize.json (in the repo, commit it):
-  {"name": "my-module",
-   "remote": {"type": "s3", "url": "s3://bucket/prefix",
-              "credentials": {"access_key_id": "${TEAM_KEY_ID}",
-                              "secret_access_key": "${TEAM_SECRET}",
-                              "region": "auto", "endpoint": "${R2_ENDPOINT}"}},
-   "adapters": [{"name": "kafka", "run": "node hooks/kafka.js"}]}
+.ctxoptimize/ (in the repo, commit it):
+  config.json    {"name": "my-module",
+                  "remote": {"type": "s3", "url": "s3://bucket/prefix",
+                             "credentials": {"access_key_id": "${TEAM_KEY_ID}",
+                                             "secret_access_key": "${TEAM_SECRET}",
+                                             "region": "auto", "endpoint": "${R2_ENDPOINT}"}}}
+  adapters/      drop scripts here — every .js/.py/.sh runs on add and must
+                 print batch JSON to stdout (template: example.js.sample)
 remote may also be a plain string URL; ${VAR} resolves from the environment
-at sync time (values are never written or printed). Adapter commands print
-batch JSON to stdout; add runs them all.
+at sync time (values are never written or printed).
 
 The binary is deterministic: no LLM, no DB, no network except your remote.
 `)

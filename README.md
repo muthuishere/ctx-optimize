@@ -40,6 +40,9 @@ ctx-optimize install --skills
 ## Usage
 
 ```sh
+# first time in a repo: scaffold .ctxoptimize/ (config + adapters dir) + the store
+ctx-optimize init
+
 # gather a repo into the central store (~/ctxoptimize/<repo-name>/)
 ctx-optimize add .
 
@@ -49,8 +52,12 @@ ctx-optimize query "where is the refund flow" --json
 # feed ANY system through the universal adapter door (strictly validated)
 ./my-postgres-adapter | ctx-optimize add --json -
 
+# combine module stores into one view; dump for other tools
+ctx-optimize merge api worker billing --into everything
+ctx-optimize export --format dot --out graph.dot
+
 # share the store: sync-only remotes (S3-compatible or any folder)
-ctx-optimize remote init s3://team-bucket/ctx/myrepo   # writes ctx-optimize.json — commit it
+ctx-optimize remote init s3://team-bucket/ctx/myrepo   # writes .ctxoptimize/config.json — commit it
 ctx-optimize remote push          # incremental — only changed artifacts move
 ctx-optimize remote pull          # a teammate who cloned the repo: this is ALL they run
 
@@ -58,12 +65,20 @@ ctx-optimize status --json
 ```
 
 - The store is **plain files** (ndjson/json/md) — diffable, portable, at
-  `~/ctxoptimize/<repo-name>/`. The only file in your repo is
-  `ctx-optimize.json` (committable config).
+  `~/ctxoptimize/<repo-name>/`. The only thing in your repo is the
+  committable `.ctxoptimize/` directory.
 - **Remotes are for sync only.** Queries always run on the local folder.
   `push`/`pull` take no URL — the remote is whatever the config says.
 
-## ctx-optimize.json — config that travels with the repo
+## .ctxoptimize/ — config that travels with the repo
+
+```
+.ctxoptimize/
+  config.json     name + remote
+  adapters/       drop scripts here — every .js/.py/.sh runs on `add`
+```
+
+`config.json`:
 
 ```json
 {
@@ -77,15 +92,11 @@ ctx-optimize status --json
       "region": "auto",
       "endpoint": "${R2_ENDPOINT}"
     }
-  },
-  "adapters": [
-    {"name": "kafka-topics", "run": "node hooks/kafka.js"},
-    {"name": "pg-schema", "run": "python3 hooks/pg_schema.py"}
-  ]
+  }
 }
 ```
 
-Commit it — it is safe by construction:
+Commit the directory — it is safe by construction:
 
 - `name` picks the store folder under `~/ctxoptimize/` (default: repo basename).
 - `remote` is a plain string URL or the full object above. `${VAR}` anywhere
@@ -93,10 +104,12 @@ Commit it — it is safe by construction:
   file holds variable names, never secret values; resolved values are never
   written or printed. Omitted credentials fall back to the standard `AWS_*`
   env vars (endpoint override covers R2/Hetzner/MinIO).
-- `adapters` are commands whose stdout is batch JSON; `ctx-optimize add` runs
-  the built-in extractors **and** every declared adapter through the
-  fail-closed door. One command refreshes the whole world; a fresh clone needs
-  zero setup to `pull`.
+- **Adapters are files**: dropping `kafka.js` into `.ctxoptimize/adapters/`
+  is the whole registration (`.js`/`.mjs` → node, `.py` → python3, `.sh` →
+  sh; other extensions inert — `init` seeds an `example.js.sample` template).
+  Each script prints batch JSON to stdout; `ctx-optimize add` runs the
+  built-in extractors **and** every adapter through the fail-closed door. One
+  command refreshes the whole world; a fresh clone needs zero setup to `pull`.
 
 ## Adapters — the open door
 

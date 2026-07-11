@@ -149,7 +149,11 @@ func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error) {
 		if n.Metadata == nil {
 			n.Metadata = map[string]string{}
 		}
-		n.Metadata["producer"] = b.Producer
+		// Stamp provenance only when absent: `merge` re-feeds stored nodes
+		// and must not overwrite their original producer.
+		if n.Metadata["producer"] == "" {
+			n.Metadata["producer"] = b.Producer
+		}
 		if _, ok := byID[n.ID]; !ok {
 			nodesAdded++
 		}
@@ -174,7 +178,9 @@ func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error) {
 		if e.Metadata == nil {
 			e.Metadata = map[string]string{}
 		}
-		e.Metadata["producer"] = b.Producer
+		if e.Metadata["producer"] == "" {
+			e.Metadata["producer"] = b.Producer
+		}
 		if _, ok := byKey[edgeKey(e)]; !ok {
 			edgesAdded++
 		}

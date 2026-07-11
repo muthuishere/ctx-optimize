@@ -7,6 +7,16 @@ import (
 	"testing"
 )
 
+func writeCfg(t *testing.T, dir, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(FileName)), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadAbsentIsEmpty(t *testing.T) {
 	c, err := Load(t.TempDir())
 	if err != nil {
@@ -19,8 +29,7 @@ func TestLoadAbsentIsEmpty(t *testing.T) {
 
 func TestRemoteStringForm(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, FileName),
-		[]byte(`{"remote": "s3://bucket/prefix"}`), 0o644)
+	writeCfg(t, dir, `{"remote": "s3://bucket/prefix"}`)
 	c, err := Load(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -32,10 +41,10 @@ func TestRemoteStringForm(t *testing.T) {
 
 func TestRemoteObjectForm(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, FileName), []byte(`{
+	writeCfg(t, dir, `{
 	  "remote": {"type": "s3", "url": "s3://bucket/${REPO}",
 	             "credentials": {"access_key_id": "${KID}", "region": "auto"}}
-	}`), 0o644)
+	}`)
 	c, err := Load(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +75,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		len(out.Adapters) != 1 || out.Adapters[0].Run != in.Adapters[0].Run {
 		t.Fatalf("round trip mismatch: %+v", out)
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, FileName))
+	data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(FileName)))
 	if data[len(data)-1] != '\n' {
 		t.Fatal("file not newline-terminated")
 	}
@@ -78,7 +87,7 @@ func TestSaveKeepsSimpleFormSimple(t *testing.T) {
 	if err := Save(dir, &Config{Remote: &Remote{URL: "file:///x"}}); err != nil {
 		t.Fatal(err)
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, FileName))
+	data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(FileName)))
 	if !strings.Contains(string(data), `"remote": "file:///x"`) {
 		t.Fatalf("expected string form: %s", data)
 	}
@@ -111,9 +120,71 @@ func TestResolveUnsetVarFailsNamingIt(t *testing.T) {
 	}
 }
 
+func TestDiscoverAdapters(t *testing.T) {
+	repo := t.TempDir()
+	dir := filepath.Join(repo, filepath.FromSlash(AdaptersDir))
+	os.MkdirAll(dir, 0o755)
+	for _, f := range []string{"kafka.js", "pg.py", "logs.sh", "README.md", "example.js.sample", ".hidden.js", "data.json"} {
+		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
+	}
+	got, err := DiscoverAdapters(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"kafka": "node " + AdaptersDir + "/kafka.js",
+		"logs":  "sh " + AdaptersDir + "/logs.sh",
+		"pg":    "python3 " + AdaptersDir + "/pg.py",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("discovered %d adapters, want %d: %+v", len(got), len(want), got)
+	}
+	for _, a := range got {
+		if want[a.Name] != a.Run {
+			t.Fatalf("adapter %s run = %q, want %q", a.Name, a.Run, want[a.Name])
+		}
+	}
+}
+
+func TestDiscoverAdaptersNoDir(t *testing.T) {
+	got, err := DiscoverAdapters(t.TempDir())
+	if err != nil || got != nil {
+		t.Fatalf("absent dir should be (nil, nil), got %v, %v", got, err)
+	}
+}
+
+func TestScaffold(t *testing.T) {
+	repo := t.TempDir()
+	if err := Scaffold(repo, "my-repo"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Name != "my-repo" {
+		t.Fatalf("scaffolded name = %q", c.Name)
+	}
+	// Template is inert — discovery must not arm it.
+	got, _ := DiscoverAdapters(repo)
+	if len(got) != 0 {
+		t.Fatalf("template should be inert: %+v", got)
+	}
+	// Idempotent: re-scaffold never clobbers an edited config.
+	c.Name = "edited"
+	Save(repo, c)
+	if err := Scaffold(repo, "my-repo"); err != nil {
+		t.Fatal(err)
+	}
+	c2, _ := Load(repo)
+	if c2.Name != "edited" {
+		t.Fatal("scaffold overwrote existing config")
+	}
+}
+
 func TestLoadGarbageFails(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, FileName), []byte("{nope"), 0o644)
+	writeCfg(t, dir, "{nope")
 	if _, err := Load(dir); err == nil {
 		t.Fatal("expected parse error")
 	}

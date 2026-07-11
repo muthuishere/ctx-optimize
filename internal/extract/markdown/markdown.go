@@ -36,8 +36,9 @@ func Extract(root string) (*schema.Batch, error) {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			// Skip the usual noise; a store must never ingest itself.
-			if name == ".git" || name == "node_modules" || name == "vendor" || strings.HasSuffix(name, "-out") {
+			// Skip hidden dirs (.git, .ctxoptimize, …) and the usual noise;
+			// a store must never ingest itself or its own config.
+			if path != root && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || strings.HasSuffix(name, "-out")) {
 				return filepath.SkipDir
 			}
 			return nil

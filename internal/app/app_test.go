@@ -90,7 +90,7 @@ func TestEndToEnd(t *testing.T) {
 	// Remote: init writes the committable repo file + push + fresh-machine pull.
 	remoteDir := t.TempDir()
 	run(0, "remote", "init", "file://"+remoteDir, "--path", repo)
-	if _, err := os.Stat(filepath.Join(repo, "ctx-optimize.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(repo, ".ctxoptimize", "config.json")); err != nil {
 		t.Fatalf("remote init did not write repo config: %v", err)
 	}
 	out, _ = run(0, "remote", "push", "--path", repo)
@@ -109,10 +109,10 @@ func TestEndToEnd(t *testing.T) {
 	}
 }
 
-// Repo-level ctx-optimize.json: declared adapters run on `add`, the object
-// remote (type/url/credentials) with ${VAR} placeholders drives bare push,
-// and "name" picks the store folder — the file travels with the repo so
-// nothing is configured per machine and no secret is ever committed.
+// The committable .ctxoptimize/ dir: adapter scripts dropped in adapters/
+// are discovered and run on `add`, the object remote (type/url/credentials)
+// with ${VAR} placeholders drives bare push, and "name" picks the store
+// folder — everything travels with the repo, no secret ever committed.
 func TestRepoConfigAdaptersAndRemote(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("adapter command uses sh")
@@ -123,13 +123,14 @@ func TestRepoConfigAdaptersAndRemote(t *testing.T) {
 	remoteDir := t.TempDir()
 	t.Setenv("CTX_TEST_REMOTE_DIR", remoteDir)
 
-	os.MkdirAll(filepath.Join(repo, "hooks"), 0o755)
+	adaptersDir := filepath.Join(repo, ".ctxoptimize", "adapters")
+	os.MkdirAll(adaptersDir, 0o755)
 	batch := `{"producer":"kafka-topics","nodes":[{"id":"kafka://orders","label":"orders","kind":"topic","file_type":"messaging","source":"kafka://orders"}],"edges":[]}`
-	os.WriteFile(filepath.Join(repo, "hooks", "kafka.json"), []byte(batch), 0o644)
+	// Discovery: a .sh dropped into adapters/ IS the registration.
+	os.WriteFile(filepath.Join(adaptersDir, "kafka.sh"), []byte("echo '"+batch+"'\n"), 0o644)
 	cfg := `{"name":"my-module",
-	         "remote":{"type":"file","url":"file://${CTX_TEST_REMOTE_DIR}"},
-	         "adapters":[{"name":"kafka","run":"cat hooks/kafka.json"}]}`
-	os.WriteFile(filepath.Join(repo, "ctx-optimize.json"), []byte(cfg), 0o644)
+	         "remote":{"type":"file","url":"file://${CTX_TEST_REMOTE_DIR}"}}`
+	os.WriteFile(filepath.Join(repo, ".ctxoptimize", "config.json"), []byte(cfg), 0o644)
 
 	run := func(wantCode int, args ...string) (string, string) {
 		t.Helper()
@@ -167,8 +168,8 @@ func TestRepoConfigAdaptersAndRemote(t *testing.T) {
 		RemoteFrom string `json:"remote_from"`
 	}
 	json.Unmarshal([]byte(out), &st)
-	if st.RemoteFrom != "ctx-optimize.json" {
-		t.Fatalf("remote_from = %q, want ctx-optimize.json", st.RemoteFrom)
+	if st.RemoteFrom != ".ctxoptimize/config.json" {
+		t.Fatalf("remote_from = %q, want .ctxoptimize/config.json", st.RemoteFrom)
 	}
 	if !strings.Contains(st.Remote, "${CTX_TEST_REMOTE_DIR}") {
 		t.Fatalf("status leaked the resolved remote: %s", st.Remote)
@@ -184,12 +185,73 @@ func TestRepoConfigAdaptersAndRemote(t *testing.T) {
 		t.Fatalf("unset var not named: %s", errUnset)
 	}
 
-	// A broken adapter fails the whole add, loudly.
-	bad := `{"adapters":[{"name":"boom","run":"exit 3"}]}`
-	os.WriteFile(filepath.Join(repo, "ctx-optimize.json"), []byte(bad), 0o644)
+	// A broken adapter script fails the whole add, loudly.
+	t.Setenv("CTX_TEST_REMOTE_DIR", remoteDir) // restore for the store open
+	os.WriteFile(filepath.Join(adaptersDir, "boom.sh"), []byte("exit 3\n"), 0o644)
 	_, errOut := run(1, "add", "--path", repo)
 	if !strings.Contains(errOut, "adapter boom") {
 		t.Fatalf("broken adapter not surfaced: %s", errOut)
+	}
+}
+
+// merge combines module stores into a derived view (original producer
+// metadata intact); export dumps it for other tools.
+func TestMergeAndExport(t *testing.T) {
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+
+	run := func(wantCode int, args ...string) (string, string) {
+		t.Helper()
+		var out, errb bytes.Buffer
+		code := Run(args, &out, &errb)
+		if code != wantCode {
+			t.Fatalf("%v: exit %d (want %d): %s", args, code, wantCode, errb.String())
+		}
+		return out.String(), errb.String()
+	}
+
+	// Two modules with one doc each.
+	repoA, repoB := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(repoA, "a.md"), []byte("# Service A\n"), 0o644)
+	os.WriteFile(filepath.Join(repoB, "b.md"), []byte("# Service B\n"), 0o644)
+	run(0, "add", "--path", repoA)
+	run(0, "add", "--path", repoB)
+
+	keyA, _ := filepath.Abs(repoA)
+	out, _ := run(0, "merge", filepath.Base(keyA), repoB, "--into", "everything")
+	if !strings.Contains(out, "merged → ") {
+		t.Fatalf("merge output: %s", out)
+	}
+
+	// The merged store is queryable and both modules are in it.
+	var g struct {
+		Nodes []struct {
+			ID       string            `json:"id"`
+			Metadata map[string]string `json:"metadata"`
+		}
+	}
+	// export resolves the store by --path basename → the "everything" module.
+	out, _ = run(0, "export", "--store", storeRoot, "--path", filepath.Join(storeRoot, "everything"))
+	if err := json.Unmarshal([]byte(out), &g); err != nil {
+		t.Fatalf("export json: %v\n%s", err, out)
+	}
+	if len(g.Nodes) < 4 { // 2 docs + 2 sections
+		t.Fatalf("merged export too small: %d nodes", len(g.Nodes))
+	}
+	for _, n := range g.Nodes {
+		if n.Metadata["producer"] == "" || strings.HasPrefix(n.Metadata["producer"], "merge:") {
+			t.Fatalf("merge clobbered provenance on %s: %q", n.ID, n.Metadata["producer"])
+		}
+	}
+
+	// Unknown module fails clearly; dot export renders.
+	_, errOut := run(1, "merge", "nope-not-a-module", "--into", "x")
+	if !strings.Contains(errOut, "no module") {
+		t.Fatalf("unknown module error: %s", errOut)
+	}
+	out, _ = run(0, "export", "--format", "dot", "--path", repoA)
+	if !strings.Contains(out, "digraph ctxoptimize") {
+		t.Fatalf("dot export: %s", out)
 	}
 }
 

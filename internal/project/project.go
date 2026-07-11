@@ -1,10 +1,14 @@
-// Package project reads/writes ctx-optimize.json — the ONE file that lives in
-// the repo itself. It is committable on purpose: the remote (URL + credential
-// NAMES) and the adapter commands travel with the code, so a teammate clones,
-// runs `ctx-optimize remote pull`, and the world is there. Nothing else ever
-// touches the repo.
+// Package project reads/writes the .ctxoptimize/ directory — the ONE thing
+// that lives in the repo itself. It is committable on purpose: config.json
+// carries the remote (URL + credential NAMES) and adapters/ carries the
+// adapter scripts, so a teammate clones, runs `ctx-optimize remote pull`, and
+// the world is there. Nothing else ever touches the repo.
 //
-// Secrets never appear in the file: credentials are ${VAR} placeholders that
+//	.ctxoptimize/
+//	  config.json      name, remote (string or {type,url,credentials})
+//	  adapters/        drop scripts here — `add` runs every *.js/*.py/*.sh
+//
+// Secrets never appear in the files: credentials are ${VAR} placeholders that
 // resolve from the environment at call time. The resolved values exist only
 // in memory for the duration of the sync — never written, never printed.
 package project
@@ -19,15 +23,59 @@ import (
 	"strings"
 )
 
-const FileName = "ctx-optimize.json"
+const (
+	Dir         = ".ctxoptimize"
+	FileName    = Dir + "/config.json"
+	AdaptersDir = Dir + "/adapters"
+)
 
 // Adapter is a declared producer: any command whose stdout is a schema.Batch.
-// Templates are just scripts ("node hooks/kafka.js", "python3 hooks/pg.py") —
-// we run them, validate the JSON, and merge; we never interpret them. The
-// command runs through the shell, so $VAR/${VAR} expand there naturally.
+// Adapters are just scripts ("node .ctxoptimize/adapters/kafka.js") — we run
+// them, validate the JSON, and merge; we never interpret them. The command
+// runs through the shell, so $VAR/${VAR} expand there naturally.
 type Adapter struct {
 	Name string `json:"name"`
 	Run  string `json:"run"`
+}
+
+// runnerByExt maps adapter script extensions to their interpreter. Files in
+// adapters/ with any other extension (README.md, *.sample, data files) are
+// inert — rename to .js/.py/.sh to arm one.
+var runnerByExt = map[string]string{
+	".js":  "node",
+	".mjs": "node",
+	".py":  "python3",
+	".sh":  "sh",
+}
+
+// DiscoverAdapters lists the runnable scripts in .ctxoptimize/adapters/,
+// sorted by name. "They can change and do files there": dropping a script in
+// IS the registration — no config entry needed.
+func DiscoverAdapters(repo string) ([]Adapter, error) {
+	entries, err := os.ReadDir(filepath.Join(repo, AdaptersDir))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []Adapter
+	for _, e := range entries {
+		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		runner, ok := runnerByExt[strings.ToLower(filepath.Ext(e.Name()))]
+		if !ok {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+		out = append(out, Adapter{
+			Name: name,
+			Run:  runner + " " + AdaptersDir + "/" + e.Name(),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }
 
 // Remote is the sync target. In JSON it is either a plain string
@@ -112,9 +160,9 @@ type Config struct {
 	Adapters []Adapter `json:"adapters,omitempty"`
 }
 
-func path(repo string) string { return filepath.Join(repo, FileName) }
+func path(repo string) string { return filepath.Join(repo, filepath.FromSlash(FileName)) }
 
-// Load reads the repo's ctx-optimize.json (absent → empty config, not an error).
+// Load reads .ctxoptimize/config.json (absent → empty config, not an error).
 func Load(repo string) (*Config, error) {
 	data, err := os.ReadFile(path(repo))
 	if os.IsNotExist(err) {
@@ -131,11 +179,52 @@ func Load(repo string) (*Config, error) {
 }
 
 // Save writes the config back, pretty-printed and newline-terminated so the
-// committed file stays git-friendly.
+// committed file stays git-friendly. Creates .ctxoptimize/ if needed.
 func Save(repo string, c *Config) error {
+	if err := os.MkdirAll(filepath.Join(repo, Dir), 0o755); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path(repo), append(data, '\n'), 0o644)
+}
+
+const adapterTemplate = `#!/usr/bin/env node
+// ctx-optimize adapter template. Rename to <name>.js to arm it — every
+// .js/.py/.sh in this directory runs on ` + "`ctx-optimize add`" + `.
+// Print ONE batch (nodes + edges) to stdout; anything invalid is rejected
+// whole. Secrets: read process.env, never hardcode values.
+const batch = {
+  producer: "example",
+  nodes: [
+    // {id: "kafka://orders", label: "orders", kind: "topic",
+    //  file_type: "messaging", source: "kafka://orders"}
+  ],
+  edges: [
+    // {source: "kafka://orders", target: "svc://billing",
+    //  relation: "consumed_by", confidence: "EXTRACTED"}
+  ],
+};
+console.log(JSON.stringify(batch));
+`
+
+// Scaffold creates the .ctxoptimize/ layout in the repo: config.json (with
+// the module name) and adapters/ seeded with an inert template. Existing
+// files are never overwritten.
+func Scaffold(repo, name string) error {
+	if err := os.MkdirAll(filepath.Join(repo, filepath.FromSlash(AdaptersDir)), 0o755); err != nil {
+		return err
+	}
+	if _, err := os.Stat(path(repo)); os.IsNotExist(err) {
+		if err := Save(repo, &Config{Name: name}); err != nil {
+			return err
+		}
+	}
+	tmpl := filepath.Join(repo, filepath.FromSlash(AdaptersDir), "example.js.sample")
+	if _, err := os.Stat(tmpl); os.IsNotExist(err) {
+		return os.WriteFile(tmpl, []byte(adapterTemplate), 0o644)
+	}
+	return nil
 }
