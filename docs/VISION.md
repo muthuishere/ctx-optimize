@@ -1,5 +1,36 @@
 # Vision & running design notes
 
+## ARCHITECTURE POSITION (2026-07-11, post-Tier-A) — code-primary Karpathy wiki
+
+Division of labor vs citenexus (assumes citenexus gets real per-unit distillation
+for DOCUMENTS): **citenexus = the Karpathy wiki for documents; ctx-optimize = the
+Karpathy wiki for CODE.** Shared: the wiki store layout (light index + pages +
+append-only log, folder-first, S3-sync) and the navigate-not-cite discipline.
+Everything code-specific lives here:
+
+1. **Atom = the symbol card** (S1e): signature + verified file:lines + body head
+   + caller/callee edges. The code analog of citenexus's Evidence Unit. Re-verified
+   against content hashes at answer time — code moves; stale citations are worse
+   than none.
+2. **Page unit = the community/subsystem** (S4), not the file/document — files
+   don't align with meaning in code; clusters do. Incremental via member_hash.
+3. **The distiller is the AGENT (agent-skill-first, S1c-proven: 39%).** The binary
+   never calls an LLM: it computes communities + member_hashes, emits per-community
+   context packs; the skill has the agent write pages; the binary VALIDATES
+   (every claimed file:line must exist and match; invented refs rejected) and
+   stores, cached per member_hash. LLM proposes, deterministic code disposes.
+   This also avoids citenexus's 24k-cap shallow-distill problem: depth = what the
+   agent spends, paid once per member_hash.
+4. **Own what docs can't have:** structural extraction (wasm tree-sitter, S2),
+   exact edges (x/tools VTA batch for Go, persistent-LSP driver for other langs,
+   S3), `affected` impact analysis (graphify's 81%-recall blind spot), seeded-
+   Louvain incremental partition (S4 fix).
+5. **NOT here:** PDF/doc ingest, RAG answering, embeddings — citenexus's proven
+   wedge. Pages may link out to doc-wikis; we don't rebuild that pipeline.
+6. **Terrain + positioning:** grep-hostile/legacy codebases + onboarding; honest
+   agent-baseline benchmarks (graphify's strawman 6.6×/70× cannot survive the
+   comparison).
+
 Living notes for ctx-optimize. **Architecture is under active discussion** — this
 file is where decisions and open questions accumulate. Nothing here is frozen.
 
