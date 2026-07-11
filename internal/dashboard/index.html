@@ -6,37 +6,53 @@
 <title>ctx-optimize</title>
 <style>
   :root {
-    --bg: #0f1115; --panel: #161a22; --border: #262c38; --text: #d7dce5;
-    --dim: #8b93a3; --accent: #5eead4; --accent2: #7aa2f7;
+    --bg0: #070b14; --bg1: #0c1322;
+    --panel: #0e1526; --panel2: #121b30;
+    --border: #1e2a45; --border2: #2b3a5e;
+    --text: #e2e8f4; --dim: #7c89a6;
+    --accent: #22d3ee; --accent2: #818cf8; --hot: #f471b5;
   }
   * { box-sizing: border-box; margin: 0; }
-  body { background: var(--bg); color: var(--text); font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-  header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
-  header h1 { font-size: 15px; color: var(--accent); font-weight: 600; }
-  header .sub { color: var(--dim); font-size: 12px; }
-  select, input[type=text] { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font: inherit; }
-  input[type=text] { flex: 1; min-width: 180px; }
-  input:focus, select:focus { outline: 1px solid var(--accent2); }
+  body { background: var(--bg0); color: var(--text); font: 13.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, var(--panel2), var(--panel)); flex-wrap: wrap; }
+  header h1 { font-size: 16px; font-weight: 700; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; letter-spacing: .5px; }
+  header .sub { color: var(--dim); font-size: 11.5px; }
+  select, input[type=text] { background: var(--bg1); color: var(--text); border: 1px solid var(--border2); border-radius: 8px; padding: 7px 11px; font: inherit; transition: border-color .15s, box-shadow .15s; }
+  input[type=text] { flex: 1; min-width: 200px; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(34,211,238,.15); }
+  ::placeholder { color: var(--dim); }
+  #counts { color: var(--dim); font-size: 12px; }
+  #counts b { color: var(--accent); font-weight: 600; }
   main { flex: 1; display: flex; min-height: 0; }
-  #side { width: 340px; border-right: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
-  #results { flex: 1; overflow-y: auto; padding: 8px; }
-  .hit { padding: 8px 10px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
-  .hit:hover, .hit.sel { border-color: var(--border); background: var(--bg); }
-  .hit .label { color: var(--accent2); }
-  .hit .meta { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #detail { border-top: 1px solid var(--border); padding: 10px; max-height: 45%; overflow-y: auto; font-size: 12.5px; }
-  #detail h2 { font-size: 13px; color: var(--accent); margin-bottom: 6px; word-break: break-all; }
-  #detail .row { margin: 2px 0; word-break: break-all; }
+  #side { width: 350px; border-right: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  #results { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  #results:empty::before { content: "type a question above — same engine the agent uses"; color: var(--dim); font-size: 12px; padding: 8px; }
+  .hit { padding: 9px 11px; border: 1px solid var(--border); border-left: 3px solid var(--kc, var(--accent2)); border-radius: 8px; cursor: pointer; background: var(--bg1); transition: transform .08s, border-color .15s, background .15s; }
+  .hit:hover { border-color: var(--border2); background: var(--panel2); transform: translateX(2px); }
+  .hit.sel { border-color: var(--accent); background: var(--panel2); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .hit .label { color: var(--text); font-weight: 600; }
+  .hit .kind { display: inline-block; font-size: 10.5px; padding: 1px 7px; border-radius: 99px; margin-left: 6px; color: var(--bg0); background: var(--kc, var(--accent2)); font-weight: 700; vertical-align: 1px; }
+  .hit .meta { color: var(--dim); font-size: 11.5px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #detail { border-top: 1px solid var(--border); padding: 12px; max-height: 45%; overflow-y: auto; font-size: 12.5px; background: linear-gradient(180deg, var(--panel2), var(--panel)); }
+  #detail h2 { font-size: 13.5px; color: var(--accent); margin-bottom: 8px; word-break: break-all; }
+  #detail .row { margin: 3px 0; word-break: break-all; }
   #detail .k { color: var(--dim); }
+  #detail .chip { display: inline-block; font-size: 10.5px; padding: 1px 8px; border-radius: 99px; color: var(--bg0); font-weight: 700; }
   #detail .nb { cursor: pointer; color: var(--accent2); }
-  #detail .nb:hover { text-decoration: underline; }
-  #stage { flex: 1; position: relative; min-width: 0; }
-  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-  #legend { position: absolute; right: 10px; top: 10px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; max-height: 40%; overflow-y: auto; }
-  #legend div { display: flex; align-items: center; gap: 6px; }
-  #legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-  #note { position: absolute; left: 10px; bottom: 10px; color: var(--dim); font-size: 12px; }
+  #detail .nb:hover { color: var(--accent); text-decoration: underline; }
+  #stage { flex: 1; position: relative; min-width: 0; background: radial-gradient(1200px 800px at 65% 35%, var(--bg1) 0%, var(--bg0) 70%); }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+  canvas.grabbing { cursor: grabbing; }
+  canvas.point { cursor: pointer; }
+  #legend { position: absolute; right: 12px; top: 12px; background: rgba(14,21,38,.92); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 12px; max-height: 45%; overflow-y: auto; backdrop-filter: blur(4px); }
+  #legend div { display: flex; align-items: center; gap: 8px; padding: 1.5px 0; }
+  #legend i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px currentColor; }
+  #note { position: absolute; left: 12px; bottom: 10px; color: var(--dim); font-size: 11.5px; background: rgba(7,11,20,.7); padding: 3px 9px; border-radius: 6px; }
+  #tip { position: absolute; pointer-events: none; display: none; background: rgba(14,21,38,.95); border: 1px solid var(--border2); border-radius: 8px; padding: 5px 10px; font-size: 12px; max-width: 380px; word-break: break-all; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
   #empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--dim); text-align: center; padding: 20px; }
+  ::-webkit-scrollbar { width: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
@@ -45,7 +61,7 @@
   <span class="sub">answer from the store</span>
   <select id="module" title="module"></select>
   <input id="q" type="text" placeholder="ask the store… (Enter)" autocomplete="off">
-  <span class="sub" id="counts"></span>
+  <span id="counts"></span>
 </header>
 <main>
   <div id="side">
@@ -56,6 +72,7 @@
     <canvas id="cv"></canvas>
     <div id="legend"></div>
     <div id="note">drag: pan · wheel: zoom · click: inspect</div>
+    <div id="tip"></div>
     <div id="empty"></div>
   </div>
 </main>
@@ -73,13 +90,21 @@ const api = async (path) => {
 let G = { nodes: [], edges: [] };     // full graph from the API
 let V = { nodes: [], edges: [] };     // rendered subset (degree-capped)
 let byId = new Map();
-let selected = null;
+let selected = null, hovered = null;
 let view = { x: 0, y: 0, k: 1 };      // pan/zoom transform
 const MAX_RENDER = 1500;
 
-// ---- colors: stable hue per kind ----
-const kindHue = k => { let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
-const kindColor = k => `hsl(${kindHue(k)} 65% 62%)`;
+// ---- colors: curated vivid palette, assigned per kind (sorted → stable) ----
+const PALETTE = ['#38bdf8','#f472b6','#a3e635','#fbbf24','#a78bfa','#34d399',
+                 '#fb7185','#22d3ee','#fb923c','#e879f9','#facc15','#4ade80',
+                 '#93c5fd','#fda4af','#5eead4','#c4b5fd'];
+let kindColors = new Map();
+function assignColors() {
+  kindColors = new Map();
+  [...new Set(V.nodes.map(n => n.kind))].sort()
+    .forEach((k, i) => kindColors.set(k, PALETTE[i % PALETTE.length]));
+}
+const kindColor = k => kindColors.get(k) || '#94a3b8';
 
 // ---- modules ----
 async function loadModules() {
@@ -104,9 +129,10 @@ async function loadModules() {
 async function loadGraph(key) {
   G = await api('/api/graph?module=' + encodeURIComponent(key));
   G.nodes = G.nodes || []; G.edges = G.edges || [];
-  $('counts').textContent = `${G.nodes.length} nodes · ${G.edges.length} edges`;
+  $('counts').innerHTML = `<b>${G.nodes.length}</b> nodes · <b>${G.edges.length}</b> edges`;
   history.replaceState(null, '', '?module=' + encodeURIComponent(key));
   buildView();
+  assignColors();
   legend();
   layout();
 }
@@ -127,13 +153,13 @@ function buildView() {
   V.nodes = nodes.map(n => ({ ...n, x: 0, y: 0, vx: 0, vy: 0, deg: deg.get(n.id) || 0 }));
   V.edges = G.edges.filter(e => keep.has(e.source) && keep.has(e.target));
   byId = new Map(V.nodes.map(n => [n.id, n]));
-  selected = null;
+  selected = null; hovered = null;
   renderDetail(null);
 }
 
 function legend() {
-  const kinds = [...new Set(V.nodes.map(n => n.kind))].sort();
-  $('legend').innerHTML = kinds.map(k => `<div><i style="background:${kindColor(k)}"></i>${k}</div>`).join('');
+  $('legend').innerHTML = [...kindColors.entries()]
+    .map(([k, c]) => `<div><i style="background:${c};color:${c}"></i>${k}</div>`).join('');
 }
 
 // ---- force layout (simple, self-contained) ----
@@ -213,25 +239,40 @@ function draw() {
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.translate(view.x, view.y); ctx.scale(view.k, view.k);
-  const neigh = neighborSet(selected);
-  ctx.lineWidth = 1 / view.k;
+  const focus = selected || hovered;
+  const neigh = neighborSet(focus);
+  const glow = V.nodes.length <= 600; // shadows are pricey on huge graphs
+
+  // edges under nodes
   for (const e of V.edges) {
     const a = byId.get(e.source), b = byId.get(e.target);
     if (!a || !b) continue;
-    const hot = selected && (e.source === selected.id || e.target === selected.id);
-    ctx.strokeStyle = hot ? 'rgba(94,234,212,.8)' : 'rgba(120,130,150,.16)';
+    const hot = focus && (e.source === focus.id || e.target === focus.id);
+    ctx.strokeStyle = hot ? 'rgba(34,211,238,.9)' : (focus ? 'rgba(124,137,166,.07)' : 'rgba(124,137,166,.22)');
+    ctx.lineWidth = (hot ? 1.8 : 1) / view.k;
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   }
+
   for (const n of V.nodes) {
-    const r = 3 + Math.min(9, Math.sqrt(n.deg));
-    const dimmed = selected && n !== selected && !neigh.has(n.id);
-    ctx.globalAlpha = dimmed ? 0.18 : 1;
-    ctx.fillStyle = n === selected ? '#5eead4' : kindColor(n.kind);
+    const r = 3.5 + Math.min(10, Math.sqrt(n.deg) * 1.4);
+    const inFocus = !focus || n === focus || neigh.has(n.id);
+    const c = kindColor(n.kind);
+    ctx.globalAlpha = inFocus ? 1 : 0.28;
+    if (glow && inFocus) { ctx.shadowColor = c; ctx.shadowBlur = 12; } else { ctx.shadowBlur = 0; }
+    ctx.fillStyle = c;
     ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2); ctx.fill();
-    if (view.k > 0.5 && (n === selected || neigh.has(n.id) || (!selected && n.deg > 3))) {
-      ctx.fillStyle = 'rgba(215,220,229,.85)';
+    ctx.shadowBlur = 0;
+    // crisp core + ring for the focused node
+    if (n === focus) {
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.6 / view.k;
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + 3 / view.k, 0, Math.PI * 2); ctx.stroke();
+    }
+    if (view.k > 0.5 && (n === focus || neigh.has(n.id) || (!focus && n.deg > 3))) {
       ctx.font = `${11 / view.k}px ui-monospace, monospace`;
-      ctx.fillText(n.label, n.x + r + 3 / view.k, n.y + 3 / view.k);
+      ctx.lineWidth = 3 / view.k; ctx.strokeStyle = 'rgba(7,11,20,.85)';
+      ctx.strokeText(n.label, n.x + r + 4 / view.k, n.y + 3.5 / view.k);
+      ctx.fillStyle = n === focus ? '#ffffff' : 'rgba(226,232,244,.92)';
+      ctx.fillText(n.label, n.x + r + 4 / view.k, n.y + 3.5 / view.k);
     }
     ctx.globalAlpha = 1;
   }
@@ -249,17 +290,53 @@ function neighborSet(sel) {
 
 // ---- interaction ----
 let drag = null;
-cv.addEventListener('mousedown', e => { drag = { x: e.clientX, y: e.clientY, moved: false }; });
+function nodeAt(e) {
+  const r = cv.getBoundingClientRect();
+  const wx = (e.clientX - r.left - view.x) / view.k, wy = (e.clientY - r.top - view.y) / view.k;
+  let best = null, bd = 12 / view.k + 6;
+  for (const n of V.nodes) {
+    const d = Math.hypot(n.x - wx, n.y - wy);
+    if (d < bd) { bd = d; best = n; }
+  }
+  return best;
+}
+cv.addEventListener('mousedown', e => { drag = { x: e.clientX, y: e.clientY, moved: false }; cv.classList.add('grabbing'); });
 window.addEventListener('mousemove', e => {
-  if (!drag) return;
-  view.x += e.clientX - drag.x; view.y += e.clientY - drag.y;
-  drag.x = e.clientX; drag.y = e.clientY; drag.moved = true;
-  draw();
+  if (drag) {
+    view.x += e.clientX - drag.x; view.y += e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY; drag.moved = true;
+    draw();
+    return;
+  }
+  const n = nodeAt(e);
+  cv.classList.toggle('point', !!n);
+  const tip = $('tip');
+  if (n && n !== selected) {
+    hovered = n;
+    tip.style.display = 'block';
+    const r = $('stage').getBoundingClientRect();
+    tip.style.left = Math.min(e.clientX - r.left + 14, r.width - 300) + 'px';
+    tip.style.top = (e.clientY - r.top + 14) + 'px';
+    tip.innerHTML = '';
+    const b = document.createElement('b'); b.textContent = n.label;
+    tip.appendChild(b);
+    tip.appendChild(document.createElement('br'));
+    const s = document.createElement('span'); s.style.color = 'var(--dim)';
+    s.textContent = `${n.kind} · ${n.source}`;
+    tip.appendChild(s);
+    draw();
+  } else if (hovered) {
+    hovered = null; tip.style.display = 'none'; draw();
+  } else {
+    tip.style.display = 'none';
+  }
 });
 window.addEventListener('mouseup', e => {
-  if (drag && !drag.moved) pick(e);
+  cv.classList.remove('grabbing');
+  if (drag && !drag.moved) select(nodeAt(e));
   drag = null;
 });
+cv.addEventListener('mouseleave', () => { hovered = null; $('tip').style.display = 'none'; draw(); });
 cv.addEventListener('wheel', e => {
   e.preventDefault();
   const r = cv.getBoundingClientRect();
@@ -269,19 +346,8 @@ cv.addEventListener('wheel', e => {
   draw();
 }, { passive: false });
 
-function pick(e) {
-  const r = cv.getBoundingClientRect();
-  const wx = (e.clientX - r.left - view.x) / view.k, wy = (e.clientY - r.top - view.y) / view.k;
-  let best = null, bd = 12 / view.k + 6;
-  for (const n of V.nodes) {
-    const d = Math.hypot(n.x - wx, n.y - wy);
-    if (d < bd) { bd = d; best = n; }
-  }
-  select(best);
-}
-
 function select(n) {
-  selected = n;
+  selected = n; hovered = null; $('tip').style.display = 'none';
   renderDetail(n);
   draw();
 }
@@ -303,7 +369,7 @@ function renderDetail(n) {
     if (e.target === n.id) nbs.push({ dir: '←', rel: e.relation, id: e.source });
   }
   d.innerHTML = `<h2>${esc(n.label)}</h2>
-    <div class="row"><span class="k">kind</span> ${esc(n.kind)} · <span class="k">type</span> ${esc(n.file_type)}</div>
+    <div class="row"><span class="chip" style="background:${kindColor(n.kind)}">${esc(n.kind)}</span> <span class="k">type</span> ${esc(n.file_type)}</div>
     <div class="row"><span class="k">source</span> ${esc(n.source)} ${esc(n.location || '')}</div>
     <div class="row"><span class="k">producer</span> ${esc(n.metadata && n.metadata.producer || '')}</div>
     ${nbs.slice(0, 30).map(x => `<div class="row">${x.dir} <span class="k">${esc(x.rel)}</span> <span class="nb" data-id="${esc(x.id)}">${esc(x.id)}</span></div>`).join('')}
@@ -326,8 +392,10 @@ async function runQuery() {
     for (const h of hits) {
       const div = document.createElement('div');
       div.className = 'hit';
-      div.innerHTML = `<div class="label"></div><div class="meta"></div>`;
-      div.querySelector('.label').textContent = `${h.node.label}  [${h.node.kind}]`;
+      div.style.setProperty('--kc', kindColor(h.node.kind));
+      div.innerHTML = `<div><span class="label"></span><span class="kind"></span></div><div class="meta"></div>`;
+      div.querySelector('.label').textContent = h.node.label;
+      div.querySelector('.kind').textContent = h.node.kind;
       div.querySelector('.meta').textContent = `${h.node.source} ${h.node.location || ''} · score ${h.score}`;
       div.addEventListener('click', () => {
         document.querySelectorAll('.hit.sel').forEach(x => x.classList.remove('sel'));
