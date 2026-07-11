@@ -90,13 +90,22 @@ func TestManifestTracksContent(t *testing.T) {
 	}
 }
 
-func TestModuleKeyStable(t *testing.T) {
+func TestModuleKeyIsBasename(t *testing.T) {
 	k, err := ModuleKey("/Users/x/proj")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if k != "Users-x-proj" {
+	if k != "proj" {
 		t.Fatalf("got %q", k)
+	}
+}
+
+func TestSanitizeKey(t *testing.T) {
+	if got := SanitizeKey("my module/v2"); got != "my-module-v2" {
+		t.Fatalf("got %q", got)
+	}
+	if got := SanitizeKey("..."); got != "" {
+		t.Fatalf("dots-only should sanitize to empty, got %q", got)
 	}
 }
 

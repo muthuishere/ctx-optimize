@@ -37,8 +37,22 @@ type Backend interface {
 // ErrNotFound signals an absent remote object (e.g. no manifest yet).
 var ErrNotFound = fmt.Errorf("remote: object not found")
 
-// Open parses a remote URL into a backend.
-func Open(rawURL string) (Backend, error) {
+// Options carries explicit credentials/endpoint from config (already
+// ${VAR}-resolved). Empty fields fall back to the standard AWS_* env vars at
+// call time. Values live in memory only — never stored, printed, or logged.
+type Options struct {
+	AccessKeyID     string
+	SecretAccessKey string
+	SessionToken    string
+	Region          string
+	Endpoint        string
+}
+
+// Open parses a remote URL into a backend using env-var credentials only.
+func Open(rawURL string) (Backend, error) { return OpenWith(rawURL, Options{}) }
+
+// OpenWith parses a remote URL into a backend with explicit options.
+func OpenWith(rawURL string, opts Options) (Backend, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse remote url: %w", err)
@@ -53,7 +67,7 @@ func Open(rawURL string) (Backend, error) {
 		if u.Host == "" {
 			return nil, fmt.Errorf("s3 remote needs a bucket: s3://bucket/prefix")
 		}
-		return newS3Backend(u.Host, strings.Trim(u.Path, "/"))
+		return newS3Backend(u.Host, strings.Trim(u.Path, "/"), opts)
 	default:
 		return nil, fmt.Errorf("unsupported remote scheme %q (file:// or s3://)", u.Scheme)
 	}

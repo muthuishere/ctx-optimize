@@ -106,7 +106,9 @@ func resolvePath(f *flags) (string, error) {
 	return os.Getwd()
 }
 
-// openStore resolves --path + --store into the module's store.
+// openStore resolves --path + --store into the module's store. The module
+// key defaults to the repo basename (~/ctxoptimize/<repo-name>/); a "name" in
+// ctx-optimize.json overrides it (custom modules, basename collisions).
 func openStore(f *flags) (*store.Store, error) {
 	path, err := resolvePath(f)
 	if err != nil {
@@ -116,35 +118,56 @@ func openStore(f *flags) (*store.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	key, err := store.ModuleKey(path)
+	pc, err := project.Load(path)
 	if err != nil {
 		return nil, err
+	}
+	key := store.SanitizeKey(pc.Name)
+	if key == "" {
+		key, err = store.ModuleKey(path)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return store.Open(root, key)
 }
 
-// resolveRemote picks the sync target: ad-hoc URL > repo ctx-optimize.json >
-// store config. The repo file is the committed source of truth (clone → pull
-// just works); the store config remains a per-machine fallback.
-func resolveRemote(adhoc, repoPath string, s *store.Store) (url, from string, err error) {
-	if adhoc != "" {
-		return adhoc, "argument", nil
-	}
+// resolveRemote picks the sync target: repo ctx-optimize.json > store config
+// (per-machine fallback, set via remote init --local). The returned remote is
+// UNresolved — ${VAR} placeholders intact, safe to print.
+func resolveRemote(repoPath string, s *store.Store) (*project.Remote, string, error) {
 	pc, err := project.Load(repoPath)
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
-	if pc.Remote != "" {
+	if pc.Remote != nil && (pc.Remote.URL != "" || pc.Remote.Type != "") {
 		return pc.Remote, project.FileName, nil
 	}
 	sc, err := s.Config()
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
 	if sc.Remote != "" {
-		return sc.Remote, "store config", nil
+		return &project.Remote{URL: sc.Remote}, "store config", nil
 	}
-	return "", "", nil
+	return nil, "", nil
+}
+
+// openBackend resolves ${VAR}s and opens the sync backend. Resolved values
+// stay inside the remote package — nothing here prints them.
+func openBackend(r *project.Remote) (remote.Backend, error) {
+	rr, err := r.Resolve()
+	if err != nil {
+		return nil, err
+	}
+	c := rr.Credentials
+	return remote.OpenWith(rr.URL, remote.Options{
+		AccessKeyID:     c["access_key_id"],
+		SecretAccessKey: c["secret_access_key"],
+		SessionToken:    c["session_token"],
+		Region:          c["region"],
+		Endpoint:        c["endpoint"],
+	})
 }
 
 // ---- commands ----
@@ -314,9 +337,13 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	remoteURL, remoteFrom, err := resolveRemote("", repoPath, s)
+	r, remoteFrom, err := resolveRemote(repoPath, s)
 	if err != nil {
 		return err
+	}
+	remoteURL := ""
+	if r != nil {
+		remoteURL = r.URL // raw form: ${VAR} placeholders, never values
 	}
 	st := map[string]any{
 		"store": s.Dir, "nodes": len(nodes), "edges": len(edges),
@@ -353,7 +380,9 @@ func cmdRemote(args []string, stdout io.Writer) error {
 			return fmt.Errorf("usage: ctx-optimize remote init <s3://bucket/prefix | file:///dir>")
 		}
 		url := f.args[0]
-		if _, err := remote.Open(url); err != nil { // validate before persisting
+		// Validate the resolved form (the raw one may hold ${VAR}s), persist
+		// the raw one — placeholders belong in the file, values never do.
+		if _, err := openBackend(&project.Remote{URL: url}); err != nil {
 			return err
 		}
 		// The remote belongs to the repo, not the machine: write the
@@ -375,26 +404,24 @@ func cmdRemote(args []string, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
-		pc.Remote = url
+		pc.Remote = &project.Remote{URL: url}
 		if err := project.Save(repoPath, pc); err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "remote set: %s → %s (commit it — teammates just pull)\n", url, project.FileName)
 		return nil
 	case "push", "pull":
-		// Resolution: ad-hoc URL > repo ctx-optimize.json > store config.
-		adhoc := ""
 		if len(f.args) > 0 {
-			adhoc = f.args[0]
+			return fmt.Errorf("remote %s takes no URL — the remote lives in %s (ctx-optimize remote init <url>)", sub, project.FileName)
 		}
-		target, _, err := resolveRemote(adhoc, repoPath, s)
+		r, _, err := resolveRemote(repoPath, s)
 		if err != nil {
 			return err
 		}
-		if target == "" {
-			return fmt.Errorf("no remote — run `ctx-optimize remote init <url>` (writes %s) or pass one: ctx-optimize remote %s <url>", project.FileName, sub)
+		if r == nil {
+			return fmt.Errorf("no remote — run `ctx-optimize remote init <url>` (writes %s)", project.FileName)
 		}
-		b, err := remote.Open(target)
+		b, err := openBackend(r)
 		if err != nil {
 			return err
 		}
@@ -475,18 +502,27 @@ commands:
   status                      store facts  [--json]
   remote init <url> [--local] write remote to the repo's ctx-optimize.json
                               (committable; --local = this machine's store only)
-  remote push|pull [url]      incremental sync; url > ctx-optimize.json > store config
+  remote push|pull            incremental sync with the configured remote
   install --skills            install the agent skill (~/.claude, +~/.agents with codex)
   uninstall --skills          remove the agent skill
   version                     print version
 
 flags:  --path DIR   module the store is keyed by (default: cwd)
-        --store DIR  store root (default: $CTX_OPTIMIZE_STORE or ~/.ctx-optimize/store)
+        --store DIR  store root (default: $CTX_OPTIMIZE_STORE or ~/ctxoptimize)
+
+The store lives at ~/ctxoptimize/<repo-name>/ (name: in ctx-optimize.json
+overrides the folder name).
 
 ctx-optimize.json (in the repo, commit it):
-  {"remote": "s3://bucket/prefix",
+  {"name": "my-module",
+   "remote": {"type": "s3", "url": "s3://bucket/prefix",
+              "credentials": {"access_key_id": "${TEAM_KEY_ID}",
+                              "secret_access_key": "${TEAM_SECRET}",
+                              "region": "auto", "endpoint": "${R2_ENDPOINT}"}},
    "adapters": [{"name": "kafka", "run": "node hooks/kafka.js"}]}
-adapter commands print batch JSON to stdout; add runs them all.
+remote may also be a plain string URL; ${VAR} resolves from the environment
+at sync time (values are never written or printed). Adapter commands print
+batch JSON to stdout; add runs them all.
 
 The binary is deterministic: no LLM, no DB, no network except your remote.
 `)

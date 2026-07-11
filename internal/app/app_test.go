@@ -75,11 +75,10 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("ask output: %s", out)
 	}
 
-	// Ad-hoc remote URL works with NO configured remote.
-	adhoc := t.TempDir()
-	out, _ = run(0, "remote", "push", "file://"+adhoc, "--path", repo)
-	if !strings.Contains(out, "transferred") {
-		t.Fatalf("ad-hoc push output: %s", out)
+	// push/pull take no URL — the config file is the single source of truth.
+	_, errURL := run(1, "remote", "push", "file:///nope", "--path", repo)
+	if !strings.Contains(errURL, "takes no URL") {
+		t.Fatalf("expected URL rejection, got: %s", errURL)
 	}
 
 	// No remote at all → clear error, exit 1.
@@ -110,21 +109,26 @@ func TestEndToEnd(t *testing.T) {
 	}
 }
 
-// Repo-level ctx-optimize.json: declared adapters run on `add`, and the
-// declared remote drives bare push — the file travels with the repo so
-// nothing is configured per machine.
+// Repo-level ctx-optimize.json: declared adapters run on `add`, the object
+// remote (type/url/credentials) with ${VAR} placeholders drives bare push,
+// and "name" picks the store folder — the file travels with the repo so
+// nothing is configured per machine and no secret is ever committed.
 func TestRepoConfigAdaptersAndRemote(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("adapter command uses sh")
 	}
 	repo := t.TempDir()
-	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
 	remoteDir := t.TempDir()
+	t.Setenv("CTX_TEST_REMOTE_DIR", remoteDir)
 
 	os.MkdirAll(filepath.Join(repo, "hooks"), 0o755)
 	batch := `{"producer":"kafka-topics","nodes":[{"id":"kafka://orders","label":"orders","kind":"topic","file_type":"messaging","source":"kafka://orders"}],"edges":[]}`
 	os.WriteFile(filepath.Join(repo, "hooks", "kafka.json"), []byte(batch), 0o644)
-	cfg := `{"remote":"file://` + remoteDir + `","adapters":[{"name":"kafka","run":"cat hooks/kafka.json"}]}`
+	cfg := `{"name":"my-module",
+	         "remote":{"type":"file","url":"file://${CTX_TEST_REMOTE_DIR}"},
+	         "adapters":[{"name":"kafka","run":"cat hooks/kafka.json"}]}`
 	os.WriteFile(filepath.Join(repo, "ctx-optimize.json"), []byte(cfg), 0o644)
 
 	run := func(wantCode int, args ...string) (string, string) {
@@ -142,27 +146,46 @@ func TestRepoConfigAdaptersAndRemote(t *testing.T) {
 	if !strings.Contains(out, "adapter kafka: 1 nodes") {
 		t.Fatalf("adapter did not run: %s", out)
 	}
+	// "name" overrides the store folder: ~store~/my-module/.
+	if _, err := os.Stat(filepath.Join(storeRoot, "my-module", "graph", "nodes.ndjson")); err != nil {
+		t.Fatalf("custom module name not used: %v", err)
+	}
 	out, _ = run(0, "query", "orders topic", "--path", repo)
 	if !strings.Contains(out, "kafka://orders") {
 		t.Fatalf("adapter node not queryable: %s", out)
 	}
 
-	// Bare push uses the repo file's remote; status reports the source.
+	// Bare push resolves ${CTX_TEST_REMOTE_DIR} at sync time; status shows
+	// the RAW url (placeholder), never the resolved value.
 	out, _ = run(0, "remote", "push", "--path", repo)
 	if !strings.Contains(out, "transferred") {
 		t.Fatalf("push via repo config: %s", out)
 	}
 	out, _ = run(0, "status", "--path", repo, "--json")
 	var st struct {
+		Remote     string `json:"remote"`
 		RemoteFrom string `json:"remote_from"`
 	}
 	json.Unmarshal([]byte(out), &st)
 	if st.RemoteFrom != "ctx-optimize.json" {
 		t.Fatalf("remote_from = %q, want ctx-optimize.json", st.RemoteFrom)
 	}
+	if !strings.Contains(st.Remote, "${CTX_TEST_REMOTE_DIR}") {
+		t.Fatalf("status leaked the resolved remote: %s", st.Remote)
+	}
+	if _, err := os.Stat(filepath.Join(remoteDir, "manifest.json")); err != nil {
+		t.Fatalf("push did not reach the resolved remote: %v", err)
+	}
+
+	// An unset ${VAR} fails loudly, naming the variable.
+	t.Setenv("CTX_TEST_REMOTE_DIR", "")
+	_, errUnset := run(1, "remote", "push", "--path", repo)
+	if !strings.Contains(errUnset, "CTX_TEST_REMOTE_DIR") {
+		t.Fatalf("unset var not named: %s", errUnset)
+	}
 
 	// A broken adapter fails the whole add, loudly.
-	bad := `{"remote":"","adapters":[{"name":"boom","run":"exit 3"}]}`
+	bad := `{"adapters":[{"name":"boom","run":"exit 3"}]}`
 	os.WriteFile(filepath.Join(repo, "ctx-optimize.json"), []byte(bad), 0o644)
 	_, errOut := run(1, "add", "--path", repo)
 	if !strings.Contains(errOut, "adapter boom") {

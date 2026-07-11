@@ -31,7 +31,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
-// Root resolves the store root: flag > $CTX_OPTIMIZE_STORE > ~/.ctx-optimize/store.
+// Root resolves the store root: flag > $CTX_OPTIMIZE_STORE > ~/ctxoptimize.
 func Root(flagValue string) (string, error) {
 	if flagValue != "" {
 		return flagValue, nil
@@ -43,23 +43,41 @@ func Root(flagValue string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve home: %w", err)
 	}
-	return filepath.Join(home, ".ctx-optimize", "store"), nil
+	return filepath.Join(home, "ctxoptimize"), nil
 }
 
-// ModuleKey derives the store key from a module path — the path alone, made
-// filesystem-safe. Deliberately dumb and reversible-by-eye so `ls` on the
-// store root reads like a list of your projects.
+// ModuleKey derives the store key from a module path: the repo's basename, so
+// the layout reads ~/ctxoptimize/<repo-name>/. Custom module names come from
+// ctx-optimize.json's "name" field (resolved by the caller), which also
+// disambiguates two repos sharing a basename.
 func ModuleKey(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("resolve %s: %w", path, err)
 	}
-	key := strings.Trim(filepath.ToSlash(abs), "/")
-	key = strings.ReplaceAll(key, "/", "-")
+	key := sanitizeKey(filepath.Base(abs))
 	if key == "" {
 		return "", fmt.Errorf("empty module key for %s", path)
 	}
 	return key, nil
+}
+
+// SanitizeKey keeps a module name filesystem- and URL-safe — callers pass
+// user-chosen names (ctx-optimize.json "name") through it.
+func SanitizeKey(name string) string { return sanitizeKey(name) }
+
+// sanitizeKey keeps a name filesystem- and URL-safe.
+func sanitizeKey(name string) string {
+	var sb strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			sb.WriteRune(r)
+		default:
+			sb.WriteByte('-')
+		}
+	}
+	return strings.Trim(sb.String(), "-.")
 }
 
 // Store is one module's folder. Open creates the layout if absent (init is

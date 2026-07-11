@@ -108,7 +108,7 @@ func TestS3SigV4Shape(t *testing.T) {
 	t.Setenv("AWS_ENDPOINT_URL", srv.URL)
 	t.Setenv("AWS_REGION", "eu-central-1")
 
-	b, err := newS3Backend("bucket", "prefix")
+	b, err := newS3Backend("bucket", "prefix", Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +133,42 @@ func TestS3SigV4Shape(t *testing.T) {
 	}
 	if string(gotBody) != "data" {
 		t.Fatalf("body corrupted: %q", gotBody)
+	}
+}
+
+// Explicit Options (from ctx-optimize.json credentials) beat env vars.
+func TestS3OptionsBeatEnv(t *testing.T) {
+	var got *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Clone(r.Context())
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	t.Setenv("AWS_ACCESS_KEY_ID", "env-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "env-secret")
+	t.Setenv("AWS_ENDPOINT_URL", "http://should-not-be-used.invalid")
+	t.Setenv("AWS_REGION", "us-east-1")
+
+	b, err := newS3Backend("bucket", "", Options{
+		AccessKeyID:     "cfg-key",
+		SecretAccessKey: "cfg-secret",
+		Region:          "auto",
+		Endpoint:        srv.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.now = func() time.Time { return time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC) }
+	if err := b.Put("manifest.json", []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("server saw no request — endpoint option ignored")
+	}
+	auth := got.Header.Get("Authorization")
+	if !strings.Contains(auth, "Credential=cfg-key/20260711/auto/s3/aws4_request") {
+		t.Fatalf("config credentials/region not used: %s", auth)
 	}
 }
 

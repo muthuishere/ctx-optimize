@@ -25,9 +25,9 @@ top.** Never call a model API on the CLI's behalf — if semantic work is needed
 
 ## Store model
 
-- Central store: `~/.ctx-optimize/store/<module-key>/` (override: `--store` or
-  `$CTX_OPTIMIZE_STORE`). The ONLY file that lives in the repo is
-  `ctx-optimize.json` (committable config — remote URL + declared adapters).
+- Central store: `~/ctxoptimize/<repo-name>/` (override root: `--store` or
+  `$CTX_OPTIMIZE_STORE`; override folder name: `"name"` in ctx-optimize.json).
+  The ONLY file that lives in the repo is `ctx-optimize.json`.
 - Everything is plain files (ndjson/json/md) — diffable, syncable.
 - Remotes are for **sync only** (S3 or a shared folder); queries always run on
   the local store. Share by pushing; a teammate who clones the repo gets the
@@ -37,7 +37,17 @@ top.** Never call a model API on the CLI's behalf — if semantic work is needed
 
 ```json
 {
-  "remote": "s3://bucket/prefix",
+  "name": "my-module",
+  "remote": {
+    "type": "s3",
+    "url": "s3://team-bucket/ctx/my-module",
+    "credentials": {
+      "access_key_id": "${TEAM_R2_KEY_ID}",
+      "secret_access_key": "${TEAM_R2_SECRET}",
+      "region": "auto",
+      "endpoint": "${R2_ENDPOINT}"
+    }
+  },
   "adapters": [
     {"name": "kafka-topics", "run": "node hooks/kafka.js"},
     {"name": "pg-schema", "run": "python3 hooks/pg_schema.py"}
@@ -45,11 +55,15 @@ top.** Never call a model API on the CLI's behalf — if semantic work is needed
 }
 ```
 
-`ctx-optimize add` runs the built-in extractors AND every declared adapter
-(each command's stdout must be batch JSON, validated fail-closed). This is the
-refresh-the-world loop: one command re-gathers all declared sources. When you
-write a new adapter, save the script under `hooks/` and declare it here so it
-runs on every future `add`.
+- `remote` may also be a plain string URL. `${VAR}` placeholders (in url or
+  credentials) resolve from the environment at sync time — **commit variable
+  NAMES, never values**; omitted credentials fall back to the standard `AWS_*`
+  env vars. Never echo or write a resolved value.
+- `ctx-optimize add` runs the built-in extractors AND every declared adapter
+  (each command's stdout must be batch JSON, validated fail-closed). This is
+  the refresh-the-world loop: one command re-gathers all declared sources.
+  When you write a new adapter, save the script under `hooks/` and declare it
+  here so it runs on every future `add`.
 
 ## Commands (always prefer `--json` when consuming output)
 
@@ -63,15 +77,12 @@ runs on every future `add`.
 | Machine-only remote (nothing in the repo) | `ctx-optimize remote init <url> --local --path <path>` |
 | Publish changes | `ctx-optimize remote push --path <path> --json` |
 | Fetch teammate's store | `ctx-optimize remote pull --path <path> --json` |
-| One-off sync anywhere | `ctx-optimize remote push <url> --path <path>` |
 | Install/refresh this skill | `ctx-optimize install --skills` |
 
 Notes:
-- `--path` defaults to the current directory; the store key derives from it.
-- Remote resolution: explicit URL arg > repo `ctx-optimize.json` > store config.
-- S3 remotes read standard env vars at call time: `AWS_ACCESS_KEY_ID`,
-  `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ENDPOINT_URL` (R2/Hetzner/MinIO).
-  Reference them by NAME — never echo their values.
+- `--path` defaults to the current directory.
+- `remote push`/`pull` take NO URL — the remote always comes from
+  `ctx-optimize.json` (or the `--local` store config). Edit the file to change it.
 
 ## Writing an adapter (the open door)
 

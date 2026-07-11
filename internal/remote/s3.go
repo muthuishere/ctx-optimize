@@ -26,16 +26,23 @@ type s3Backend struct {
 	prefix   string
 	endpoint string // scheme://host, path-style addressing
 	region   string
+	creds    Options // explicit credentials; empty fields fall back to env
 	client   *http.Client
 	now      func() time.Time // injected for testability
 }
 
-func newS3Backend(bucket, prefix string) (*s3Backend, error) {
-	region := os.Getenv("AWS_REGION")
+func newS3Backend(bucket, prefix string, opts Options) (*s3Backend, error) {
+	region := opts.Region
+	if region == "" {
+		region = os.Getenv("AWS_REGION")
+	}
 	if region == "" {
 		region = "us-east-1"
 	}
-	endpoint := os.Getenv("AWS_ENDPOINT_URL")
+	endpoint := opts.Endpoint
+	if endpoint == "" {
+		endpoint = os.Getenv("AWS_ENDPOINT_URL")
+	}
 	if endpoint == "" {
 		endpoint = fmt.Sprintf("https://s3.%s.amazonaws.com", region)
 	}
@@ -44,6 +51,7 @@ func newS3Backend(bucket, prefix string) (*s3Backend, error) {
 		prefix:   prefix,
 		endpoint: strings.TrimRight(endpoint, "/"),
 		region:   region,
+		creds:    opts,
 		client:   &http.Client{Timeout: 60 * time.Second},
 		now:      time.Now,
 	}, nil
@@ -88,17 +96,24 @@ func (s *s3Backend) Get(key string) ([]byte, error) {
 }
 
 func (s *s3Backend) do(method, key string, body []byte) (*http.Response, error) {
-	accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
-	secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	accessKey := firstOf(s.creds.AccessKeyID, os.Getenv("AWS_ACCESS_KEY_ID"))
+	secretKey := firstOf(s.creds.SecretAccessKey, os.Getenv("AWS_SECRET_ACCESS_KEY"))
 	if accessKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("s3 remote needs AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the environment")
+		return nil, fmt.Errorf("s3 remote needs credentials — in ctx-optimize.json (${VAR} placeholders) or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in the environment")
 	}
 	req, err := http.NewRequest(method, s.objectURL(key), strings.NewReader(string(body)))
 	if err != nil {
 		return nil, err
 	}
-	s.sign(req, body, accessKey, secretKey, os.Getenv("AWS_SESSION_TOKEN"))
+	s.sign(req, body, accessKey, secretKey, firstOf(s.creds.SessionToken, os.Getenv("AWS_SESSION_TOKEN")))
 	return s.client.Do(req)
+}
+
+func firstOf(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // sign implements AWS Signature Version 4 for a single request.

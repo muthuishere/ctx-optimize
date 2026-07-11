@@ -9,9 +9,9 @@ the validated `add --json` door.
 
 - `cmd/ctx-optimize/` — 10-line shim → `internal/app.Run(args, stdout, stderr)`
 - `internal/schema` — THE emit contract (Node/Edge/Batch + fail-closed Validate)
-- `internal/store` — central store `~/.ctx-optimize/store/<module-key>/`, ndjson graph, content-hash manifest
-- `internal/project` — repo-level `ctx-optimize.json` (committable: remote + declared adapters; the ONLY file we put in a user's repo)
-- `internal/remote` — sync-only remotes: `file://` + `s3://` (stdlib SigV4, no SDK); resolution: URL arg > ctx-optimize.json > store config
+- `internal/store` — central store `~/ctxoptimize/<repo-name>/` (key = basename, or ctx-optimize.json `name`), ndjson graph, content-hash manifest
+- `internal/project` — repo-level `ctx-optimize.json` (committable: name + remote [string or {type,url,credentials}] + declared adapters; the ONLY file we put in a user's repo). `${VAR}` resolves from env at sync time; resolved values never written/printed
+- `internal/remote` — sync-only remotes: `file://` + `s3://` (stdlib SigV4, no SDK); push/pull take NO url — remote comes from ctx-optimize.json (or store config via `remote init --local`)
 - `internal/extract/markdown` — tier-1 producer (code langs via tree-sitter WASM: next)
 - `internal/query` — lexical IDF + prefix tier + budget; complete hits (S1e: no pointer lists)
 - `internal/skills` — embedded SKILL.md, `install --skills` fans to claude+codex

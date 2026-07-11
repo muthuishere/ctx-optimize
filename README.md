@@ -40,7 +40,7 @@ ctx-optimize install --skills
 ## Usage
 
 ```sh
-# gather a repo into the central store (~/.ctx-optimize/store/<module-key>/)
+# gather a repo into the central store (~/ctxoptimize/<repo-name>/)
 ctx-optimize add .
 
 # ask the store — complete, citable hits under a token budget
@@ -54,26 +54,30 @@ ctx-optimize remote init s3://team-bucket/ctx/myrepo   # writes ctx-optimize.jso
 ctx-optimize remote push          # incremental — only changed artifacts move
 ctx-optimize remote pull          # a teammate who cloned the repo: this is ALL they run
 
-# one-off sync anywhere, no config
-ctx-optimize remote push file:///mnt/backup
-
 ctx-optimize status --json
 ```
 
-- The store is **plain files** (ndjson/json/md) — diffable, portable. The only
-  file in your repo is `ctx-optimize.json` (committable config).
+- The store is **plain files** (ndjson/json/md) — diffable, portable, at
+  `~/ctxoptimize/<repo-name>/`. The only file in your repo is
+  `ctx-optimize.json` (committable config).
 - **Remotes are for sync only.** Queries always run on the local folder.
-  Resolution: explicit URL > repo `ctx-optimize.json` > per-machine store
-  config (`remote init --local`).
-- S3 credentials come from the standard env vars at call time
-  (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`,
-  `AWS_ENDPOINT_URL` for R2/Hetzner/MinIO) — never stored.
+  `push`/`pull` take no URL — the remote is whatever the config says.
 
 ## ctx-optimize.json — config that travels with the repo
 
 ```json
 {
-  "remote": "s3://team-bucket/ctx/myrepo",
+  "name": "my-module",
+  "remote": {
+    "type": "s3",
+    "url": "s3://team-bucket/ctx/my-module",
+    "credentials": {
+      "access_key_id": "${TEAM_R2_KEY_ID}",
+      "secret_access_key": "${TEAM_R2_SECRET}",
+      "region": "auto",
+      "endpoint": "${R2_ENDPOINT}"
+    }
+  },
   "adapters": [
     {"name": "kafka-topics", "run": "node hooks/kafka.js"},
     {"name": "pg-schema", "run": "python3 hooks/pg_schema.py"}
@@ -81,10 +85,18 @@ ctx-optimize status --json
 }
 ```
 
-Commit it. `ctx-optimize add` then runs the built-in extractors **and** every
-declared adapter (each command prints batch JSON to stdout; the door validates
-fail-closed). One command refreshes the whole world; a fresh clone needs zero
-setup to `pull`.
+Commit it — it is safe by construction:
+
+- `name` picks the store folder under `~/ctxoptimize/` (default: repo basename).
+- `remote` is a plain string URL or the full object above. `${VAR}` anywhere
+  in the url/credentials resolves from the environment **at sync time** — the
+  file holds variable names, never secret values; resolved values are never
+  written or printed. Omitted credentials fall back to the standard `AWS_*`
+  env vars (endpoint override covers R2/Hetzner/MinIO).
+- `adapters` are commands whose stdout is batch JSON; `ctx-optimize add` runs
+  the built-in extractors **and** every declared adapter through the
+  fail-closed door. One command refreshes the whole world; a fresh clone needs
+  zero setup to `pull`.
 
 ## Adapters — the open door
 
