@@ -455,10 +455,17 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 			}
 			id := rel + "::" + qual
 			parent := callerAt()
+			meta := map[string]string{"lang": lang.Name}
+			if sig := signatureOf(text(n)); sig != "" {
+				meta["signature"] = sig
+			}
+			if doc := docAbove(raw, i, typeOf, text); doc != "" {
+				meta["doc"] = doc
+			}
 			res.nodes = append(res.nodes, schema.Node{
 				ID: id, Label: qual, Kind: kind, FileType: "code", Source: rel,
 				Location: fmt.Sprintf("L%d-L%d", n.StartRow+1, n.EndRow+1),
-				Metadata: map[string]string{"lang": lang.Name},
+				Metadata: meta,
 			})
 			res.edges = append(res.edges, schema.Edge{
 				Source: parent, Target: id, Relation: "contains",
@@ -492,6 +499,55 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		}
 	}
 	return res
+}
+
+// signatureOf is the declaration's header line — what an agent needs to cite
+// or call the symbol without opening the file (the symbol-card primitive; the
+// spike measured pointer-chase file reads as the #1 context waste). First
+// non-attribute line of the decl text, capped: decorators (@…), Rust #[…] and
+// C# […] attributes are skipped so `@Override` doesn't shadow the method.
+func signatureOf(declText string) string {
+	for _, line := range strings.Split(declText, "\n") {
+		l := strings.TrimSpace(line)
+		if l == "" || strings.HasPrefix(l, "@") || strings.HasPrefix(l, "#[") ||
+			strings.HasPrefix(l, "[") {
+			continue
+		}
+		l = strings.TrimRight(l, " \t{")
+		if len(l) > 160 {
+			l = l[:160] + "…"
+		}
+		return strings.TrimSpace(l)
+	}
+	return ""
+}
+
+// docAbove collects the comment block sitting DIRECTLY above a declaration.
+// Preorder puts those comments immediately before the decl record (they start
+// after the previous sibling's subtree), so walk backward while each record is
+// a comment whose end row touches the running start row — a blank line breaks
+// the chain, which is exactly the convention in every embedded language.
+func docAbove(raw []RawNode, i int, typeOf func(RawNode) string, text func(RawNode) string) string {
+	startRow := raw[i].StartRow
+	var parts []string
+	for j := i - 1; j >= 0; j-- {
+		if !raw[j].Named { // newline/indent tokens (python) sit between
+			continue
+		}
+		if raw[j].Start <= raw[i].Start && raw[j].End >= raw[i].End {
+			continue // ancestor wrapper (python's block) — not a neighbor
+		}
+		if !strings.Contains(typeOf(raw[j]), "comment") || raw[j].EndRow+1 < startRow {
+			break
+		}
+		parts = append([]string{strings.TrimSpace(text(raw[j]))}, parts...)
+		startRow = raw[j].StartRow
+	}
+	doc := strings.Join(parts, "\n")
+	if len(doc) > 500 {
+		doc = doc[:500] + "…"
+	}
+	return doc
 }
 
 // importTarget extracts what an import statement points at: the last named

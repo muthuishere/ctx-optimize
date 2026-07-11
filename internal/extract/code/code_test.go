@@ -194,3 +194,46 @@ func TestLangForFile(t *testing.T) {
 		t.Fatal("md is not code")
 	}
 }
+
+// Symbol cards start here: every declaration carries its signature line and
+// the comment block sitting directly above it, so query/card answers never
+// force a file read.
+func TestSignatureAndDoc(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"main.go": "package main\n\n// Greet says hi.\n// Politely.\nfunc Greet(name string) string {\n\treturn name\n}\n",
+		"app.py":  "class Billing:\n    # refunds money\n    def refund(self, amount):\n        return amount\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	batch, err := Extract(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]schema.Node{}
+	for _, n := range batch.Nodes {
+		byID[n.ID] = n
+	}
+	g := byID["main.go::Greet"]
+	if g.Metadata["signature"] != "func Greet(name string) string" {
+		t.Errorf("go signature = %q", g.Metadata["signature"])
+	}
+	if g.Metadata["doc"] != "// Greet says hi.\n// Politely." {
+		t.Errorf("go doc = %q", g.Metadata["doc"])
+	}
+	r := byID["app.py::Billing.refund"]
+	if r.Metadata["signature"] != "def refund(self, amount):" {
+		t.Errorf("py signature = %q", r.Metadata["signature"])
+	}
+	if r.Metadata["doc"] != "# refunds money" {
+		t.Errorf("py doc = %q", r.Metadata["doc"])
+	}
+	// A blank line breaks the doc chain — the package clause's distance from
+	// Billing means the class gets no doc.
+	if d := byID["app.py::Billing"].Metadata["doc"]; d != "" {
+		t.Errorf("class doc should be empty, got %q", d)
+	}
+}

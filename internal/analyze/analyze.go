@@ -278,6 +278,109 @@ func RenderExplanation(ex *Explanation) string {
 	return sb.String()
 }
 
+// ---- card (the symbol-card primitive) ----
+
+// CardData is everything an agent needs to reason about one symbol WITHOUT
+// opening its file: signature, doc, location, containment, call graph. The
+// spike campaign measured pointer-chase reads (find node → open file for the
+// signature) as the #1 context waste; this is the fix.
+type CardData struct {
+	Node      schema.Node         `json:"node"`
+	Signature string              `json:"signature,omitempty"`
+	Doc       string              `json:"doc,omitempty"`
+	Parent    string              `json:"parent,omitempty"`    // what contains it
+	Contains  []string            `json:"contains,omitempty"`  // what it contains
+	Calls     []string            `json:"calls,omitempty"`     // outgoing calls
+	CalledBy  []string            `json:"called_by,omitempty"` // incoming calls
+	Imports   []string            `json:"imports,omitempty"`   // file nodes only
+	Other     map[string][]string `json:"other,omitempty"`     // any remaining relations, "rel →|←" keyed
+}
+
+func Card(nodes []schema.Node, edges []schema.Edge, name string) (*CardData, error) {
+	n, err := Resolve(nodes, name)
+	if err != nil {
+		return nil, err
+	}
+	c := &CardData{Node: *n, Signature: n.Metadata["signature"], Doc: n.Metadata["doc"]}
+	other := map[string][]string{}
+	for _, e := range edges {
+		switch {
+		case e.Source == n.ID && e.Relation == "contains":
+			c.Contains = append(c.Contains, e.Target)
+		case e.Target == n.ID && e.Relation == "contains":
+			c.Parent = e.Source
+		case e.Source == n.ID && e.Relation == "calls":
+			c.Calls = append(c.Calls, e.Target)
+		case e.Target == n.ID && e.Relation == "calls":
+			c.CalledBy = append(c.CalledBy, e.Source)
+		case e.Source == n.ID && e.Relation == "imports":
+			c.Imports = append(c.Imports, e.Target)
+		case e.Source == n.ID:
+			other[e.Relation+" →"] = append(other[e.Relation+" →"], e.Target)
+		case e.Target == n.ID:
+			other[e.Relation+" ←"] = append(other[e.Relation+" ←"], e.Source)
+		}
+	}
+	for _, s := range [][]string{c.Contains, c.Calls, c.CalledBy, c.Imports} {
+		sort.Strings(s)
+	}
+	for k := range other {
+		sort.Strings(other[k])
+	}
+	if len(other) > 0 {
+		c.Other = other
+	}
+	return c, nil
+}
+
+// RenderCard is the human/agent-readable form; --json marshals CardData.
+func RenderCard(c *CardData) string {
+	var sb strings.Builder
+	n := c.Node
+	fmt.Fprintf(&sb, "%s  [%s]  %s", n.Label, n.Kind, n.Source)
+	if n.Location != "" {
+		fmt.Fprintf(&sb, " %s", n.Location)
+	}
+	sb.WriteString("\n")
+	if c.Signature != "" {
+		fmt.Fprintf(&sb, "  sig: %s\n", c.Signature)
+	}
+	if c.Doc != "" {
+		for _, line := range strings.Split(c.Doc, "\n") {
+			fmt.Fprintf(&sb, "  doc: %s\n", line)
+		}
+	}
+	if c.Parent != "" {
+		fmt.Fprintf(&sb, "  in: %s\n", c.Parent)
+	}
+	writeList := func(title string, ids []string) {
+		if len(ids) == 0 {
+			return
+		}
+		fmt.Fprintf(&sb, "  %s (%d):\n", title, len(ids))
+		for i, id := range ids {
+			if i == 15 {
+				fmt.Fprintf(&sb, "    … %d more\n", len(ids)-15)
+				break
+			}
+			fmt.Fprintf(&sb, "    %s\n", id)
+		}
+	}
+	writeList("contains", c.Contains)
+	writeList("calls", c.Calls)
+	writeList("called by", c.CalledBy)
+	writeList("imports", c.Imports)
+	rels := make([]string, 0, len(c.Other))
+	for r := range c.Other {
+		rels = append(rels, r)
+	}
+	sort.Strings(rels)
+	for _, r := range rels {
+		writeList(r, c.Other[r])
+	}
+	return sb.String()
+}
+
 // ---- hubs (god nodes) ----
 
 type Hub struct {

@@ -66,6 +66,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdPath(rest, stdout)
 	case "explain":
 		err = cmdExplain(rest, stdout)
+	case "card":
+		err = cmdCard(rest, stdout)
 	case "affected":
 		err = cmdAffected(rest, stdout)
 	case "hubs":
@@ -603,6 +605,26 @@ func cmdExplain(args []string, stdout io.Writer) error {
 		return emit(stdout, ex)
 	}
 	fmt.Fprint(stdout, analyze.RenderExplanation(ex))
+	return nil
+}
+
+func cmdCard(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	if len(f.args) != 1 {
+		return fmt.Errorf(`usage: ctx-optimize card "X"`)
+	}
+	nodes, edges, err := loadGraph(f)
+	if err != nil {
+		return err
+	}
+	c, err := analyze.Card(nodes, edges, f.args[0])
+	if err != nil {
+		return err
+	}
+	if f.bools["json"] {
+		return emit(stdout, c)
+	}
+	fmt.Fprint(stdout, analyze.RenderCard(c))
 	return nil
 }
 
@@ -1169,6 +1191,8 @@ commands:
   query|ask "<question>"      answer from the local store  [--budget N] [--json]
   path "A" "B"                shortest path between two nodes  [--json]
   explain "X"                 plain-language node + neighborhood  [--json]
+  card "X"                    symbol card: signature, doc, location, callers,
+                              callees — cite without opening the file  [--json]
   affected "X"                reverse impact: what breaks if X changes
                               [--depth N] [--relation R] [--json]
   hubs                        most-connected nodes (god nodes)  [--top N] [--json]

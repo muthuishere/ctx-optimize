@@ -120,3 +120,27 @@ func TestHubs(t *testing.T) {
 		t.Fatalf("top cap: %+v", got)
 	}
 }
+
+func TestCard(t *testing.T) {
+	nodes, edges := fixture()
+	nodes[1].Metadata = map[string]string{"signature": "class RefundService:", "doc": "# refunds money"}
+	c, err := Card(nodes, edges, "RefundService")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Signature != "class RefundService:" || c.Doc != "# refunds money" {
+		t.Fatalf("card metadata: %+v", c)
+	}
+	if len(c.CalledBy) != 2 || c.CalledBy[0] != "api" || c.CalledBy[1] != "worker" {
+		t.Fatalf("called_by: %v", c.CalledBy)
+	}
+	if got := c.Other["references →"]; len(got) != 1 || got[0] != "db" {
+		t.Fatalf("other relations: %v", c.Other)
+	}
+	text := RenderCard(c)
+	for _, want := range []string{"sig: class RefundService:", "doc: # refunds money", "called by (2):", "references → (1):"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("render missing %q:\n%s", want, text)
+		}
+	}
+}

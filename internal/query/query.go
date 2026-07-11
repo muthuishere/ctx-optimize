@@ -180,6 +180,9 @@ func Render(r *Result) string {
 	var sb strings.Builder
 	for _, h := range r.Hits {
 		fmt.Fprintf(&sb, "%s  [%s]  %s %s\n", h.Node.Label, h.Node.Kind, h.Node.Source, h.Node.Location)
+		if sig := h.Node.Metadata["signature"]; sig != "" {
+			fmt.Fprintf(&sb, "    sig: %s\n", sig)
+		}
 		for _, nb := range h.Neighbors {
 			arrow := "→"
 			if nb.Dir == "in" {
@@ -224,7 +227,7 @@ func dice(a, b map[string]bool) float64 {
 }
 
 func estimateTokens(n schema.Node, neighbors []Neighbor) int {
-	c := len(n.ID) + len(n.Label) + len(n.Source) + len(n.Location) + 16
+	c := len(n.ID) + len(n.Label) + len(n.Source) + len(n.Location) + len(n.Metadata["signature"]) + 16
 	for _, nb := range neighbors {
 		c += len(nb.ID) + len(nb.Relation) + 8
 	}

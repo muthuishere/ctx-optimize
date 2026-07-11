@@ -33,6 +33,7 @@ one.** The binary is deterministic; you supply all semantics.
 |---|---|
 | Asking anything about the codebase, and a store exists | `ctx-optimize query "<question>" --json` — BEFORE any Grep/Read |
 | Asking "what is X / explain X" | `ctx-optimize explain "X" --json` |
+| About to open a file just to see a symbol's signature/doc/callers | `ctx-optimize card "X" --json` — the card IS the read |
 | Asking "what breaks if X changes / blast radius / impact" | `ctx-optimize affected "X" --depth 2 --json` |
 | Asking "how are A and B connected / trace A to B" | `ctx-optimize path "A" "B" --json` |
 | Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |
@@ -50,8 +51,9 @@ one.** The binary is deterministic; you supply all semantics.
 
 Fast path, imperative: **if `ctx-optimize status --json` shows nodes > 0 and
 the request is a question — query. Do not rebuild. Do not grep. Do not read
-files speculatively.** Only open a file when a hit's `location` demands
-verbatim code, and then read only that range.
+files speculatively.** Need a symbol's signature, doc, or callers? `card` has it —
+only open a file when a hit's `location` demands verbatim code, and then
+read only that range.
 
 ## Answering discipline (cite or abstain)
 

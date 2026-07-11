@@ -413,3 +413,53 @@ func TestExportAllOut(t *testing.T) {
 		}
 	}
 }
+
+// `card X` answers with signature + doc + call graph — no file read needed.
+func TestCardVerb(t *testing.T) {
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+	repo := t.TempDir()
+	src := "package main\n\n// Greet says hi.\nfunc Greet(name string) string {\n\treturn name\n}\n\nfunc main() {\n\tGreet(\"x\")\n}\n"
+	os.WriteFile(filepath.Join(repo, "main.go"), []byte(src), 0o644)
+
+	var out, errb bytes.Buffer
+	if code := Run([]string{"add", "--path", repo}, &out, &errb); code != 0 {
+		t.Fatalf("add: %s", errb.String())
+	}
+
+	out.Reset()
+	if code := Run([]string{"card", "Greet", "--path", repo}, &out, &errb); code != 0 {
+		t.Fatalf("card: %s", errb.String())
+	}
+	text := out.String()
+	for _, want := range []string{"sig: func Greet(name string) string", "doc: // Greet says hi.", "called by (1):", "main.go::main"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("card missing %q:\n%s", want, text)
+		}
+	}
+
+	// --json returns the full CardData object.
+	out.Reset()
+	if code := Run([]string{"card", "Greet", "--path", repo, "--json"}, &out, &errb); code != 0 {
+		t.Fatalf("card --json: %s", errb.String())
+	}
+	var c struct {
+		Signature string   `json:"signature"`
+		CalledBy  []string `json:"called_by"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &c); err != nil {
+		t.Fatalf("card --json not parseable: %v\n%s", err, out.String())
+	}
+	if c.Signature == "" || len(c.CalledBy) != 1 {
+		t.Fatalf("card json: %+v", c)
+	}
+
+	// Query hits surface the signature inline (human render).
+	out.Reset()
+	if code := Run([]string{"query", "greet", "--path", repo}, &out, &errb); code != 0 {
+		t.Fatalf("query: %s", errb.String())
+	}
+	if !strings.Contains(out.String(), "sig: func Greet") {
+		t.Fatalf("query render missing signature:\n%s", out.String())
+	}
+}
