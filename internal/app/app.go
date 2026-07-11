@@ -32,6 +32,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/skills"
 	"github.com/muthuishere/ctx-optimize/internal/store"
 	"github.com/muthuishere/ctx-optimize/internal/version"
+	"github.com/muthuishere/ctx-optimize/internal/wiki"
 )
 
 // Run dispatches args (without argv[0]) and returns the process exit code.
@@ -62,6 +63,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdAffected(rest, stdout)
 	case "hubs":
 		err = cmdHubs(rest, stdout)
+	case "wiki":
+		err = cmdWiki(rest, stdout)
 	case "merge":
 		err = cmdMerge(rest, stdout)
 	case "export":
@@ -254,10 +257,15 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 		if err != nil {
 			return err
 		}
+		pages, err := wiki.Generate(s) // wiki-by-default: every add refreshes it
+		if err != nil {
+			return err
+		}
 		if _, err := s.UpdateManifest(); err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "added %d nodes, %d edges → %s\n", n, e, s.Dir)
+		fmt.Fprintf(stdout, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
 		return nil
 	}
 
@@ -328,6 +336,10 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 		totalN += n
 		totalPruned += pruned
 	}
+	pages, err := wiki.Generate(s) // wiki-by-default: every add refreshes it
+	if err != nil {
+		return err
+	}
 	if _, err := s.UpdateManifest(); err != nil {
 		return err
 	}
@@ -336,6 +348,7 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 		fmt.Fprintf(stdout, ", pruned %d stale", totalPruned)
 	}
 	fmt.Fprintf(stdout, " → %s\n", s.Dir)
+	fmt.Fprintf(stdout, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
 	return nil
 }
 
@@ -554,6 +567,25 @@ func cmdHubs(args []string, stdout io.Writer) error {
 	for _, h := range hubs {
 		fmt.Fprintf(stdout, "%4d (%d in / %d out)  %s  [%s]  %s\n", h.In+h.Out, h.In, h.Out, h.Node.Label, h.Node.Kind, h.Node.Source)
 	}
+	return nil
+}
+
+// cmdWiki regenerates the deterministic markdown wiki from the graph. Every
+// successful `add` already does this; the verb rebuilds on demand.
+func cmdWiki(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	s, err := openStore(f)
+	if err != nil {
+		return err
+	}
+	pages, err := wiki.Generate(s)
+	if err != nil {
+		return err
+	}
+	if _, err := s.UpdateManifest(); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
 	return nil
 }
 
@@ -945,6 +977,9 @@ commands:
   affected "X"                reverse impact: what breaks if X changes
                               [--depth N] [--relation R] [--json]
   hubs                        most-connected nodes (god nodes)  [--top N] [--json]
+  wiki                        regenerate the markdown wiki in the store's wiki/
+                              dir (deterministic, from nodes+edges only; every
+                              add already regenerates it)
   status                      store facts  [--json]
   merge <module>... --into N  combine module stores into one merged view
   export [--format json|dot]  dump the graph  [--out FILE]

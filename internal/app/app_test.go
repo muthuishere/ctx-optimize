@@ -36,6 +36,13 @@ func TestEndToEnd(t *testing.T) {
 	if !strings.Contains(out, "added") {
 		t.Fatalf("add output: %s", out)
 	}
+	// Wiki-by-default: a successful add regenerates the wiki and says so.
+	if !strings.Contains(out, "wiki: ") {
+		t.Fatalf("add did not report the wiki: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("CTX_OPTIMIZE_STORE"), filepath.Base(repo), "wiki", "index.md")); err != nil {
+		t.Fatalf("add did not regenerate wiki/index.md: %v", err)
+	}
 
 	// The universal door: adapter JSON via file.
 	batch := `{"producer":"pg-schema","nodes":[{"id":"pg://db/refunds","label":"refunds","kind":"table","file_type":"schema","source":"pg://db/refunds"}],"edges":[]}`
