@@ -38,7 +38,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdInit(rest, stdout)
 	case "add":
 		err = cmdAdd(rest, stdout, os.Stdin)
-	case "query":
+	case "query", "ask": // `ask` — same verb graphify users reach for
 		err = cmdQuery(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
@@ -277,14 +277,22 @@ func cmdRemote(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "remote set: %s\n", url)
 		return nil
 	case "push", "pull":
-		cfg, err := s.Config()
-		if err != nil {
-			return err
+		// Ad-hoc URL wins over config — one-off sync to anywhere without
+		// touching the stored remote: `ctx-optimize remote push file:///mnt/x`.
+		target := ""
+		if len(f.args) > 0 {
+			target = f.args[0]
+		} else {
+			cfg, err := s.Config()
+			if err != nil {
+				return err
+			}
+			target = cfg.Remote
 		}
-		if cfg.Remote == "" {
-			return fmt.Errorf("no remote configured — run: ctx-optimize remote init <url>")
+		if target == "" {
+			return fmt.Errorf("no remote — run `ctx-optimize remote init <url>` or pass one: ctx-optimize remote %s <url>", sub)
 		}
-		b, err := remote.Open(cfg.Remote)
+		b, err := remote.Open(target)
 		if err != nil {
 			return err
 		}
@@ -360,10 +368,10 @@ usage: ctx-optimize <command> [flags]
 commands:
   init                        prepare the store for --path (default: cwd)
   add [<path>] [--json -|F]   gather sources; --json is the universal adapter door
-  query "<question>"          answer from the local store  [--budget N] [--json]
+  query|ask "<question>"      answer from the local store  [--budget N] [--json]
   status                      store facts  [--json]
   remote init <url>           configure sync remote (s3://bucket/prefix | file:///dir)
-  remote push | pull          incremental sync with the configured remote  [--json]
+  remote push|pull [url]      incremental sync; ad-hoc url wins over config  [--json]
   install --skills            install the agent skill (~/.claude, +~/.agents with codex)
   uninstall --skills          remove the agent skill
   version                     print version

@@ -68,6 +68,25 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("query missed expected nodes, got %v", ids)
 	}
 
+	// `ask` is an alias for query.
+	out, _ = run(0, "ask", "refund", "--path", repo)
+	if !strings.Contains(out, "refund") && !strings.Contains(out, "Refund") {
+		t.Fatalf("ask output: %s", out)
+	}
+
+	// Ad-hoc remote URL works with NO configured remote.
+	adhoc := t.TempDir()
+	out, _ = run(0, "remote", "push", "file://"+adhoc, "--path", repo)
+	if !strings.Contains(out, "transferred") {
+		t.Fatalf("ad-hoc push output: %s", out)
+	}
+
+	// No remote at all → clear error, exit 1.
+	_, errNoRemote := run(1, "remote", "pull", "--path", repo)
+	if !strings.Contains(errNoRemote, "no remote") {
+		t.Fatalf("expected no-remote error, got: %s", errNoRemote)
+	}
+
 	// Remote: init + push + fresh-machine pull.
 	remoteDir := t.TempDir()
 	run(0, "remote", "init", "file://"+remoteDir, "--path", repo)
