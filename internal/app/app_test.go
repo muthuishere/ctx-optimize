@@ -255,6 +255,81 @@ func TestMergeAndExport(t *testing.T) {
 	}
 }
 
+// The learning loop end-to-end: save-result episodes, then reflect
+// aggregates them into lessons + reflections/LESSONS.md in the store.
+func TestSaveResultAndReflect(t *testing.T) {
+	repo := t.TempDir()
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+
+	run := func(wantCode int, args ...string) (string, string) {
+		t.Helper()
+		var out, errb bytes.Buffer
+		code := Run(args, &out, &errb)
+		if code != wantCode {
+			t.Fatalf("%v: exit %d (want %d): %s", args, code, wantCode, errb.String())
+		}
+		return out.String(), errb.String()
+	}
+
+	// Validation surfaces as exit 1: question required, corrected needs text.
+	_, errOut := run(1, "save-result", "--outcome", "useful", "--path", repo)
+	if !strings.Contains(errOut, "question") {
+		t.Fatalf("missing-question error: %s", errOut)
+	}
+	_, errOut = run(1, "save-result", "--question", "q", "--outcome", "corrected", "--path", repo)
+	if !strings.Contains(errOut, "correction") {
+		t.Fatalf("corrected-without-correction error: %s", errOut)
+	}
+
+	run(0, "save-result", "--question", "where is auth", "--answer", "internal/auth",
+		"--type", "query", "--nodes", "auth.go::login, auth.go::verify", "--outcome", "useful", "--path", repo)
+	run(0, "save-result", "--question", "how do refunds post", "--nodes", "auth.go::login",
+		"--outcome", "useful", "--path", repo)
+	run(0, "save-result", "--question", "is billing in auth", "--nodes", "billing.md::intro",
+		"--outcome", "corrected", "--correction", "billing lives in internal/pay", "--path", repo)
+
+	out, _ := run(0, "reflect", "--min-corroboration", "2", "--path", repo, "--json")
+	var l struct {
+		PreferredNodes []struct {
+			Node   string `json:"node"`
+			Useful int    `json:"useful"`
+		} `json:"preferred_nodes"`
+		DeadEnds    []struct{ Node string } `json:"dead_ends"`
+		Corrections []struct {
+			Correction string `json:"correction"`
+		} `json:"corrections"`
+	}
+	if err := json.Unmarshal([]byte(out), &l); err != nil {
+		t.Fatalf("reflect --json not parseable: %v\n%s", err, out)
+	}
+	if len(l.PreferredNodes) != 1 || l.PreferredNodes[0].Node != "auth.go::login" || l.PreferredNodes[0].Useful != 2 {
+		t.Fatalf("preferred: %+v", l.PreferredNodes)
+	}
+	if len(l.DeadEnds) != 1 || l.DeadEnds[0].Node != "billing.md::intro" {
+		t.Fatalf("dead ends: %+v", l.DeadEnds)
+	}
+	if len(l.Corrections) != 1 || l.Corrections[0].Correction != "billing lives in internal/pay" {
+		t.Fatalf("corrections: %+v", l.Corrections)
+	}
+	lessons, err := os.ReadFile(filepath.Join(storeRoot, filepath.Base(mustAbs(t, repo)), "reflections", "LESSONS.md"))
+	if err != nil {
+		t.Fatalf("LESSONS.md not written: %v", err)
+	}
+	if !strings.Contains(string(lessons), "billing lives in internal/pay") {
+		t.Fatalf("LESSONS.md missing correction:\n%s", lessons)
+	}
+}
+
+func mustAbs(t *testing.T, p string) string {
+	t.Helper()
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
+}
+
 func TestUnknownCommandExits2(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := Run([]string{"bogus"}, &out, &errb); code != 2 {
