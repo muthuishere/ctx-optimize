@@ -45,6 +45,34 @@ symbol cards vs grep on the kernel testbed. S1c's 39% was measured on LLM-deep
 pages; the deterministic variant's number is unmeasured. It costs nothing to
 build (no tokens), so measure before architecture lock.
 
+## FINAL INTEGRATION CONTRACT (2026-07-11, owner) — three layers, "we are not those people"
+
+1. **ctx-optimize binary (Go):** deterministic code engine ONLY — graph, symbol
+   cards, zero-LLM wiki, exact edges, store/sync. No LLM calls, no doc-RAG, no
+   embeddings, no backends list, no API keys. Ever.
+2. **Agent skill = the product surface + orchestration layer.** Drives the binary
+   for code. For DOCUMENTS drives **citenexus's Python API directly** (chunking,
+   grounding, wiki; embeddings — if any — live inside citenexus's world, not
+   ours; nothing embedded in our CLI). Semantic work is done by the HOST agent
+   (Claude Code / Codex / Devin) already running — never an API we call.
+3. **citenexus:** grounded document core, consumed at the skill layer only. Per
+   its own session's decision (2026-07-11): wires the distiller into
+   integrate_document (honesty fix), DEFERS deep distillation, and does not
+   double-build — the deep-distill + member_hash cache engine design lives in
+   ctx-optimize; citenexus contributes grounding.
+
+The test: graphify is an LLM-API product with a deterministic feature.
+ctx-optimize is a deterministic product, full stop — intelligence enters only
+through the user's own agent; documents only through citenexus.
+
+**Proof plan ("actual proof everywhere"):** the A/B benchmark protocol ships
+with the repo as a repeatable harness — {Claude Code, Codex, Devin} ×
+{grep-hostile repos (linux block/ testbed + one legacy monolith)} — real
+harness-reported tokens, bare agent vs agent+skill, quality-matched. Claim only
+cells the matrix proves (>50% target; measured floor: graphify's inferior
+pointer-list version already −23% on kernel C). Honest benchmarks are the
+positioning weapon graphify cannot copy.
+
 Living notes for ctx-optimize. **Architecture is under active discussion** — this
 file is where decisions and open questions accumulate. Nothing here is frozen.
 
