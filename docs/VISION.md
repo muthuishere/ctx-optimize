@@ -1,35 +1,49 @@
 # Vision & running design notes
 
-## ARCHITECTURE POSITION (2026-07-11, post-Tier-A) — code-primary Karpathy wiki
+## ARCHITECTURE POSITION (2026-07-11, post-Tier-A, owner-corrected) —
+## deterministic code wiki: graphify's zero-LLM build, Karpathy's FORM, citenexus's discipline
 
-Division of labor vs citenexus (assumes citenexus gets real per-unit distillation
-for DOCUMENTS): **citenexus = the Karpathy wiki for documents; ctx-optimize = the
-Karpathy wiki for CODE.** Shared: the wiki store layout (light index + pages +
-append-only log, folder-first, S3-sync) and the navigate-not-cite discipline.
-Everything code-specific lives here:
+**Owner correction (final):** NO LLM work in the product. Not an LLM-distilled
+wiki. The core principle stands: no DB, no AI for most of everything. The build
+lane is graphify-style — deterministic, seconds-fast, zero tokens (kernel block/
+= 2.1s / 0 tokens). The output takes the Karpathy wiki's FORM (index + pages +
+[[links]], browsable) but is AUTHORED BY CODE. citenexus contributes its
+deterministic machinery: the _deterministic_page concept, the light-index +
+pages + append-only-log store layout, and navigate-not-cite grounding (perfect
+by construction here — every line is extracted, nothing can be hallucinated).
 
-1. **Atom = the symbol card** (S1e): signature + verified file:lines + body head
-   + caller/callee edges. The code analog of citenexus's Evidence Unit. Re-verified
-   against content hashes at answer time — code moves; stale citations are worse
-   than none.
-2. **Page unit = the community/subsystem** (S4), not the file/document — files
-   don't align with meaning in code; clusters do. Incremental via member_hash.
-3. **The distiller is the AGENT (agent-skill-first, S1c-proven: 39%).** The binary
-   never calls an LLM: it computes communities + member_hashes, emits per-community
-   context packs; the skill has the agent write pages; the binary VALIDATES
-   (every claimed file:line must exist and match; invented refs rejected) and
-   stores, cached per member_hash. LLM proposes, deterministic code disposes.
-   This also avoids citenexus's 24k-cap shallow-distill problem: depth = what the
-   agent spends, paid once per member_hash.
-4. **Own what docs can't have:** structural extraction (wasm tree-sitter, S2),
-   exact edges (x/tools VTA batch for Go, persistent-LSP driver for other langs,
-   S3), `affected` impact analysis (graphify's 81%-recall blind spot), seeded-
-   Louvain incremental partition (S4 fix).
-5. **NOT here:** PDF/doc ingest, RAG answering, embeddings — citenexus's proven
-   wedge. Pages may link out to doc-wikis; we don't rebuild that pipeline.
-6. **Terrain + positioning:** grep-hostile/legacy codebases + onboarding; honest
-   agent-baseline benchmarks (graphify's strawman 6.6×/70× cannot survive the
-   comparison).
+Why zero-LLM still reduces tokens (spike-grounded):
+1. **Symbol cards are 100% deterministic** — signature + doc comment + body head
+   + verified file:lines + caller/callee edges. S1e measured cards kill the #1
+   waste (28/28 pointer-chase reads). The biggest measured win needs no model.
+2. **The distillation already exists — humans wrote it.** Doc comments, READMEs,
+   specs, package docs are pre-distilled prose. A page = per-community harvested
+   doc-comments + god-node signatures + edge summaries + [[links]] to neighbor
+   communities. Organizing existing prose is extraction, not generation.
+3. **Exact edges are deterministic** (S3: x/tools VTA batch for Go, persistent-
+   LSP driver per language) → `affected` impact analysis, graphify's 81%-recall
+   blind spot, grep's impossibility.
+4. **Incremental is trivial when deterministic:** member_hash gates regeneration,
+   and regeneration is nearly free (no LLM cache economics needed). Seeded-Louvain
+   (S4 fix) pins partition stability.
+
+Structure (unchanged from spikes): atom = symbol card, re-verified against
+content hashes at answer time (code moves; stale citations worse than none);
+page unit = community/subsystem (S4), not file.
+
+**Optional, later, clearly labeled, never the core:** an agent/LLM enrichment
+pass over the deterministic wiki (the S1c-style deep pages, 39% measured) —
+off by default, cached per member_hash, validated by the binary (every claimed
+file:line must exist). LLM proposes, deterministic code disposes.
+
+NOT here: PDF/doc ingest, RAG answering, embeddings — citenexus's proven wedge.
+Terrain + positioning: grep-hostile/legacy codebases + onboarding; honest
+agent-baseline benchmarks (graphify's strawman 6.6×/70× cannot survive them).
+
+**Open measurement (next spike):** the deterministic composite — zero-LLM wiki +
+symbol cards vs grep on the kernel testbed. S1c's 39% was measured on LLM-deep
+pages; the deterministic variant's number is unmeasured. It costs nothing to
+build (no tokens), so measure before architecture lock.
 
 Living notes for ctx-optimize. **Architecture is under active discussion** — this
 file is where decisions and open questions accumulate. Nothing here is frozen.
