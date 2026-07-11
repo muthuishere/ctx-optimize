@@ -51,10 +51,26 @@ build (no tokens), so measure before architecture lock.
    cards, zero-LLM wiki, exact edges, store/sync. No LLM calls, no doc-RAG, no
    embeddings, no backends list, no API keys. Ever.
 2. **Agent skill = the product surface + orchestration layer.** Drives the binary
-   for code. For DOCUMENTS drives **citenexus's Python API directly** (chunking,
-   grounding, wiki; embeddings — if any — live inside citenexus's world, not
-   ours; nothing embedded in our CLI). Semantic work is done by the HOST agent
-   (Claude Code / Codex / Devin) already running — never an API we call.
+   for code. For DOCUMENTS drives **citenexus's Python API — its DETERMINISTIC
+   lane only, no embeddings anywhere** (verified 2026-07-11 in both codebases):
+   - citenexus signals are independent toggles (`Signal.embedding/lexical/
+     structure`, `config/signals.py`; ingest embeds only `if Signal.embedding
+     in self._signals`, `ingest/pipeline.py:193`) → configure **embedding OFF**.
+   - Retrieval = `LexicalRetriever` / `Bm25TextSearch` — BM25-lite over stored
+     text, no vectors (`retrieve/lexical.py`).
+   - Pipeline: extract (pdf/docx/html → blocks w/ bbox) → deterministic chunker
+     (450/60, no tokenizer dep) → EU store → BM25 lexical → deterministic
+     token-overlap faithfulness gate → verbatim cite-or-abstain → deterministic
+     wiki pages (light index + pages + log). Zero LLM, zero embeddings, zero
+     network.
+   **Contrast (why citenexus and not graphify's doc lane):** graphify's
+   docs/papers/images/videos REQUIRE a cloud LLM backend (`llm.py` BACKENDS:
+   claude/openai/gemini/…) — build-time API calls, non-deterministic, plus LLM
+   community naming; its only non-LLM doc path is a regex markdown extractor.
+   For documents graphify says "call a cloud LLM"; citenexus says "here is a
+   deterministic pipeline with verbatim citations." We consume the latter.
+   Semantic work — if ever wanted — is done by the HOST agent (Claude Code /
+   Codex / Devin) already running; never an API we call, never embeddings.
 3. **citenexus:** grounded document core, consumed at the skill layer only. Per
    its own session's decision (2026-07-11): wires the distiller into
    integrate_document (honesty fix), DEFERS deep distillation, and does not
