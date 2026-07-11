@@ -130,7 +130,23 @@ loses to grep.
 - **Method:** drive `gopls` call-hierarchy + parse `scip-go` on the same repo as
   the owner's spike; compare edge precision vs tree-sitter name-resolution.
 - **Pass:** ≥90% precision on sampled edges; runs headless.
-- **Result:** _pending_
+- **Result (2026-07-11): ✅ PASS — exact edges are cheap; and the assumption
+  flipped.** Verified ALL 65 of graphify's INFERRED call edges vs type-checked
+  ground truth: **0% error** (precision fine) but **recall only 81%** — the 27
+  missed pairs are interface/method dispatch, recursion, test→method: exactly
+  the edges `affected` needs. graphify's weakness = blind spot, not
+  hallucination.
+  Exact routes measured: **x/tools go/callgraph VTA** (in-process library,
+  whole module ~1s / ~1GB, per-call-site lines, resolves interface dispatch;
+  spike tool ~150 lines) — powers batch graph build for Go. **gopls persistent
+  LSP session** 2–37ms warm/query; same 3 LSP requests generalize to
+  rust-analyzer / clangd / tsserver / jdtls / pyright — the cross-language
+  driver. gopls CLI per-call too slow (~1.2s, reloads workspace).
+  **House rules from measured gotchas:** pass build tags (309→623 edges with
+  `-tags=citenexus_ffi`), `Tests: true`, fail LOUDLY on non-compiling packages
+  (they drop out silently).
+  **Architecture:** Go fast-path = x/tools batch; other langs = thin LSP
+  call-hierarchy driver + language server; both feed symbol cards + `affected`.
 
 ### S4 · Community stability (incremental design lives/dies here)
 - **Question:** does a one-file edit repartition the whole graph?
