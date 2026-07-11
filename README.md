@@ -162,6 +162,17 @@ are user-pluggable); here languages are drop-in packs, adapters are dropped
 scripts, and the batch door takes any producer. Vision: `docs/VISION.md`.
 Standing critique: `docs/CRITIQUE.md`.
 
+## Lineage
+
+With all due respect to graphify — a project we learned a great deal from —
+there is a direct line between it and this tool: graphify's central graph
+store and its pluggable remote push/pull hooks (the one part of graphify an
+end user can extend without forking) were contributed upstream by this
+project's author (graphify #1751 / #1752; git-verifiable). ctx-optimize is
+that same idea carried through the whole product: the store, the languages,
+the adapters, and the sync are all open seams by design — nothing here
+requires a fork to extend.
+
 ## License
 
 MIT © 2026 Muthukumaran Navaneethakrishnan
