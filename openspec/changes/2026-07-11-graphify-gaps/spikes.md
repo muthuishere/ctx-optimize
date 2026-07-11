@@ -35,7 +35,15 @@ external is an adapter.
 - **Method:** repeat S1 on a genuinely large repo (10k+ files); and separately
   test Q&A against a distilled wiki (pages pre-built) vs grep.
 - **Pass:** same >50% bar, on either the scale axis or the wiki axis.
-- **Result:** _pending_
+- **Build-scale data (kubernetes, 2026-07-11):** 13,134 Go files (17.5k w/
+  vendor; 19.6k ingested) → **286,616 nodes / 622,685 edges / 15,076
+  communities** in **6m46s**, peak **2.8 GB RAM**, zero LLM tokens. Edge
+  provenance 83% EXTRACTED / 17% INFERRED (avg conf 0.8).
+  **Design lessons:** `graph.json` = **360 MB single blob** — validates our
+  columnar/sharded-manifest storage requirement; **15k communities = 15k wiki
+  pages** — the wiki needs hierarchy/pruning (god-communities, size thresholds)
+  at scale; HTML viz refuses >5k nodes (their own tool can't render its output).
+- **A/B result:** _pending (agents running)_
 
 ### S2 · Pure-Go extraction (single-binary promise)
 - **Question:** can we extract without cgo?
