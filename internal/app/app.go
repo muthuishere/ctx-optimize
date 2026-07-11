@@ -6,14 +6,18 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
+	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/query"
 	"github.com/muthuishere/ctx-optimize/internal/remote"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
@@ -93,15 +97,20 @@ func parseFlags(args []string) *flags {
 	return f
 }
 
-// openStore resolves --path (default cwd) + --store into the module's store.
+// resolvePath resolves --path (default cwd) — the module directory that both
+// the store key and the repo-level ctx-optimize.json hang off.
+func resolvePath(f *flags) (string, error) {
+	if p := f.strs["path"]; p != "" {
+		return p, nil
+	}
+	return os.Getwd()
+}
+
+// openStore resolves --path + --store into the module's store.
 func openStore(f *flags) (*store.Store, error) {
-	path := f.strs["path"]
-	if path == "" {
-		var err error
-		path, err = os.Getwd()
-		if err != nil {
-			return nil, err
-		}
+	path, err := resolvePath(f)
+	if err != nil {
+		return nil, err
 	}
 	root, err := store.Root(f.strs["store"])
 	if err != nil {
@@ -112,6 +121,30 @@ func openStore(f *flags) (*store.Store, error) {
 		return nil, err
 	}
 	return store.Open(root, key)
+}
+
+// resolveRemote picks the sync target: ad-hoc URL > repo ctx-optimize.json >
+// store config. The repo file is the committed source of truth (clone → pull
+// just works); the store config remains a per-machine fallback.
+func resolveRemote(adhoc, repoPath string, s *store.Store) (url, from string, err error) {
+	if adhoc != "" {
+		return adhoc, "argument", nil
+	}
+	pc, err := project.Load(repoPath)
+	if err != nil {
+		return "", "", err
+	}
+	if pc.Remote != "" {
+		return pc.Remote, project.FileName, nil
+	}
+	sc, err := s.Config()
+	if err != nil {
+		return "", "", err
+	}
+	if sc.Remote != "" {
+		return sc.Remote, "store config", nil
+	}
+	return "", "", nil
 }
 
 // ---- commands ----
@@ -170,6 +203,23 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 			return err
 		}
 		batches = append(batches, b)
+
+		// Declared adapters from the repo's ctx-optimize.json: run each
+		// command, treat stdout as a batch through the same fail-closed door.
+		// This is `add` = refresh the world — one command re-gathers all
+		// declared sources.
+		pc, err := project.Load(target)
+		if err != nil {
+			return err
+		}
+		for _, a := range pc.Adapters {
+			b, err := runAdapter(target, a)
+			if err != nil {
+				return fmt.Errorf("adapter %s: %w", a.Name, err)
+			}
+			batches = append(batches, b)
+			fmt.Fprintf(stdout, "adapter %s: %d nodes, %d edges\n", a.Name, len(b.Nodes), len(b.Edges))
+		}
 	}
 
 	totalN, totalE := 0, 0
@@ -186,6 +236,33 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	}
 	fmt.Fprintf(stdout, "added %d nodes, %d edges → %s\n", totalN, totalE, s.Dir)
 	return nil
+}
+
+// runAdapter executes a declared adapter command (cwd = the repo) and parses
+// its stdout as a schema.Batch. The command is user-committed config — same
+// trust model as npm scripts or a Taskfile.
+func runAdapter(repo string, a project.Adapter) (*schema.Batch, error) {
+	if a.Name == "" || a.Run == "" {
+		return nil, fmt.Errorf("needs both name and run")
+	}
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", a.Run)
+	} else {
+		cmd = exec.Command("sh", "-c", a.Run)
+	}
+	cmd.Dir = repo
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("%w\n%s", err, strings.TrimSpace(errb.String()))
+	}
+	var b schema.Batch
+	if err := json.Unmarshal(out.Bytes(), &b); err != nil {
+		return nil, fmt.Errorf("stdout is not a batch: %w", err)
+	}
+	return &b, nil
 }
 
 func cmdQuery(args []string, stdout io.Writer) error {
@@ -233,17 +310,26 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := s.Config()
+	repoPath, err := resolvePath(f)
+	if err != nil {
+		return err
+	}
+	remoteURL, remoteFrom, err := resolveRemote("", repoPath, s)
 	if err != nil {
 		return err
 	}
 	st := map[string]any{
-		"store": s.Dir, "nodes": len(nodes), "edges": len(edges), "remote": cfg.Remote,
+		"store": s.Dir, "nodes": len(nodes), "edges": len(edges),
+		"remote": remoteURL, "remote_from": remoteFrom,
 	}
 	if f.bools["json"] {
 		return emit(stdout, st)
 	}
-	fmt.Fprintf(stdout, "store:  %s\nnodes:  %d\nedges:  %d\nremote: %s\n", s.Dir, len(nodes), len(edges), orNone(cfg.Remote))
+	fmt.Fprintf(stdout, "store:  %s\nnodes:  %d\nedges:  %d\nremote: %s", s.Dir, len(nodes), len(edges), orNone(remoteURL))
+	if remoteFrom != "" {
+		fmt.Fprintf(stdout, "  (from %s)", remoteFrom)
+	}
+	fmt.Fprintln(stdout)
 	return nil
 }
 
@@ -257,6 +343,10 @@ func cmdRemote(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	repoPath, err := resolvePath(f)
+	if err != nil {
+		return err
+	}
 	switch sub {
 	case "init":
 		if len(f.args) == 0 {
@@ -266,31 +356,43 @@ func cmdRemote(args []string, stdout io.Writer) error {
 		if _, err := remote.Open(url); err != nil { // validate before persisting
 			return err
 		}
-		cfg, err := s.Config()
-		if err != nil {
-			return err
-		}
-		cfg.Remote = url
-		if err := s.SaveConfig(cfg); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "remote set: %s\n", url)
-		return nil
-	case "push", "pull":
-		// Ad-hoc URL wins over config — one-off sync to anywhere without
-		// touching the stored remote: `ctx-optimize remote push file:///mnt/x`.
-		target := ""
-		if len(f.args) > 0 {
-			target = f.args[0]
-		} else {
+		// The remote belongs to the repo, not the machine: write the
+		// committable ctx-optimize.json so teammates clone → pull, done.
+		// --local keeps it out of the repo (store config only).
+		if f.bools["local"] {
 			cfg, err := s.Config()
 			if err != nil {
 				return err
 			}
-			target = cfg.Remote
+			cfg.Remote = url
+			if err := s.SaveConfig(cfg); err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "remote set (this machine only): %s\n", url)
+			return nil
+		}
+		pc, err := project.Load(repoPath)
+		if err != nil {
+			return err
+		}
+		pc.Remote = url
+		if err := project.Save(repoPath, pc); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "remote set: %s → %s (commit it — teammates just pull)\n", url, project.FileName)
+		return nil
+	case "push", "pull":
+		// Resolution: ad-hoc URL > repo ctx-optimize.json > store config.
+		adhoc := ""
+		if len(f.args) > 0 {
+			adhoc = f.args[0]
+		}
+		target, _, err := resolveRemote(adhoc, repoPath, s)
+		if err != nil {
+			return err
 		}
 		if target == "" {
-			return fmt.Errorf("no remote — run `ctx-optimize remote init <url>` or pass one: ctx-optimize remote %s <url>", sub)
+			return fmt.Errorf("no remote — run `ctx-optimize remote init <url>` (writes %s) or pass one: ctx-optimize remote %s <url>", project.FileName, sub)
 		}
 		b, err := remote.Open(target)
 		if err != nil {
@@ -367,17 +469,24 @@ usage: ctx-optimize <command> [flags]
 
 commands:
   init                        prepare the store for --path (default: cwd)
-  add [<path>] [--json -|F]   gather sources; --json is the universal adapter door
+  add [<path>] [--json -|F]   gather built-ins + adapters from ctx-optimize.json;
+                              --json is the universal adapter door
   query|ask "<question>"      answer from the local store  [--budget N] [--json]
   status                      store facts  [--json]
-  remote init <url>           configure sync remote (s3://bucket/prefix | file:///dir)
-  remote push|pull [url]      incremental sync; ad-hoc url wins over config  [--json]
+  remote init <url> [--local] write remote to the repo's ctx-optimize.json
+                              (committable; --local = this machine's store only)
+  remote push|pull [url]      incremental sync; url > ctx-optimize.json > store config
   install --skills            install the agent skill (~/.claude, +~/.agents with codex)
   uninstall --skills          remove the agent skill
   version                     print version
 
 flags:  --path DIR   module the store is keyed by (default: cwd)
         --store DIR  store root (default: $CTX_OPTIMIZE_STORE or ~/.ctx-optimize/store)
+
+ctx-optimize.json (in the repo, commit it):
+  {"remote": "s3://bucket/prefix",
+   "adapters": [{"name": "kafka", "run": "node hooks/kafka.js"}]}
+adapter commands print batch JSON to stdout; add runs them all.
 
 The binary is deterministic: no LLM, no DB, no network except your remote.
 `)

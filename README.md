@@ -50,19 +50,41 @@ ctx-optimize query "where is the refund flow" --json
 ./my-postgres-adapter | ctx-optimize add --json -
 
 # share the store: sync-only remotes (S3-compatible or any folder)
-ctx-optimize remote init s3://team-bucket/ctx/myrepo
+ctx-optimize remote init s3://team-bucket/ctx/myrepo   # writes ctx-optimize.json — commit it
 ctx-optimize remote push          # incremental — only changed artifacts move
-ctx-optimize remote pull          # teammate pulls, queries locally
+ctx-optimize remote pull          # a teammate who cloned the repo: this is ALL they run
+
+# one-off sync anywhere, no config
+ctx-optimize remote push file:///mnt/backup
 
 ctx-optimize status --json
 ```
 
-- The store is **plain files** (ndjson/json/md) — diffable, portable; your repo
-  is never written to.
+- The store is **plain files** (ndjson/json/md) — diffable, portable. The only
+  file in your repo is `ctx-optimize.json` (committable config).
 - **Remotes are for sync only.** Queries always run on the local folder.
+  Resolution: explicit URL > repo `ctx-optimize.json` > per-machine store
+  config (`remote init --local`).
 - S3 credentials come from the standard env vars at call time
   (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`,
   `AWS_ENDPOINT_URL` for R2/Hetzner/MinIO) — never stored.
+
+## ctx-optimize.json — config that travels with the repo
+
+```json
+{
+  "remote": "s3://team-bucket/ctx/myrepo",
+  "adapters": [
+    {"name": "kafka-topics", "run": "node hooks/kafka.js"},
+    {"name": "pg-schema", "run": "python3 hooks/pg_schema.py"}
+  ]
+}
+```
+
+Commit it. `ctx-optimize add` then runs the built-in extractors **and** every
+declared adapter (each command prints batch JSON to stdout; the door validates
+fail-closed). One command refreshes the whole world; a fresh clone needs zero
+setup to `pull`.
 
 ## Adapters — the open door
 
@@ -70,9 +92,9 @@ Everything external is an adapter emitting one JSON schema into
 `ctx-optimize add --json -`: nodes (`id`, `label`, `kind`, `file_type`,
 `source`, `location`) and edges (`source`, `target`, `relation`,
 `confidence` ∈ `EXTRACTED|INFERRED|AMBIGUOUS`). The door validates strictly and
-tags provenance per producer. Adapters live in the store's `hooks/` dir and
-travel with push/pull. Your agent can write a new adapter on demand — point it
-at any system with the schema and it gathers it.
+tags provenance per producer. Your agent can write a new adapter on demand —
+point it at any system with the schema and it gathers it. Make it permanent by
+saving the script under `hooks/` and declaring it in `ctx-optimize.json`.
 
 ## Design
 

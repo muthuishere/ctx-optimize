@@ -26,26 +26,49 @@ top.** Never call a model API on the CLI's behalf — if semantic work is needed
 ## Store model
 
 - Central store: `~/.ctx-optimize/store/<module-key>/` (override: `--store` or
-  `$CTX_OPTIMIZE_STORE`). The repo itself is NEVER written to — git stays clean.
+  `$CTX_OPTIMIZE_STORE`). The ONLY file that lives in the repo is
+  `ctx-optimize.json` (committable config — remote URL + declared adapters).
 - Everything is plain files (ndjson/json/md) — diffable, syncable.
 - Remotes are for **sync only** (S3 or a shared folder); queries always run on
-  the local store. Share by pushing, teammate pulls.
+  the local store. Share by pushing; a teammate who clones the repo gets the
+  remote from `ctx-optimize.json` and just runs `remote pull` — no setup.
+
+## ctx-optimize.json (repo config — commit it)
+
+```json
+{
+  "remote": "s3://bucket/prefix",
+  "adapters": [
+    {"name": "kafka-topics", "run": "node hooks/kafka.js"},
+    {"name": "pg-schema", "run": "python3 hooks/pg_schema.py"}
+  ]
+}
+```
+
+`ctx-optimize add` runs the built-in extractors AND every declared adapter
+(each command's stdout must be batch JSON, validated fail-closed). This is the
+refresh-the-world loop: one command re-gathers all declared sources. When you
+write a new adapter, save the script under `hooks/` and declare it here so it
+runs on every future `add`.
 
 ## Commands (always prefer `--json` when consuming output)
 
 | Intent | Command |
 |---|---|
-| Gather a repo into the store | `ctx-optimize add <path>` |
-| Feed adapter output (ANY external system) | `<adapter> \| ctx-optimize add --json - --path <path>` |
+| Gather everything (built-ins + declared adapters) | `ctx-optimize add <path>` |
+| Feed one-off adapter output (ANY external system) | `<adapter> \| ctx-optimize add --json - --path <path>` |
 | Ask the store | `ctx-optimize query "<question>" --path <path> --json` |
 | Store status | `ctx-optimize status --path <path> --json` |
-| Configure a remote | `ctx-optimize remote init <s3://bucket/prefix or file:///dir> --path <path>` |
+| Set the repo's remote (writes ctx-optimize.json) | `ctx-optimize remote init <s3://… or file:///…> --path <path>` |
+| Machine-only remote (nothing in the repo) | `ctx-optimize remote init <url> --local --path <path>` |
 | Publish changes | `ctx-optimize remote push --path <path> --json` |
 | Fetch teammate's store | `ctx-optimize remote pull --path <path> --json` |
+| One-off sync anywhere | `ctx-optimize remote push <url> --path <path>` |
 | Install/refresh this skill | `ctx-optimize install --skills` |
 
 Notes:
 - `--path` defaults to the current directory; the store key derives from it.
+- Remote resolution: explicit URL arg > repo `ctx-optimize.json` > store config.
 - S3 remotes read standard env vars at call time: `AWS_ACCESS_KEY_ID`,
   `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ENDPOINT_URL` (R2/Hetzner/MinIO).
   Reference them by NAME — never echo their values.
@@ -66,10 +89,11 @@ Any system can be gathered. Emit this JSON to stdout and pipe into the door:
 
 Rules the door enforces (it rejects the whole batch otherwise): `producer`
 required (provenance); every node needs `id/label/kind/file_type/source`;
-edge `confidence` ∈ `EXTRACTED|INFERRED|AMBIGUOUS`. Adapters you write for a
-store belong in its `hooks/` dir so they travel with push/pull. **Write new
-adapters yourself when asked** ("add the kafka topics to the store") — you can
-introspect anything and emit this schema.
+edge `confidence` ∈ `EXTRACTED|INFERRED|AMBIGUOUS`. **Write new adapters
+yourself when asked** ("add the kafka topics to the store") — you can
+introspect anything and emit this schema. Then make it repeatable: save the
+script under the repo's `hooks/` dir and declare it in `ctx-optimize.json` so
+every future `add` refreshes it automatically.
 
 ## Answering questions
 

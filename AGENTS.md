@@ -10,7 +10,8 @@ the validated `add --json` door.
 - `cmd/ctx-optimize/` — 10-line shim → `internal/app.Run(args, stdout, stderr)`
 - `internal/schema` — THE emit contract (Node/Edge/Batch + fail-closed Validate)
 - `internal/store` — central store `~/.ctx-optimize/store/<module-key>/`, ndjson graph, content-hash manifest
-- `internal/remote` — sync-only remotes: `file://` + `s3://` (stdlib SigV4, no SDK)
+- `internal/project` — repo-level `ctx-optimize.json` (committable: remote + declared adapters; the ONLY file we put in a user's repo)
+- `internal/remote` — sync-only remotes: `file://` + `s3://` (stdlib SigV4, no SDK); resolution: URL arg > ctx-optimize.json > store config
 - `internal/extract/markdown` — tier-1 producer (code langs via tree-sitter WASM: next)
 - `internal/query` — lexical IDF + prefix tier + budget; complete hits (S1e: no pointer lists)
 - `internal/skills` — embedded SKILL.md, `install --skills` fans to claude+codex
