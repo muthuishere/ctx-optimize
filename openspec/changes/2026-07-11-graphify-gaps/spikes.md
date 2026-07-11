@@ -43,7 +43,31 @@ external is an adapter.
   columnar/sharded-manifest storage requirement; **15k communities = 15k wiki
   pages** — the wiki needs hierarchy/pruning (god-communities, size thresholds)
   at scale; HTML viz refuses >5k nodes (their own tool can't render its output).
-- **A/B result:** _pending (agents running)_
+- **A/B result (2026-07-11): ❌ DECISIVE FAIL — graphify cost MORE than grep at
+  scale.** Grep: 32,546 tok / 22 calls / 116s / 10-10 sharpest. Graphify:
+  42,800 tok / 29 calls / 385s / 10-10 but `affected` on PodSpec BLOCKED by
+  node-ID name collision, several answers less precise. **+31% tokens, 3.3×
+  slower.** Grep got CHEAPER at scale (32.5k vs 56k on the mid repo) — well-named
+  code is its own index.
+
+## S1 OVERALL VERDICT — the "graph query saves tokens" thesis is FALSIFIED
+Mid repo: −11%. Large repo: +31% (negative). Both quality-matched. Do NOT build
+a product on "cheaper code search for agents."
+**Surviving hypotheses (the only ones):**
+1. **Incremental LLM wiki** — pre-distilled understanding answering conceptual
+   questions with zero search (S1c to test; S4 already proved the incremental
+   machinery viable).
+2. **Precise impact analysis** — `affected`/`path` with LSP-grade edges (S3):
+   the query class grep cannot do, and where graphify demonstrably breaks
+   (name collisions at 287k nodes).
+**Cancelled:** S5 (lexical query engine port) — pointless to port an engine that
+loses to grep.
+
+### S1c · Wiki-axis test (NEW — the last token-saving hypothesis)
+- **Method:** brain repo (38 communities): label + distill a wiki cheaply, then
+  10 CONCEPTUAL questions (why/how-does-it-fit-together, not where-is-X):
+  grep agent vs wiki-reading agent. Same bar.
+- **Result:** _pending_
 
 ### S2 · Pure-Go extraction (single-binary promise)
 - **Question:** can we extract without cgo?
