@@ -18,6 +18,12 @@ Turns a repo (and, via adapters, DB schemas, messaging topics, log shapes,
 documents) into ONE local knowledge store you answer from. **Gather once,
 refresh cheaply, answer from the store — never go everywhere every time.**
 
+Built-in code extraction (tree-sitter, no setup): Go, Python, JavaScript,
+TypeScript/TSX, Java, C, C++, C#, Rust — functions/methods/classes/structs/
+interfaces/enums/traits with locations, contains + imports edges, and
+name-resolved call edges (INFERRED). Markdown/txt docs land in the same
+graph. `add` on a 4k-file repo takes well under a second.
+
 Division of labor: the `ctx-optimize` CLI does ALL deterministic work (extract,
 graph, store, sync) with zero LLM/network calls; **you are the reasoning LLM on
 top.** Never call a model API on the CLI's behalf — if semantic work is needed

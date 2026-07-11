@@ -78,3 +78,24 @@ func keys(m map[string]schema.Node) []string {
 	}
 	return out
 }
+
+// Two identical headings in one file must not collide.
+func TestDuplicateHeadingsGetSuffixes(t *testing.T) {
+	dir := t.TempDir()
+	md := "# Doc\n\n## Files changed\na\n\n## Files changed\nb\n"
+	os.WriteFile(filepath.Join(dir, "d.md"), []byte(md), 0o644)
+	b, err := Extract(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Validate(); err != nil {
+		t.Fatalf("dup headings still collide: %v", err)
+	}
+	ids := map[string]bool{}
+	for _, n := range b.Nodes {
+		ids[n.ID] = true
+	}
+	if !ids["d.md::files-changed"] || !ids["d.md::files-changed-2"] {
+		t.Fatalf("expected suffixed slugs, got %v", ids)
+	}
+}

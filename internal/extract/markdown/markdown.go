@@ -75,6 +75,7 @@ func extractFile(b *schema.Batch, rel, content string) {
 	lines := strings.Split(content, "\n")
 	var stack []openSection
 	sectionStart := map[string]int{}
+	usedSlugs := map[string]int{} // repeated headings ("Files changed") get -2, -3…
 
 	closeTo := func(level, endLine int) {
 		for len(stack) > 0 && stack[len(stack)-1].level >= level {
@@ -95,7 +96,12 @@ func extractFile(b *schema.Batch, rel, content string) {
 			level := len(m[1])
 			title := m[2]
 			closeTo(level, lineNo-1)
-			secID := fmt.Sprintf("%s::%s", rel, slug(title))
+			s := slug(title)
+			usedSlugs[s]++
+			if n := usedSlugs[s]; n > 1 {
+				s = fmt.Sprintf("%s-%d", s, n)
+			}
+			secID := fmt.Sprintf("%s::%s", rel, s)
 			parent := docID
 			if len(stack) > 0 {
 				parent = stack[len(stack)-1].id

@@ -12,7 +12,8 @@ the validated `add --json` door.
 - `internal/store` — central store `~/ctxoptimize/<repo-name>/` (key = basename, or config `name`), ndjson graph, content-hash manifest; Merge stamps producer only when absent (merge preserves provenance)
 - `internal/project` — repo-level `.ctxoptimize/` dir (committable; the ONLY thing we put in a user's repo): `config.json` (name + remote [string or {type,url,credentials}]) + `adapters/` (dropped scripts discovered by extension: .js/.mjs→node, .py→python3, .sh→sh; `init` scaffolds with inert example.js.sample). `${VAR}` resolves from env at sync time; resolved values never written/printed
 - `internal/remote` — sync-only remotes: `file://` + `s3://` (stdlib SigV4, no SDK); push/pull take NO url — remote comes from `.ctxoptimize/config.json` (or store config via `remote init --local`)
-- `internal/extract/markdown` — tier-1 producer (code langs via tree-sitter WASM: next)
+- `internal/extract/markdown` — tier-1 doc producer (dup heading slugs get -2/-3 suffixes)
+- `internal/extract/code` — tier-1 code producer: tree-sitter grammars compiled to WASI (scripts/wasm/build.sh, zig cc; treesitter.wasm COMMITTED ~19MB, go:embed), wazero host (pure Go, one instance per worker goroutine). Wave-1 langs: go/py/js/ts/tsx/java/c/cpp/c#/rust — adding one = grammar in wasm + entry in langs.go. Emits file/decl nodes (qualified labels, L#-L#), contains + imports (EXTRACTED), calls resolved module-wide by unique name (INFERRED; ambiguous dropped). ~0.5s for 4k files.
 - `internal/query` — lexical IDF + prefix + trigram tiers + budget; complete hits (S1e: no pointer lists)
 - `internal/analyze` — pure graph verbs: path, explain, affected (reverse impact), hubs; Resolve = id > label > fuzzy tokens
 - store.Replace = producer-scoped truth on `add` (stale nodes pruned; <50% shrink refused without --force); Merge (--json door) stays upsert

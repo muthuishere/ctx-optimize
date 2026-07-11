@@ -21,6 +21,7 @@ import (
 
 	"github.com/muthuishere/ctx-optimize/internal/analyze"
 	"github.com/muthuishere/ctx-optimize/internal/dashboard"
+	"github.com/muthuishere/ctx-optimize/internal/extract/code"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/query"
@@ -272,6 +273,14 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 			return err
 		}
 		batches = append(batches, b)
+		cb, err := code.Extract(target)
+		if err != nil {
+			return err
+		}
+		if len(cb.Nodes) > 0 {
+			batches = append(batches, cb)
+			fmt.Fprintf(stdout, "code: %d nodes, %d edges\n", len(cb.Nodes), len(cb.Edges))
+		}
 
 		// Adapters: scripts dropped in .ctxoptimize/adapters/ (discovered by
 		// extension) plus any commands declared in config.json — a config

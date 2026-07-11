@@ -9,11 +9,12 @@ skill-capable harness) answers from the store instead of burning tokens on
 grep-and-read. The binary never calls a model, a database, or the network —
 the only intelligence in the system is the agent you already run.
 
-> ⚠️ **Status: v0 under construction.** The store, the universal adapter door,
-> markdown extraction, lexical query, and remote init/push/pull work today.
-> Code-language extraction (tree-sitter/WASM), symbol cards, the deterministic
-> wiki, and exact call edges are landing next — see `openspec/` for the
-> spike-measured plan.
+> ⚠️ **Status: v0.** Working today: code extraction for 9 languages
+> (Go, Python, JS, TS/TSX, Java, C, C++, C#, Rust — tree-sitter compiled to
+> WASM, zero setup), markdown docs, the universal adapter door, query/path/
+> explain/affected/hubs, merge/export, the live dashboard, and remote
+> init/push/pull. Symbol cards, the deterministic wiki, and exact call edges
+> are next — see `openspec/` for the spike-measured plan.
 
 ## Install
 

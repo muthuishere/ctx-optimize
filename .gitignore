@@ -16,3 +16,4 @@
 # build output
 /bin/
 npm/platforms/*/bin/*
+/.wasm-build/
