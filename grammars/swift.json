@@ -1,0 +1,10 @@
+{
+  "name": "swift",
+  "exts": [".swift"],
+  "decls": {"class_declaration": "class", "protocol_declaration": "interface",
+            "function_declaration": "function", "init_declaration": "method",
+            "typealias_declaration": "type"},
+  "names": ["simple_identifier", "type_identifier", "identifier"],
+  "calls": ["call_expression"],
+  "imports": ["import_declaration"]
+}

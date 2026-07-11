@@ -1,0 +1,11 @@
+{
+  "name": "dart",
+  "exts": [".dart"],
+  "decls": {"class_definition": "class", "mixin_declaration": "class",
+            "enum_declaration": "enum", "extension_declaration": "class",
+            "function_signature": "function", "method_signature": "method",
+            "getter_signature": "method", "setter_signature": "method"},
+  "names": ["identifier"],
+  "calls": [],
+  "imports": ["library_import"]
+}

@@ -39,12 +39,18 @@ type Engine struct {
 }
 
 func NewEngine(ctx context.Context) (*Engine, error) {
+	return NewEngineFromBytes(ctx, wasmModule)
+}
+
+// NewEngineFromBytes hosts any module built against the shim ABI — the
+// embedded bundle or a single-grammar pack.
+func NewEngineFromBytes(ctx context.Context, module []byte) (*Engine, error) {
 	rt := wazero.NewRuntime(ctx)
 	wasi_snapshot_preview1.MustInstantiate(ctx, rt)
-	compiled, err := rt.CompileModule(ctx, wasmModule)
+	compiled, err := rt.CompileModule(ctx, module)
 	if err != nil {
 		rt.Close(ctx)
-		return nil, fmt.Errorf("compile treesitter.wasm: %w", err)
+		return nil, fmt.Errorf("compile wasm module: %w", err)
 	}
 	return &Engine{rt: rt, compiled: compiled}, nil
 }

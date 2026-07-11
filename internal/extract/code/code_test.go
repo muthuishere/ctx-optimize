@@ -24,10 +24,7 @@ func TestExtractAllLanguages(t *testing.T) {
 		"geo.cpp":   "#include <vector>\n\nnamespace geo {\nclass Shape {\npublic:\n  int area() { return compute(); }\n};\nint compute() { return 42; }\n}\n",
 		"Svc.cs":    "using System;\n\nnamespace App {\n  public class Svc {\n    public void Run() { Helper(); }\n    static void Helper() {}\n  }\n}\n",
 		"lib.rs":    "use std::io;\n\npub struct Ledger { pub id: u64 }\n\npub trait Post { fn post(&self); }\n\npub fn settle(l: &Ledger) -> u64 { check(l.id) }\n\nfn check(v: u64) -> u64 { v }\n",
-		"App.kt":    "import java.util.List\n\nclass Cart {\n    fun total(): Int { return tax(10) }\n}\n\nfun tax(v: Int): Int = v\n",
-		"main.dart": "import 'dart:io';\n\nclass Order {\n  int total() { return 1; }\n}\n\nint price(int v) { return v; }\n",
 		"main.zig":  "const std = @import(\"std\");\n\nfn add(a: i32, b: i32) i32 {\n    return a + b;\n}\n\npub fn main() void {\n    _ = add(1, 2);\n}\n",
-		"App.swift": "import Foundation\n\nprotocol Payable { func pay() }\n\nclass Invoice {\n    func total() -> Int { return round2(3) }\n}\n\nfunc round2(_ v: Int) -> Int { return v }\n",
 		"db.sql":    "CREATE TABLE refunds (id INT PRIMARY KEY, amount INT);\n\nCREATE VIEW big_refunds AS SELECT * FROM refunds WHERE amount > 100;\n",
 	}
 	for name, content := range files {
@@ -73,15 +70,7 @@ func TestExtractAllLanguages(t *testing.T) {
 		"module://react":          "module",
 		"module://stdio.h":        "module",
 		"module://java.util.List": "module",
-		"App.kt::Cart":            "class",
-		"App.kt::Cart.total":      "function",
-		"App.kt::tax":             "function",
-		"main.dart::Order":        "class",
-		"main.dart::price":        "function",
 		"main.zig::add":           "function",
-		"App.swift::Payable":      "interface",
-		"App.swift::Invoice":      "class",
-		"App.swift::round2":       "function",
 		"db.sql::refunds":         "table",
 		"db.sql::big_refunds":     "view",
 	}
@@ -119,6 +108,70 @@ func TestExtractAllLanguages(t *testing.T) {
 	// Imports are EXTRACTED.
 	if edges["main.go→module://fmt/imports"] != "EXTRACTED" {
 		t.Errorf("missing import edge for fmt")
+	}
+}
+
+// Dynamic grammar pack: drop <name>.wasm + <name>.json into
+// .ctxoptimize/grammars/ and the language just works — no recompile.
+// Uses the kotlin pack shipped in the repo's grammars/ dir.
+func TestDynamicGrammarPack(t *testing.T) {
+	pack := filepath.Join("..", "..", "..", "grammars", "kotlin.wasm")
+	if _, err := os.Stat(pack); err != nil {
+		t.Skip("kotlin pack not present")
+	}
+	root := t.TempDir()
+	gdir := filepath.Join(root, ".ctxoptimize", "grammars")
+	os.MkdirAll(gdir, 0o755)
+	data, err := os.ReadFile(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(gdir, "kotlin.wasm"), data, 0o644)
+	cfg, err := os.ReadFile(filepath.Join("..", "..", "..", "grammars", "kotlin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(gdir, "kotlin.json"), cfg, 0o644)
+	t.Setenv("CTX_OPTIMIZE_GRAMMARS", filepath.Join(root, "nonexistent")) // isolate from ~
+
+	kt := "import java.util.List\n\nclass Cart {\n    fun total(): Int { return tax(10) }\n}\n\nfun tax(v: Int): Int = v\n"
+	os.WriteFile(filepath.Join(root, "App.kt"), []byte(kt), 0o644)
+
+	batch, err := Extract(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]string{}
+	for _, n := range batch.Nodes {
+		byID[n.ID] = n.Kind
+	}
+	if byID["App.kt::Cart"] != "class" || byID["App.kt::tax"] != "function" {
+		t.Fatalf("pack language not extracted: %v", byID)
+	}
+	found := false
+	for _, e := range batch.Edges {
+		if e.Source == "App.kt::Cart.total" && e.Target == "App.kt::tax" && e.Relation == "calls" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("pack call edge missing")
+	}
+}
+
+// A pack with a config but no wasm fails loudly, never silently skips.
+func TestBrokenPackFailsLoudly(t *testing.T) {
+	root := t.TempDir()
+	gdir := filepath.Join(root, ".ctxoptimize", "grammars")
+	os.MkdirAll(gdir, 0o755)
+	os.WriteFile(filepath.Join(gdir, "lua.json"),
+		[]byte(`{"name":"lua","exts":[".lua"],"decls":{"function_declaration":"function"}}`), 0o644)
+	t.Setenv("CTX_OPTIMIZE_GRAMMARS", filepath.Join(root, "nonexistent"))
+	if _, err := Extract(root); err == nil {
+		t.Fatal("expected missing-wasm error")
 	}
 }
 

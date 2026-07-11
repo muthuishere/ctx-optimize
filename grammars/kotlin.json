@@ -1,0 +1,9 @@
+{
+  "name": "kotlin",
+  "exts": [".kt", ".kts"],
+  "decls": {"class_declaration": "class", "object_declaration": "class",
+            "function_declaration": "function"},
+  "names": ["simple_identifier", "type_identifier", "identifier"],
+  "calls": ["call_expression"],
+  "imports": ["import_header"]
+}

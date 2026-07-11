@@ -13,16 +13,12 @@ LOCK="$REPO_ROOT/scripts/wasm/grammars.lock"
 
 GRAMMARS=(tree-sitter tree-sitter-go tree-sitter-python tree-sitter-javascript
           tree-sitter-typescript tree-sitter-java tree-sitter-c tree-sitter-cpp
-          tree-sitter-c-sharp tree-sitter-rust tree-sitter-kotlin tree-sitter-dart
-          tree-sitter-zig tree-sitter-swift tree-sitter-sql)
+          tree-sitter-c-sharp tree-sitter-rust tree-sitter-zig tree-sitter-sql)
 
 # wave-2 grammars live outside the tree-sitter org (repo, extra clone args)
 clone_url() {
   case "$1" in
-    tree-sitter-kotlin) echo "https://github.com/fwcd/tree-sitter-kotlin.git" ;;
-    tree-sitter-dart)   echo "https://github.com/UserNobody14/tree-sitter-dart.git" ;;
     tree-sitter-zig)    echo "https://github.com/tree-sitter-grammars/tree-sitter-zig.git" ;;
-    tree-sitter-swift)  echo "https://github.com/alex-pinkus/tree-sitter-swift.git" ;;
     tree-sitter-sql)    echo "https://github.com/DerekStride/tree-sitter-sql.git" ;;
     *)                  echo "https://github.com/tree-sitter/$1.git" ;;
   esac
@@ -31,11 +27,7 @@ clone_url() {
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 for r in "${GRAMMARS[@]}"; do
-  if [ ! -d "$r" ]; then
-    extra=()
-    [ "$r" = tree-sitter-swift ] && extra=(--branch with-generated-files)
-    git clone --depth 1 "${extra[@]}" "$(clone_url "$r")" "$r"
-  fi
+  [ -d "$r" ] || git clone --depth 1 "$(clone_url "$r")" "$r"
 done
 
 # sql does not commit its generated parser — generate once (needs node/npx)
@@ -65,11 +57,11 @@ cc_unit() { # src, extra includes...
   "${CC[@]}" "$@" "$src" -o "$o" &
 }
 cc_unit "$REPO_ROOT/scripts/wasm/shim.c" "${RUNTIME_INC[@]}"
+cc_unit "$REPO_ROOT/scripts/wasm/langs-embedded.c" "${RUNTIME_INC[@]}"
 cc_unit "tree-sitter/lib/src/lib.c" "${RUNTIME_INC[@]}"
 for g in tree-sitter-go tree-sitter-python tree-sitter-javascript tree-sitter-java \
          tree-sitter-c tree-sitter-cpp tree-sitter-c-sharp tree-sitter-rust \
-         tree-sitter-kotlin tree-sitter-dart tree-sitter-zig tree-sitter-swift \
-         tree-sitter-sql; do
+         tree-sitter-zig tree-sitter-sql; do
   cc_unit "$g/src/parser.c" -I "$g/src"
   [ -f "$g/src/scanner.c" ] && cc_unit "$g/src/scanner.c" -I "$g/src"
 done

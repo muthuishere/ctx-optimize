@@ -51,14 +51,71 @@ type declRef struct {
 	file  string
 }
 
-// Extract parses every recognized code file under root.
+// resolved routes a file to its language and the engine that parses it.
+type resolved struct {
+	lang      *Lang
+	engineKey string // "" = embedded bundle; else the pack's wasm path
+}
+
+// Extract parses every recognized code file under root — embedded languages
+// plus any grammar packs (see langs.go LoadPacks).
 func Extract(root string) (*schema.Batch, error) {
 	ctx := context.Background()
-	eng, err := NewEngine(ctx)
+
+	packs, err := LoadPacks(root)
 	if err != nil {
 		return nil, err
 	}
-	defer eng.Close(ctx)
+	// A pack extension beats the embedded set — users can override built-ins.
+	packByExt := map[string]*Pack{}
+	for i := range packs {
+		for _, ext := range packs[i].Lang.Exts {
+			packByExt[strings.ToLower(ext)] = &packs[i]
+		}
+	}
+	resolve := func(name string) *resolved {
+		lower := strings.ToLower(name)
+		for ext, p := range packByExt {
+			if strings.HasSuffix(lower, ext) {
+				return &resolved{lang: &p.Lang, engineKey: p.WasmPath}
+			}
+		}
+		if l := LangForFile(name); l != nil {
+			return &resolved{lang: l}
+		}
+		return nil
+	}
+
+	engines := map[string]*Engine{}
+	var engMu sync.Mutex
+	defer func() {
+		for _, e := range engines {
+			e.Close(ctx)
+		}
+	}()
+	getEngine := func(key string) (*Engine, error) {
+		engMu.Lock()
+		defer engMu.Unlock()
+		if e, ok := engines[key]; ok {
+			return e, nil
+		}
+		var e *Engine
+		var err error
+		if key == "" {
+			e, err = NewEngine(ctx)
+		} else {
+			data, rerr := os.ReadFile(key)
+			if rerr != nil {
+				return nil, rerr
+			}
+			e, err = NewEngineFromBytes(ctx, data)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("engine %s: %w", key, err)
+		}
+		engines[key] = e
+		return e, nil
+	}
 
 	var files []string
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -74,7 +131,7 @@ func Extract(root string) (*schema.Batch, error) {
 			}
 			return nil
 		}
-		if LangForFile(name) == nil {
+		if resolve(name) == nil {
 			return nil
 		}
 		if info, err := d.Info(); err == nil && info.Size() > maxFileBytes {
@@ -88,22 +145,38 @@ func Extract(root string) (*schema.Batch, error) {
 	}
 	sort.Strings(files) // deterministic output regardless of walk order
 
-	// Symbol tables once per language (shared, read-only after this).
-	symTab := map[int][]string{}
-	{
+	// Symbol tables once per engine+language (read-only after this).
+	symTab := map[string]map[int][]string{}
+	loadSyms := func(key string, langs []Lang) error {
+		eng, err := getEngine(key)
+		if err != nil {
+			return err
+		}
 		inst, err := eng.NewInstance(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		for _, l := range Languages {
+		defer inst.Close(ctx)
+		m := map[int][]string{}
+		for _, l := range langs {
 			names, err := inst.Symbols(ctx, l.ID)
 			if err != nil {
-				inst.Close(ctx)
-				return nil, fmt.Errorf("symbols %s: %w", l.Name, err)
+				return fmt.Errorf("symbols %s: %w", l.Name, err)
 			}
-			symTab[l.ID] = names
+			m[l.ID] = names
 		}
-		inst.Close(ctx)
+		symTab[key] = m
+		return nil
+	}
+	if len(files) > 0 {
+		if err := loadSyms("", Languages); err != nil {
+			return nil, err
+		}
+	}
+	for i := range packs {
+		if err := loadSyms(packs[i].WasmPath, []Lang{packs[i].Lang}); err != nil {
+			return nil, err
+		}
 	}
 
 	workers := runtime.NumCPU() - 1
@@ -120,17 +193,29 @@ func Extract(root string) (*schema.Batch, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			inst, err := eng.NewInstance(ctx)
-			if err != nil {
-				for path := range jobs {
-					results <- fileResult{path: path, err: err}
+			instances := map[string]*Instance{} // engineKey → this worker's instance
+			defer func() {
+				for _, inst := range instances {
+					inst.Close(ctx)
 				}
-				return
-			}
-			defer inst.Close(ctx)
+			}()
 			for path := range jobs {
-				res := extractFile(ctx, inst, symTab, root, path)
-				results <- res
+				r := resolve(filepath.Base(path))
+				inst, ok := instances[r.engineKey]
+				if !ok {
+					eng, err := getEngine(r.engineKey)
+					if err != nil {
+						results <- fileResult{path: path, err: err}
+						continue
+					}
+					inst, err = eng.NewInstance(ctx)
+					if err != nil {
+						results <- fileResult{path: path, err: err}
+						continue
+					}
+					instances[r.engineKey] = inst
+				}
+				results <- extractFile(ctx, inst, r.lang, symTab[r.engineKey], root, path)
 			}
 		}()
 	}
@@ -184,9 +269,8 @@ func Extract(root string) (*schema.Batch, error) {
 	return batch, nil
 }
 
-func extractFile(ctx context.Context, inst *Instance, symTab map[int][]string, root, path string) fileResult {
+func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int][]string, root, path string) fileResult {
 	res := fileResult{path: path}
-	lang := LangForFile(filepath.Base(path))
 	src, err := os.ReadFile(path)
 	if err != nil {
 		res.err = err

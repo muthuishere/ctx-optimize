@@ -4,7 +4,13 @@
 // grammar in the wasm + one entry here. IDs are the shim ABI (shim.c order).
 package code
 
-import "strings"
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 type Lang struct {
 	ID       int
@@ -135,31 +141,7 @@ var Languages = []Lang{
 		Imports: set("use_declaration"),
 	},
 	{
-		ID: 10, Name: "kotlin", Exts: []string{".kt", ".kts"},
-		Decls: map[string]string{
-			"class_declaration": "class", "object_declaration": "class",
-			"function_declaration": "function",
-		},
-		Names:   set("simple_identifier", "type_identifier", "identifier"),
-		Calls:   set("call_expression"),
-		Imports: set("import_header"),
-	},
-	{
-		ID: 11, Name: "dart", Exts: []string{".dart"},
-		Decls: map[string]string{
-			"class_definition": "class", "mixin_declaration": "class",
-			"enum_declaration": "enum", "extension_declaration": "class",
-			"function_signature": "function", "method_signature": "method",
-			"getter_signature": "method", "setter_signature": "method",
-		},
-		Names: set("identifier"),
-		// dart call sites are selector chains, not a single node type —
-		// call edges wait for a finer pass; imports still land.
-		Calls:   set(),
-		Imports: set("library_import"),
-	},
-	{
-		ID: 12, Name: "zig", Exts: []string{".zig"},
+		ID: 10, Name: "zig", Exts: []string{".zig"},
 		// zig struct/enum/union literals are anonymous (named by the const
 		// they're assigned to) — v1 takes functions and tests; containers
 		// need parent-aware naming, later.
@@ -171,20 +153,7 @@ var Languages = []Lang{
 		Imports: set(),
 	},
 	{
-		ID: 13, Name: "swift", Exts: []string{".swift"},
-		Decls: map[string]string{
-			// class_declaration covers class/struct/enum/actor/extension in
-			// this grammar; the keyword is a child, the kind stays "class".
-			"class_declaration": "class", "protocol_declaration": "interface",
-			"function_declaration": "function", "init_declaration": "method",
-			"typealias_declaration": "type",
-		},
-		Names:   set("simple_identifier", "type_identifier", "identifier"),
-		Calls:   set("call_expression"),
-		Imports: set("import_declaration"),
-	},
-	{
-		ID: 14, Name: "sql", Exts: []string{".sql"},
+		ID: 11, Name: "sql", Exts: []string{".sql"},
 		Decls: map[string]string{
 			"create_table": "table", "create_view": "view",
 			"create_materialized_view": "view", "create_function": "function",
@@ -213,4 +182,96 @@ func LangForFile(name string) *Lang {
 		}
 	}
 	return nil
+}
+
+// ---- dynamic grammar packs ----
+//
+// A pack is two files side by side in a grammars dir: <name>.wasm (built by
+// scripts/wasm/build-grammar.sh — same shim, one grammar at id 0) and
+// <name>.json declaring the node-type mapping:
+//
+//	{"name": "kotlin", "exts": [".kt", ".kts"],
+//	 "decls": {"class_declaration": "class", "function_declaration": "function"},
+//	 "names": ["simple_identifier", "type_identifier"],
+//	 "calls": ["call_expression"], "imports": ["import_header"]}
+//
+// Dropping the pair in IS the registration — no recompile, no restart.
+// Search order (later wins on extension clashes, and any pack beats the
+// embedded set, so users can override built-ins):
+//  1. $CTX_OPTIMIZE_GRAMMARS (default ~/ctxoptimize/grammars) — machine-wide
+//  2. <repo>/.ctxoptimize/grammars — travels with the repo
+
+// Pack is one dynamically loaded grammar.
+type Pack struct {
+	Lang     Lang
+	WasmPath string
+}
+
+type packConfig struct {
+	Name    string            `json:"name"`
+	Exts    []string          `json:"exts"`
+	Decls   map[string]string `json:"decls"`
+	Names   []string          `json:"names"`
+	Calls   []string          `json:"calls"`
+	Imports []string          `json:"imports"`
+}
+
+// LoadPacks discovers grammar packs for a repo. Malformed packs fail loudly —
+// a silently skipped language reads as "covered" when it isn't.
+func LoadPacks(repo string) ([]Pack, error) {
+	var dirs []string
+	if env := os.Getenv("CTX_OPTIMIZE_GRAMMARS"); env != "" {
+		dirs = append(dirs, env)
+	} else if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, "ctxoptimize", "grammars"))
+	}
+	dirs = append(dirs, filepath.Join(repo, ".ctxoptimize", "grammars"))
+
+	byName := map[string]Pack{}
+	var order []string
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			cfgPath := filepath.Join(dir, e.Name())
+			data, err := os.ReadFile(cfgPath)
+			if err != nil {
+				return nil, err
+			}
+			var pc packConfig
+			if err := json.Unmarshal(data, &pc); err != nil {
+				return nil, fmt.Errorf("grammar pack %s: %w", cfgPath, err)
+			}
+			if pc.Name == "" || len(pc.Exts) == 0 || len(pc.Decls) == 0 {
+				return nil, fmt.Errorf("grammar pack %s: name, exts and decls are required", cfgPath)
+			}
+			wasmPath := filepath.Join(dir, pc.Name+".wasm")
+			if _, err := os.Stat(wasmPath); err != nil {
+				return nil, fmt.Errorf("grammar pack %s: missing %s.wasm next to the config", cfgPath, pc.Name)
+			}
+			if _, seen := byName[pc.Name]; !seen {
+				order = append(order, pc.Name)
+			}
+			byName[pc.Name] = Pack{
+				Lang: Lang{
+					ID: 0, Name: pc.Name, Exts: pc.Exts, Decls: pc.Decls,
+					Names: set(pc.Names...), Calls: set(pc.Calls...), Imports: set(pc.Imports...),
+				},
+				WasmPath: wasmPath,
+			}
+		}
+	}
+	packs := make([]Pack, 0, len(order))
+	for _, n := range order {
+		packs = append(packs, byName[n])
+	}
+	return packs, nil
 }

@@ -20,43 +20,10 @@
 #include <string.h>
 #include <tree_sitter/api.h>
 
-extern const TSLanguage *tree_sitter_go(void);
-extern const TSLanguage *tree_sitter_python(void);
-extern const TSLanguage *tree_sitter_javascript(void);
-extern const TSLanguage *tree_sitter_typescript(void);
-extern const TSLanguage *tree_sitter_tsx(void);
-extern const TSLanguage *tree_sitter_java(void);
-extern const TSLanguage *tree_sitter_c(void);
-extern const TSLanguage *tree_sitter_cpp(void);
-extern const TSLanguage *tree_sitter_c_sharp(void);
-extern const TSLanguage *tree_sitter_rust(void);
-extern const TSLanguage *tree_sitter_kotlin(void);
-extern const TSLanguage *tree_sitter_dart(void);
-extern const TSLanguage *tree_sitter_zig(void);
-extern const TSLanguage *tree_sitter_swift(void);
-extern const TSLanguage *tree_sitter_sql(void);
-
-// Order is the ABI: keep in sync with langs.go.
-static const TSLanguage *lang_by_id(int id) {
-  switch (id) {
-  case 0: return tree_sitter_go();
-  case 1: return tree_sitter_python();
-  case 2: return tree_sitter_javascript();
-  case 3: return tree_sitter_typescript();
-  case 4: return tree_sitter_tsx();
-  case 5: return tree_sitter_java();
-  case 6: return tree_sitter_c();
-  case 7: return tree_sitter_cpp();
-  case 8: return tree_sitter_c_sharp();
-  case 9: return tree_sitter_rust();
-  case 10: return tree_sitter_kotlin();
-  case 11: return tree_sitter_dart();
-  case 12: return tree_sitter_zig();
-  case 13: return tree_sitter_swift();
-  case 14: return tree_sitter_sql();
-  default: return NULL;
-  }
-}
+// The language table lives in a companion unit: langs-embedded.c for the
+// bundled build, a generated single-grammar table for grammar packs
+// (scripts/wasm/build-grammar.sh). Same shim either way.
+extern const TSLanguage *co_lang_by_id(int id);
 
 static uint8_t *out_buf = NULL;
 static size_t out_cap = 0, out_len = 0;
@@ -84,7 +51,7 @@ __attribute__((export_name("co_out_ptr"))) const uint8_t *co_out_ptr(void) { ret
 __attribute__((export_name("co_out_len"))) uint32_t co_out_len(void) { return (uint32_t)out_len; }
 
 __attribute__((export_name("co_symbols"))) int co_symbols(int lang_id) {
-  const TSLanguage *L = lang_by_id(lang_id);
+  const TSLanguage *L = co_lang_by_id(lang_id);
   if (!L) return -1;
   out_len = 0;
   uint32_t n = ts_language_symbol_count(L);
@@ -100,7 +67,7 @@ __attribute__((export_name("co_symbols"))) int co_symbols(int lang_id) {
 }
 
 __attribute__((export_name("co_parse"))) int co_parse(int lang_id, const char *src, uint32_t len) {
-  const TSLanguage *L = lang_by_id(lang_id);
+  const TSLanguage *L = co_lang_by_id(lang_id);
   if (!L) return -1;
   TSParser *p = ts_parser_new();
   if (!p) return -2;

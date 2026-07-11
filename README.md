@@ -9,12 +9,13 @@ skill-capable harness) answers from the store instead of burning tokens on
 grep-and-read. The binary never calls a model, a database, or the network —
 the only intelligence in the system is the agent you already run.
 
-> ⚠️ **Status: v0.** Working today: code extraction for 9 languages
-> (Go, Python, JS, TS/TSX, Java, C, C++, C#, Rust — tree-sitter compiled to
-> WASM, zero setup), markdown docs, the universal adapter door, query/path/
-> explain/affected/hubs, merge/export, the live dashboard, and remote
-> init/push/pull. Symbol cards, the deterministic wiki, and exact call edges
-> are next — see `openspec/` for the spike-measured plan.
+> ⚠️ **Status: v0.** Working today: code extraction for 12 embedded languages
+> (Go, Python, JS, TS/TSX, Java, C, C++, C#, Rust, Zig, SQL — tree-sitter
+> compiled to WASM, zero setup) plus **drop-in grammar packs** for any other
+> language (kotlin/swift/dart ship in `grammars/`), markdown docs, the
+> universal adapter door, query/path/explain/affected/hubs, merge/export, the
+> live dashboard, and remote init/push/pull. Symbol cards, the deterministic
+> wiki, and exact call edges are next — see `openspec/` for the plan.
 
 ## Install
 
@@ -114,6 +115,17 @@ Commit the directory — it is safe by construction:
   Each script prints batch JSON to stdout; `ctx-optimize add` runs the
   built-in extractors **and** every adapter through the fail-closed door. One
   command refreshes the whole world; a fresh clone needs zero setup to `pull`.
+
+## Grammar packs — add any language without recompiling
+
+A language is just a grammar + a node-type mapping. The 12 embedded ones
+cover the mainstream; anything else is a **pack**: `<name>.wasm` +
+`<name>.json` dropped into `~/ctxoptimize/grammars/` (machine-wide) or
+`.ctxoptimize/grammars/` (travels with the repo). Next `add` picks it up;
+pack extensions override embedded ones. kotlin, swift and dart ship as packs
+in `grammars/` — copy the pair in to enable. Build your own from any
+tree-sitter grammar: `scripts/wasm/build-grammar.sh <grammar-dir> <symbol>
+<out.wasm>` plus a JSON mapping (see `grammars/kotlin.json`).
 
 ## Adapters — the open door
 
