@@ -13,9 +13,17 @@ the only intelligence in the system is the agent you already run.
 > (Go, Python, JS, TS/TSX, Java, C, C++, C#, Rust, Zig, SQL — tree-sitter
 > compiled to WASM, zero setup) plus **drop-in grammar packs** for any other
 > language (kotlin/swift/dart ship in `grammars/`), markdown docs, the
-> universal adapter door, query/path/explain/affected/hubs, merge/export, the
-> live dashboard, and remote init/push/pull. Symbol cards, the deterministic
-> wiki, and exact call edges are next — see `openspec/` for the plan.
+> universal adapter door, query/path/explain/affected/hubs, **symbol cards**
+> (`card X`: signature + doc + callers/callees, no file read), the
+> **deterministic wiki** (regenerated on every add), the save-result/reflect
+> learning loop, merge/export (json/dot/graphml/csv/obsidian), the live
+> dashboard, and remote init/push/pull. Exact call edges are next — see
+> `openspec/` for the plan.
+
+**Site, demos, benchmarks:** https://muthuishere.github.io/ctx-optimize-site/ —
+honest head-to-head vs graphify (raw data in [`benchmarks/`](benchmarks/)):
+12k-file corpus gathered in 0.67s vs 8.88s, queries ~4× faster, methodology
+stated on the page.
 
 ## Install
 
