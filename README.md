@@ -123,7 +123,7 @@ Everything external is an adapter emitting one JSON schema into
 `confidence` ∈ `EXTRACTED|INFERRED|AMBIGUOUS`). The door validates strictly and
 tags provenance per producer. Your agent can write a new adapter on demand —
 point it at any system with the schema and it gathers it. Make it permanent by
-saving the script under `hooks/` and declaring it in `ctx-optimize.json`.
+dropping the script into `.ctxoptimize/adapters/` — every future `add` runs it.
 
 ## Design
 
