@@ -45,7 +45,38 @@ symbol cards vs grep on the kernel testbed. S1c's 39% was measured on LLM-deep
 pages; the deterministic variant's number is unmeasured. It costs nothing to
 build (no tokens), so measure before architecture lock.
 
+## REVISION (2026-07-11, later) — citenexus DROPPED from the core; docs-in-the-graph
+
+Owner questioned the citenexus dependency; resolution: **not needed in the core.**
+citenexus's value is an ANSWERING pipeline (faithfulness gate, cite-or-abstain
+generation) — machinery for products that call LLMs to answer. We never answer;
+the HOST AGENT answers. We serve context. What remains of the doc lane (extract
+→ chunk → nodes → lexical query) we already build for code:
+- **Docs are nodes in the SAME graph** (emit schema already has file_type;
+  graphify's own markdown extractor proves the pattern, incl. code↔doc edges
+  from ADR/NOTE refs). Markdown/txt = deterministic Go producer.
+- One graph, one store, one query engine, one wiki, one sync. No Python in the
+  core, no install friction (the G3 gap we attack graphify on).
+- PDFs/docx: DEFERRED; when needed the SKILL converts (tiny bundled python
+  script or the host agent) → markdown → same producer.
+- citenexus = an OPTIONAL skill-level integration for users who already run it;
+  its chunker parameters and light-index/pages/log layout are ported as
+  PATTERNS, never imported.
+
+## Store layout (owner, default) — central, file-based, multi-module
+```
+~/.ctx-optimize/store/<module-key>/   # user-home central store, keyed by module
+  graph/ … wiki/ … cards/ … manifest.json
+```
+- **Multi-module by default:** detect modules (go.mod / package.json / pom / …)
+  → per-module graphs + merged repo view; cross-repo merge on top.
+- **Repo stays git-clean** — nothing written into the repo (the #1751/#1752
+  central-store design graphify ignored, made the default here).
+- **Push/pull anywhere:** plain files + manifest → sync adapters (S3, rsync, …),
+  incremental. Layout configurable; user-home is only the default.
+
 ## FINAL INTEGRATION CONTRACT (2026-07-11, owner) — three layers, "we are not those people"
+### (superseded in part by the revision above: citenexus is now OPTIONAL at the skill layer, not a core doc lane)
 
 1. **ctx-optimize binary (Go):** deterministic code engine ONLY — graph, symbol
    cards, zero-LLM wiki, exact edges, store/sync. No LLM calls, no doc-RAG, no
