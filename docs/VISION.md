@@ -59,6 +59,28 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
   core, no install friction (the G3 gap we attack graphify on).
 - PDFs/docx: DEFERRED; when needed the SKILL converts (tiny bundled python
   script or the host agent) → markdown → same producer.
+
+### The open adapter door (owner, 2026-07-11) — two producer tiers, one contract
+- **Tier 1, compiled into the Go binary (deterministic, zero-dep):** code langs
+  (wasm tree-sitter), markdown/txt, exact edges. NOTHING else — no DB drivers,
+  no format libs. "No DB" holds literally in the binary.
+- **Tier 2, skill-level adapters (scripts, OPEN-ENDED + DYNAMIC):** all
+  conversions and live-system introspection — pdf/docx→md; **postgres schema**
+  (information_schema → tables/columns/FKs); **messaging middleware schemas**
+  (Kafka schema-registry / RabbitMQ definitions / AsyncAPI → topics/events);
+  **log structure discovery** (samples → fields/formats/emitters); and unknown
+  systems. Three equal sources of adapters:
+  1. **bundled** with the skill,
+  2. **user-added dynamically** — drop a script into the adapters dir /
+     register it; theirs are first-class, they can add whatever,
+  3. **agent-written on demand** — the host agent, given the emit schema,
+     introspects any system and emits conformant JSON.
+- **The universal door:** `ctx-optimize add --json` (stdin/file) accepts the
+  emit schema, STRICTLY validated (conformance, dedup, per-adapter provenance
+  tag), merged into the one graph. Adapter proposes, binary disposes. The
+  binary stays closed and deterministic forever; the adapter surface grows
+  without touching it. (Supersedes tasks.md Story 9's "Go libs per adapter" —
+  SQL/DB/messaging adapters are skill-level scripts, not compiled code.)
 - citenexus = an OPTIONAL skill-level integration for users who already run it;
   its chunker parameters and light-index/pages/log layout are ported as
   PATTERNS, never imported.
