@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/muthuishere/ctx-optimize/internal/analyze"
 	"github.com/muthuishere/ctx-optimize/internal/dashboard"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/project"
@@ -50,6 +51,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdQuery(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
+	case "path":
+		err = cmdPath(rest, stdout)
+	case "explain":
+		err = cmdExplain(rest, stdout)
+	case "affected":
+		err = cmdAffected(rest, stdout)
+	case "hubs":
+		err = cmdHubs(rest, stdout)
 	case "merge":
 		err = cmdMerge(rest, stdout)
 	case "export":
@@ -219,7 +228,9 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 		return err
 	}
 
-	var batches []*schema.Batch
+	// The --json door UPSERTS (a one-off pipe may be partial); the gather
+	// path below REPLACES per producer (a re-gather is that producer's whole
+	// truth — deleted sources leave the graph, shrink-guarded by --force).
 	if src, ok := f.strs["json"]; ok || f.bools["json"] {
 		var data []byte
 		if !ok || src == "-" {
@@ -234,8 +245,19 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 		if err := json.Unmarshal(data, &b); err != nil {
 			return fmt.Errorf("parse batch json: %w", err)
 		}
-		batches = append(batches, &b)
-	} else {
+		n, e, err := s.Merge(&b) // Merge validates — the door fails closed
+		if err != nil {
+			return err
+		}
+		if _, err := s.UpdateManifest(); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "added %d nodes, %d edges → %s\n", n, e, s.Dir)
+		return nil
+	}
+
+	var batches []*schema.Batch
+	{
 		// Built-in tier-1 producers over the target path. Markdown today;
 		// code languages (tree-sitter wasm) join here.
 		target := f.strs["path"]
@@ -284,19 +306,23 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 		}
 	}
 
-	totalN, totalE := 0, 0
+	totalN, totalPruned := 0, 0
 	for _, b := range batches {
-		n, e, err := s.Merge(b) // Merge validates — the door fails closed
+		n, pruned, err := s.Replace(b, f.bools["force"]) // validates; fail-closed
 		if err != nil {
 			return err
 		}
 		totalN += n
-		totalE += e
+		totalPruned += pruned
 	}
 	if _, err := s.UpdateManifest(); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "added %d nodes, %d edges → %s\n", totalN, totalE, s.Dir)
+	fmt.Fprintf(stdout, "added %d nodes", totalN)
+	if totalPruned > 0 {
+		fmt.Fprintf(stdout, ", pruned %d stale", totalPruned)
+	}
+	fmt.Fprintf(stdout, " → %s\n", s.Dir)
 	return nil
 }
 
@@ -396,6 +422,125 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "  (from %s)", remoteFrom)
 	}
 	fmt.Fprintln(stdout)
+	return nil
+}
+
+// loadGraph is the shared read path for the analysis verbs.
+func loadGraph(f *flags) ([]schema.Node, []schema.Edge, error) {
+	s, err := openStore(f)
+	if err != nil {
+		return nil, nil, err
+	}
+	nodes, err := s.Nodes()
+	if err != nil {
+		return nil, nil, err
+	}
+	edges, err := s.Edges()
+	if err != nil {
+		return nil, nil, err
+	}
+	return nodes, edges, nil
+}
+
+func cmdPath(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	if len(f.args) != 2 {
+		return fmt.Errorf(`usage: ctx-optimize path "A" "B"`)
+	}
+	nodes, edges, err := loadGraph(f)
+	if err != nil {
+		return err
+	}
+	steps, err := analyze.ShortestPath(nodes, edges, f.args[0], f.args[1])
+	if err != nil {
+		return err
+	}
+	if f.bools["json"] {
+		return emit(stdout, map[string]any{"steps": steps})
+	}
+	if len(steps) == 0 {
+		fmt.Fprintln(stdout, "same node")
+		return nil
+	}
+	fmt.Fprintln(stdout, steps[0].From)
+	for _, st := range steps {
+		fmt.Fprintf(stdout, "  %s %s %s\n", st.Dir, st.Relation, st.To)
+	}
+	return nil
+}
+
+func cmdExplain(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	if len(f.args) != 1 {
+		return fmt.Errorf(`usage: ctx-optimize explain "X"`)
+	}
+	nodes, edges, err := loadGraph(f)
+	if err != nil {
+		return err
+	}
+	ex, err := analyze.Explain(nodes, edges, f.args[0])
+	if err != nil {
+		return err
+	}
+	if f.bools["json"] {
+		return emit(stdout, ex)
+	}
+	fmt.Fprint(stdout, analyze.RenderExplanation(ex))
+	return nil
+}
+
+func cmdAffected(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	if len(f.args) != 1 {
+		return fmt.Errorf(`usage: ctx-optimize affected "X" [--depth N] [--relation R]`)
+	}
+	nodes, edges, err := loadGraph(f)
+	if err != nil {
+		return err
+	}
+	depth := 2
+	if v, ok := f.strs["depth"]; ok {
+		if d, err := strconv.Atoi(v); err == nil {
+			depth = d
+		}
+	}
+	var relations []string
+	if r, ok := f.strs["relation"]; ok {
+		relations = append(relations, r)
+	}
+	target, impacts, err := analyze.Affected(nodes, edges, f.args[0], depth, relations)
+	if err != nil {
+		return err
+	}
+	if f.bools["json"] {
+		return emit(stdout, map[string]any{"target": target, "affected": impacts})
+	}
+	fmt.Fprintf(stdout, "changing %s impacts %d nodes (depth %d):\n", target.Label, len(impacts), depth)
+	for _, im := range impacts {
+		fmt.Fprintf(stdout, "  d%d %s  [%s]  via %s on %s\n", im.Depth, im.Node.Label, im.Node.Kind, im.Via, im.DependsOn)
+	}
+	return nil
+}
+
+func cmdHubs(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	nodes, edges, err := loadGraph(f)
+	if err != nil {
+		return err
+	}
+	top := 10
+	if v, ok := f.strs["top"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			top = n
+		}
+	}
+	hubs := analyze.Hubs(nodes, edges, top)
+	if f.bools["json"] {
+		return emit(stdout, map[string]any{"hubs": hubs})
+	}
+	for _, h := range hubs {
+		fmt.Fprintf(stdout, "%4d (%d in / %d out)  %s  [%s]  %s\n", h.In+h.Out, h.In, h.Out, h.Node.Label, h.Node.Kind, h.Node.Source)
+	}
 	return nil
 }
 
@@ -683,8 +828,14 @@ usage: ctx-optimize <command> [flags]
 commands:
   init                        scaffold .ctxoptimize/ + prepare the store (--path, default: cwd)
   add [<path>] [--json -|F]   gather built-ins + every adapter script in
-                              .ctxoptimize/adapters/; --json is the universal door
+                              .ctxoptimize/adapters/; re-gather prunes stale nodes
+                              (--force to allow >50%% shrink); --json door upserts
   query|ask "<question>"      answer from the local store  [--budget N] [--json]
+  path "A" "B"                shortest path between two nodes  [--json]
+  explain "X"                 plain-language node + neighborhood  [--json]
+  affected "X"                reverse impact: what breaks if X changes
+                              [--depth N] [--relation R] [--json]
+  hubs                        most-connected nodes (god nodes)  [--top N] [--json]
   status                      store facts  [--json]
   merge <module>... --into N  combine module stores into one merged view
   export [--format json|dot]  dump the graph  [--out FILE]

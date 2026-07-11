@@ -201,6 +201,105 @@ func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error) {
 	return nodesAdded, edgesAdded, nil
 }
 
+// Replace is producer-scoped replacement: the batch becomes the producer's
+// ENTIRE truth — nodes/edges previously from this producer that it no longer
+// emits are pruned (files deleted from the repo leave the graph). Other
+// producers' artifacts are untouched. Shrink guard (graphify-proven): a
+// re-gather emitting less than half the producer's previous nodes is more
+// likely a broken run than a huge refactor — refuse unless forced.
+func (s *Store) Replace(b *schema.Batch, force bool) (added, pruned int, err error) {
+	if err := b.Validate(); err != nil {
+		return 0, 0, fmt.Errorf("reject batch: %w", err)
+	}
+	existing, err := s.Nodes()
+	if err != nil {
+		return 0, 0, err
+	}
+	prev := 0
+	for _, n := range existing {
+		if n.Metadata["producer"] == b.Producer {
+			prev++
+		}
+	}
+	if prev > 0 && len(b.Nodes)*2 < prev && !force {
+		return 0, 0, fmt.Errorf("refusing to shrink producer %q from %d to %d nodes — pass --force if this is a real deletion", b.Producer, prev, len(b.Nodes))
+	}
+
+	newIDs := map[string]bool{}
+	for _, n := range b.Nodes {
+		newIDs[n.ID] = true
+	}
+	prevIDs := make(map[string]bool, len(existing))
+	kept := existing[:0]
+	for _, n := range existing {
+		prevIDs[n.ID] = true
+		if n.Metadata["producer"] == b.Producer && !newIDs[n.ID] {
+			pruned++
+			continue
+		}
+		if n.Metadata["producer"] == b.Producer {
+			continue // re-emitted below with fresh content
+		}
+		kept = append(kept, n)
+	}
+	byID := make(map[string]schema.Node, len(kept)+len(b.Nodes))
+	for _, n := range kept {
+		byID[n.ID] = n
+	}
+	for _, n := range b.Nodes {
+		if n.Metadata == nil {
+			n.Metadata = map[string]string{}
+		}
+		if n.Metadata["producer"] == "" {
+			n.Metadata["producer"] = b.Producer
+		}
+		if !prevIDs[n.ID] {
+			added++
+		}
+		byID[n.ID] = n
+	}
+	nodes := make([]schema.Node, 0, len(byID))
+	for _, n := range byID {
+		nodes = append(nodes, n)
+	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
+
+	oldEdges, err := s.Edges()
+	if err != nil {
+		return 0, 0, err
+	}
+	edgeKey := func(e schema.Edge) string { return e.Source + "\x00" + e.Target + "\x00" + e.Relation }
+	byKey := map[string]schema.Edge{}
+	for _, e := range oldEdges {
+		if e.Metadata["producer"] == b.Producer {
+			continue // this producer's edges are fully re-stated by the batch
+		}
+		byKey[edgeKey(e)] = e
+	}
+	for _, e := range b.Edges {
+		if e.Metadata == nil {
+			e.Metadata = map[string]string{}
+		}
+		if e.Metadata["producer"] == "" {
+			e.Metadata["producer"] = b.Producer
+		}
+		byKey[edgeKey(e)] = e
+	}
+	edges := make([]schema.Edge, 0, len(byKey))
+	for _, e := range byKey {
+		edges = append(edges, e)
+	}
+	sort.Slice(edges, func(i, j int) bool { return edgeKey(edges[i]) < edgeKey(edges[j]) })
+
+	if err := writeNDJSON(s.nodesPath(), len(nodes), func(i int) any { return nodes[i] }); err != nil {
+		return 0, 0, err
+	}
+	if err := writeNDJSON(s.edgesPath(), len(edges), func(i int) any { return edges[i] }); err != nil {
+		return 0, 0, err
+	}
+	return added, pruned, nil
+}
+
 // ---- manifest ----
 
 // Entry is one artifact's fingerprint. Sync and refresh both key on Hash —

@@ -79,6 +79,10 @@ top.** Never call a model API on the CLI's behalf — if semantic work is needed
 | Gather everything (built-ins + adapter scripts) | `ctx-optimize add <path>` |
 | Feed one-off adapter output (ANY external system) | `<adapter> \| ctx-optimize add --json - --path <path>` |
 | Ask the store | `ctx-optimize query "<question>" --path <path> --json` |
+| How are A and B connected? | `ctx-optimize path "A" "B" --path <path> --json` |
+| What is X? (node + neighborhood) | `ctx-optimize explain "X" --path <path> --json` |
+| What breaks if X changes? (blast radius) | `ctx-optimize affected "X" --depth 2 --path <path> --json` |
+| Most important nodes (god nodes) | `ctx-optimize hubs --top 10 --path <path> --json` |
 | Store status | `ctx-optimize status --path <path> --json` |
 | Combine modules into one view | `ctx-optimize merge <module\|path>... --into <name>` |
 | Dump the graph for other tools | `ctx-optimize export --format json\|dot --path <path>` |
@@ -91,6 +95,10 @@ top.** Never call a model API on the CLI's behalf — if semantic work is needed
 
 Notes:
 - `--path` defaults to the current directory.
+- Re-running `add` REPLACES each producer's world: nodes whose source is gone
+  are pruned automatically. A shrink to under half a producer's nodes is
+  refused (broken-run guard) — pass `--force` when it's a real mass deletion.
+- `path`/`explain`/`affected` accept a node id, exact label, or fuzzy name.
 - `remote push`/`pull` take NO URL — the remote always comes from
   `.ctxoptimize/config.json` (or the `--local` store config). To change the
   remote, edit the file (or re-run `remote init`), never pass a URL to sync.

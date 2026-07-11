@@ -148,3 +148,47 @@ func TestConfigRoundtrip(t *testing.T) {
 		t.Fatal("hooks/ dir must exist in layout")
 	}
 }
+
+// Replace: producer-scoped truth — stale nodes pruned, other producers kept,
+// catastrophic shrink refused without force.
+func TestReplacePrunesAndGuards(t *testing.T) {
+	s, err := Open(t.TempDir(), "m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := func(id string) schema.Node {
+		return schema.Node{ID: id, Label: id, Kind: "section", FileType: "doc", Source: id}
+	}
+	// producer A: 4 nodes; producer B: 1 node.
+	if _, _, err := s.Merge(&schema.Batch{Producer: "A", Nodes: []schema.Node{node("a1"), node("a2"), node("a3"), node("a4")}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Merge(&schema.Batch{Producer: "B", Nodes: []schema.Node{node("b1")}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-gather A with 3 nodes (one file deleted) → prunes a4, keeps B.
+	added, pruned, err := s.Replace(&schema.Batch{Producer: "A", Nodes: []schema.Node{node("a1"), node("a2"), node("a5")}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 1 || pruned != 2 { // a5 new; a3+a4 gone
+		t.Fatalf("added %d pruned %d", added, pruned)
+	}
+	nodes, _ := s.Nodes()
+	ids := map[string]bool{}
+	for _, n := range nodes {
+		ids[n.ID] = true
+	}
+	if !ids["b1"] || ids["a4"] || !ids["a5"] {
+		t.Fatalf("wrong survivors: %v", ids)
+	}
+
+	// Shrink guard: 3 → 1 nodes (<50%) refused without force.
+	if _, _, err := s.Replace(&schema.Batch{Producer: "A", Nodes: []schema.Node{node("a1")}}, false); err == nil {
+		t.Fatal("expected shrink guard")
+	}
+	if _, _, err := s.Replace(&schema.Batch{Producer: "A", Nodes: []schema.Node{node("a1")}}, true); err != nil {
+		t.Fatalf("force should override: %v", err)
+	}
+}

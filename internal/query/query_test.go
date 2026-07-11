@@ -37,7 +37,7 @@ func TestBudgetCapsOutput(t *testing.T) {
 	var many []schema.Node
 	for i := 0; i < 500; i++ {
 		many = append(many, schema.Node{
-			ID: strings.Repeat("x", 40) + string(rune('a'+i%26)) + string(rune('a'+i/26)),
+			ID:    strings.Repeat("x", 40) + string(rune('a'+i%26)) + string(rune('a'+i/26)),
 			Label: "submit handler variant", Kind: "function", FileType: "code", Source: "big.c",
 		})
 	}
@@ -57,5 +57,17 @@ func TestNoMatchesRendersHint(t *testing.T) {
 	}
 	if !strings.Contains(Render(r), "no matches") {
 		t.Fatal("miss must be informative (S1e: cheap-but-informative misses)")
+	}
+}
+
+// Trigram tier: a typo'd identifier still finds its node.
+func TestTrigramCatchesTypo(t *testing.T) {
+	nodes := []schema.Node{
+		{ID: "a", Label: "RefundSerializer", Kind: "class", FileType: "code", Source: "a.py"},
+		{ID: "b", Label: "PaymentGateway", Kind: "class", FileType: "code", Source: "b.py"},
+	}
+	res := Run(nodes, nil, "refund serialzer", 2000) // missing 'i'
+	if len(res.Hits) == 0 || res.Hits[0].Node.ID != "a" {
+		t.Fatalf("typo not caught: %+v", res.Hits)
 	}
 }

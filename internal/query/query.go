@@ -89,6 +89,7 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 		score float64
 	}
 	var candidates []scored
+	memo := map[string]map[string]bool{}
 	for i := range nodes {
 		var s float64
 		for _, qt := range qTokens {
@@ -100,9 +101,26 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 			}
 			// Prefix tier (graphify-proven): "refund" ⇢ "refunds",
 			// "serialize" ⇢ "serializer" — weaker than an exact hit.
+			matched := false
 			for nt := range nodeTokens[i] {
 				if len(qt) >= 3 && (strings.HasPrefix(nt, qt) || strings.HasPrefix(qt, nt)) {
 					s += 0.7 * (0.1 + math.Log(total/(1+float64(df[nt]))))
+					matched = true
+					break
+				}
+			}
+			if matched || len(qt) < 5 {
+				continue
+			}
+			// Trigram tier (graphify-proven, rapidfuzz-style): catches typos
+			// and infix matches ("serialzer" ⇢ "serializer"). Weakest tier.
+			qt3 := trigrams(qt, memo)
+			for nt := range nodeTokens[i] {
+				if len(nt) < 5 {
+					continue
+				}
+				if dice(qt3, trigrams(nt, memo)) >= 0.5 {
+					s += 0.4 * (0.1 + math.Log(total/(1+float64(df[nt]))))
 					break
 				}
 			}
@@ -163,6 +181,38 @@ func Render(r *Result) string {
 		}
 	}
 	return sb.String()
+}
+
+// trigrams memoizes per query run (memo local to Run — the dashboard serves
+// concurrent queries, so no shared mutable state).
+func trigrams(s string, memo map[string]map[string]bool) map[string]bool {
+	if t, ok := memo[s]; ok {
+		return t
+	}
+	t := map[string]bool{}
+	for i := 0; i+3 <= len(s); i++ {
+		t[s[i:i+3]] = true
+	}
+	memo[s] = t
+	return t
+}
+
+// dice is the Sørensen–Dice coefficient over trigram sets.
+func dice(a, b map[string]bool) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	small, big := a, b
+	if len(b) < len(a) {
+		small, big = b, a
+	}
+	inter := 0
+	for t := range small {
+		if big[t] {
+			inter++
+		}
+	}
+	return 2 * float64(inter) / float64(len(a)+len(b))
 }
 
 func estimateTokens(n schema.Node, neighbors []Neighbor) int {
