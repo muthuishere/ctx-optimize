@@ -61,11 +61,19 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
   script or the host agent) → markdown → same producer.
 
 ### Product qualities (owner, 2026-07-11) — fast · answers · zero ceremony · refresh-the-world
-1. **graphify-fast is a HARD budget, not a nice-to-have.** Reference numbers to
-   meet or beat on the same corpus: kernel block/ (73k lines C) ≈ 2s; k8s (17.5k
-   files) ≈ 7min full build. S2 route: parallel wasm workers (~220–540 files/s
-   per worker single-threaded — parallelize to close the cgo gap). Incremental
-   refresh of a typical edit: sub-second.
+1. **graphify-fast is a HARD budget, not a nice-to-have — and Go is chosen to
+   BEAT it, multithreaded (owner).** graphify's measured effective rate:
+   ~48 files/s (Python ProcessPool, 18 workers; k8s 19.6k files = 6m46s).
+   Ours: S2 measured 219–537 files/s PER single-threaded wasm worker; one wazero
+   instance per goroutine worker (no GIL, no fork overhead) → 10 workers ≈
+   ~3,000 files/s → **k8s in ~10–15s (vs their 7min), kernel block/ well under
+   1s (vs 2.1s)** — an honest 10–40× build advantage, trivially verifiable by
+   anyone with a stopwatch. Multi-module = free parallelism (each module builds
+   concurrently, then the merged view). x/tools VTA ~1s/module, parallel. LSP:
+   one warm server per language per module, 2–37ms/query, driven concurrently.
+   Incremental refresh of a typical edit: content-hash gate → a handful of
+   files → milliseconds. Speed compounds the product: at 10s full rebuilds,
+   "refresh the world" becomes a habit, not a feature.
 2. **It must ANSWER, not point.** The query primitive is the symbol card /
    wiki page — complete, citation-grade, one call (S1e). Pointer lists are the
    graphify mistake we measured.
