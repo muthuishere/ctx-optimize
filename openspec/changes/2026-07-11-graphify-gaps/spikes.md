@@ -69,6 +69,19 @@ loses to grep.
   grep agent vs wiki-reading agent. Same bar.
 - **Result:** _pending_
 
+### S1d · The kernel test (owner challenge — "Linux showed progress, why?")
+- **Owner's counter-evidence:** his graphify run on Linux kernel block/ showed
+  progress. Reconciliation hypothesis — S1/S1b tested the two most grep-friendly
+  codebases on earth (modern Go, predictable naming); **the graph pays off where
+  naming fails**: legacy C/C++, macros, function pointers, huge files, obscure
+  symbol→file mapping. Also: graphify's own benchmark compares against naive
+  full-file reading, not a strong grep agent — different baseline, both honest.
+- **Method:** same A/B protocol on linux/block (C). Plus run graphify's own
+  `benchmark` to capture what baseline IT uses.
+- **Pass:** >50% cut on kernel-style code ⇒ the product's territory is
+  "codebases where grep fails" (legacy/C/monoliths) — a real, large market.
+- **Result:** _pending_
+
 ### S2 · Pure-Go extraction (single-binary promise)
 - **Question:** can we extract without cgo?
 - **Method:** same 2 grammars three ways — official go-tree-sitter (cgo) vs
