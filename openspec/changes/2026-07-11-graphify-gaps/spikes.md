@@ -57,7 +57,18 @@ external is an adapter.
 - **Method:** build graph on a mid repo, partition (Louvain), edit 5 files one at
   a time with community-ID remapping; measure % pages whose member_hash flips.
 - **Pass:** single-file edit touches ≤10% of communities.
-- **Result:** _pending_
+- **Result (2026-07-11): ⚠️ MARGINAL — design VIABLE with a fatter tail.**
+  citenexus-Go copy (239 nodes / 413 edges / 17 communities). Body edit 0%,
+  small add 5.9%, rename 5.9% ✅ · delete-function 17.6%, add-caller-of-hub
+  23.5% ❌. Crucially: NEVER a global repartition — IDs stable across all runs
+  (remap works), no-op rerun = 0% (deterministic topology-hash short-circuit).
+  Failures are bounded local cascades: 2–4 boundary clusters migrate when an
+  edge lands on a high-degree hub; Jaccard-thresholding does NOT rescue (real
+  3–7-node migrations).
+  **Design implication:** member_hash re-distill works — common case 0–1 pages,
+  budget a burst of ~2–4 pages on hub-adjacent edits. To kill the tail: seed
+  Louvain with the previous partition (frozen boundaries) — partitioner-side
+  fix, adopt in our Go implementation (S6).
 
 ### S5 · Lexical query engine (it IS the engine — no embeddings)
 - **Question:** does IDF+trigram+budget-BFS in Go match graphify's answers?
