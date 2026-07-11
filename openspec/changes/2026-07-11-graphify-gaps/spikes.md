@@ -189,6 +189,28 @@ artifacts. **Pass:** local query <100ms; push = changed files only.
 - **S15** SKILL.md drive test (agent drives subcommands cleanly) — _pending_
 - **S16** toolnexus headless (`run --once`, model-free binary) — _pending_
 
+### S1e · Read-call forensics (owner's question: why so many reads?)
+- **Method:** parsed all 4 A/B transcripts (tool_use/tool_result pairs), classified
+  every Read by what preceded it, measured waste by never-cited files.
+- **Result (2026-07-11): ✅ ANSWERED — reads are pointer-chases, not discovery.**
+  28/28 reads targeted a file a prior tool result had already named; 0 discovery
+  reads. Cause: NO tool returns body + trustworthy line numbers (grep = 1 line;
+  graphify query = prose+names, ~5.7k ch regardless of need; explain = name+edges,
+  263–566 ch, no body) — so citation-grade answers force a follow-up read.
+  Sinks measured: (1) full-file reads = 96% of the brain grep agent's traffic,
+  9% of read content survives into the answer; window discipline is purely
+  behavioral (same model: 17/17 windowed on k8s, 0/11 on brain). (2) graphify
+  verbose-but-incomplete stdout → agents `head`-truncate it in self-defense,
+  and still read after. (3) call-count inflation: 29 calls → 46 turns → 2.4×
+  cache-read cost; 32-char misses cause retry chains.
+- **DESIGN CONSEQUENCE — the SYMBOL CARD is the product's query primitive:**
+  one response = qualified symbol + file + verified start–end lines + signature
+  + doc + body head (~30 lines) + caller/callee edges. Deletes the follow-up
+  read (measured: would remove 12/12 of the graph agent's reads). Plus: hard
+  output cap actually honored; misses return nearest-match suggestions (one
+  call replaces three). Minimize CALLS, not just bytes — each turn re-reads the
+  growing context.
+
 ## Killed by decisions (no spike needed)
 - Vector store / embeddings comparisons — owner: no embeddings, ever.
 - Lance/Postgres query engines — owner: no DB.
