@@ -19,11 +19,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/muthuishere/ctx-optimize/internal/analyze"
 	"github.com/muthuishere/ctx-optimize/internal/dashboard"
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
+	"github.com/muthuishere/ctx-optimize/internal/feedback"
 	"github.com/muthuishere/ctx-optimize/internal/grammar"
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/query"
@@ -54,6 +56,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdQuery(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
+	case "save-result":
+		err = cmdSaveResult(rest, stdout)
+	case "reflect":
+		err = cmdReflect(rest, stdout)
 	case "path":
 		err = cmdPath(rest, stdout)
 	case "explain":
@@ -435,6 +441,85 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "  (from %s)", remoteFrom)
 	}
 	fmt.Fprintln(stdout)
+	return nil
+}
+
+// cmdSaveResult records how a store answer worked out — the agent's side of
+// the learning loop. time.Now() lives HERE; the feedback package only ever
+// sees injected times, so its tests stay deterministic.
+func cmdSaveResult(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	if f.strs["question"] == "" {
+		return fmt.Errorf(`usage: ctx-optimize save-result --question Q --answer A [--type query|path|explain|affected] [--nodes "id1,id2"] [--outcome useful|dead_end|corrected] [--correction C]`)
+	}
+	s, err := openStore(f)
+	if err != nil {
+		return err
+	}
+	var nodes []string
+	for _, n := range strings.Split(f.strs["nodes"], ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			nodes = append(nodes, n)
+		}
+	}
+	r := feedback.Result{
+		Question:   f.strs["question"],
+		Answer:     f.strs["answer"],
+		Type:       f.strs["type"],
+		Nodes:      nodes,
+		Outcome:    f.strs["outcome"],
+		Correction: f.strs["correction"],
+		When:       time.Now().UTC(),
+	}
+	if err := feedback.Save(s, r); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "saved result (%d nodes cited) → %s\n", len(nodes), filepath.Join(s.Dir, "memory", "results.ndjson"))
+	return nil
+}
+
+// cmdReflect aggregates saved results into reflections/LESSONS.md — pure
+// deterministic tallying (half-life decay), no LLM anywhere.
+func cmdReflect(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	s, err := openStore(f)
+	if err != nil {
+		return err
+	}
+	halfLife := 30.0
+	if v, ok := f.strs["half-life-days"]; ok {
+		hl, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return fmt.Errorf("bad --half-life-days %q", v)
+		}
+		halfLife = hl
+	}
+	minCorr := 2
+	if v, ok := f.strs["min-corroboration"]; ok {
+		mc, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("bad --min-corroboration %q", v)
+		}
+		minCorr = mc
+	}
+	l, err := feedback.Reflect(s, time.Now().UTC(), halfLife, minCorr)
+	if err != nil {
+		return err
+	}
+	if f.bools["json"] {
+		return emit(stdout, l)
+	}
+	for _, ns := range l.PreferredNodes {
+		fmt.Fprintf(stdout, "prefer   %s  (score %.3f, %d useful)\n", ns.Node, ns.Score, ns.Useful)
+	}
+	for _, ns := range l.DeadEnds {
+		fmt.Fprintf(stdout, "dead end %s  (score %.3f)\n", ns.Node, ns.Score)
+	}
+	for _, c := range l.Corrections {
+		fmt.Fprintf(stdout, "corrected %q → %s\n", c.Question, c.Correction)
+	}
+	fmt.Fprintf(stdout, "%d preferred, %d dead ends, %d corrections → %s\n",
+		len(l.PreferredNodes), len(l.DeadEnds), len(l.Corrections), filepath.Join(s.Dir, "reflections", "LESSONS.md"))
 	return nil
 }
 
@@ -946,6 +1031,13 @@ commands:
                               [--depth N] [--relation R] [--json]
   hubs                        most-connected nodes (god nodes)  [--top N] [--json]
   status                      store facts  [--json]
+  save-result --question Q    record how a store answer worked out
+                              [--answer A] [--type query|path|explain|affected]
+                              [--nodes "id1,id2"] [--outcome useful|dead_end|corrected]
+                              [--correction C]
+  reflect                     aggregate saved results (half-life decay) into
+                              reflections/LESSONS.md  [--half-life-days N]
+                              [--min-corroboration N] [--json]
   merge <module>... --into N  combine module stores into one merged view
   export [--format json|dot]  dump the graph  [--out FILE]
   serve|dashboard             local dashboard over the whole store

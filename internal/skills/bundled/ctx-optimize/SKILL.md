@@ -44,6 +44,8 @@ one.** The binary is deterministic; you supply all semantics.
 | Combining several repos/modules | `ctx-optimize merge <mod>... --into <name>` |
 | Exporting for other tools | `ctx-optimize export --format json|dot` |
 | Asked for a language we don't cover | `ctx-optimize languages add <name>` (kotlin, ruby, lua, swift, …— `languages list` shows all) or `languages add <github-url>`; then review the suggested .json mapping |
+| Just answered a question from the store | `ctx-optimize save-result --question Q --answer A --type T --nodes "id1,id2" --outcome useful` |
+| Starting a session in a repo with a store | `ctx-optimize reflect` — then read `reflections/LESSONS.md` in the store |
 
 Fast path, imperative: **if `ctx-optimize status --json` shows nodes > 0 and
 the request is a question — query. Do not rebuild. Do not grep. Do not read
@@ -61,6 +63,23 @@ verbatim code, and then read only that range.
    trigram, typos are OK), `hubs` for orientation, `explain` on a nearby
    node — or `add` if the store is stale. Never pad an answer from priors.
 4. Stay in budget: `--budget N` caps output tokens (default 2000).
+
+## Learning loop (save-result → reflect)
+
+The store also remembers how its answers worked out — deterministically, no
+model anywhere; you are the judge, the binary only tallies.
+
+- **After answering from the store**, record the episode, citing the node ids
+  you actually used:
+  `ctx-optimize save-result --question "where is auth" --answer "internal/auth" --type query --nodes "auth.go::login,auth.go::verify" --outcome useful`
+  Use `--outcome dead_end` when the cited nodes did NOT answer the question.
+- **When an answer proved wrong**, say so with the fix:
+  `ctx-optimize save-result --question "..." --outcome corrected --correction "billing actually lives in internal/pay"`
+- **At session start in a repo with a store**, run `ctx-optimize reflect` and
+  read `reflections/LESSONS.md` in the store: preferred nodes (corroborated,
+  recency-weighted), dead ends to avoid, and verbatim corrections. Recent
+  results outweigh old ones (`--half-life-days`, default 30); a node needs
+  `--min-corroboration` (default 2) distinct useful results to be preferred.
 
 ## Adding content — each source works differently (know the lanes)
 
