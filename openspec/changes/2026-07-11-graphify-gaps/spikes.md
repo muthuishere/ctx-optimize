@@ -80,7 +80,18 @@ loses to grep.
   `benchmark` to capture what baseline IT uses.
 - **Pass:** >50% cut on kernel-style code ⇒ the product's territory is
   "codebases where grep fails" (legacy/C/monoliths) — a real, large market.
-- **Result:** _pending_
+- **Benchmark forensics (2026-07-11) — WHY graphify "shows progress":** its
+  self-reported "6.6×" is a strawman, confirmed in `benchmark.py`: baseline =
+  paste-the-ENTIRE-corpus-per-query (nobody does this); corpus size not even
+  measured (estimated `nodes × 50` words); the "query cost" side is an
+  unbudgeted depth-3 BFS dump (~29k tok) that ignores its own `--budget 2000`
+  default; 2 of 5 canned questions matched nothing and were silently dropped.
+  Marketing number, not agent-reality. Our A/B replaces it.
+- **Build data:** block/ = 98 files / 73k lines of C → 2,854 nodes / 7,081
+  edges / 133 communities in **2.1s**, zero LLM. (Fresh 0.9.12 `update` builds
+  still emit pre-#1504 colliding node IDs — their own fix isn't wired into the
+  no-LLM lane.)
+- **A/B result:** _pending_
 
 ### S2 · Pure-Go extraction (single-binary promise)
 - **Question:** can we extract without cgo?
@@ -88,7 +99,19 @@ loses to grep.
   wazero+WASM grammars (pure Go) vs subprocess SCIP indexer. Build for
   mac/linux/windows; measure binary size + parse speed.
 - **Pass:** 6 launch languages feasible with a sane release matrix.
-- **Result:** _pending_
+- **Result (2026-07-11): ✅ PASS — wazero + self-built WASI wasm module.**
+  Measured: cgo fails hard under CGO_ENABLED=0 (only works via zig cc);
+  the one pure-Go runtime (gotreesitter) is DISQUALIFIED (>300s hang on a real
+  215KB file that cgo parses in 25ms; 0.6% symbol loss). The spike BUILT the
+  missing wazero binding (~80-line C shim + ~150-line host): all 7 grammars
+  (go/py/js/ts/rust/java/c#) in one 11MB embedded wasm, symbols byte-identical
+  to cgo, ~55–60% cgo speed (219–537 f/s ⇒ ~10k files/45s single-threaded),
+  full cross-compile matrix with plain `go build`, ~118ms one-time JIT.
+  **Decision: Route B-2.** .scm queries stay the extraction language. CI owns a
+  zig/wasi-sdk wasm pipeline (build-time only). Fallbacks: cgo+zig cc if speed
+  ever demands; ast-grep (MIT) as optional external accelerator, never required.
+  **Resolves review finding R1 unamended** — single static binary holds.
+  Versions: go-tree-sitter v0.25.0 grammars, wazero v1.12.0, zig 0.15.2.
 
 ### S3 · Precise edges (the wedge)
 - **Question:** does LSP/SCIP fix the 2,487-reliable-vs-7,718-guessed problem?
