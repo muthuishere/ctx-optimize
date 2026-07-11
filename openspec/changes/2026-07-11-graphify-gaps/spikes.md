@@ -63,11 +63,27 @@ a product on "cheaper code search for agents."
 **Cancelled:** S5 (lexical query engine port) — pointless to port an engine that
 loses to grep.
 
-### S1c · Wiki-axis test (NEW — the last token-saving hypothesis)
-- **Method:** brain repo (38 communities): label + distill a wiki cheaply, then
-  10 CONCEPTUAL questions (why/how-does-it-fit-together, not where-is-X):
-  grep agent vs wiki-reading agent. Same bar.
-- **Result:** _pending_
+### S1c · Wiki-axis test (the Karpathy hypothesis, isolated)
+- **Method:** agent-as-distiller built a REAL wiki for the brain repo (16 pages
+  + light index, 84k chars, every claim file:line-cited; one-time cost 174k
+  tok). Then 10 CONCEPTUAL questions: grep-on-source vs wiki-only.
+- **Result (2026-07-11): ✅ BEST AXIS — 38.8% savings at equal quality.**
+  Grep: 61,097 tok / 13 calls / 94s. Wiki-only: 37,392 tok / 9 calls / 63s,
+  10-10 and arguably crisper — never touched source. Break-even on distillation
+  ≈ 7 question-sessions; S4's incremental machinery maintains rather than
+  rebuilds; wiki doubles as human onboarding.
+  **Karpathy's actual concept WORKS — graphify never built it** (its "wiki" is
+  member lists; the distillation is the product).
+
+## TIER A CLOSING VERDICT (2026-07-11)
+No single axis cleared the 50% bar (best: wiki 39%). But the spikes converge on
+a coherent composite product: **incremental distilled wiki (39% measured) +
+symbol cards (deletes the measured pointer-chase waste) + exact impact analysis
+(x/tools/LSP — capability grep lacks and graphify gets wrong)** in one pure-Go
+binary (wazero/WASM), aimed at grep-hostile/legacy codebases + onboarding, with
+honest agent-baseline benchmarks as positioning. The composite is a projection:
+measured pieces, unmeasured sum. Owner decides: build on the composite bet,
+run one composite prototype spike first, or stop.
 
 ### S1d · The kernel test (owner challenge — "Linux showed progress, why?")
 - **Owner's counter-evidence:** his graphify run on Linux kernel block/ showed
