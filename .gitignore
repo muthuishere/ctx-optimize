@@ -1,0 +1,14 @@
+# binaries / build
+/ctx-optimize
+/dist/
+*.exe
+
+# graph output / caches (layout is configurable; ignore common defaults)
+/.ctx-optimize/
+*-out/
+/cache/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
