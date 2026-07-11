@@ -507,19 +507,40 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 // non-attribute line of the decl text, capped: decorators (@…), Rust #[…] and
 // C# […] attributes are skipped so `@Override` doesn't shadow the method.
 func signatureOf(declText string) string {
-	for _, line := range strings.Split(declText, "\n") {
+	lines := strings.Split(declText, "\n")
+	start := -1
+	for i, line := range lines {
 		l := strings.TrimSpace(line)
 		if l == "" || strings.HasPrefix(l, "@") || strings.HasPrefix(l, "#[") ||
 			strings.HasPrefix(l, "[") {
 			continue
 		}
-		l = strings.TrimRight(l, " \t{")
-		if len(l) > 160 {
-			l = l[:160] + "…"
-		}
-		return strings.TrimSpace(l)
+		start = i
+		break
 	}
-	return ""
+	if start < 0 {
+		return ""
+	}
+	// A multi-line parameter list joins until parens balance — `def f(` alone
+	// is not a signature.
+	var sb strings.Builder
+	depth := 0
+	for i := start; i < len(lines) && i < start+8; i++ {
+		l := strings.TrimSpace(lines[i])
+		if sb.Len() > 0 {
+			sb.WriteByte(' ')
+		}
+		sb.WriteString(l)
+		depth += strings.Count(l, "(") - strings.Count(l, ")")
+		if depth <= 0 || sb.Len() > 160 {
+			break
+		}
+	}
+	sig := strings.TrimSpace(strings.TrimRight(sb.String(), " \t{"))
+	if len(sig) > 160 {
+		sig = sig[:160] + "…"
+	}
+	return sig
 }
 
 // docAbove collects the comment block sitting DIRECTLY above a declaration.
