@@ -118,17 +118,25 @@ optional per-language **LSP/SCIP** producer, behind the same schema. Both tree-s
 - **THEN** call edges are EXTRACTED-grade (exact references), not name-guessed
 
 ### Requirement: Incremental, scalable wiki (owner: "incremental like graphify, better")
-Building or rebuilding SHALL be incremental: only units whose source changed are
-re-extracted and only affected wiki pages are re-distilled; unchanged units are read
-from the store. Invalidation SHALL key on content hash (not just mtime). (Mechanism
-detailed after the incremental-wiki research — port citenexus-Python
-`WikiStore.integrate_document` + a graphify-style stat/cache index.)
+Building or rebuilding SHALL be incremental. Invalidation SHALL key on **content
+hash** (mtime/size only as a fast-path gate), with separate structural vs LLM hashes
+so a structural change never re-bills the LLM. The re-distill unit SHALL be the
+**community/cluster**, keyed by a `member_hash`; a page re-distills only when its
+member set changes, and cache hits (unversioned distill cache) avoid the LLM call.
+Storage SHALL be per-page objects + a light manifest so query reads only the
+manifest. See `design.md` for the full mechanism.
 
 #### Scenario: one file changes
 - **GIVEN** a built store and one edited source file
 - **WHEN** the user re-runs `add`
-- **THEN** only that file re-extracts and only its affected wiki pages re-distill;
-  everything else is untouched
+- **THEN** only that file re-extracts, only the communities whose `member_hash`
+  changed re-distill (others are read from the store), and no whole-corpus LLM call
+  or global wiki rewrite occurs
+
+#### Scenario: release does not re-bill
+- **GIVEN** a new ctx-optimize version with an unchanged distiller prompt
+- **WHEN** the user re-runs `add` on an unchanged repo
+- **THEN** the unversioned distill cache hits for every community — zero LLM calls
 
 ### Requirement: First-class multi-repo merge (addresses G6)
 ctx-optimize SHALL merge graphs across repos into one, with node dedup and repo
