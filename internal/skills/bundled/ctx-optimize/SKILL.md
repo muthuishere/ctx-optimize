@@ -16,10 +16,13 @@ description: >
 
 # ctx-optimize
 
-One local knowledge store per repo — code (15 languages via built-in
-tree-sitter: go, python, js, ts/tsx, java, c, c++, c#, rust, kotlin, dart,
-zig, swift, sql), markdown/txt docs, and anything else via adapters — that
-you answer from. **Gather once, refresh cheaply, answer from the store.**
+One local knowledge store per repo — code (12 embedded languages: go,
+python, js, ts/tsx, java, c, c++, c#, rust, zig, sql; any other language via
+a drop-in grammar pack — `<name>.wasm` + `<name>.json` in
+`~/ctxoptimize/grammars/` or `.ctxoptimize/grammars/`; kotlin/swift/dart
+packs ship in the repo's `grammars/`), markdown/txt docs, and anything else
+via adapters — that you answer from. **Gather once, refresh cheaply, answer
+from the store.**
 
 **ctx-optimize needs no API key, no model, no database — never prompt for
 one.** The binary is deterministic; you supply all semantics.
