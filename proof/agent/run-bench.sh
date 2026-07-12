@@ -55,11 +55,21 @@ echo "repo:    $REPO"
 echo "workdir: $WORK"
 echo
 
-# 1. binary
+# 1. binary — prefer an explicit --bin, then an installed ctx-optimize
+#    (npm: `npm i -g @muthuishere/ctx-optimize`), and only build from source
+#    as a last resort (needs this repo's Go tree).
 if [ -z "$BIN" ]; then
-  BIN="$WORK/ctx-optimize"
-  echo "[1/6] building ctx-optimize ..."
-  ( cd "$ROOT" && go build -o "$BIN" ./cmd/ctx-optimize )
+  if command -v ctx-optimize >/dev/null 2>&1; then
+    BIN="$(command -v ctx-optimize)"
+    echo "[1/6] using installed ctx-optimize ..."
+  elif [ -f "$ROOT/go.mod" ]; then
+    BIN="$WORK/ctx-optimize"
+    echo "[1/6] building ctx-optimize from source ..."
+    ( cd "$ROOT" && go build -o "$BIN" ./cmd/ctx-optimize )
+  else
+    echo "no ctx-optimize on PATH and no Go source; install it: npm i -g @muthuishere/ctx-optimize" >&2
+    exit 2
+  fi
 fi
 echo "      binary: $("$BIN" --version)"
 
