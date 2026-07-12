@@ -268,6 +268,16 @@ artifacts. **Pass:** local query <100ms; push = changed files only.
 - **Consequence (per the pre-commitment):** do not lead with universal token
   savings; lead with onboarding savings + impact correctness + the equalizer
   story. Fix D1–D3, re-run arm B, publish both runs.
+- **Tier addendum (same day, owner-requested):** repeated on Claude Code
+  haiku + sonnet, 40× corpus (3,987 kernel files → 274,812 nodes / 3,989
+  wiki pages gathered in 5.5s; query 1.7s / card 1.1s at that scale).
+  Haiku −1.1% tok / −29% turns / 11-11; Sonnet +5.2% tok / −13% turns /
+  arm B quality BEAT arm A (12/12 vs 11.5/12 — A claimed a comment-only
+  caller). **Refined mechanism: step-cost economics, not model IQ** — the
+  store cuts steps at every tier; steps become token savings only where
+  the harness re-pays context per step (Devin: cached=0 → −42.5%).
+  Claude's prompt caching absorbs extra steps → parity even on haiku.
+  Codex mini unavailable on ChatGPT accounts (400, measured).
 
 ## Killed by decisions (no spike needed)
 - Vector store / embeddings comparisons — owner: no embeddings, ever.

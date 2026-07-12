@@ -1,0 +1,9 @@
+This kernel tree implements three pluggable blk-mq I/O schedulers (plus the implicit "none"/no-op passthrough when no elevator is attached):
+
+| Scheduler | File | Philosophy (one sentence) | Dispatch entry point |
+|---|---|---|---|
+| **mq-deadline** | `block/mq-deadline.c` | Bounds per-request worst-case latency by giving each read/write a deadline and dispatching whichever is more urgent (expired deadline or best-positioned in the sorted sector order), batching in one direction to limit disk-seek thrashing. | `dd_dispatch_request()` (`block/mq-deadline.c:994` via `.dispatch_request`; core logic in `__dd_dispatch_request()`, `block/mq-deadline.c:325`) |
+| **kyber** | `block/kyber-iosched.c` | Self-tunes per-domain (read/sync-write/other) in-flight queue depths to hit configurable target latencies, acting as a low-overhead, latency-driven throttle suited to fast multiqueue devices rather than a strict ordering scheduler. | `kyber_dispatch_request()` (`block/kyber-iosched.c:789`, registered at `:1008`; iterates domains via `kyber_dispatch_cur_domain()`, `:739`) |
+| **BFQ** (Budget Fair Queueing) | `block/bfq-iosched.c` | Fairly shares device bandwidth among processes/cgroups by assigning each queue a service "budget" (proportional to its weight) while still guaranteeing low latency to interactive/soft-real-time workloads. | `bfq_dispatch_request()` (registered at `block/bfq-iosched.c:7597`; core logic in `__bfq_dispatch_request()`, `:5157`) |
+
+There's also the "none" pseudo-scheduler (no `elevator_type` at all) — requests go straight from software queues to `blk_mq_run_hw_queue()`/hardware dispatch with no reordering, philosophy being "let the fast NVMe-class device or a lower layer do the scheduling."

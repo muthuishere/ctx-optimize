@@ -1,0 +1,1 @@
+bio_attempt_back_merge() at block/blk-merge.c:941 performs the actual merge (extends `req->biotail`, updates `nr_phys_segments`, `__data_len`, accounts I/O). Before doing the merge it calls ll_back_merge_fn() (block/blk-merge.c:573) as the gatekeeper, which checks things like max sectors/segments and gap constraints (via req_gap_back_merge) to decide whether the merge is allowed.

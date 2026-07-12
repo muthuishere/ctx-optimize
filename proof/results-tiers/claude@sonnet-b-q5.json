@@ -1,0 +1,9 @@
+{
+ "harness": "claude@sonnet",
+ "arm": "b",
+ "qid": "q5",
+ "wall_s": 10.4,
+ "exit": 0,
+ "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"api_error_status\":null,\"duration_ms\":9149,\"duration_api_ms\":7032,\"ttft_ms\":2237,\"ttft_stream_ms\":1478,\"time_to_request_ms\":45,\"num_turns\":2,\"result\":\"bio_attempt_back_merge() at block/blk-merge.c:941 performs the actual merge (extends `req->biotail`, updates `nr_phys_segments`, `__data_len`, accounts I/O). Before doing the merge it calls ll_back_merge_fn() (block/blk-merge.c:573) as the gatekeeper, which checks things like max sectors/segments and gap constraints (via req_gap_back_merge) to decide whether the merge is allowed.\",\"stop_reason\":\"end_turn\",\"session_id\":\"b07990f7-b85c-4bc2-870d-1ba67df5a6ee\",\"total_cost_usd\":0.1672905,\"usage\":{\"input_tokens\":4,\"cache_creation_input_tokens\":23042,\"cache_read_input_tokens\":79605,\"output_tokens\":343,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":23042,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":158,\"cache_read_input_tokens\":50642,\"cache_creation_input_tokens\":1363,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1363},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-sonnet-5\":{\"inputTokens\":4,\"outputTokens\":343,\"cacheReadInputTokens\":79605,\"cacheCreationInputTokens\":23042,\"webSearchRequests\":0,\"costUSD\":0.1672905,\"contextWindow\":1000000,\"maxOutputTokens\":64000}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"uuid\":\"4e422f14-db8c-4a1f-97a8-b329140165cf\"}\n",
+ "stderr": ""
+}

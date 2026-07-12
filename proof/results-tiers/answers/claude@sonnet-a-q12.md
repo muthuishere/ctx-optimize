@@ -1,0 +1,7 @@
+This kernel tree has three pluggable blk-mq I/O schedulers, registered via `struct elevator_type` (`block/*-iosched.c`):
+
+| Scheduler | Philosophy | Dispatch entry point |
+|---|---|---|
+| **BFQ** (Budget Fair Queueing) | Proportional-share scheduling that gives each process/cgroup a fair, budgeted share of disk time while prioritizing low latency for interactive/soft-real-time tasks (`block/bfq-iosched.c:16-22`). | `bfq_dispatch_request(struct blk_mq_hw_ctx *hctx)` — `block/bfq-iosched.c:5298` (delegates to `__bfq_dispatch_request` at `:5157`), registered at `block/bfq-iosched.c:7597`. |
+| **Kyber** | Controls per-request-type latency by dynamically throttling queue depths of separate scheduling domains (read/write/discard/etc.) rather than reordering by deadline or fairness (`block/kyber-iosched.c:3-4`). | `kyber_dispatch_request(struct blk_mq_hw_ctx *hctx)` — `block/kyber-iosched.c:789`, registered at `block/kyber-iosched.c:1008`. |
+| **mq-deadline** | Bounds per-request latency by sorting into per-priority read/write deadline queues and dispatching whichever request's deadline is about to expire, batching same-direction requests otherwise for throughput (`block/mq-deadline.c:3-4`, `:322`). | `dd_dispatch_request(struct blk_mq_hw_ctx *hctx)` — `block/mq-deadline.c:452` (delegates to `__dd_dispatch_request` at `:325`), registered at `block/mq-deadline.c:994`. |

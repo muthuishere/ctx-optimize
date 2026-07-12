@@ -43,7 +43,7 @@ ARM_B_RULES = (
     "  ctx-optimize explain <symbol>         # relationships around a symbol\n"
     "  ctx-optimize path <sym-a> <sym-b>     # how two symbols connect\n"
     "  ctx-optimize affected <symbol>        # impact: what depends on it\n"
-    "  plus wiki pages under ~/ctxoptimize/linux-block/wiki/ (start at index.md).\n"
+    "  plus wiki pages under ~/ctxoptimize/linux/wiki/ (start at index.md).\n"
     "Run these from the current directory. Only open source files if the store "
     "leaves a specific gap the answer still needs."
 )
@@ -57,16 +57,27 @@ TIMEOUT = 900
 
 
 def build_cmd(harness, prompt, aux_path):
-    if harness == "claude":
-        return ["claude", "-p", prompt, "--output-format", "json",
-                "--dangerously-skip-permissions"]
-    if harness == "codex":
-        return ["codex", "exec", "--json", "--skip-git-repo-check",
-                "-s", "danger-full-access",
-                "-o", str(aux_path), prompt]
-    if harness == "devin":
-        return ["devin", "-p", prompt, "--permission-mode", "dangerous",
-                "--export", str(aux_path)]
+    # harness may carry a model variant: "claude@haiku", "codex@gpt-5-mini"
+    base, _, model = harness.partition("@")
+    if base == "claude":
+        cmd = ["claude", "-p", prompt, "--output-format", "json",
+               "--dangerously-skip-permissions"]
+        if model:
+            cmd += ["--model", model]
+        return cmd
+    if base == "codex":
+        cmd = ["codex", "exec", "--json", "--skip-git-repo-check",
+               "-s", "danger-full-access",
+               "-o", str(aux_path)]
+        if model:
+            cmd += ["-m", model]
+        return cmd + [prompt]
+    if base == "devin":
+        cmd = ["devin", "-p", prompt, "--permission-mode", "dangerous",
+               "--export", str(aux_path)]
+        if model:
+            cmd += ["--model", model]
+        return cmd
     raise ValueError(harness)
 
 

@@ -27,6 +27,39 @@ arm costs the same or more tokens than plain grep at equal answer quality.
 The pre-committed consequence applies: **stop selling "saves tokens" as the
 universal headline, pivot the claim to where the data says the value is.**
 
+## Model-tier addendum (2026-07-12, same day)
+
+Owner asked: does a small/medium model change the picture? Re-ran the full
+12-question A/B on Claude Code with `--model haiku` and `--model sonnet`, on a
+**40× bigger corpus** (3,987 C/H files: block+mm+kernel+fs+drivers/block+
+drivers/nvme+lib; store: 274,812 nodes / 3,989 wiki pages, gathered in
+**5.5s**). Raw runs: `results-tiers/`. (Codex's mini model returns 400 on
+ChatGPT accounts — `gpt-5.1-codex-mini` is API-only; measured, not assumed.)
+
+| Tier | Corpus | Tokens A→B | Turns A→B | Quality A / B |
+|---|---|---|---|---|
+| Claude (default/big) | 98 files | −0.2% | ~flat | 12/12 vs 11.5/12 |
+| Claude Sonnet | 3,987 files | +5.2% cost | **−13%** | 11.5/12 vs **12/12** |
+| Claude Haiku | 3,987 files | −1.1% | **−29%** | 11/12 vs 11/12 |
+| Codex (default) | 98 files | +3.0% | ~flat | 11.5/12 vs 11.5/12 |
+| Devin (SWE-1.6) | 98 files | **−42.5%** | −24% steps | 5/6 vs **6/6** |
+
+**The mechanism is step-cost economics, not model IQ.** The store cuts
+*steps* at every tier (haiku −29%, devin −24%, sonnet −13%). Whether fewer
+steps become fewer tokens depends on what the harness pays per step: Devin
+reports zero cached tokens — every step re-pays the whole context — so
+−24% steps became −42.5% tokens. Claude Code's prompt caching makes extra
+steps nearly free, so even haiku lands at token parity. Corollary: the
+token-savings claim is real exactly where caching is absent or billed
+(API pay-per-step scaffolds, custom agents, CI loops), and it is a
+step/latency claim where caching is present.
+
+**Quality tilts toward the store arm as models get smaller-or-equal:** sonnet
+arm B beat arm A (A listed a comment-only file as a real caller of
+`blk_mq_run_hw_queue`; B explicitly flagged it "comment, not an actual
+call"), devin arm B beat arm A (wrong gatekeeper). Frontier arm A never lost
+on correctness; sub-frontier arm A did, twice.
+
 ## Where the value actually is (measured)
 
 1. **Weak/cheap harnesses save big.** Devin's model burned 2.3M tokens /

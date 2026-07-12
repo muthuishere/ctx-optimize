@@ -1,0 +1,5 @@
+Found the answer:
+
+- **`check_partition()`** — `block/partitions/core.c:119`. It walks the `check_part[]` array (`block/partitions/core.c:17`, listing parsers like `msdos_partition`, `efi_partition`, `mac_partition`, `amiga_partition`, `atari_partition`, `osf_partition`, `sgi_partition`, `sun_partition`, `adfspart_check_*`, `ibm_partition`, etc.) and invokes each one in turn via `res = check_part[i++](state);` (line 143) until one succeeds.
+
+- **`blk_add_partitions()`** — `block/partitions/core.c:583`. Called from `bdev_disk_changed()` (line 695) after `check_partition()` returns; it iterates `state->parts[]` and calls **`blk_add_partition()`** (`block/partitions/core.c:531`) for each discovered slot, which in turn calls **`add_partition()`** (`block/partitions/core.c:295`) to actually create the partition device.

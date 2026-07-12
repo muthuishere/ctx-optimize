@@ -1,0 +1,9 @@
+{
+ "harness": "claude@sonnet",
+ "arm": "a",
+ "qid": "q8",
+ "wall_s": 9.1,
+ "exit": 0,
+ "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"api_error_status\":null,\"duration_ms\":7787,\"duration_api_ms\":7295,\"ttft_ms\":2618,\"ttft_stream_ms\":2221,\"time_to_request_ms\":43,\"num_turns\":3,\"result\":\"Files containing calls to `blk_mq_run_hw_queue()`:\\n\\n- `block/blk-mq.c`\\n- `block/blk-mq-sched.c`\\n- `block/blk-mq-tag.c`\\n- `block/mq-deadline.c`\\n- `block/kyber-iosched.c`\\n- `drivers/block/rnbd/rnbd-clt.c`\",\"stop_reason\":\"end_turn\",\"session_id\":\"8dba44af-30d3-437e-9e20-9a485f33ecf8\",\"total_cost_usd\":0.17726730000000002,\"usage\":{\"input_tokens\":6,\"cache_creation_input_tokens\":22325,\"cache_read_input_tokens\":129981,\"output_tokens\":287,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":22325,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":124,\"cache_read_input_tokens\":50562,\"cache_creation_input_tokens\":726,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":726},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-sonnet-5\":{\"inputTokens\":6,\"outputTokens\":287,\"cacheReadInputTokens\":129981,\"cacheCreationInputTokens\":22325,\"webSearchRequests\":0,\"costUSD\":0.17726730000000002,\"contextWindow\":1000000,\"maxOutputTokens\":64000}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"uuid\":\"4fcba464-95a4-4eb2-bfdd-dcee39ac0359\"}\n",
+ "stderr": ""
+}

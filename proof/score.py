@@ -87,7 +87,7 @@ def main():
     for p in sorted(out_dir.glob("*-*-q*.json")):
         rec = json.loads(p.read_text())
         try:
-            m = EXTRACT[rec["harness"]](rec)
+            m = EXTRACT[rec["harness"].partition("@")[0]](rec)
         except Exception as e:
             m = {"error": f"{type(e).__name__}: {e}", "answer": ""}
         row = {"run": p.stem, "harness": rec["harness"], "arm": rec["arm"],
