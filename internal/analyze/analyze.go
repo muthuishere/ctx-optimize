@@ -288,7 +288,7 @@ type CardData struct {
 	Node      schema.Node         `json:"node"`
 	Signature string              `json:"signature,omitempty"`
 	Doc       string              `json:"doc,omitempty"`
-	Body      string              `json:"body,omitempty"` // first lines of the actual source span, filled by the caller when the file is reachable
+	Body      string              `json:"body,omitempty"`      // first lines of the actual source span, filled by the caller when the file is reachable
 	Parent    string              `json:"parent,omitempty"`    // what contains it
 	Contains  []string            `json:"contains,omitempty"`  // what it contains
 	Calls     []string            `json:"calls,omitempty"`     // outgoing calls
