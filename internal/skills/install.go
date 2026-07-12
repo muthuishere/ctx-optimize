@@ -1,7 +1,8 @@
 // Package skills embeds the bundled agent skill and installs it — the binary
 // ships via npm/brew with no repo alongside, so embed-and-write-out is the
-// only reliable delivery. Fan-out: ~/.claude/skills always; ~/.agents/skills
-// when codex is on PATH or --agents is passed (house pattern from crossmem).
+// only reliable delivery. Targets are always ~/.claude/skills and
+// ~/.agents/skills (the cross-CLI SKILL.md standard); per-repo triggering is
+// the AGENTS.md/CLAUDE.md pointer block that `init` writes.
 package skills
 
 import (
@@ -9,7 +10,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -18,27 +18,21 @@ var bundled embed.FS
 
 const skillName = "ctx-optimize"
 
-// Targets returns the skill install directories for this machine. The
-// SKILL.md format is a cross-CLI standard: Claude Code reads
-// ~/.claude/skills; Copilot CLI and Devin CLI read ~/.agents/skills (Copilot
-// also reads .claude/skills); Codex and Devin additionally have their own
-// native dirs. Install everywhere the corresponding CLI is present.
+// Targets returns the skill install directories: always the two standard
+// locations, nothing CLI-specific. ~/.claude/skills is read by Claude Code
+// (and Copilot); ~/.agents/skills is the cross-CLI SKILL.md standard read by
+// Copilot and Devin. Codex/OpenCode get their pointer via the AGENTS.md
+// block `init` writes — the mechanism measured to actually trigger usage.
 func Targets(includeAgents bool) ([]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
-	targets := []string{filepath.Join(home, ".claude", "skills", skillName)}
-	if includeAgents || onPath("codex") || onPath("devin") || onPath("copilot") {
-		targets = append(targets, filepath.Join(home, ".agents", "skills", skillName))
-	}
-	if onPath("codex") {
-		targets = append(targets, filepath.Join(home, ".codex", "skills", skillName))
-	}
-	if onPath("devin") {
-		targets = append(targets, filepath.Join(home, ".config", "devin", "skills", skillName))
-	}
-	return targets, nil
+	_ = includeAgents // both targets are unconditional now
+	return []string{
+		filepath.Join(home, ".claude", "skills", skillName),
+		filepath.Join(home, ".agents", "skills", skillName),
+	}, nil
 }
 
 // Install writes the embedded skill into each target dir.
@@ -87,9 +81,4 @@ func Uninstall() ([]string, error) {
 		}
 	}
 	return removed, nil
-}
-
-func onPath(bin string) bool {
-	_, err := exec.LookPath(bin)
-	return err == nil
 }
