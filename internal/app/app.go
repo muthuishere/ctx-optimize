@@ -35,6 +35,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/skills"
 	"github.com/muthuishere/ctx-optimize/internal/store"
+	metrics "github.com/muthuishere/ctx-optimize/internal/usage"
 	"github.com/muthuishere/ctx-optimize/internal/version"
 	"github.com/muthuishere/ctx-optimize/internal/wiki"
 )
@@ -210,6 +211,31 @@ func openBackend(r *project.Remote) (remote.Backend, error) {
 }
 
 // ---- commands ----
+
+// countingWriter measures bytes served so usage analytics reflect actual
+// output volume (est tokens = bytes/4, same heuristic as the query budget).
+type countingWriter struct {
+	w io.Writer
+	n int
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += n
+	return n, err
+}
+
+// served records one answered read verb into the store's usage metrics.
+// Fail-silent by design: analytics never break an answer.
+func served(s *store.Store, verb, arg string, hits int, cw *countingWriter, t0 time.Time) {
+	if s == nil {
+		return
+	}
+	metrics.Record(s.Dir, metrics.Event{
+		Verb: verb, Arg: arg, Hits: hits, Bytes: cw.n,
+		MS: time.Since(t0).Milliseconds(),
+	})
+}
 
 func cmdInit(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
@@ -426,11 +452,14 @@ func cmdQuery(args []string, stdout io.Writer) error {
 			budget = b
 		}
 	}
+	t0 := time.Now()
 	res := query.Run(nodes, edges, strings.Join(f.args, " "), budget)
+	cw := &countingWriter{w: stdout}
+	defer func() { served(s, "query", strings.Join(f.args, " "), len(res.Hits), cw, t0) }()
 	if f.bools["json"] {
-		return emit(stdout, res)
+		return emit(cw, res)
 	}
-	fmt.Fprint(stdout, query.Render(res))
+	fmt.Fprint(cw, query.Render(res))
 	return nil
 }
 
@@ -463,6 +492,9 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	st := map[string]any{
 		"store": s.Dir, "nodes": len(nodes), "edges": len(edges),
 		"remote": remoteURL, "remote_from": remoteFrom,
+	}
+	if sum, err := metrics.Summarize(s.Dir); err == nil && sum.Total > 0 {
+		st["served"] = sum
 	}
 	if f.bools["json"] {
 		return emit(stdout, st)
@@ -580,6 +612,11 @@ func cmdPath(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	t0 := time.Now()
+	cw := &countingWriter{w: stdout}
+	stdout = cw
+	st, _ := openStore(f)
+	defer func() { served(st, "path", strings.Join(f.args, " → "), 1, cw, t0) }()
 	steps, err := analyze.ShortestPath(nodes, edges, f.args[0], f.args[1])
 	if err != nil {
 		return err
@@ -607,6 +644,11 @@ func cmdExplain(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	t0 := time.Now()
+	cw := &countingWriter{w: stdout}
+	stdout = cw
+	st, _ := openStore(f)
+	defer func() { served(st, "explain", f.args[0], 1, cw, t0) }()
 	ex, err := analyze.Explain(nodes, edges, f.args[0])
 	if err != nil {
 		return err
@@ -627,15 +669,19 @@ func cmdCard(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	t0 := time.Now()
 	c, err := analyze.Card(nodes, edges, f.args[0])
 	if err != nil {
 		return err
 	}
 	c.Body = bodyHead(f.strs["path"], c.Node)
+	cw := &countingWriter{w: stdout}
+	st, _ := openStore(f) // path resolution only — cheap; nil is fine
+	defer func() { served(st, "card", f.args[0], 1, cw, t0) }()
 	if f.bools["json"] {
-		return emit(stdout, c)
+		return emit(cw, c)
 	}
-	fmt.Fprint(stdout, analyze.RenderCard(c))
+	fmt.Fprint(cw, analyze.RenderCard(c))
 	return nil
 }
 
@@ -705,6 +751,10 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 	if err != nil || len(nodes) == 0 {
 		return nil
 	}
+	t0 := time.Now()
+	cw := &countingWriter{w: stdout}
+	stdout = cw
+	defer func() { served(s, "hook-context", "", 1, cw, t0) }()
 	msg := fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (sig+doc+body+callers) · `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks.", len(nodes))
 	// Two wire formats: the Claude hook contract (also understood by Codex
 	// and Devin — the ecosystem converged on it) and Copilot's sessionStart
@@ -734,6 +784,11 @@ func cmdAffected(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	t0 := time.Now()
+	cw := &countingWriter{w: stdout}
+	stdout = cw
+	st, _ := openStore(f)
+	defer func() { served(st, "affected", f.args[0], 1, cw, t0) }()
 	depth := 2
 	if v, ok := f.strs["depth"]; ok {
 		if d, err := strconv.Atoi(v); err == nil {
@@ -764,6 +819,11 @@ func cmdHubs(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	t0 := time.Now()
+	cw := &countingWriter{w: stdout}
+	stdout = cw
+	st, _ := openStore(f)
+	defer func() { served(st, "hubs", "", 1, cw, t0) }()
 	top := 10
 	if v, ok := f.strs["top"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {

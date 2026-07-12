@@ -26,6 +26,8 @@
   main { flex: 1; display: flex; min-height: 0; }
   #side { width: 350px; border-right: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
   #results { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  #usagebox { border-bottom: 1px solid var(--border); padding: 10px 12px; font-size: 12px; line-height: 1.7; background: var(--bg1); }
+  #servedchip { font-size: 11px; color: var(--dim); border: 1px solid var(--border); border-radius: 12px; padding: 2px 10px; white-space: nowrap; }
   #results:empty::before { content: "type a question above — same engine the agent uses"; color: var(--dim); font-size: 12px; padding: 8px; }
   .hit { padding: 9px 11px; border: 1px solid var(--border); border-left: 3px solid var(--kc, var(--accent2)); border-radius: 8px; cursor: pointer; background: var(--bg1); transition: transform .08s, border-color .15s, background .15s; }
   .hit:hover { border-color: var(--border2); background: var(--panel2); transform: translateX(2px); }
@@ -62,9 +64,11 @@
   <select id="module" title="module"></select>
   <input id="q" type="text" placeholder="ask the store… (Enter)" autocomplete="off">
   <span id="counts"></span>
+  <span id="servedchip" title="click for the served panel" style="cursor:pointer"></span>
 </header>
 <main>
   <div id="side">
+    <div id="usagebox" style="display:none"></div>
     <div id="results"></div>
     <div id="detail"><span class="k">click a node or a hit for details</span></div>
   </div>
@@ -106,6 +110,30 @@ function assignColors() {
 }
 const kindColor = k => kindColors.get(k) || '#94a3b8';
 
+// ---- served / usage analytics ----
+async function loadUsage(key) {
+  try {
+    const u = await api('/api/usage?module=' + encodeURIComponent(key));
+    const chip = $('servedchip');
+    chip.textContent = u.total_served
+      ? `served ${u.total_served} · ~${fmtTok(u.est_tokens_served)} tok`
+      : 'served 0 — agents have not asked yet';
+    chip.onclick = () => {
+      const box = $('usagebox');
+      if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+      const verbs = Object.entries(u.by_verb || {}).sort((a,b)=>b[1].count-a[1].count)
+        .map(([v,st]) => `<div class="row"><b>${esc(v)}</b> ×${st.count} · ${fmtTok(Math.round(st.bytes/4))} tok · avg ${st.avg_ms}ms</div>`).join('');
+      const days = Object.entries(u.by_day || {}).sort().slice(-14)
+        .map(([d,c]) => `<div class="row"><span class="k">${d}</span> ${'▪'.repeat(Math.min(c,40))} ${c}</div>`).join('');
+      box.innerHTML = `<div class="row"><b>served</b> — ${u.total_served} answers · ~${fmtTok(u.est_tokens_served)} tokens delivered${u.first_event?` · since ${u.first_event}`:''}</div>
+        <div class="row"><span class="k">today ${u.served_today} · last 7 days ${u.served_last_7_days}</span></div>${verbs}
+        <div class="row k">last 14 days</div>${days}`;
+      box.style.display = 'block';
+    };
+  } catch (e) { /* analytics must never break the dashboard */ }
+}
+const fmtTok = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
+
 // ---- modules ----
 async function loadModules() {
   const mods = await api('/api/modules');
@@ -130,6 +158,7 @@ async function loadGraph(key) {
   G = await api('/api/graph?module=' + encodeURIComponent(key));
   G.nodes = G.nodes || []; G.edges = G.edges || [];
   $('counts').innerHTML = `<b>${G.nodes.length}</b> nodes · <b>${G.edges.length}</b> edges`;
+  loadUsage(key);
   history.replaceState(null, '', '?module=' + encodeURIComponent(key));
   buildView();
   assignColors();

@@ -17,6 +17,7 @@ import (
 
 	"github.com/muthuishere/ctx-optimize/internal/query"
 	"github.com/muthuishere/ctx-optimize/internal/store"
+	"github.com/muthuishere/ctx-optimize/internal/usage"
 )
 
 //go:embed index.html
@@ -83,6 +84,21 @@ func NewHandler(root string) http.Handler {
 			return
 		}
 		jsonOK(w, map[string]any{"nodes": nodes, "edges": edges})
+	})
+
+	mux.HandleFunc("/api/usage", func(w http.ResponseWriter, r *http.Request) {
+		mod := r.URL.Query().Get("module")
+		if mod == "" || mod != filepath.Base(mod) {
+			jsonError(w, http.StatusBadRequest, "module required")
+			return
+		}
+		sum, err := usage.Summarize(filepath.Join(root, mod))
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sum)
 	})
 
 	mux.HandleFunc("/api/query", func(w http.ResponseWriter, r *http.Request) {
