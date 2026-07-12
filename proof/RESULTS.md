@@ -133,7 +133,20 @@ because the mechanism requires it: `install` adds a Claude Code
 UserPromptSubmit hook → `ctx-optimize hook-context` (prints the pointer
 only when the cwd repo has a populated store; silent otherwise; surgical
 settings.json merge). Hook-only one-shot (repo pointer files removed):
-store used unprompted, correct answer, baseline cost. graphify ships the
+store used unprompted, correct answer, baseline cost.
+
+**Every hook verified LIVE, none for-the-sake (owner requirement), all with
+repo pointer files parked so only the hook could trigger:** claude ✓
+(UserPromptSubmit → query, correct gatekeeper) · codex ✓ (~/.codex/hooks.json,
+9 store calls — note graphify's codex hook is a deliberate no-op; ours
+injects because we chose UserPromptSubmit, which codex accepts, over
+PreToolUse, which it rejects) · copilot ✓ (sessionStart → agent's FIRST
+action was `ctx-optimize query`) · devin ✓ (native ~/.claude/settings.json
+pickup → 1 query + 11 cards, self-selected --json). opencode has no JSON
+hook format (JS plugins only) → covered by the AGENTS.md pointer.
+`uninstall` reverses all hook installs. `init` keeps writing BOTH
+CLAUDE.md + AGENTS.md — committable team-wide coverage independent of any
+machine's hooks. graphify ships the
 same idea as per-CLI config rewriting (`install --platform <cli>`, global
 CLAUDE.md section — which is why its skill "fires": Muthu's global
 CLAUDE.md already carries its pointer); we deliberately keep the repo
