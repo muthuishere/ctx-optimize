@@ -1,0 +1,10 @@
+{
+  "repo": "https://github.com/gorilla/mux",
+  "name": "gorilla-mux",
+  "questions": [
+    { "id": "q1", "prompt": "Which function or method decides whether an incoming request matches a route, and where is it defined?" },
+    { "id": "q2", "prompt": "What does the router's ServeHTTP method do, and where is it defined?" },
+    { "id": "q3", "prompt": "How are path variables (like {id}) captured from a URL and made available to handlers? Name the functions involved." },
+    { "id": "q4", "prompt": "If I change the Route.Match method, what other code depends on it or calls it?" }
+  ]
+}

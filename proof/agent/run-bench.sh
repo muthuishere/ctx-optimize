@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# End-to-end headless benchmark — the same flow a CI job runs.
+#
+#   1. build (or reuse) the ctx-optimize binary
+#   2. install the agent skill into the global skill dirs   (proves install)
+#   3. git clone a small repo
+#   4. ctx-optimize init && add .   -> builds the store, writes the agent pointer
+#   5. for each question, run the OpenRouter agent on arm a (shell) and arm b (store)
+#   6. print a time / tokens / cost / steps comparison table
+#
+# Needs: OPENROUTER_API_KEY in the environment, node, go (or a prebuilt --bin),
+# git. Nothing here prints the key.
+#
+# Usage:
+#   proof/agent/run-bench.sh [--model openai/gpt-4o-mini] [--bin PATH]
+#                            [--questions FILE] [--out DIR] [--repo URL --name N]
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+MODEL="openai/gpt-4o-mini"
+BIN=""
+QFILE="$HERE/questions.json"
+OUT="$HERE/results"
+REPO=""
+NAME=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --model) MODEL="$2"; shift 2;;
+    --bin) BIN="$2"; shift 2;;
+    --questions) QFILE="$2"; shift 2;;
+    --out) OUT="$2"; shift 2;;
+    --repo) REPO="$2"; shift 2;;
+    --name) NAME="$2"; shift 2;;
+    *) echo "unknown arg: $1" >&2; exit 2;;
+  esac
+done
+
+[ -n "${OPENROUTER_API_KEY:-}" ] || { echo "OPENROUTER_API_KEY not set" >&2; exit 2; }
+
+# repo + name default from the questions file
+[ -n "$REPO" ] || REPO="$(node -e 'console.log(require(process.argv[1]).repo)' "$QFILE")"
+[ -n "$NAME" ] || NAME="$(node -e 'console.log(require(process.argv[1]).name)' "$QFILE")"
+
+WORK="$(mktemp -d)"
+CLONE="$WORK/$NAME"
+mkdir -p "$OUT"
+
+echo "== ctx-optimize headless benchmark =="
+echo "model:   $MODEL"
+echo "repo:    $REPO"
+echo "workdir: $WORK"
+echo
+
+# 1. binary
+if [ -z "$BIN" ]; then
+  BIN="$WORK/ctx-optimize"
+  echo "[1/6] building ctx-optimize ..."
+  ( cd "$ROOT" && go build -o "$BIN" ./cmd/ctx-optimize )
+fi
+echo "      binary: $("$BIN" --version)"
+
+# 2. install the agent skill (global dirs) — proves the skill install path
+echo "[2/6] installing agent skill ..."
+"$BIN" install --skills >/dev/null 2>&1 || echo "      (skill install skipped)"
+
+# 3. clone
+echo "[3/6] cloning $NAME ..."
+git clone --depth 1 "$REPO" "$CLONE" >/dev/null 2>&1
+echo "      $(find "$CLONE" -type f | wc -l | tr -d ' ') files"
+
+# 4. build the store + agent pointer
+echo "[4/6] building the store ..."
+( cd "$CLONE" && "$BIN" init >/dev/null 2>&1 && "$BIN" add . >/dev/null 2>&1 )
+echo "      $("$BIN" status --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log((j.nodes||0)+" nodes, "+(j.edges||0)+" edges")}catch{console.log("store built")}})')"
+
+# 5. run both arms per question
+echo "[5/6] running agent (arm a = shell, arm b = store) ..."
+QIDS="$(node -e 'require(process.argv[1]).questions.forEach(q=>console.log(q.id))' "$QFILE")"
+for qid in $QIDS; do
+  QTEXT="$(node -e 'const q=require(process.argv[1]).questions.find(x=>x.id===process.argv[2]);console.log(q.prompt)' "$QFILE" "$qid")"
+  for arm in a b; do
+    dest="$OUT/${NAME}-${arm}-${qid}.json"
+    printf "      %s arm %s ... " "$qid" "$arm"
+    if node "$HERE/agent.mjs" --repo "$CLONE" --bin "$BIN" --arm "$arm" \
+        --model "$MODEL" --q "$QTEXT" > "$dest" 2>"$dest.err"; then
+      node -e 'const r=require(process.argv[1]);console.log(`ok  ${r.wall_s}s  ${r.tokens.total}tok  $${r.cost_usd}  ${r.steps} steps`)' "$dest"
+    else
+      echo "FAILED (see $dest.err)"; cat "$dest.err" | tail -3
+    fi
+  done
+done
+
+# 6. summary table
+echo
+echo "[6/6] summary"
+node "$HERE/summarize.mjs" "$OUT" "$NAME" "$MODEL" | tee "$OUT/SUMMARY-${NAME}.md"
+
+echo
+echo "raw records: $OUT"
+echo "clone kept at: $CLONE (rm -rf $WORK when done)"
