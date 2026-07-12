@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -628,11 +629,56 @@ func cmdCard(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	c.Body = bodyHead(f.strs["path"], c.Node)
 	if f.bools["json"] {
 		return emit(stdout, c)
 	}
 	fmt.Fprint(stdout, analyze.RenderCard(c))
 	return nil
+}
+
+// bodyHead returns the first lines of the node's source span, read from the
+// local file at card time — the S1e finding: a card without the body forces
+// the agent into a follow-up read that costs more than the whole card. The
+// file is only reachable when the card is asked from (or --path points at)
+// the repo; anywhere else the card silently omits the body.
+const bodyHeadLines = 30
+const bodyHeadBytes = 1600
+
+func bodyHead(root string, n schema.Node) string {
+	m := regexp.MustCompile(`^L(\d+)(?:-L(\d+))?$`).FindStringSubmatch(n.Location)
+	if m == nil || n.Source == "" || strings.Contains(n.Source, "://") {
+		return ""
+	}
+	start, _ := strconv.Atoi(m[1])
+	end := start
+	if m[2] != "" {
+		end, _ = strconv.Atoi(m[2])
+	}
+	if root == "" {
+		root = "."
+	}
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(n.Source)))
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(data), "\n")
+	if start < 1 || start > len(lines) {
+		return ""
+	}
+	last := min(end, len(lines))
+	shown := min(last, start+bodyHeadLines-1)
+	body := strings.Join(lines[start-1:shown], "\n")
+	if len(body) > bodyHeadBytes {
+		body = body[:bodyHeadBytes]
+		if i := strings.LastIndexByte(body, '\n'); i > 0 {
+			body = body[:i]
+		}
+	}
+	if shown < last {
+		body += fmt.Sprintf("\n… (%d more lines to %s)", last-shown, n.Location)
+	}
+	return body
 }
 
 func cmdAffected(args []string, stdout io.Writer) error {

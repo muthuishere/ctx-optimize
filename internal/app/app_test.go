@@ -3,11 +3,14 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
 // end-to-end through Run(): init → add (markdown) → add --json (the door) →
@@ -461,5 +464,31 @@ func TestCardVerb(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "sig: func Greet") {
 		t.Fatalf("query render missing signature:\n%s", out.String())
+	}
+}
+
+func TestCardBodyHead(t *testing.T) {
+	n := schema.Node{Source: "x.go", Location: "L2-L50"}
+	dir := t.TempDir()
+	var lines []string
+	lines = append(lines, "package x")
+	for i := 2; i <= 60; i++ {
+		lines = append(lines, fmt.Sprintf("// line %d", i))
+	}
+	if err := os.WriteFile(filepath.Join(dir, "x.go"), []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := bodyHead(dir, n)
+	if !strings.HasPrefix(body, "// line 2") {
+		t.Fatalf("body should start at L2: %q", body[:40])
+	}
+	if !strings.Contains(body, "more lines to L2-L50") {
+		t.Fatalf("expected truncation note, got tail %q", body[len(body)-60:])
+	}
+	if bodyHead(dir, schema.Node{Source: "pg://db/t", Location: "L1"}) != "" {
+		t.Fatal("adapter URIs must not be read as files")
+	}
+	if bodyHead(dir, schema.Node{Source: "missing.go", Location: "L1"}) != "" {
+		t.Fatal("missing file must be silent")
 	}
 }

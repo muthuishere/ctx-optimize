@@ -288,6 +288,7 @@ type CardData struct {
 	Node      schema.Node         `json:"node"`
 	Signature string              `json:"signature,omitempty"`
 	Doc       string              `json:"doc,omitempty"`
+	Body      string              `json:"body,omitempty"` // first lines of the actual source span, filled by the caller when the file is reachable
 	Parent    string              `json:"parent,omitempty"`    // what contains it
 	Contains  []string            `json:"contains,omitempty"`  // what it contains
 	Calls     []string            `json:"calls,omitempty"`     // outgoing calls
@@ -352,6 +353,12 @@ func RenderCard(c *CardData) string {
 	}
 	if c.Parent != "" {
 		fmt.Fprintf(&sb, "  in: %s\n", c.Parent)
+	}
+	if c.Body != "" {
+		sb.WriteString("  body:\n")
+		for _, line := range strings.Split(c.Body, "\n") {
+			fmt.Fprintf(&sb, "    %s\n", line)
+		}
 	}
 	writeList := func(title string, ids []string) {
 		if len(ids) == 0 {
