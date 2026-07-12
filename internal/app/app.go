@@ -1214,34 +1214,84 @@ func cmdLanguages(args []string, stdout io.Writer) error {
 	}
 }
 
-// cmdInstall: `install` = skills + claude hook (everything detected);
-// `--skills` / `--hooks` select one. Skills are generic (two standard dirs);
-// the hook is agent-specific only because Claude Code is the one supported
-// CLI with a hook API — other CLIs are covered by init's repo pointer block.
+// cmdInstall: graphify-style per-platform installs with a per-platform
+// report. `install` alone = every platform detected on PATH (claude always);
+// `--claude/--codex/--copilot/--devin` select platforms; `--skills`/`--hooks`
+// narrow what gets installed. Skills land in the two standard dirs
+// (~/.claude/skills for claude; ~/.agents/skills shared by codex/copilot/
+// devin). The hook exists only for claude — the one supported CLI with a
+// hook API; everyone else's trigger is the repo pointer `init` writes.
 func cmdInstall(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
+	plats := []string{}
+	for _, p := range []string{"claude", "codex", "copilot", "devin"} {
+		if f.bools[p] {
+			plats = append(plats, p)
+		}
+	}
+	if len(plats) == 0 { // nothing named: everything detected
+		plats = append(plats, "claude")
+		for _, p := range []string{"codex", "copilot", "devin"} {
+			if skills.OnPath(p) {
+				plats = append(plats, p)
+			}
+		}
+	}
 	doSkills := f.bools["skills"] || !f.bools["hooks"]
 	doHooks := f.bools["hooks"] || !f.bools["skills"]
-	if doSkills {
-		targets, err := skills.Install(f.bools["agents"])
-		if err != nil {
-			return err
-		}
-		for _, t := range targets {
-			fmt.Fprintf(stdout, "installed skill: %s\n", t)
-		}
+
+	claudeDir, err := skills.ClaudeSkillDir()
+	if err != nil {
+		return err
 	}
-	if doHooks {
-		p, changed, err := skills.InstallClaudeHook()
-		switch {
-		case err != nil:
-			fmt.Fprintf(stdout, "claude hook: skipped (%v)\n", err)
-		case changed:
-			fmt.Fprintf(stdout, "installed claude hook: %s (UserPromptSubmit → ctx-optimize hook-context)\n", p)
-		default:
-			fmt.Fprintf(stdout, "claude hook: already installed (%s)\n", p)
-		}
+	agentsDir, err := skills.AgentsSkillDir()
+	if err != nil {
+		return err
 	}
+	installed := map[string]bool{}
+	skillFor := func(dir string) (string, error) {
+		if installed[dir] {
+			return dir, nil
+		}
+		if err := skills.InstallDir(dir); err != nil {
+			return "", err
+		}
+		installed[dir] = true
+		return dir, nil
+	}
+
+	for _, plat := range plats {
+		skillNote, hookNote := "—", "—"
+		dir := agentsDir
+		if plat == "claude" {
+			dir = claudeDir
+		}
+		if doSkills {
+			d, err := skillFor(dir)
+			if err != nil {
+				return err
+			}
+			skillNote = "✓ " + d
+		}
+		if plat == "claude" && doHooks {
+			p, changed, err := skills.InstallClaudeHook()
+			switch {
+			case err != nil:
+				hookNote = fmt.Sprintf("skipped (%v)", err)
+			case changed:
+				hookNote = "✓ UserPromptSubmit → `ctx-optimize hook-context` (" + p + ")"
+			default:
+				hookNote = "✓ already installed (" + p + ")"
+			}
+		} else if plat != "claude" {
+			hookNote = "no hook API — trigger is the repo pointer (`ctx-optimize init` writes AGENTS.md)"
+			if !skills.OnPath(plat) {
+				hookNote += " · cli not found on PATH"
+			}
+		}
+		fmt.Fprintf(stdout, "%-9s skill %s\n%-9s hook  %s\n", plat, skillNote, "", hookNote)
+	}
+	fmt.Fprintf(stdout, "\nper-repo trigger: run `ctx-optimize init` in each repo — writes the CLAUDE.md + AGENTS.md pointer block (commit them; the whole team's agents inherit it)\n")
 	return nil
 }
 
@@ -1321,7 +1371,8 @@ commands:
                               (committable; --local = this machine's store only)
   remote push|pull            incremental sync with the configured remote (no url —
                               the config file is the single source of truth)
-  install --skills            install the agent skill (~/.claude, +~/.agents with codex)
+  install                     skills + hooks for every agent CLI detected; report per platform
+    --claude|--codex|--copilot|--devin   select platforms · --skills / --hooks narrow scope
   uninstall --skills          remove the agent skill
   version                     print version
 

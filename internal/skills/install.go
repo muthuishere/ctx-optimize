@@ -10,11 +10,18 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
 //go:embed bundled
 var bundled embed.FS
+
+// OnPath reports whether a CLI binary is installed on this machine.
+func OnPath(bin string) bool {
+	_, err := exec.LookPath(bin)
+	return err == nil
+}
 
 const skillName = "ctx-optimize"
 
@@ -33,6 +40,43 @@ func Targets(includeAgents bool) ([]string, error) {
 		filepath.Join(home, ".claude", "skills", skillName),
 		filepath.Join(home, ".agents", "skills", skillName),
 	}, nil
+}
+
+// InstallDir writes the embedded skill into one target dir.
+func InstallDir(dst string) error {
+	src := "bundled/" + skillName
+	return fs.WalkDir(bundled, src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, path)
+		out := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(out, 0o755)
+		}
+		data, err := bundled.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(out, data, 0o644)
+	})
+}
+
+// ClaudeSkillDir and AgentsSkillDir are the two standard install targets.
+func ClaudeSkillDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".claude", "skills", skillName), nil
+}
+
+func AgentsSkillDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".agents", "skills", skillName), nil
 }
 
 // Install writes the embedded skill into each target dir.
