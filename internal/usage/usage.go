@@ -26,6 +26,11 @@ type Event struct {
 	MS    int64     `json:"ms"`
 }
 
+// Path returns the metrics file location for a store.
+func Path(storeDir string) string {
+	return filepath.Join(storeDir, filepath.FromSlash(fileName))
+}
+
 // Record appends one event. Errors are deliberately dropped.
 func Record(storeDir string, e Event) {
 	if storeDir == "" {
@@ -56,20 +61,36 @@ type VerbStat struct {
 	AvgMS int64 `json:"avg_ms"`
 }
 
+// Savings model, stated so the number is checkable: every answered read
+// verb replaces the search-and-read chain the A/B baselines actually made —
+// one grep (~600 tok of matches) plus two file reads (~3,500 tok each;
+// S1e measured full-file pointer-chase reads at 9–14k, so 2×3.5k is
+// conservative). saved = replaced − served, floored at zero per event.
+// Cost uses a blended $3/M-token input rate (typical frontier input price).
+const (
+	replacedPerAnswer = 600 + 2*3500
+	usdPerMTok        = 3.0
+)
+
 type Summary struct {
 	Total      int                 `json:"total_served"`
 	Bytes      int                 `json:"bytes_served"`
 	EstTokens  int                 `json:"est_tokens_served"`
+	EstSaved   int                 `json:"est_tokens_saved"`
+	EstUSD     float64             `json:"est_cost_saved_usd"`
+	SavedModel string              `json:"saved_model"`
 	Today      int                 `json:"served_today"`
 	Last7Days  int                 `json:"served_last_7_days"`
 	ByVerb     map[string]VerbStat `json:"by_verb"`
 	ByDay      map[string]int      `json:"by_day"` // YYYY-MM-DD → count
 	FirstEvent string              `json:"first_event,omitempty"`
+	File       string              `json:"file"` // where the raw events live
 }
 
 // Summarize folds the metrics file into totals. Missing file = zero summary.
 func Summarize(storeDir string) (*Summary, error) {
-	sum := &Summary{ByVerb: map[string]VerbStat{}, ByDay: map[string]int{}}
+	sum := &Summary{ByVerb: map[string]VerbStat{}, ByDay: map[string]int{},
+		File: filepath.Join(storeDir, filepath.FromSlash(fileName))}
 	f, err := os.Open(filepath.Join(storeDir, filepath.FromSlash(fileName)))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -103,6 +124,11 @@ func Summarize(storeDir string) (*Summary, error) {
 		vs.Bytes += e.Bytes
 		totalMS[e.Verb] += e.MS
 		sum.ByVerb[e.Verb] = vs
+		if e.Verb != "hook-context" { // the nudge itself replaces nothing
+			if saved := replacedPerAnswer - e.Bytes/4; saved > 0 {
+				sum.EstSaved += saved
+			}
+		}
 		if sum.FirstEvent == "" || day < sum.FirstEvent {
 			sum.FirstEvent = day
 		}
@@ -114,5 +140,7 @@ func Summarize(storeDir string) (*Summary, error) {
 		sum.ByVerb[v] = vs
 	}
 	sum.EstTokens = sum.Bytes / 4
+	sum.EstUSD = float64(sum.EstSaved) / 1e6 * usdPerMTok
+	sum.SavedModel = "each answer replaces ~1 grep (600 tok) + 2 file reads (2×3,500 tok, S1e-measured conservative); saved = replaced − served; cost at $3/M input tokens"
 	return sum, sc.Err()
 }

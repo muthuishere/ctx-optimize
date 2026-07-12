@@ -92,6 +92,29 @@ func NewHandler(root string) http.Handler {
 			jsonError(w, http.StatusBadRequest, "module required")
 			return
 		}
+		if r.URL.Query().Get("format") == "csv" {
+			f, err := os.Open(usage.Path(filepath.Join(root, mod)))
+			if err != nil {
+				jsonError(w, http.StatusNotFound, "no usage recorded yet")
+				return
+			}
+			defer f.Close()
+			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+			w.Header().Set("Content-Disposition", "attachment; filename=ctx-optimize-usage-"+mod+".csv")
+			w.Write([]byte("ts,verb,arg,hits,bytes,ms\n"))
+			sc := bufio.NewScanner(f)
+			sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+			for sc.Scan() {
+				var e usage.Event
+				if json.Unmarshal(sc.Bytes(), &e) != nil {
+					continue
+				}
+				w.Write([]byte(e.TS.Format("2006-01-02T15:04:05") + "," + e.Verb + "," +
+					strconv.Quote(e.Arg) + "," + strconv.Itoa(e.Hits) + "," +
+					strconv.Itoa(e.Bytes) + "," + strconv.FormatInt(e.MS, 10) + "\n"))
+			}
+			return
+		}
 		sum, err := usage.Summarize(filepath.Join(root, mod))
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, err.Error())
