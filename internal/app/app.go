@@ -87,6 +87,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdRemote(rest, stdout)
 	case "install":
 		err = cmdInstall(rest, stdout)
+	case "hook-context":
+		err = cmdHookContext(rest, stdout)
 	case "uninstall":
 		err = cmdUninstall(rest, stdout)
 	case "help", "-h", "--help":
@@ -681,6 +683,32 @@ func bodyHead(root string, n schema.Node) string {
 	return body
 }
 
+// cmdHookContext is the generic agent-hook entry point: harness hooks (e.g.
+// Claude Code UserPromptSubmit) run it once per prompt; it prints a short
+// store pointer ONLY when the cwd repo carries .ctxoptimize/ and its store
+// has nodes — otherwise it stays silent and costs nothing. Deterministic,
+// no flags, safe to wire into any hook system that captures stdout.
+func cmdHookContext(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	path, err := resolvePath(f)
+	if err != nil {
+		return nil // hooks must never fail the prompt
+	}
+	if _, err := os.Stat(filepath.Join(path, project.Dir)); err != nil {
+		return nil
+	}
+	s, err := openStore(f)
+	if err != nil {
+		return nil
+	}
+	nodes, err := s.Nodes()
+	if err != nil || len(nodes) == 0 {
+		return nil
+	}
+	fmt.Fprintf(stdout, "This repo has a pre-built ctx-optimize knowledge store (%d nodes). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (sig+doc+body+callers) · `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks.\n", len(nodes))
+	return nil
+}
+
 func cmdAffected(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) != 1 {
@@ -1186,17 +1214,33 @@ func cmdLanguages(args []string, stdout io.Writer) error {
 	}
 }
 
+// cmdInstall: `install` = skills + claude hook (everything detected);
+// `--skills` / `--hooks` select one. Skills are generic (two standard dirs);
+// the hook is agent-specific only because Claude Code is the one supported
+// CLI with a hook API — other CLIs are covered by init's repo pointer block.
 func cmdInstall(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
-	if !f.bools["skills"] {
-		return fmt.Errorf("usage: ctx-optimize install --skills [--agents]")
+	doSkills := f.bools["skills"] || !f.bools["hooks"]
+	doHooks := f.bools["hooks"] || !f.bools["skills"]
+	if doSkills {
+		targets, err := skills.Install(f.bools["agents"])
+		if err != nil {
+			return err
+		}
+		for _, t := range targets {
+			fmt.Fprintf(stdout, "installed skill: %s\n", t)
+		}
 	}
-	targets, err := skills.Install(f.bools["agents"])
-	if err != nil {
-		return err
-	}
-	for _, t := range targets {
-		fmt.Fprintf(stdout, "installed skill: %s\n", t)
+	if doHooks {
+		p, changed, err := skills.InstallClaudeHook()
+		switch {
+		case err != nil:
+			fmt.Fprintf(stdout, "claude hook: skipped (%v)\n", err)
+		case changed:
+			fmt.Fprintf(stdout, "installed claude hook: %s (UserPromptSubmit → ctx-optimize hook-context)\n", p)
+		default:
+			fmt.Fprintf(stdout, "claude hook: already installed (%s)\n", p)
+		}
 	}
 	return nil
 }
