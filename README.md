@@ -1,5 +1,11 @@
 # ctx-optimize
 
+[![CI](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml/badge.svg)](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@muthuishere/ctx-optimize?logo=npm)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
+[![benchmark](https://img.shields.io/badge/benchmark-run%20it%20yourself-4ade80)](https://muthuishere.github.io/ctx-optimize-site/proof/agent/)
+[![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **Gather a codebase — and its world — into one local knowledge store an AI agent answers from. Deterministic. No LLM API. No DB. Gather once, refresh cheaply, never go everywhere every time.**
 
 Your coding agent burns its context window on grep-and-read: to answer one
@@ -11,7 +17,7 @@ harness) answers *from the store* in a single call. The binary never touches a
 model, a database, or the network: it's deterministic, and the only
 intelligence in the system is the agent you already run.
 
-> **Status: v0.1.0 — published.** On npm (`@muthuishere/ctx-optimize`) with
+> **Status: v0.1.x — published.** On npm (`@muthuishere/ctx-optimize`) with
 > prebuilt binaries for macOS / Linux / Windows; CI green; benchmarks
 > reproducible (see [Proof](#proof--reproducible-not-our-word)). Working
 > today: code extraction for **12 embedded languages** (Go, Python, JS,
