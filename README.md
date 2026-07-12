@@ -2,28 +2,32 @@
 
 **Gather a codebase — and its world — into one local knowledge store an AI agent answers from. Deterministic. No LLM API. No DB. Gather once, refresh cheaply, never go everywhere every time.**
 
-ctx-optimize turns a repo (plus, via adapters, database schemas, messaging
-topics, log shapes, documents) into a queryable graph stored as plain files in
-a central per-module store. Your agent (Claude Code, Codex, Devin — any
-skill-capable harness) answers from the store instead of burning tokens on
-grep-and-read. The binary never calls a model, a database, or the network —
-the only intelligence in the system is the agent you already run.
+Your coding agent burns its context window on grep-and-read: to answer one
+question it greps, opens files, chases callers, re-reads. ctx-optimize turns a
+repo — plus, via adapters, database schemas, messaging topics, log shapes,
+documents — into a queryable graph stored as plain files in a central
+per-module store, and your agent (Claude Code, Codex, Devin — any skill-capable
+harness) answers *from the store* in a single call. The binary never touches a
+model, a database, or the network: it's deterministic, and the only
+intelligence in the system is the agent you already run.
 
-> ⚠️ **Status: v0.** Working today: code extraction for 12 embedded languages
-> (Go, Python, JS, TS/TSX, Java, C, C++, C#, Rust, Zig, SQL — tree-sitter
-> compiled to WASM, zero setup) plus **drop-in grammar packs** for any other
-> language (kotlin/swift/dart ship in `grammars/`), markdown docs, the
-> universal adapter door, query/path/explain/affected/hubs, **symbol cards**
+> **Status: v0.1.0 — published.** On npm (`@muthuishere/ctx-optimize`) with
+> prebuilt binaries for macOS / Linux / Windows; CI green; benchmarks
+> reproducible (see [Proof](#proof--reproducible-not-our-word)). Working
+> today: code extraction for **12 embedded languages** (Go, Python, JS,
+> TS/TSX, Java, C, C++, C#, Rust, Zig, SQL — tree-sitter compiled to WASM,
+> zero setup) plus **drop-in grammar packs** for any other language
+> (kotlin/swift/dart ship in `grammars/`), markdown docs, the universal
+> adapter door, `query`/`path`/`explain`/`affected`/`hubs`, **symbol cards**
 > (`card X`: signature + doc + callers/callees, no file read), the
 > **deterministic wiki** (regenerated on every add), the save-result/reflect
 > learning loop, merge/export (json/dot/graphml/csv/obsidian), the live
-> dashboard, and remote init/push/pull. Exact call edges are next — see
-> `openspec/` for the plan.
+> dashboard, and remote init/push/pull. Exact call edges (x/tools + LSP) are
+> next — see `openspec/` for the plan.
 
-**Site, demos, benchmarks:** https://muthuishere.github.io/ctx-optimize-site/ —
-honest head-to-head vs graphify (raw data in [`benchmarks/`](benchmarks/)):
-12k-file corpus gathered in 0.67s vs 8.88s, queries ~4× faster, methodology
-stated on the page.
+**Site, demos, benchmarks:** https://muthuishere.github.io/ctx-optimize-site/
+— landing page, unedited demos, and the full proof write-up. Everything below
+is reproducible; see [Proof](#proof--reproducible-not-our-word).
 
 ## Install
 
@@ -82,6 +86,44 @@ ctx-optimize status --json
   committable `.ctxoptimize/` directory.
 - **Remotes are for sync only.** Queries always run on the local folder.
   `push`/`pull` take no URL — the remote is whatever the config says.
+
+## Proof — reproducible, not our word
+
+Two kinds of evidence, both runnable.
+
+**Speed vs graphify** (raw data in [`benchmarks/`](benchmarks/)): a 12k-file
+corpus gathered in **0.67s vs 8.88s**, queries **~4× faster**, a smaller
+store. Methodology on the site.
+
+**What an agent actually saves.** A headless harness lets the *same* model
+answer a set of questions **three ways** over OpenRouter — plain shell,
+ctx-optimize, and graphify — and reports the provider's own token/cost
+accounting (`usage.include=true`), not our estimate. Last public CI run on
+`gorilla/mux` (a small, well-named repo — plain grep's *best* case, i.e. the
+hardest terrain for a graph to win on):
+
+| comparison | result |
+|---|---|
+| ctx-optimize **vs plain shell** | **−31% cost · −64% tool calls · −36% tokens** |
+| ctx-optimize **vs graphify** | **~half the tokens & tool calls** |
+| graphify **vs plain shell** | **+22% tokens** — its `query` returns a raw node dump that costs *more* than grep |
+
+ctx-optimize answers most questions in a single `query`/`card` call; both arms
+answered correctly with `file:line` citations (a cheaper wrong answer is a
+loss, not a saving).
+
+**Run it yourself — no source needed**, it uses the published CLI:
+
+```sh
+npm i -g @muthuishere/ctx-optimize      # the store CLI
+pipx install graphifyy                  # the competitor (arm c; optional)
+export OPENROUTER_API_KEY=sk-or-...      # read from env only, never logged
+bash proof/agent/run-bench.sh           # defaults: gorilla/mux, openai/gpt-4o-mini
+```
+
+Or fork and click **Run workflow** — [`.github/workflows/benchmark.yml`](.github/workflows/benchmark.yml)
+runs it headless on a clean runner and publishes the table to the job summary.
+Harness + full write-up: https://muthuishere.github.io/ctx-optimize-site/proof/agent/
 
 ## .ctxoptimize/ — config that travels with the repo
 
