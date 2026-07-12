@@ -86,8 +86,13 @@ def run_one(harness, arm, q, corpus, out_dir):
     if result_path.exists():
         print(f"  skip {result_path.name} (exists)")
         return
-    rules = ARM_A_RULES if arm == "a" else ARM_B_RULES
-    prompt = rules + "\n\n" + COMMON.format(q=q["prompt"])
+    if arm == "p":
+        # product arm: plain question, no steering — the environment (skill
+        # installed + repo agent-pointer file, or neither) is the variable
+        prompt = COMMON.format(q=q["prompt"])
+    else:
+        rules = ARM_A_RULES if arm == "a" else ARM_B_RULES
+        prompt = rules + "\n\n" + COMMON.format(q=q["prompt"])
     aux_path = out_dir / f"{harness}-{arm}-{q['id']}.aux"
     cmd = build_cmd(harness, prompt, aux_path)
     t0 = time.time()

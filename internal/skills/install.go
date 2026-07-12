@@ -18,15 +18,25 @@ var bundled embed.FS
 
 const skillName = "ctx-optimize"
 
-// Targets returns the skill install directories for this machine.
+// Targets returns the skill install directories for this machine. The
+// SKILL.md format is a cross-CLI standard: Claude Code reads
+// ~/.claude/skills; Copilot CLI and Devin CLI read ~/.agents/skills (Copilot
+// also reads .claude/skills); Codex and Devin additionally have their own
+// native dirs. Install everywhere the corresponding CLI is present.
 func Targets(includeAgents bool) ([]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
 	targets := []string{filepath.Join(home, ".claude", "skills", skillName)}
-	if includeAgents || onPath("codex") {
+	if includeAgents || onPath("codex") || onPath("devin") || onPath("copilot") {
 		targets = append(targets, filepath.Join(home, ".agents", "skills", skillName))
+	}
+	if onPath("codex") {
+		targets = append(targets, filepath.Join(home, ".codex", "skills", skillName))
+	}
+	if onPath("devin") {
+		targets = append(targets, filepath.Join(home, ".config", "devin", "skills", skillName))
 	}
 	return targets, nil
 }

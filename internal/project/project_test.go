@@ -189,3 +189,37 @@ func TestLoadGarbageFails(t *testing.T) {
 		t.Fatal("expected parse error")
 	}
 }
+
+func TestEnsureAgentPointer(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# My repo\nrules here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	written, err := EnsureAgentPointer(dir, "mymod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(written) != 2 {
+		t.Fatalf("expected CLAUDE.md+AGENTS.md written, got %v", written)
+	}
+	ag, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if !strings.Contains(string(ag), "rules here") || !strings.Contains(string(ag), "ctxoptimize/mymod") {
+		t.Fatalf("AGENTS.md lost content or missing block:\n%s", ag)
+	}
+	// second run must be a no-op (idempotent)
+	written2, err := EnsureAgentPointer(dir, "mymod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(written2) != 0 {
+		t.Fatalf("second run rewrote files: %v", written2)
+	}
+	// changed name → block replaced in place, exactly one block
+	if _, err := EnsureAgentPointer(dir, "renamed"); err != nil {
+		t.Fatal(err)
+	}
+	ag, _ = os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if strings.Count(string(ag), "ctx-optimize:begin") != 1 || !strings.Contains(string(ag), "ctxoptimize/renamed") {
+		t.Fatalf("block not replaced in place:\n%s", ag)
+	}
+}

@@ -224,6 +224,10 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if err := project.Scaffold(path, name); err != nil {
 		return err
 	}
+	pointed, err := project.EnsureAgentPointer(path, name)
+	if err != nil {
+		return err
+	}
 	s, err := openStore(f)
 	if err != nil {
 		return err
@@ -232,6 +236,9 @@ func cmdInit(args []string, stdout io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(stdout, "store ready: %s\n%s/ scaffolded — commit it (config.json + adapters/)\n", s.Dir, project.Dir)
+	if len(pointed) > 0 {
+		fmt.Fprintf(stdout, "agent pointer written to %s — commit these too; they make agent CLIs use the store unprompted\n", strings.Join(pointed, " + "))
+	}
 	return nil
 }
 

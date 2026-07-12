@@ -1,17 +1,18 @@
 ---
 name: ctx-optimize
 description: >
-  Answer codebase and system questions from a pre-built local knowledge store
-  instead of grepping and reading files — optimize the context an agent spends
-  on code. Backed by the `ctx-optimize` CLI (Go, deterministic, no LLM, no DB,
-  no network at query time); YOU (the agent) are the only intelligence. When a
-  store exists for the repo (`ctx-optimize status` succeeds with nodes > 0),
-  treat ANY codebase question as a store query FIRST, before Grep/Read.
-  Trigger on: "use ctx-optimize", "build the code graph", "query the graph",
-  "what is in this codebase", "gather this repo", "add this repo to the
-  store", "refresh the store", "push/pull the store", "share the graph with
-  the team", "what breaks if I change X", "how are X and Y connected",
-  "add the database schema / kafka topics / logs / docs to the store".
+  REQUIRED before Grep/rg/Read when exploring code in any repo that contains
+  a `.ctxoptimize/` directory — that marker means a pre-built knowledge graph
+  of this codebase already exists, and one `ctx-optimize` call answers what a
+  grep-and-read chain would: `query "<terms>"` (ranked, cited, signatures),
+  `card <symbol>` (signature + doc + callers + callees, no file read),
+  `affected <symbol>` (impact/blast radius), `path <a> <b>`, `explain`,
+  plus a generated wiki. Use it for ANY question about code: where is X,
+  how does Y work, who calls Z, what breaks if I change W, architecture,
+  onboarding. Fall back to Grep/Read only for what the store lacks. Also
+  builds/refreshes/shares the store ("gather this repo", "add the schema /
+  kafka topics / docs", "push/pull the store"). No store yet? `ctx-optimize
+  init && ctx-optimize add .` creates it in seconds.
 ---
 
 # ctx-optimize

@@ -228,3 +228,64 @@ func Scaffold(repo, name string) error {
 	}
 	return nil
 }
+
+// Agent-pointer block: the one mechanism measured to make agents actually
+// use the store unprompted (proof S16 addendum: skill alone fired 0/2 times
+// headless; skill + this line in the repo's agent-instructions file fired
+// immediately). CLAUDE.md is read by Claude Code; AGENTS.md by Codex,
+// Copilot, OpenCode and Devin. The block is marker-fenced and idempotent.
+const pointerBegin = "<!-- ctx-optimize:begin -->"
+const pointerEnd = "<!-- ctx-optimize:end -->"
+
+func pointerBlock(name string) string {
+	return pointerBegin + "\n" +
+		"This repo has a pre-built ctx-optimize knowledge store (`.ctxoptimize/` here, data at `~/ctxoptimize/" + name + "/`).\n" +
+		"For ANY question about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
+		"use `ctx-optimize` (CLI or agent skill) BEFORE grep/reading files:\n" +
+		"`ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>` ·\n" +
+		"`ctx-optimize path <a> <b>` · `ctx-optimize explain <symbol>` · wiki at `~/ctxoptimize/" + name + "/wiki/`.\n" +
+		"Fresh clone? `ctx-optimize init && ctx-optimize add .` (or `ctx-optimize remote pull`) rebuilds it in seconds.\n" +
+		pointerEnd + "\n"
+}
+
+// EnsureAgentPointer writes or refreshes the pointer block in the repo's
+// CLAUDE.md and AGENTS.md. Existing content outside the markers is never
+// touched; missing files are created with just the block.
+func EnsureAgentPointer(repo, name string) ([]string, error) {
+	block := pointerBlock(name)
+	var written []string
+	for _, fn := range []string{"CLAUDE.md", "AGENTS.md"} {
+		p := filepath.Join(repo, fn)
+		data, err := os.ReadFile(p)
+		switch {
+		case os.IsNotExist(err):
+			if err := os.WriteFile(p, []byte(block), 0o644); err != nil {
+				return written, err
+			}
+		case err != nil:
+			return written, err
+		default:
+			s := string(data)
+			if i := strings.Index(s, pointerBegin); i >= 0 {
+				j := strings.Index(s, pointerEnd)
+				if j < i {
+					return written, fmt.Errorf("%s: malformed ctx-optimize markers", fn)
+				}
+				s = s[:i] + strings.TrimSuffix(block, "\n") + s[j+len(pointerEnd):]
+			} else {
+				if !strings.HasSuffix(s, "\n") {
+					s += "\n"
+				}
+				s += "\n" + block
+			}
+			if s == string(data) {
+				continue
+			}
+			if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+				return written, err
+			}
+		}
+		written = append(written, fn)
+	}
+	return written, nil
+}
