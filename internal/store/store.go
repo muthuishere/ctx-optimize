@@ -17,6 +17,7 @@ package store
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -25,8 +26,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
@@ -103,30 +106,76 @@ func (s *Store) edgesPath() string { return filepath.Join(s.Dir, "graph", "edges
 
 // Nodes loads all nodes (empty store → empty slice, not an error).
 func (s *Store) Nodes() ([]schema.Node, error) {
-	var out []schema.Node
-	err := readNDJSON(s.nodesPath(), func(line []byte) error {
-		var n schema.Node
-		if err := json.Unmarshal(line, &n); err != nil {
-			return err
-		}
-		out = append(out, n)
-		return nil
-	})
-	return out, err
+	return parseNDJSONParallel[schema.Node](s.nodesPath())
 }
 
 // Edges loads all edges.
 func (s *Store) Edges() ([]schema.Edge, error) {
-	var out []schema.Edge
-	err := readNDJSON(s.edgesPath(), func(line []byte) error {
-		var e schema.Edge
-		if err := json.Unmarshal(line, &e); err != nil {
-			return err
+	return parseNDJSONParallel[schema.Edge](s.edgesPath())
+}
+
+// parseNDJSONParallel decodes an ndjson file across all cores while keeping
+// line order (results stay deterministic). Kernel-scale stores (275k nodes)
+// decode in ~1/6 the single-threaded time on a big desktop.
+func parseNDJSONParallel[T any](path string) ([]T, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
 		}
-		out = append(out, e)
-		return nil
-	})
-	return out, err
+		return nil, err
+	}
+	var lines [][]byte
+	for len(data) > 0 {
+		i := bytes.IndexByte(data, '\n')
+		var line []byte
+		if i < 0 {
+			line, data = data, nil
+		} else {
+			line, data = data[:i], data[i+1:]
+		}
+		if len(bytes.TrimSpace(line)) > 0 {
+			lines = append(lines, line)
+		}
+	}
+	out := make([]T, len(lines))
+	workers := runtime.NumCPU()
+	if workers > len(lines) {
+		workers = len(lines)
+	}
+	if workers < 1 {
+		return out, nil
+	}
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+	chunk := (len(lines) + workers - 1) / workers
+	for w := 0; w < workers; w++ {
+		lo := w * chunk
+		hi := min(lo+chunk, len(lines))
+		if lo >= hi {
+			break
+		}
+		wg.Add(1)
+		go func(lo, hi int) {
+			defer wg.Done()
+			for i := lo; i < hi; i++ {
+				if err := json.Unmarshal(lines[i], &out[i]); err != nil {
+					select {
+					case errCh <- fmt.Errorf("%s line %d: %w", filepath.Base(path), i+1, err):
+					default:
+					}
+					return
+				}
+			}
+		}(lo, hi)
+	}
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
+	return out, nil
 }
 
 // Merge upserts a validated batch into the graph: nodes replace by id (a

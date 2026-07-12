@@ -13,8 +13,10 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
@@ -66,6 +68,14 @@ func Tokenize(s string) []string {
 	return out
 }
 
+// callableKind marks kinds whose dotted labels are real symbols, not child
+// declarations of a parent scope.
+var callableKind = map[string]bool{
+	"function": true, "method": true, "class": true, "interface": true,
+	"file": true, "module": true, "table": true, "document": true,
+	"section": true, "topic": true,
+}
+
 // Run scores every node against the question and returns the top hits with
 // their 1-hop neighborhoods, truncated to ~budget tokens (chars/4).
 func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) *Result {
@@ -78,16 +88,44 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 	}
 
 	// Document frequency over node token sets → IDF. Rare tokens decide.
-	df := map[string]int{}
+	// Tokenizing 275k nodes single-threaded measured ~500ms — shard it.
 	nodeTokens := make([]map[string]bool, len(nodes))
-	for i, n := range nodes {
-		set := map[string]bool{}
-		for _, t := range Tokenize(n.Label + " " + n.Source) {
-			set[t] = true
+	workers := runtime.NumCPU()
+	shardDF := make([]map[string]int, workers)
+	var wg sync.WaitGroup
+	chunk := (len(nodes) + workers - 1) / workers
+	for w := 0; w < workers; w++ {
+		lo := w * chunk
+		hi := lo + chunk
+		if hi > len(nodes) {
+			hi = len(nodes)
 		}
-		nodeTokens[i] = set
-		for t := range set {
-			df[t]++
+		if lo >= hi {
+			shardDF[w] = map[string]int{}
+			continue
+		}
+		wg.Add(1)
+		go func(w, lo, hi int) {
+			defer wg.Done()
+			local := map[string]int{}
+			for i := lo; i < hi; i++ {
+				set := map[string]bool{}
+				for _, t := range Tokenize(nodes[i].Label + " " + nodes[i].Source) {
+					set[t] = true
+				}
+				nodeTokens[i] = set
+				for t := range set {
+					local[t]++
+				}
+			}
+			shardDF[w] = local
+		}(w, lo, hi)
+	}
+	wg.Wait()
+	df := map[string]int{}
+	for _, local := range shardDF {
+		for t, c := range local {
+			df[t] += c
 		}
 	}
 	total := float64(len(nodes)) + 1
@@ -96,46 +134,34 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 		idx   int
 		score float64
 	}
+	shardCand := make([][]scored, workers)
+	for w := 0; w < workers; w++ {
+		lo := w * chunk
+		hi := lo + chunk
+		if hi > len(nodes) {
+			hi = len(nodes)
+		}
+		if lo >= hi {
+			continue
+		}
+		wg.Add(1)
+		go func(w, lo, hi int) {
+			defer wg.Done()
+			var local []scored
+			memo := map[string]map[string]bool{}
+			for i := lo; i < hi; i++ {
+				s := scoreNode(nodes, nodeTokens, qTokens, df, total, memo, i)
+				if s > 0 {
+					local = append(local, scored{i, s})
+				}
+			}
+			shardCand[w] = local
+		}(w, lo, hi)
+	}
+	wg.Wait()
 	var candidates []scored
-	memo := map[string]map[string]bool{}
-	for i := range nodes {
-		var s float64
-		for _, qt := range qTokens {
-			if nodeTokens[i][qt] {
-				// Base weight keeps a match alive even when the token is in
-				// every node (IDF→0 on uniform corpora); IDF still ranks.
-				s += 0.1 + math.Log(total/(1+float64(df[qt])))
-				continue
-			}
-			// Prefix tier (graphify-proven): "refund" ⇢ "refunds",
-			// "serialize" ⇢ "serializer" — weaker than an exact hit.
-			matched := false
-			for nt := range nodeTokens[i] {
-				if len(qt) >= 3 && (strings.HasPrefix(nt, qt) || strings.HasPrefix(qt, nt)) {
-					s += 0.7 * (0.1 + math.Log(total/(1+float64(df[nt]))))
-					matched = true
-					break
-				}
-			}
-			if matched || len(qt) < 5 {
-				continue
-			}
-			// Trigram tier (graphify-proven, rapidfuzz-style): catches typos
-			// and infix matches ("serialzer" ⇢ "serializer"). Weakest tier.
-			qt3 := trigrams(qt, memo)
-			for nt := range nodeTokens[i] {
-				if len(nt) < 5 {
-					continue
-				}
-				if dice(qt3, trigrams(nt, memo)) >= 0.5 {
-					s += 0.4 * (0.1 + math.Log(total/(1+float64(df[nt]))))
-					break
-				}
-			}
-		}
-		if s > 0 {
-			candidates = append(candidates, scored{i, s})
-		}
+	for _, local := range shardCand {
+		candidates = append(candidates, local...)
 	}
 	sort.Slice(candidates, func(a, b int) bool {
 		if candidates[a].score != candidates[b].score {
@@ -170,6 +196,49 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 		}
 	}
 	return res
+}
+
+// scoreNode applies the three match tiers (exact-IDF, prefix, trigram —
+// graphify-proven weights) plus the child-declaration downrank (proof D1:
+// dotted-label data nodes inherit their parent's tokens and bury the real
+// symbol; callable kinds keep dotted labels — Store.Merge is first-class).
+func scoreNode(nodes []schema.Node, nodeTokens []map[string]bool, qTokens []string, df map[string]int, total float64, memo map[string]map[string]bool, i int) float64 {
+	var s float64
+	for _, qt := range qTokens {
+		if nodeTokens[i][qt] {
+			// Base weight keeps a match alive even when the token is in
+			// every node (IDF→0 on uniform corpora); IDF still ranks.
+			s += 0.1 + math.Log(total/(1+float64(df[qt])))
+			continue
+		}
+		// Prefix tier: "refund" ⇢ "refunds" — weaker than an exact hit.
+		matched := false
+		for nt := range nodeTokens[i] {
+			if len(qt) >= 3 && (strings.HasPrefix(nt, qt) || strings.HasPrefix(qt, nt)) {
+				s += 0.7 * (0.1 + math.Log(total/(1+float64(df[nt]))))
+				matched = true
+				break
+			}
+		}
+		if matched || len(qt) < 5 {
+			continue
+		}
+		// Trigram tier: typos and infix matches. Weakest tier.
+		qt3 := trigrams(qt, memo)
+		for nt := range nodeTokens[i] {
+			if len(nt) < 5 {
+				continue
+			}
+			if dice(qt3, trigrams(nt, memo)) >= 0.5 {
+				s += 0.4 * (0.1 + math.Log(total/(1+float64(df[nt]))))
+				break
+			}
+		}
+	}
+	if s > 0 && strings.ContainsRune(nodes[i].Label, '.') && !callableKind[nodes[i].Kind] {
+		s *= 0.2
+	}
+	return s
 }
 
 // Render is the human-readable form; --json callers marshal Result directly.

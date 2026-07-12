@@ -360,30 +360,32 @@ func RenderCard(c *CardData) string {
 			fmt.Fprintf(&sb, "    %s\n", line)
 		}
 	}
-	writeList := func(title string, ids []string) {
+	writeList := func(title string, ids []string, cap int) {
 		if len(ids) == 0 {
 			return
 		}
 		fmt.Fprintf(&sb, "  %s (%d):\n", title, len(ids))
 		for i, id := range ids {
-			if i == 15 {
-				fmt.Fprintf(&sb, "    … %d more\n", len(ids)-15)
+			if cap > 0 && i == cap {
+				fmt.Fprintf(&sb, "    … %d more\n", len(ids)-cap)
 				break
 			}
 			fmt.Fprintf(&sb, "    %s\n", id)
 		}
 	}
-	writeList("contains", c.Contains)
-	writeList("calls", c.Calls)
-	writeList("called by", c.CalledBy)
-	writeList("imports", c.Imports)
+	writeList("contains", c.Contains, 15)
+	writeList("calls", c.Calls, 15)
+	// callers are never truncated — impact answers were measured to go wrong
+	// when the tail was hidden (proof S16, D2)
+	writeList("called by", c.CalledBy, 0)
+	writeList("imports", c.Imports, 15)
 	rels := make([]string, 0, len(c.Other))
 	for r := range c.Other {
 		rels = append(rels, r)
 	}
 	sort.Strings(rels)
 	for _, r := range rels {
-		writeList(r, c.Other[r])
+		writeList(r, c.Other[r], 15)
 	}
 	return sb.String()
 }
