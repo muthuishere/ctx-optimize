@@ -1,0 +1,54 @@
+# Release: tag vX.Y.Z → cross-compile via goreleaser → publish the npm
+# wrapper + platform packages via OIDC trusted publishing (tokenless).
+#
+# One-time setup on npmjs.com (owner, web UI — no API for this):
+#   for EACH package (@muthuishere/ctx-optimize and the 5 platform packages):
+#   Package → Settings → Trusted Publisher → GitHub Actions →
+#     repository: muthuishere/ctx-optimize, workflow: release.yml
+# Until that's flipped, this workflow needs an NPM_TOKEN secret fallback.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write # OIDC — this is what npm trusted publishing consumes
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: gate
+        run: go vet ./... && go test ./...
+      - name: build all platforms
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          args: build --clean
+      - name: sync versions to tag
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          for d in npm npm/platforms/*; do
+            (cd "$d" && npm version "$V" --no-git-tag-version --allow-same-version)
+          done
+          # wrapper's optionalDependencies must pin the same version
+          node -e '
+            const f="npm/package.json", p=require("./"+f), v=process.env.GITHUB_REF_NAME.slice(1);
+            for (const k of Object.keys(p.optionalDependencies)) p.optionalDependencies[k]=v;
+            require("fs").writeFileSync(f, JSON.stringify(p,null,2)+"\n");'
+      - name: publish platform packages
+        run: |
+          for d in npm/platforms/*; do
+            (cd "$d" && npm publish --access public)
+          done
+      - name: publish wrapper
+        run: cd npm && npm publish --access public
