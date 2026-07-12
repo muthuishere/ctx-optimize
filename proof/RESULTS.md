@@ -66,6 +66,42 @@ arm B beat arm A (A listed a comment-only file as a real caller of
 call"), devin arm B beat arm A (wrong gatekeeper). Frontier arm A never lost
 on correctness; sub-frontier arm A did, twice.
 
+## Cost-true addendum (owner challenge: "prompt cache still costs")
+
+Correct. Cache reads bill at ~10% of input price; the "fresh tokens" metric
+above zero-priced them. On `total_cost_usd` (the harness's own bill), the
+steered store arm is CHEAPER at every Claude tier — because ~26% fewer cache
+re-reads: **default −9.2% ($3.55→$3.22) · Sonnet −5.6% · Haiku −16.2%
+($1.36→$1.14)**. "Token parity" was an artifact of the metric, not reality.
+
+## Natural-usage addendum — the skill-trigger experiment (2026-07-12)
+
+Owner reframe: the honest product test is *install the skill, ask plain
+questions, observe*. Results (claude default, 3,987-file corpus, plain
+questions, environment is the only variable; `results-product/`):
+
+- **Skill alone NEVER fires.** 0 store calls in 2 one-shots (old and
+  imperative description). graphify's skill has the same passive trigger —
+  this failure mode is industry-wide, not ours.
+- **The fix that measured true: a pointer block in the repo's CLAUDE.md +
+  AGENTS.md** (the instruction files Claude/Codex/Copilot/OpenCode/Devin all
+  load natively). With it: 55–57 unprompted store calls per 12-question run
+  (cards dominate: ~40). `init` now writes this block (marker-fenced,
+  idempotent); `install --skills` fans out to ~/.claude/skills,
+  ~/.agents/skills, ~/.codex/skills, ~/.config/devin/skills. Copilot reads
+  .claude/skills + ~/.agents/skills natively. No hooks anywhere.
+- **Natural-usage cost, today:** pointer-v1 ("use before grep") +11% vs
+  baseline — agents paid for store AND verification reads. Pointer-v2
+  ("INSTEAD of; cite directly; don't re-verify; sweeps stay grep") +6%,
+  turns −6%. Wins where the thesis lives: mechanism/architecture questions
+  −13…25% cost, −30…50% turns (q3/q5/q6). Losses: enumeration sweeps (q8)
+  and body-constant questions (q9) where cards lack function bodies.
+- **The known next lever is code, not prompts:** the original S1e card
+  design specified a ~30-line body head in every card — never implemented.
+  That is what forces the read-after-card on q9-type questions. Plus D1
+  (junk child nodes) and D2 (caller-list cap). Fix, re-run this same
+  harness, publish both runs.
+
 ## Where the value actually is (measured)
 
 1. **Weak/cheap harnesses save big.** Devin's model burned 2.3M tokens /

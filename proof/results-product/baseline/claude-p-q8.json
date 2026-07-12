@@ -1,0 +1,9 @@
+{
+ "harness": "claude",
+ "arm": "p",
+ "qid": "q8",
+ "wall_s": 7.6,
+ "exit": 0,
+ "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"api_error_status\":null,\"duration_ms\":6253,\"duration_api_ms\":5699,\"ttft_ms\":2531,\"ttft_stream_ms\":1776,\"time_to_request_ms\":65,\"num_turns\":2,\"result\":\"Files containing calls to `blk_mq_run_hw_queue()`:\\n\\n- `block/blk-mq.c` (also defines it)\\n- `block/blk-mq-sched.c`\\n- `block/blk-mq-tag.c`\\n- `block/kyber-iosched.c`\\n- `block/mq-deadline.c`\\n- `drivers/block/rnbd/rnbd-clt.c`\",\"stop_reason\":\"end_turn\",\"session_id\":\"a66c7b82-a677-44e5-a28a-2e6667d181f9\",\"total_cost_usd\":0.15592019999999998,\"usage\":{\"input_tokens\":4,\"cache_creation_input_tokens\":21283,\"cache_read_input_tokens\":79034,\"output_tokens\":300,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":21283,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":209,\"cache_read_input_tokens\":50071,\"cache_creation_input_tokens\":175,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":175},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-sonnet-5\":{\"inputTokens\":4,\"outputTokens\":300,\"cacheReadInputTokens\":79034,\"cacheCreationInputTokens\":21283,\"webSearchRequests\":0,\"costUSD\":0.15592019999999998,\"contextWindow\":1000000,\"maxOutputTokens\":64000}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"uuid\":\"06400a5e-fddc-4b39-a127-964bb6e9f691\"}\n",
+ "stderr": ""
+}

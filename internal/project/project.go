@@ -240,11 +240,13 @@ const pointerEnd = "<!-- ctx-optimize:end -->"
 func pointerBlock(name string) string {
 	return pointerBegin + "\n" +
 		"This repo has a pre-built ctx-optimize knowledge store (`.ctxoptimize/` here, data at `~/ctxoptimize/" + name + "/`).\n" +
-		"For ANY question about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
-		"use `ctx-optimize` (CLI or agent skill) BEFORE grep/reading files:\n" +
-		"`ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>` ·\n" +
-		"`ctx-optimize path <a> <b>` · `ctx-optimize explain <symbol>` · wiki at `~/ctxoptimize/" + name + "/wiki/`.\n" +
-		"Fresh clone? `ctx-optimize init && ctx-optimize add .` (or `ctx-optimize remote pull`) rebuilds it in seconds.\n" +
+		"For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
+		"use it INSTEAD of grep-and-read chains, not in addition to them:\n" +
+		"`ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (signature+doc+callers+callees) ·\n" +
+		"`ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>` · wiki at `~/ctxoptimize/" + name + "/wiki/`.\n" +
+		"Card/query output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source;\n" +
+		"open a file only when the answer needs a body the store didn't show. Exhaustive text sweeps\n" +
+		"(every literal occurrence of a string) are still grep's job. Fresh clone? `ctx-optimize init && ctx-optimize add .` rebuilds in seconds.\n" +
 		pointerEnd + "\n"
 }
 

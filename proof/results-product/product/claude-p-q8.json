@@ -1,0 +1,9 @@
+{
+ "harness": "claude",
+ "arm": "p",
+ "qid": "q8",
+ "wall_s": 33.4,
+ "exit": 0,
+ "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"api_error_status\":null,\"duration_ms\":32227,\"duration_api_ms\":27303,\"ttft_ms\":1634,\"ttft_stream_ms\":1248,\"time_to_request_ms\":61,\"num_turns\":6,\"result\":\"Files containing calls to `blk_mq_run_hw_queue()`:\\n\\n- `block/blk-mq.c` \u2014 its own definition (`block/blk-mq.c:2321`) plus internal callers like `blk_mq_dispatch_rq_list`, `blk_mq_insert_requests`, `blk_mq_hctx_notify_dead`, etc.\\n- `block/blk-mq-sched.c` \u2014 `__blk_mq_sched_restart`\\n- `block/blk-mq-tag.c` \u2014 `blk_mq_get_tag`\\n- `block/kyber-iosched.c` \u2014 `kyber_domain_wake`\\n- `block/mq-deadline.c`\\n- `drivers/block/rnbd/rnbd-clt.c` \u2014 `rnbd_clt_dev_requeue`\",\"stop_reason\":\"end_turn\",\"session_id\":\"81a554ea-5792-44ce-b883-c6b8d379c2f5\",\"total_cost_usd\":0.29006760000000004,\"usage\":{\"input_tokens\":12,\"cache_creation_input_tokens\":29369,\"cache_read_input_tokens\":305592,\"output_tokens\":1476,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":29369,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":262,\"cache_read_input_tokens\":58170,\"cache_creation_input_tokens\":178,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":178},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-sonnet-5\":{\"inputTokens\":12,\"outputTokens\":1476,\"cacheReadInputTokens\":305592,\"cacheCreationInputTokens\":29369,\"webSearchRequests\":0,\"costUSD\":0.29006760000000004,\"contextWindow\":1000000,\"maxOutputTokens\":64000}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"uuid\":\"c5136b97-76ca-4023-b4ed-138b925f7937\"}\n",
+ "stderr": ""
+}
