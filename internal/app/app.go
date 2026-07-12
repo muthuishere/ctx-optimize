@@ -705,8 +705,24 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 	if err != nil || len(nodes) == 0 {
 		return nil
 	}
-	fmt.Fprintf(stdout, "This repo has a pre-built ctx-optimize knowledge store (%d nodes). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (sig+doc+body+callers) · `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks.\n", len(nodes))
-	return nil
+	msg := fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (sig+doc+body+callers) · `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks.", len(nodes))
+	// Two wire formats: the Claude hook contract (also understood by Codex
+	// and Devin — the ecosystem converged on it) and Copilot's sessionStart
+	// contract. Plain text is Claude-only, so JSON is the default.
+	switch f.strs["format"] {
+	case "copilot":
+		return emit(stdout, map[string]string{"additionalContext": msg})
+	case "text":
+		fmt.Fprintln(stdout, msg)
+		return nil
+	default:
+		return emit(stdout, map[string]any{
+			"hookSpecificOutput": map[string]string{
+				"hookEventName":     "UserPromptSubmit",
+				"additionalContext": msg,
+			},
+		})
+	}
 }
 
 func cmdAffected(args []string, stdout io.Writer) error {
@@ -1273,20 +1289,32 @@ func cmdInstall(args []string, stdout io.Writer) error {
 			}
 			skillNote = "✓ " + d
 		}
-		if plat == "claude" && doHooks {
-			p, changed, err := skills.InstallClaudeHook()
-			switch {
-			case err != nil:
-				hookNote = fmt.Sprintf("skipped (%v)", err)
-			case changed:
-				hookNote = "✓ UserPromptSubmit → `ctx-optimize hook-context` (" + p + ")"
-			default:
-				hookNote = "✓ already installed (" + p + ")"
+		if doHooks {
+			var p string
+			var changed bool
+			var err error
+			note := ""
+			switch plat {
+			case "claude":
+				p, changed, err = skills.InstallClaudeHook()
+			case "codex":
+				p, changed, err = skills.InstallCodexHook()
+				note = " · trust it once: run `/hooks` inside codex"
+			case "copilot":
+				p, changed, err = skills.InstallCopilotHook()
+				note = " · sessionStart (its prompt event can't inject context)"
+			case "devin":
+				hookNote = "✓ covered — devin reads the Claude hook in ~/.claude/settings.json natively"
 			}
-		} else if plat != "claude" {
-			hookNote = "no hook API — trigger is the repo pointer (`ctx-optimize init` writes AGENTS.md)"
-			if !skills.OnPath(plat) {
-				hookNote += " · cli not found on PATH"
+			if plat != "devin" {
+				switch {
+				case err != nil:
+					hookNote = fmt.Sprintf("skipped (%v)", err)
+				case changed:
+					hookNote = "✓ → `ctx-optimize hook-context` (" + p + ")" + note
+				default:
+					hookNote = "✓ already installed (" + p + ")" + note
+				}
 			}
 		}
 		fmt.Fprintf(stdout, "%-9s skill %s\n%-9s hook  %s\n", plat, skillNote, "", hookNote)
@@ -1301,6 +1329,14 @@ func cmdUninstall(args []string, stdout io.Writer) error {
 		return fmt.Errorf("usage: ctx-optimize uninstall --skills")
 	}
 	removed, err := skills.Uninstall()
+	if err != nil {
+		return err
+	}
+	hookFiles, err := skills.RemoveHooks()
+	if err != nil {
+		return err
+	}
+	removed = append(removed, hookFiles...)
 	if err != nil {
 		return err
 	}
