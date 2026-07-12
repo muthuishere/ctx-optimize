@@ -1,10 +1,10 @@
 # Headless benchmark — run it yourself
 
-Don't trust our numbers. Run them. This harness clones a small repo, builds a
-ctx-optimize store, and lets the **same model** answer a set of questions
-**twice** — once with shell only, once with the store first — then reports the
-real time, tokens, cost, and step count from **OpenRouter's own usage
-accounting** (not our estimate).
+Don't trust our numbers. Run them. This harness clones a small repo, builds the
+knowledge stores, and lets the **same model** answer a set of questions **three
+ways** — shell only, ctx-optimize store first, and **graphify** store first —
+then reports the real time, tokens, cost, and step count from **OpenRouter's own
+usage accounting** (not our estimate).
 
 No Anthropic account needed; it runs on any OpenRouter model.
 
@@ -32,16 +32,19 @@ The result table lands in the run's **job summary**; the raw records are
 uploaded as the `benchmark-results` artifact. Workflow file:
 [`.github/workflows/benchmark.yml`](../../.github/workflows/benchmark.yml).
 
-## The two arms
+## The three arms
 
 | | tools the model gets | steered to |
 |---|---|---|
 | **arm a** | `run_shell` (grep/rg/find/sed/cat) | find the answer however |
 | **arm b** | `ctx_optimize` (query/card/affected/path/explain) + `run_shell` for gaps | prefer the store |
+| **arm c** | `graphify` (query/explain/affected/path) + `run_shell` for gaps | prefer the graph |
 
 Same model, same temperature (0), same question, same freshly-cloned repo.
 Tokens and cost are compared honestly: the model and prompt are identical, so
-the only variable is *how it looks things up*.
+the only variable is *how it looks things up*. Arm c only runs when the
+`graphify` CLI is installed (`pipx install graphifyy`); both stores are built
+offline with no LLM (`ctx-optimize add .`, `graphify update . --no-cluster`).
 
 ## What to expect
 
@@ -52,6 +55,12 @@ call, vs a 2–4 step grep-and-read chain), which shows up as lower wall time an
 lower cost. Token savings are modest here and grow with repo size and question
 difficulty. On sprawling or unfamiliar code the gap widens; on tiny code it
 narrows — we publish both rather than cherry-pick.
+
+Against **graphify** specifically: both build an offline graph, but graphify's
+`query` returns a raw BFS node dump (often 100+ nodes), so the model pays more
+tokens to wade through it — in our runs graphify's token use lands at or above
+plain shell, while ctx-optimize's `query`/`card` return a tight, cited,
+signature-bearing hit and answer in a single call.
 
 Quality is not sacrificed for cheapness: answers cite `file:line`, and a
 cheaper-but-wrong answer is a loss, not a saving — inspect the `answer` field

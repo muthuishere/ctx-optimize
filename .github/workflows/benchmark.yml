@@ -1,9 +1,10 @@
 name: benchmark
 
-# Headless proof: clone a small repo, build the ctx-optimize store, and let the
-# SAME model answer a set of questions twice — shell-only vs store-first — over
-# OpenRouter, reporting real time / tokens / cost. Runs entirely headless; the
-# result table lands in the job summary and as a downloadable artifact.
+# Headless proof: clone a small repo, build the stores, and let the SAME model
+# answer a set of questions three ways over OpenRouter — shell-only,
+# ctx-optimize store first, and graphify store first — reporting real
+# time / tokens / cost. Runs entirely headless; the result table lands in the
+# job summary and as a downloadable artifact.
 #
 # Manual (workflow_dispatch) so it only spends OpenRouter credit when asked.
 # Needs repo secret OPENROUTER_API_KEY.
@@ -43,6 +44,11 @@ jobs:
 
       - name: Build ctx-optimize
         run: go build -o bin/ctx-optimize ./cmd/ctx-optimize
+
+      - name: Install graphify (arm c — the competitor, offline graph)
+        run: |
+          pipx install graphifyy || python3 -m pip install --user graphifyy
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run headless benchmark
         env:

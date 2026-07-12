@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Headless benchmark agent — OpenRouter, no Anthropic weekly limit involved.
 //
-// One question, one model, run TWICE against the same cloned repo:
+// One question, one model, run against the same cloned repo under one of three
+// arms:
 //   arm a — shell only (grep/rg/find/sed/cat) — the agent everyone has
 //   arm b — ctx-optimize store first, shell only to fill gaps
+//   arm c — graphify store first, shell only to fill gaps  (the competitor)
 // and report, per arm: wall seconds, prompt/completion tokens, dollar cost
 // (OpenRouter's own accounting), and tool-call count (steps). Token and cost
 // numbers come from OpenRouter's `usage` block with `usage.include=true`, so
@@ -12,7 +14,8 @@
 // Usage:
 //   OPENROUTER_API_KEY=... node agent.mjs \
 //     --repo /path/to/clone --bin /path/to/ctx-optimize \
-//     --arm a|b --q "question text" [--model openai/gpt-4o-mini] [--max-steps 12]
+//     --arm a|b|c --q "question text" [--model openai/gpt-4o-mini] [--max-steps 12]
+//     [--graphify-bin graphify]
 //
 // Prints one JSON record to stdout. The key is read from the environment only
 // (never logged). Deterministic-ish: temperature 0.
@@ -26,6 +29,7 @@ const KEY = process.env.OPENROUTER_API_KEY;
 if (!KEY) { die("OPENROUTER_API_KEY not set in environment"); }
 const REPO = path.resolve(args.repo || die("--repo required"));
 const BIN = args.bin || "ctx-optimize";
+const GBIN = args["graphify-bin"] || "graphify";
 const ARM = args.arm || "b";
 const Q = args.q || die("--q required");
 const MODEL = args.model || "openai/gpt-4o-mini";
@@ -50,8 +54,26 @@ const SYS_B =
   "the store leaves. Reply concisely with function/type names and file:line " +
   "citations. Do not modify anything. Stop as soon as you can answer.";
 
+const SYS_C =
+  "You answer questions about the code in the current repository. A graphify " +
+  "knowledge graph for this repo is ALREADY BUILT (graphify-out/). Prefer it " +
+  "over reading files:\n" +
+  "  query \"<question>\" -> graph traversal of nodes related to the question\n" +
+  "  explain <node>     -> a node and its neighbors\n" +
+  "  affected <node>    -> nodes impacted by it\n" +
+  "  path <a> <b>       -> how two nodes connect\n" +
+  "Call the graphify tool FIRST. Use run_shell only to fill a specific gap the " +
+  "graph leaves. Reply concisely with function/type names and file:line " +
+  "citations. Do not modify anything. Stop as soon as you can answer.";
+
 const TOOLS_A = [shellTool()];
 const TOOLS_B = [ctxTool(), shellTool()];
+const TOOLS_C = [graphifyTool(), shellTool()];
+const ARM_CFG = {
+  a: { sys: SYS_A, tools: TOOLS_A },
+  b: { sys: SYS_B, tools: TOOLS_B },
+  c: { sys: SYS_C, tools: TOOLS_C },
+};
 
 function shellTool() {
   return {
@@ -94,6 +116,31 @@ function ctxTool() {
   };
 }
 
+function graphifyTool() {
+  return {
+    type: "function",
+    function: {
+      name: "graphify",
+      description:
+        "Query the prebuilt graphify knowledge graph for this repo. Pass the " +
+        "sub-command and its arguments, e.g. [\"query\",\"refund flow\"], " +
+        "[\"explain\",\"ChargeService\"], [\"affected\",\"User\"], " +
+        "[\"path\",\"A\",\"B\"]. Returns related graph nodes and edges.",
+      parameters: {
+        type: "object",
+        properties: {
+          argv: {
+            type: "array",
+            items: { type: "string" },
+            description: "sub-command + args, without the leading 'graphify'",
+          },
+        },
+        required: ["argv"],
+      },
+    },
+  };
+}
+
 function runShell(command) {
   try {
     return execFileSync("/bin/sh", ["-c", command], {
@@ -117,6 +164,17 @@ function runCtx(argv) {
     });
   } catch (e) {
     return `[ctx-optimize error] ${e.stderr || e.message || e}`.slice(0, OUT_CAP);
+  }
+}
+function runGraphify(argv) {
+  const safe = Array.isArray(argv) ? argv.map(String) : [String(argv)];
+  try {
+    return execFileSync(GBIN, safe, {
+      cwd: REPO, encoding: "utf8", timeout: 30000, maxBuffer: 32 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (e) {
+    return `[graphify error] ${e.stderr || e.message || e}`.slice(0, OUT_CAP);
   }
 }
 
@@ -146,20 +204,19 @@ async function chat(messages, tools) {
 }
 
 async function main() {
-  const sys = ARM === "a" ? SYS_A : SYS_B;
-  const tools = ARM === "a" ? TOOLS_A : TOOLS_B;
+  const cfg = ARM_CFG[ARM] || die(`unknown arm ${ARM}`);
   const messages = [
-    { role: "system", content: sys },
+    { role: "system", content: cfg.sys },
     { role: "user", content: `Question: ${Q}` },
   ];
 
   const usage = { prompt: 0, completion: 0, total: 0, cost: 0 };
-  const calls = { run_shell: 0, ctx_optimize: 0 };
+  const calls = { run_shell: 0, ctx_optimize: 0, graphify: 0 };
   let answer = "";
   const t0 = Date.now();
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const resp = await chat(messages, tools);
+    const resp = await chat(messages, cfg.tools);
     const u = resp.usage || {};
     usage.prompt += u.prompt_tokens || 0;
     usage.completion += u.completion_tokens || 0;
@@ -180,6 +237,7 @@ async function main() {
         const a = JSON.parse(tc.function?.arguments || "{}");
         if (name === "run_shell") { calls.run_shell++; out = runShell(a.command || ""); }
         else if (name === "ctx_optimize") { calls.ctx_optimize++; out = runCtx(a.argv || []); }
+        else if (name === "graphify") { calls.graphify++; out = runGraphify(a.argv || []); }
         else out = `[unknown tool ${name}]`;
       } catch (e) {
         out = `[tool arg parse error] ${e.message}`;
@@ -195,7 +253,7 @@ async function main() {
   const record = {
     model: MODEL, arm: ARM, question: Q,
     wall_s: round(wall, 2),
-    steps: calls.run_shell + calls.ctx_optimize,
+    steps: calls.run_shell + calls.ctx_optimize + calls.graphify,
     tool_calls: calls,
     tokens: { prompt: usage.prompt, completion: usage.completion, total: usage.total },
     cost_usd: round(usage.cost, 6),
