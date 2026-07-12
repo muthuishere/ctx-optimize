@@ -1,0 +1,9 @@
+{
+ "harness": "claude",
+ "arm": "a",
+ "qid": "q8",
+ "wall_s": 10.7,
+ "exit": 0,
+ "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"api_error_status\":null,\"duration_ms\":9447,\"duration_api_ms\":8922,\"ttft_ms\":3125,\"ttft_stream_ms\":2851,\"time_to_request_ms\":42,\"num_turns\":3,\"result\":\"Files containing calls to `blk_mq_run_hw_queue()` (excluding comment-only mentions):\\n\\n- `block/blk-mq.c` \u2014 definition (line 2321) plus many call sites (e.g. 1430, 1492, 1878, 2201, 2404, 2485, 2511, 2589, 2744, 2914, 3206, 3823, etc.)\\n- `block/blk-mq-sched.c:44,331`\\n- `block/blk-mq-tag.c:175`\\n- `block/kyber-iosched.c:688`\\n\\n`block/mq-deadline.c` only references it in a comment (line 445), no actual call.\",\"stop_reason\":\"end_turn\",\"session_id\":\"900ba8b2-0380-4b7d-a4c1-14938a38ecd4\",\"total_cost_usd\":0.1871112,\"usage\":{\"input_tokens\":6,\"cache_creation_input_tokens\":23581,\"cache_read_input_tokens\":130324,\"output_tokens\":434,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":23581,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":207,\"cache_read_input_tokens\":50755,\"cache_creation_input_tokens\":1789,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1789},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-sonnet-5\":{\"inputTokens\":6,\"outputTokens\":434,\"cacheReadInputTokens\":130324,\"cacheCreationInputTokens\":23581,\"webSearchRequests\":0,\"costUSD\":0.1871112,\"contextWindow\":1000000,\"maxOutputTokens\":64000}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"uuid\":\"5f2ea271-ee4f-4a77-9943-db04d935e8d2\"}\n",
+ "stderr": ""
+}

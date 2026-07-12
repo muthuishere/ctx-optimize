@@ -1,0 +1,3 @@
+Implementation: `bio_attempt_back_merge()` in `block/blk-merge.c:941`. It appends the new bio via `req->biotail->bi_next = bio`, updates `req->biotail`, and increases `req->__data_len` at `block/blk-merge.c:962`.
+
+Gatekeeper: `blk_attempt_bio_merge()` in `block/blk-merge.c:1035`, which checks `blk_rq_merge_ok()` at `block/blk-merge.c:1041` and, for `ELEVATOR_BACK_MERGE`, requires `blk_mq_sched_allow_merge()` before calling `bio_attempt_back_merge()` at `block/blk-merge.c:1045`.

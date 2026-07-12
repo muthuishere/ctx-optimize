@@ -1,0 +1,9 @@
+{
+ "harness": "devin",
+ "arm": "b",
+ "qid": "q12",
+ "wall_s": 4.0,
+ "exit": 1,
+ "stdout": "",
+ "stderr": "Error: Agent error: Your daily usage quota has been exhausted. Visit https://app.devin.ai/plans to manage your plan. (trace ID: eee0e2699a11815c9aaa73c83be9f17e)\n"
+}

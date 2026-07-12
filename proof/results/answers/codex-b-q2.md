@@ -1,0 +1,7 @@
+`bio_split()` rejects:
+
+- nonsensical split sizes: `sectors <= 0` or `sectors >= bio_sectors(bio)`, returning `ERR_PTR(-EINVAL)` ([block/bio.c](/private/tmp/claude-501/-Users-muthuishere-muthu-gitworkspace-nexus-workspace-brain/dc4417dd-0040-4de7-82a4-10f10843dc78/scratchpad/proof/linux/block/bio.c:1828))
+- zone append bios: `bio_op(bio) == REQ_OP_ZONE_APPEND` ([block/bio.c](/private/tmp/claude-501/-Users-muthuishere-muthu-gitworkspace-nexus-workspace-brain/dc4417dd-0040-4de7-82a4-10f10843dc78/scratchpad/proof/linux/block/bio.c:1833))
+- atomic writes: `bio->bi_opf & REQ_ATOMIC` ([block/bio.c](/private/tmp/claude-501/-Users-muthuishere-muthu-gitworkspace-nexus-workspace-brain/dc4417dd-0040-4de7-82a4-10f10843dc78/scratchpad/proof/linux/block/bio.c:1837))
+
+On success, it allocates a cloned bio for the front `sectors` via `bio_alloc_clone()`, sets the clone’s `bi_size` to `sectors << 9`, trims integrity metadata if present, then calls `bio_advance(bio, split->bi_iter.bi_size)` on the original ([block/bio.c](/private/tmp/claude-501/-Users-muthuishere-muthu-gitworkspace-nexus-workspace-brain/dc4417dd-0040-4de7-82a4-10f10843dc78/scratchpad/proof/linux/block/bio.c:1841)). So the original bio is not left untouched: its iterator is advanced past the split-off front portion, leaving it representing only the remaining sectors, as the function comment says ([block/bio.c](/private/tmp/claude-501/-Users-muthuishere-muthu-gitworkspace-nexus-workspace-brain/dc4417dd-0040-4de7-82a4-10f10843dc78/scratchpad/proof/linux/block/bio.c:1816)).

@@ -1,0 +1,3 @@
+**`bio_attempt_back_merge()`** at `block/blk-merge.c:941` performs the actual merge (appends `bio` to `req->biotail`, updates `__data_len`, stats, etc.).
+
+Gatekeeper: **`ll_back_merge_fn()`** at `block/blk-merge.c:573`, called at line 946 — it checks gap constraints (`req_gap_back_merge`), integrity gap, crypto-context mergeability, and max-sector limits (falling through to `ll_new_hw_segment()` for segment-count checks) before allowing the merge.

@@ -243,6 +243,32 @@ artifacts. **Pass:** local query <100ms; push = changed files only.
   call replaces three). Minimize CALLS, not just bytes — each turn re-reads the
   growing context.
 
+### S16 · Proof matrix — the pre-committed composite test (2026-07-12)
+- **Method:** the CRITIQUE.md kill-bar test, run for real on the SHIPPED
+  product (v0.1.1-equivalent HEAD). linux/block corpus (the S1d terrain),
+  12 questions (locate/mechanism/impact/conceptual) with source-derived
+  ground truth, A/B per harness: grep-only vs store-first. Harness-native
+  token accounting; within-harness ratios only. Full harness/protocol in
+  `proof/` (repo), raw runs in `proof/results/`.
+- **Result: ❌ the 25% composite bar is NOT cleared on frontier harnesses.**
+  Claude Code: −0.2% tokens (parity), quality 12/12 vs 11.5/12, wall −14%.
+  Codex: +3.0% tokens (parity), 11.5/12 both arms.
+  Devin (SWE-1.6): **−42.5% tokens** (n=6, quota-truncated, high variance).
+- **The three findings that survive:** (1) conceptual/onboarding traces save
+  34–49% on BOTH frontier CLIs (q11; matches S1c) — shallow enumerations
+  don't; (2) the q5 correctness pattern — grep arms of Codex AND Devin named
+  the wrong merge gatekeeper, store arms got `ll_back_merge_fn` right via
+  call edges (S3's recall finding, now demonstrated at answer level);
+  (3) store value is inversely proportional to harness search competence
+  (frontier ~0%, mid-tier −42%) — the store is a competence equalizer.
+- **Defects surfaced:** D1 query noise (local-var child decls = 50–80% of
+  kernel top-10 hits), D2 card caller-list 15-cap hid `kyber_domain_wake`
+  and cost Codex arm B a complete impact answer, D3 doc-comment terms not
+  indexed ("writeback throttling" ranks blk-throttle.c over blk-wbt.c).
+- **Consequence (per the pre-commitment):** do not lead with universal token
+  savings; lead with onboarding savings + impact correctness + the equalizer
+  story. Fix D1–D3, re-run arm B, publish both runs.
+
 ## Killed by decisions (no spike needed)
 - Vector store / embeddings comparisons — owner: no embeddings, ever.
 - Lance/Postgres query engines — owner: no DB.

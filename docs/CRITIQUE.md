@@ -46,6 +46,15 @@ Thin slice (cards + deterministic wiki) on kernel + one true legacy repo:
 **composite <25% on hostile terrain → stop, or pivot to impact-analysis-only**
 (S3 alone justifies that smaller tool).
 
+**MEASURED 2026-07-12 (S16, `proof/RESULTS.md`): bar NOT cleared on frontier
+harnesses** — Claude Code −0.2%, Codex +3.0% (parity at equal quality); Devin
+−42.5% (partial n). The pre-committed consequence is in force: the universal
+token-savings claim is dead; the product's measured value is onboarding
+traces (−34…49% on frontier CLIs), impact-answer correctness (both frontier
+grep arms produced a wrong gatekeeper the store got right), the
+weak-harness equalizer effect, and wall time. Pivot positioning accordingly;
+fix the D1–D3 defects the proof surfaced before re-measuring.
+
 ## The wiki answer (owner asked: better wiki, or is graphify-style enough?)
 - **Tier 1 (graphify-style index):** enough for navigation only — forfeits the
   conceptual class (the strongest measured axis). Not enough alone.

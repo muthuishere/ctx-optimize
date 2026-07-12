@@ -1,0 +1,9 @@
+{
+ "harness": "claude",
+ "arm": "a",
+ "qid": "q4",
+ "wall_s": 12.0,
+ "exit": 0,
+ "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"api_error_status\":null,\"duration_ms\":10753,\"duration_api_ms\":10353,\"ttft_ms\":2497,\"ttft_stream_ms\":1609,\"time_to_request_ms\":45,\"num_turns\":3,\"result\":\"`bio_split()` is defined in block/bio.c:1823. It has exactly one direct caller inside `block/`:\\n\\n- **`bio_submit_split_bioset()`** \u2014 `block/blk-merge.c:122`\\n\\nAll other `bio_split*` hits in `block/` (e.g. `bio_split_discard`, `bio_split_rw`, `bio_split_io_at`, `bio_split_to_limits`, `bio_split_zone_append`, `bio_split_write_zeroes`, and `disk->bio_split` the bio_set field) are distinct symbols, not calls to `bio_split()` itself.\",\"stop_reason\":\"end_turn\",\"session_id\":\"7990c47a-5712-444a-ad53-b0d74b46fbda\",\"total_cost_usd\":0.20110889999999998,\"usage\":{\"input_tokens\":6,\"cache_creation_input_tokens\":25453,\"cache_read_input_tokens\":131493,\"output_tokens\":595,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":25453,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":202,\"cache_read_input_tokens\":52069,\"cache_creation_input_tokens\":2347,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2347},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-sonnet-5\":{\"inputTokens\":6,\"outputTokens\":595,\"cacheReadInputTokens\":131493,\"cacheCreationInputTokens\":25453,\"webSearchRequests\":0,\"costUSD\":0.20110889999999998,\"contextWindow\":1000000,\"maxOutputTokens\":64000}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"uuid\":\"43f48ee9-20f5-4d77-8a6d-dffd64befa42\"}\n",
+ "stderr": ""
+}

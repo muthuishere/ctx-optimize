@@ -1,0 +1,7 @@
+The repo defines three blk-mq I/O schedulers:
+
+| Scheduler | Scheduling philosophy | Dispatch entry point |
+|---|---|---|
+| `mq-deadline` | Deadline scheduler adapted for blk-mq: batches by direction, prefers reads, prevents write starvation, and falls back to FIFO when deadlines expire. `block/mq-deadline.c:321`, `block/mq-deadline.c:344`, `block/mq-deadline.c:383` | `dd_dispatch_request()` registered at `block/mq-deadline.c:994`; function starts at `block/mq-deadline.c:452` |
+| `kyber` | Low-overhead latency controller for fast/multiqueue devices: divides I/O into domains and self-tunes queue depth/tokens to hit latency targets. `block/kyber-iosched.c:3`, `block/kyber-iosched.c:25`, `block/Kconfig.iosched:14` | `kyber_dispatch_request()` registered at `block/kyber-iosched.c:1008`; function starts at `block/kyber-iosched.c:789` |
+| `bfq` | Budget Fair Queueing: proportional-share scheduling by per-process/queue budgets and weights, with low-latency boosts for interactive/soft real-time workloads. `block/bfq-iosched.c:16`, `block/bfq-iosched.c:22`, `block/bfq-iosched.c:30` | `bfq_dispatch_request()` registered at `block/bfq-iosched.c:7597`; function starts at `block/bfq-iosched.c:5298` |

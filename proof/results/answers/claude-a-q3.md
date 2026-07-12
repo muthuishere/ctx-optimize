@@ -1,0 +1,8 @@
+For read/write bios, the block layer decides via `bio_may_need_split()` (block/blk.h:397-413), called from `__bio_split_to_limits()` (block/blk.h:429-451). Flow:
+
+- Entry points: `blk_mq_submit_bio()` (block/blk-mq.c:3146) and the generic wrapper `bio_split_to_limits()` (block/blk-merge.c:479) both call `__bio_split_to_limits()`.
+- For `REQ_OP_READ`/`REQ_OP_WRITE`, `__bio_split_to_limits()` checks `bio_may_need_split(bio, lim)` (block/blk.h:435). This is a cheap heuristic: returns true if `lim->chunk_sectors` is set, or the bio has no io_vec yet, or the first bvec's size/offset/alignment could exceed `lim->max_fast_segment_size`/`dma_alignment` — i.e., "might need a split, verify for real."
+- If that quick check says "maybe," the actual splitter `bio_split_rw()` (block/blk-merge.c:418-424) runs, which calls `bio_split_rw_at()` with the max size from `get_max_io_size()` (block/blk-merge.c:229) — this does the real segment-by-segment walk against `queue_limits` (max_sectors, max_segments, virt boundary/gaps, etc.) and computes the exact split point.
+- The actual split/resubmit is performed by `bio_submit_split()` (block/blk-merge.c, used at line 424), which calls `bio_split()`/`bio_chain()` and resubmits the remainder via `submit_bio_noacct()`.
+
+So: deciding check = `bio_may_need_split()` (block/blk.h:397), real split computation = `bio_split_rw_at()`/`get_max_io_size()` (block/blk-merge.c:229,418), actual split = `bio_split_rw()` → `bio_submit_split()` (block/blk-merge.c:418-424).

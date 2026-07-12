@@ -1,0 +1,3 @@
+- **Function that tries each partition parser:** `check_partition` in `block/partitions/core.c:119` - iterates through the `check_part[]` array (lines 17-91) calling each parser function at line 143: `res = check_part[i++](state)`
+
+- **Function that adds discovered partitions:** `blk_add_partition` in `block/partitions/core.c:531` - called from `blk_add_partitions` (line 583) which loops through parsed partitions at line 635 calling `blk_add_partition(disk, state, p)` for each one
