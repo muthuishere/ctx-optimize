@@ -36,13 +36,19 @@ drivers/nvme+lib; store: 274,812 nodes / 3,989 wiki pages, gathered in
 **5.5s**). Raw runs: `results-tiers/`. (Codex's mini model returns 400 on
 ChatGPT accounts — `gpt-5.1-codex-mini` is API-only; measured, not assumed.)
 
-| Tier | Corpus | Tokens A→B | Turns A→B | Quality A / B |
-|---|---|---|---|---|
-| Claude (default/big) | 98 files | −0.2% | ~flat | 12/12 vs 11.5/12 |
-| Claude Sonnet | 3,987 files | +5.2% cost | **−13%** | 11.5/12 vs **12/12** |
-| Claude Haiku | 3,987 files | −1.1% | **−29%** | 11/12 vs 11/12 |
-| Codex (default) | 98 files | +3.0% | ~flat | 11.5/12 vs 11.5/12 |
-| Devin (SWE-1.6) | 98 files | **−42.5%** | −24% steps | 5/6 vs **6/6** |
+| Tier | Corpus | Tokens A→B | Turns A→B | Wall A→B | Quality A / B |
+|---|---|---|---|---|---|
+| Claude (default/big) | 98 files | −0.2% | ~flat | **−14%** (347→298s) | 12/12 vs 11.5/12 |
+| Claude Sonnet | 3,987 files | +5.2% cost | **−13%** | +3% (386→397s) | 11.5/12 vs **12/12** |
+| Claude Haiku | 3,987 files | −1.1% | **−29%** | +9% (641→698s) | 11/12 vs 11/12 |
+| Codex (default) | 98 files | +3.0% | ~flat | ±0% (683→680s) | 11.5/12 vs 11.5/12 |
+| Devin (SWE-1.6) | 98 files | **−42.5%** | −24% steps | **−34%** (294→195s) | 5/6 vs **6/6** |
+
+Wall time follows the same step-cost economics as tokens: it falls where the
+harness is fast per store call (Claude default −14%, Devin −34%), stays flat
+on Codex, and rises slightly on Sonnet/Haiku (+3%/+9%) — smaller models spend
+longer digesting store output per step, and haiku's arm-B q9 (248s vs 126s)
+is a single heavy outlier inside that +9%.
 
 **The mechanism is step-cost economics, not model IQ.** The store cuts
 *steps* at every tier (haiku −29%, devin −24%, sonnet −13%). Whether fewer
