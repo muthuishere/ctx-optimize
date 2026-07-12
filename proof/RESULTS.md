@@ -102,6 +102,43 @@ questions, environment is the only variable; `results-product/`):
   (junk child nodes) and D2 (caller-list cap). Fix, re-run this same
   harness, publish both runs.
 
+## THE RE-RUN — body-head cards clear the bar (2026-07-12, same day)
+
+Promise kept: fix, re-run the same frozen harness, publish both numbers.
+The fix was the unbuilt S1e design — `card` now returns the first ~30 lines
+of the symbol's actual body alongside signature/doc/callers (read from the
+local file at card time). Same 12 plain questions, same frozen no-store
+baseline, natural usage (skill + repo pointer, zero steering), real dollars:
+
+| Run | Total cost | vs baseline | Turns | Store calls |
+|---|---|---|---|---|
+| Baseline (no store) | $3.16 | — | 70 | 0 |
+| Pointer v1, no-body cards | $3.50 | +11% worse | 71 | 55 |
+| Pointer v2, no-body cards | $3.36 | +6% worse | 66 | 57 |
+| **Pointer v2 + body-head cards** | **$2.16** | **−31.6%** | **53** | 56 |
+
+**The pre-committed 25% bar is CLEARED in the most honest configuration** —
+unprompted usage, harness-billed dollars, quality spot-verified on the
+cheapest runs (q2 at $0.049 and q5 at $0.054 are complete, correct,
+straight-off-one-card answers; q5's store arm again names the gatekeeper
+grep arms repeatedly got wrong). Per-question: 9 of 12 cheaper, big wins on
+mechanism/onboarding (q2 −77%, q5 −74%, q11 −60%, q6 −58%); residual
+losses on q1/q9/q12 (−10…−41%). Wall +31% (store calls ~1–2s each at 275k
+nodes — query latency is now the next optimization target).
+
+**Trigger stack (final, per owner):** generic skills in the two standard
+dirs (`~/.claude/skills`, `~/.agents/skills`) + generic repo pointer block
+written by `init` (CLAUDE.md + AGENTS.md) + ONE agent-specific wire, only
+because the mechanism requires it: `install` adds a Claude Code
+UserPromptSubmit hook → `ctx-optimize hook-context` (prints the pointer
+only when the cwd repo has a populated store; silent otherwise; surgical
+settings.json merge). Hook-only one-shot (repo pointer files removed):
+store used unprompted, correct answer, baseline cost. graphify ships the
+same idea as per-CLI config rewriting (`install --platform <cli>`, global
+CLAUDE.md section — which is why its skill "fires": Muthu's global
+CLAUDE.md already carries its pointer); we deliberately keep the repo
+block + skills generic and the hook minimal.
+
 ## Where the value actually is (measured)
 
 1. **Weak/cheap harnesses save big.** Devin's model burned 2.3M tokens /

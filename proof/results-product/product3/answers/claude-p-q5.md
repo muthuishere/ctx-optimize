@@ -1,0 +1,3 @@
+**Merge implementation:** `bio_attempt_back_merge()` — `block/blk-merge.c:941-970`. Performs the actual merge (adjusts `req->__data_len`, splices bio, calls `blk_account_io_merge_bio`, etc.).
+
+**Gatekeeper:** `ll_back_merge_fn()` — `block/blk-merge.c:573` (called first thing inside `bio_attempt_back_merge`, before the merge is committed). It checks segment/size/gap constraints (e.g. via `req_gap_back_merge`) and returns false to veto the merge.
