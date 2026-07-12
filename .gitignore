@@ -8,6 +8,9 @@
 *-out/
 /cache/
 
+# local drafts (marketing / launch copy — never committed)
+/MARKETING.md
+
 # os / editor
 .DS_Store
 .idea/
