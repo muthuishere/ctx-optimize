@@ -1315,7 +1315,23 @@ func cmdRemote(args []string, stdout io.Writer) error {
 		if len(f.args) > 0 {
 			return fmt.Errorf("remote %s takes no URL — the remote lives in %s (ctx-optimize remote init <url>)", sub, project.FileName)
 		}
-		r, _, err := resolveRemote(repoPath, s)
+		// Scope-aware like every other verb: the remote keyspace root maps
+		// to the ROOT store dir. A multi-module root syncs the whole store
+		// tree; inside a module only that module's prefix moves; a
+		// single-module repo is the tree's trivial case (unchanged).
+		sc, err := resolveScope(f)
+		if err != nil {
+			return err
+		}
+		storeRoot, err := store.Root(f.strs["store"])
+		if err != nil {
+			return err
+		}
+		rootStore, err := store.Open(storeRoot, sc.rootKey)
+		if err != nil {
+			return err
+		}
+		r, _, err := resolveRemote(sc.rootDir, rootStore)
 		if err != nil {
 			return err
 		}
@@ -1327,13 +1343,37 @@ func cmdRemote(args []string, stdout io.Writer) error {
 			return err
 		}
 		var res *remote.Result
-		if sub == "push" {
-			res, err = remote.Push(s, b)
-		} else {
-			res, err = remote.Pull(s, b)
-		}
-		if err != nil {
-			return err
+		switch {
+		case sc.kind == scopeSingle:
+			// Today's path, byte-identical: one store at the backend root.
+			single, err := store.Open(storeRoot, sc.storeKey)
+			if err != nil {
+				return err
+			}
+			if sub == "push" {
+				res, err = remote.Push(single, b)
+			} else {
+				res, err = remote.Pull(single, b)
+			}
+			if err != nil {
+				return err
+			}
+		case sub == "push":
+			rels, err := scopeStoreRels(sc, storeRoot)
+			if err != nil {
+				return err
+			}
+			if res, err = remote.PushTree(storeRoot, sc.rootKey, rels, b); err != nil {
+				return err
+			}
+		default: // pull
+			prefix := ""
+			if sc.kind == scopeModule {
+				prefix = sc.modulePath
+			}
+			if res, err = remote.PullTree(storeRoot, sc.rootKey, prefix, b); err != nil {
+				return err
+			}
 		}
 		if f.bools["json"] {
 			return emit(stdout, res)
@@ -1628,7 +1668,9 @@ commands:
   remote init <url> [--local] write remote to .ctxoptimize/config.json
                               (committable; --local = this machine's store only)
   remote push|pull            incremental sync with the configured remote (no url —
-                              the config file is the single source of truth)
+                              the config file is the single source of truth);
+                              scope follows cwd: multi-module root syncs the
+                              whole store tree, a module dir only its prefix
   install                     skills + hooks for every agent CLI detected; report per platform
     --claude|--codex|--copilot|--devin   select platforms · --skills / --hooks narrow scope
   uninstall --skills          remove the agent skill
