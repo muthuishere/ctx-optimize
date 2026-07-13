@@ -31,6 +31,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
@@ -385,8 +386,8 @@ func (s *Store) UpdateManifest() (*Manifest, error) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if rel == "manifest.json" || rel == "config.json" {
-			return nil
+		if rel == "manifest.json" || rel == "config.json" || rel == "source.json" {
+			return nil // machine-local: sync fingerprint / remote / source paths differ per host
 		}
 		h, size, err := hashFile(path)
 		if err != nil {
@@ -453,6 +454,56 @@ func (s *Store) SaveConfig(c *Config) error {
 		return err
 	}
 	return os.WriteFile(s.configPath(), append(data, '\n'), 0o644)
+}
+
+// ---- source provenance (freshness) ----
+//
+// source.json records, per gathered root, the git HEAD captured at add time.
+// It is source provenance (a different axis from the content-hash manifest,
+// which fingerprints store artifacts for sync) and drives the freshness signal.
+
+func (s *Store) sourcePath() string { return filepath.Join(s.Dir, "source.json") }
+
+// Sources returns recorded source provenance (absent → empty, never an error).
+func (s *Store) Sources() ([]freshness.Source, error) {
+	data, err := os.ReadFile(s.sourcePath())
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var srcs []freshness.Source
+	if err := json.Unmarshal(data, &srcs); err != nil {
+		return nil, fmt.Errorf("parse source.json: %w", err)
+	}
+	return srcs, nil
+}
+
+// RecordSource upserts one root's provenance keyed by absolute path, then
+// rewrites source.json sorted by path so diffs stay stable.
+func (s *Store) RecordSource(src freshness.Source) error {
+	srcs, err := s.Sources()
+	if err != nil {
+		return err
+	}
+	replaced := false
+	for i := range srcs {
+		if srcs[i].Path == src.Path {
+			srcs[i] = src
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		srcs = append(srcs, src)
+	}
+	sort.Slice(srcs, func(i, j int) bool { return srcs[i].Path < srcs[j].Path })
+	data, err := json.MarshalIndent(srcs, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.sourcePath(), append(data, '\n'), 0o644)
 }
 
 // ---- helpers ----
