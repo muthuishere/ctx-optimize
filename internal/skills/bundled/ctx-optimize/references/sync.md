@@ -1,39 +1,26 @@
-# Sync — keep imported content and the shared store fresh
+# Sync — share the store, keep it fresh
 
-Two different syncs; don't conflate them.
-
-## 1. Content sync (re-fetch imported docs)
-
-Make the fetch repeatable, then it refreshes on every `add .`:
-
-- Save the working fetch+convert commands as
-  `.ctxoptimize/adapters/fetch-<source>.sh` (or .py/.js). An adapter may
-  either (a) print a batch to stdout, or (b) refresh files under
-  `docs/imported/…` and print an EMPTY batch
-  (`{"producer":"fetch-<source>","nodes":[],"edges":[]}`) — the markdown
-  producer then re-extracts the refreshed files in the same add run.
-- The script reads the provenance frontmatter (source ids, `fetched_at`) to
-  know what to re-download; credentials come from broker CLIs (`apl`) or
-  env-var NAMES — never values in the script.
-- One-off refresh without scripts: repeat the ingest flow by hand; the
-  stable file paths make it an overwrite, and `add .` prunes what
-  disappeared (producer-scoped Replace).
-
-## 2. Store sync (share the gathered world with the team)
+## Store sync (the team's gathered world)
 
 `remote push` / `pull` against the committed remote in
-`.ctxoptimize/config.json` — scope-aware:
+`.ctxoptimize/config.json` (`remote init <url>` writes it; commit it —
+teammates clone and bare `pull` just works). Scope-aware:
 
 - at a multi-module ROOT: the whole store tree (every module + navigator)
 - inside a MODULE dir: only that module's prefix (a teammate pulls just the
   module they work on — KBs, sub-second)
 - single-module repo: unchanged classic behavior
 
-Queries never touch the remote. Merged stores are derived — never synced.
+Sync is incremental (content-hash manifest). Queries never touch the
+remote. Merged stores are derived — never synced. Credentials: `${VAR}`
+placeholders in config resolve from env at sync time; commit variable
+NAMES, never values.
 
-## Freshness
+## Freshness (is the store telling the truth?)
 
-`ctx-optimize status` shows a `fresh:` line (store vs git HEAD);
-`ctx-optimize fresh` exits 0 fresh / 1 stale / 2 unknown — gate on it before
-trusting the store in automation. Imported-doc staleness is the fetch
-script's job (compare `fetched_at` / source etag when the source offers one).
+- `ctx-optimize status` shows a `fresh:` line — store vs the repo's current
+  git HEAD.
+- `ctx-optimize fresh` exits 0 fresh / 1 stale / 2 unknown — gate on it in
+  automation before trusting the store instead of grep.
+- Stale? `ctx-optimize add .` re-gathers (prunes deleted, re-emits changed;
+  adapters re-run too, so external content refreshes in the same pass).
