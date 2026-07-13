@@ -346,3 +346,41 @@ func TestStatusShowsSavings(t *testing.T) {
 		t.Fatalf("status must surface the savings line:\n%s", out)
 	}
 }
+
+// A module whose code vanishes must NOT keep its stale graph silently: the
+// empty code batch has to reach Replace so the shrink guard refuses loudly,
+// and --force does the honest prune. (Regression: gatherInto used to skip
+// empty code batches entirely — "added 0 nodes", exit 0, deleted functions
+// still answered queries.)
+func TestEmptiedModuleHitsShrinkGuard(t *testing.T) {
+	repo := fakeMonorepo(t)
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+	runCLI(t, 0, "init", "--scan", "--yes", "--path", repo)
+	runCLI(t, 0, "add", "--path", repo)
+
+	// Gut the worker module: all code gone, go.mod remains.
+	if err := os.Remove(filepath.Join(repo, "services/worker/worker.go")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(repo, "services/worker/shared.go")); err != nil {
+		t.Fatal(err)
+	}
+
+	out, errb := runCLI(t, 1, "add", "--path", repo)
+	if !strings.Contains(out+errb, "refusing to shrink") {
+		t.Fatalf("emptied module must trip the shrink guard, got:\n%s%s", out, errb)
+	}
+
+	out, _ = runCLI(t, 0, "add", "--force", "--path", repo)
+	if !strings.Contains(out, "pruned") {
+		t.Fatalf("--force must prune the deleted code, got:\n%s", out)
+	}
+	data, err := os.ReadFile(filepath.Join(storeRoot, filepath.Base(repo), "services/worker/graph/nodes.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "RunPayrollJob") {
+		t.Fatal("deleted function still in the graph after --force add")
+	}
+}

@@ -456,8 +456,11 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 	if err != nil {
 		return err
 	}
+	// Always Replace, even when empty: an empty batch against an empty
+	// producer is a no-op, but against previous code nodes it must hit the
+	// shrink guard — skipping it here silently kept deleted code in the graph.
+	batches = append(batches, cb)
 	if len(cb.Nodes) > 0 {
-		batches = append(batches, cb)
 		fmt.Fprintf(out, "code: %d nodes, %d edges\n", len(cb.Nodes), len(cb.Edges))
 	}
 	pc, err := project.Load(dir)
