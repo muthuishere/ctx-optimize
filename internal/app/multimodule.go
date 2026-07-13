@@ -16,8 +16,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
+	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/navigator"
 	"github.com/muthuishere/ctx-optimize/internal/project"
@@ -500,6 +502,19 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 	}
 	if _, err := s.UpdateManifest(); err != nil {
 		return err
+	}
+	// Record source provenance so freshness can later tell whether this
+	// store still reflects the repo. Best-effort: a non-git dir records
+	// nothing. Every gather path (single, module, fan-out worker) runs
+	// through here, so module stores carry their own provenance.
+	if abs, aerr := filepath.Abs(dir); aerr == nil {
+		if head, headUnix, ok := gitHead(abs); ok {
+			if err := s.RecordSource(freshness.Source{
+				Path: abs, Head: head, HeadUnix: headUnix, AddedUnix: time.Now().Unix(),
+			}); err != nil {
+				return err
+			}
+		}
 	}
 	fmt.Fprintf(out, "added %d nodes", totalN)
 	if totalPruned > 0 {
