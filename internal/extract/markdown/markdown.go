@@ -53,14 +53,19 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 				}
 			}
 			// Skip hidden dirs (.git, .ctxoptimize, …) and the usual noise;
-			// a store must never ingest itself or its own config.
-			if path != root && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || strings.HasSuffix(name, "-out")) {
+			// a store must never ingest itself or its own config. Same list
+			// as the code walk — a .md inside dist/ is generated output.
+			if path != root && (strings.HasPrefix(name, ".") || name == "node_modules" ||
+				name == "vendor" || name == "target" || name == "dist" || name == "build" ||
+				strings.HasSuffix(name, "-out")) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(name))
-		if ext != ".md" && ext != ".txt" {
+		isDoc := ext == ".md" || ext == ".txt"
+		isConfig := configFile(name)
+		if !isDoc && !isConfig {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)
@@ -68,9 +73,16 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		if info, err := d.Info(); err == nil && info.Size() > maxConfigBytes && isConfig {
+			return nil // a 5MB "config" is data, not configuration
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", rel, err)
+		}
+		if isConfig {
+			extractConfig(b, rel, string(data))
+			return nil
 		}
 		extractFile(b, rel, string(data))
 		return nil
@@ -79,6 +91,91 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		return nil, err
 	}
 	return b, nil
+}
+
+const maxConfigBytes = 256 * 1024
+
+// configExts are property/config formats indexed as searchable documents.
+var configExts = map[string]bool{
+	".properties": true, ".yaml": true, ".yml": true, ".toml": true, ".ini": true,
+}
+
+// manifestNames are build/dependency manifests indexed by exact basename —
+// NOT their whole extension class (every .json would be data, not config).
+var manifestNames = map[string]bool{
+	"package.json": true, "pom.xml": true, "go.mod": true, "go.work": true,
+	"build.gradle": true, "build.gradle.kts": true,
+	"settings.gradle": true, "settings.gradle.kts": true,
+	"Cargo.toml": true, "pyproject.toml": true, "Makefile": true,
+	"Dockerfile": true, "docker-compose.yml": true, "docker-compose.yaml": true,
+	"Taskfile.yml": true, "Taskfile.yaml": true,
+}
+
+// configFile decides if a file is an indexable config/manifest. Anything
+// that smells like a secret store is refused outright — a knowledge graph
+// must never become the place credentials leak from.
+func configFile(name string) bool {
+	lower := strings.ToLower(name)
+	if strings.Contains(lower, "secret") || strings.Contains(lower, "credential") ||
+		strings.HasPrefix(lower, ".env") || strings.Contains(lower, "password") {
+		return false
+	}
+	if manifestNames[name] {
+		return true
+	}
+	return configExts[strings.ToLower(filepath.Ext(name))]
+}
+
+// extractConfig emits a config/manifest file as one document node with
+// line-anchored top-level KEY sections (yaml/toml/properties top-level keys,
+// [toml sections], gradle/manifest lines are left whole). Deliberately
+// shallow — searchable and citable, never parsed semantics.
+func extractConfig(b *schema.Batch, rel, content string) {
+	b.Nodes = append(b.Nodes, schema.Node{
+		ID: rel, Label: filepath.Base(rel), Kind: "config",
+		FileType: "config", Source: rel, Location: "L1",
+	})
+	usedSlugs := map[string]int{}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		t := strings.TrimRight(line, " \t\r")
+		if t == "" || strings.HasPrefix(strings.TrimSpace(t), "#") || strings.HasPrefix(strings.TrimSpace(t), "//") {
+			continue
+		}
+		// top-level only: no leading whitespace
+		if line != t && strings.TrimLeft(line, " \t") != line {
+			continue
+		}
+		var key string
+		switch {
+		case strings.HasPrefix(t, "[") && strings.HasSuffix(strings.TrimSpace(t), "]"):
+			key = strings.Trim(strings.TrimSpace(t), "[]") // toml/ini section
+		case strings.ContainsAny(t, ":="):
+			cut := strings.IndexAny(t, ":=")
+			key = strings.TrimSpace(t[:cut])
+		}
+		if key == "" || len(key) > 80 || strings.ContainsAny(key, "{}\"' ") {
+			continue
+		}
+		s := slug(key)
+		if s == "" {
+			continue
+		}
+		if n := usedSlugs[s]; n > 0 {
+			usedSlugs[s] = n + 1
+			s = fmt.Sprintf("%s-%d", s, n+1)
+		} else {
+			usedSlugs[s] = 1
+		}
+		id := rel + "#" + s
+		b.Nodes = append(b.Nodes, schema.Node{
+			ID: id, Label: key, Kind: "config_key",
+			FileType: "config", Source: rel, Location: fmt.Sprintf("L%d", i+1),
+		})
+		b.Edges = append(b.Edges, schema.Edge{
+			Source: rel, Target: id, Relation: "contains", Confidence: "EXTRACTED",
+		})
+	}
 }
 
 func extractFile(b *schema.Batch, rel, content string) {

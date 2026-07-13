@@ -3,6 +3,7 @@ package markdown
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/muthuishere/ctx-optimize/internal/schema"
@@ -97,5 +98,45 @@ func TestDuplicateHeadingsGetSuffixes(t *testing.T) {
 	}
 	if !ids["d.md::files-changed"] || !ids["d.md::files-changed-2"] {
 		t.Fatalf("expected suffixed slugs, got %v", ids)
+	}
+}
+
+func TestConfigAndManifestIngestion(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(content), 0o644)
+	}
+	write("application.properties", "server.port=8080\nspring.datasource.url=jdbc:pg\n")
+	write("config.yaml", "database:\n  host: x\nqueue:\n  name: y\n")
+	write("package.json", "{\n  \"name\": \"demo\"\n}\n")
+	write("secrets.properties", "api_key=SHOULD_NEVER_ENTER\n")
+	write(".env", "TOKEN=nope\n")
+	write("dist/leftover.md", "# generated\n")
+	b, err := Extract(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, n := range b.Nodes {
+		got[n.ID] = n.Kind
+	}
+	if got["application.properties"] != "config" || got["config.yaml"] != "config" || got["package.json"] != "config" {
+		t.Fatalf("config files not ingested: %v", got)
+	}
+	if got["application.properties#server-port"] != "config_key" {
+		t.Fatalf("top-level property key missing: %v", got)
+	}
+	if got["config.yaml#database"] != "config_key" || got["config.yaml#queue"] != "config_key" {
+		t.Fatalf("yaml top-level keys missing: %v", got)
+	}
+	for id := range got {
+		if strings.Contains(id, "secrets") || strings.Contains(id, ".env") {
+			t.Fatalf("secret-ish file ingested: %s", id)
+		}
+		if strings.Contains(id, "dist/") {
+			t.Fatalf("dist/ content ingested: %s", id)
+		}
 	}
 }
