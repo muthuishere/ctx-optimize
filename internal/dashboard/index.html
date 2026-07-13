@@ -150,14 +150,37 @@ async function loadUsage(key) {
 const fmtTok = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
 
 // ---- modules ----
+// Multi-module repos nest stores under one root ("beam/sdks/java/harness"):
+// group the picker per repo, label nested entries by their in-repo path, and
+// surface the navigator's one-line summary as the option tooltip.
 async function loadModules() {
   const mods = await api('/api/modules');
   const sel = $('module');
   sel.innerHTML = '';
+  const byRoot = new Map();
   for (const m of mods) {
-    const o = document.createElement('option');
-    o.value = m.key; o.textContent = `${m.key} (${m.nodes})`;
-    sel.appendChild(o);
+    if (!byRoot.has(m.root)) byRoot.set(m.root, []);
+    byRoot.get(m.root).push(m);
+  }
+  for (const [root, list] of byRoot) {
+    if (list.length === 1 && list[0].key === root) {
+      const m = list[0];
+      const o = document.createElement('option');
+      o.value = m.key; o.textContent = `${m.key} (${m.nodes})`;
+      if (m.summary) o.title = m.summary;
+      sel.appendChild(o);
+      continue;
+    }
+    const g = document.createElement('optgroup');
+    g.label = `${root} — ${list.length} modules`;
+    for (const m of list) {
+      const o = document.createElement('option');
+      const label = m.key === root ? '(repo root)' : m.key.slice(root.length + 1);
+      o.value = m.key; o.textContent = `${label} (${m.nodes})`;
+      if (m.summary) o.title = m.summary;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
   }
   const want = new URLSearchParams(location.search).get('module');
   if (want && mods.some(m => m.key === want)) sel.value = want;

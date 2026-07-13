@@ -252,7 +252,21 @@ func Scaffold(repo, name string) error {
 const pointerBegin = "<!-- ctx-optimize:begin -->"
 const pointerEnd = "<!-- ctx-optimize:end -->"
 
-func pointerBlock(name string) string {
+func pointerBlock(name string, modules int) string {
+	if modules > 0 {
+		return pointerBegin + "\n" +
+			"This is a MULTI-MODULE repo with a pre-built ctx-optimize knowledge store (`.ctxoptimize/` here,\n" +
+			fmt.Sprintf("data at `~/ctxoptimize/%s/` — one graph per module + a navigator, %d modules declared in config.json).\n", name, modules) +
+			"For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
+			"use it INSTEAD of grep-and-read chains, not in addition to them:\n" +
+			"`ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>`.\n" +
+			"Scope follows your cwd: inside a module dir answers come from that module (zero hits escalate repo-wide);\n" +
+			"at the root the navigator federates across the best-matching modules (`--modules all|a,b` to widen).\n" +
+			"Module map + hubs: `~/ctxoptimize/" + name + "/navigator.md`; unified wiki starts at `~/ctxoptimize/" + name + "/wiki/index.md`.\n" +
+			"Card/query output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source.\n" +
+			"Fresh clone? `ctx-optimize init && ctx-optimize add .` rebuilds every module store in seconds.\n" +
+			pointerEnd + "\n"
+	}
 	return pointerBegin + "\n" +
 		"This repo has a pre-built ctx-optimize knowledge store (`.ctxoptimize/` here, data at `~/ctxoptimize/" + name + "/`).\n" +
 		"For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
@@ -267,9 +281,10 @@ func pointerBlock(name string) string {
 
 // EnsureAgentPointer writes or refreshes the pointer block in the repo's
 // CLAUDE.md and AGENTS.md. Existing content outside the markers is never
-// touched; missing files are created with just the block.
-func EnsureAgentPointer(repo, name string) ([]string, error) {
-	block := pointerBlock(name)
+// touched; missing files are created with just the block. modules > 0
+// switches to the multi-module wording (navigator, scope-follows-cwd).
+func EnsureAgentPointer(repo, name string, modules int) ([]string, error) {
+	block := pointerBlock(name, modules)
 	var written []string
 	for _, fn := range []string{"CLAUDE.md", "AGENTS.md"} {
 		p := filepath.Join(repo, fn)

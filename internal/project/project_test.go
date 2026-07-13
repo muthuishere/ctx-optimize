@@ -195,7 +195,7 @@ func TestEnsureAgentPointer(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# My repo\nrules here\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	written, err := EnsureAgentPointer(dir, "mymod")
+	written, err := EnsureAgentPointer(dir, "mymod", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestEnsureAgentPointer(t *testing.T) {
 		t.Fatalf("AGENTS.md lost content or missing block:\n%s", ag)
 	}
 	// second run must be a no-op (idempotent)
-	written2, err := EnsureAgentPointer(dir, "mymod")
+	written2, err := EnsureAgentPointer(dir, "mymod", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestEnsureAgentPointer(t *testing.T) {
 		t.Fatalf("second run rewrote files: %v", written2)
 	}
 	// changed name → block replaced in place, exactly one block
-	if _, err := EnsureAgentPointer(dir, "renamed"); err != nil {
+	if _, err := EnsureAgentPointer(dir, "renamed", 0); err != nil {
 		t.Fatal(err)
 	}
 	ag, _ = os.ReadFile(filepath.Join(dir, "AGENTS.md"))

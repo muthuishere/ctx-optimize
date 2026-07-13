@@ -267,7 +267,16 @@ func cmdInit(args []string, stdout io.Writer) error {
 			return err
 		}
 	}
-	pointed, err := project.EnsureAgentPointer(path, name)
+	// Re-load: init --scan may just have written modules[] — the pointer
+	// block and the store key both follow the final config.
+	cfg, err := project.Load(path)
+	if err != nil {
+		return err
+	}
+	if cfg.Name != "" {
+		name = store.SanitizeKey(cfg.Name)
+	}
+	pointed, err := project.EnsureAgentPointer(path, name, len(cfg.Modules))
 	if err != nil {
 		return err
 	}
@@ -844,26 +853,60 @@ func bodyHead(root string, n schema.Node) string {
 // no flags, safe to wire into any hook system that captures stdout.
 func cmdHookContext(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
-	path, err := resolvePath(f)
-	if err != nil {
-		return nil // hooks must never fail the prompt
+	// Scope-aware like every read verb: the upward walk finds the repo's
+	// config from any subdir, and the message matches where the prompt is —
+	// a module dir points at that module's graph, a multi-module root points
+	// at the navigator.
+	sc, err := resolveScope(f)
+	if err != nil || sc.cfg == nil {
+		return nil // hooks must never fail the prompt; no config → silent
 	}
-	if _, err := os.Stat(filepath.Join(path, project.Dir)); err != nil {
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
 		return nil
 	}
-	s, err := openStore(f)
+	s, err := store.Open(storeRoot, sc.storeKey)
 	if err != nil {
 		return nil
 	}
 	nodes, err := s.Nodes()
-	if err != nil || len(nodes) == 0 {
+	if err != nil {
 		return nil
+	}
+	var msg string
+	switch {
+	case sc.kind == scopeModule:
+		if len(nodes) == 0 {
+			return nil
+		}
+		msg = fmt.Sprintf("You are inside module %q of a multi-module repo with a pre-built ctx-optimize knowledge store (%d nodes for this module). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>`. Answers are scoped to this module; zero hits auto-escalate repo-wide (`--root` forces it). Output is parsed fact with file:line — cite it directly.", sc.moduleName, len(nodes))
+	case sc.kind == scopeRoot && len(sc.modules) > 0:
+		total := len(nodes)
+		count := 0
+		for _, m := range sc.modules {
+			ms, err := store.Open(storeRoot, store.SanitizeKeyPath(sc.rootKey+"/"+m.Path))
+			if err != nil {
+				continue
+			}
+			if mn, err := ms.Nodes(); err == nil && len(mn) > 0 {
+				total += len(mn)
+				count++
+			}
+		}
+		if total == 0 {
+			return nil
+		}
+		msg = fmt.Sprintf("This is a multi-module repo with a pre-built ctx-optimize knowledge store: %d modules, %d nodes total, plus a navigator (module map + hubs at `~/ctxoptimize/%s/navigator.md`). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` (federates across the best-matching modules from the root; run inside a module dir to scope to it) · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly.", count, total, sc.rootKey)
+	default:
+		if len(nodes) == 0 {
+			return nil
+		}
+		msg = fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (sig+doc+body+callers) · `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks.", len(nodes))
 	}
 	t0 := time.Now()
 	cw := &countingWriter{w: stdout}
 	stdout = cw
 	defer func() { served(s, "hook-context", "", 1, cw, t0) }()
-	msg := fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (sig+doc+body+callers) · `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks.", len(nodes))
 	// Two wire formats: the Claude hook contract (also understood by Codex
 	// and Devin — the ecosystem converged on it) and Copilot's sessionStart
 	// contract. Plain text is Claude-only, so JSON is the default.
