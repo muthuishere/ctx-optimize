@@ -16,7 +16,31 @@ proof/agent/run-bench.sh                 # defaults: gorilla/mux, openai/gpt-4o-
 ```
 
 Options: `--model <slug>` · `--repo <url> --name <short>` · `--questions <file>`
-· `--bin <path>` (skip the `go build`) · `--out <dir>`.
+· `--bin <path>` (skip the `go build`) · `--out <dir>` · `--monorepo`
+(multi-module build: `init --scan --yes && add .`) · `--smoke` (free
+deterministic checks only) · `--smoke-monorepo` (both, on etcd).
+
+## Monorepo arm (multi-module)
+
+etcd is a real 12-module repo (api, client/v3, server, pkg, etcdctl, …).
+`--monorepo` builds **one store per module + a navigator** and the agent
+queries from the repo root, where answers federate across modules — the flow
+graphify has no equivalent for (its per-directory graphs are built by hand
+and never merged back into one query surface).
+
+```sh
+proof/agent/run-bench.sh --smoke-monorepo               # FREE: no key, no model
+proof/agent/run-bench.sh --monorepo \
+  --questions proof/agent/questions-monorepo.json       # paid three-way run
+```
+
+The smoke mode verifies the store's answers deterministically: every question
+in `questions-monorepo.json` carries the exact `ctx-optimize` argv and the
+file paths its output must contain (real, verified citations — e.g.
+`watcher.Watch → client/v3/watch.go`), including two scope checks run from
+*inside* `client/v3`: a module-scoped answer labeled `[client-v3]`, and a
+cross-module `card` that answers from the owning module with
+`[not in client-v3 — found in server]`. No API key, no cost — CI-friendly.
 
 It prints a per-question table and the three headline deltas, and writes
 `results/SUMMARY-<name>.md` plus one raw JSON record per run.
