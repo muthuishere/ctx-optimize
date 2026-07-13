@@ -11,7 +11,9 @@ description: >
   how does Y work, who calls Z, what breaks if I change W, architecture,
   onboarding. Fall back to Grep/Read only for what the store lacks. Also
   builds/refreshes/shares the store ("gather this repo", "add the schema /
-  kafka topics / docs", "push/pull the store"). No store yet? `ctx-optimize
+  kafka topics / docs", "push the store", "pull the store", "share the
+  graph", "publish the store", "export to the team", "import/load a
+  teammate's store", "sync the graph with the code"). No store yet? `ctx-optimize
   init && ctx-optimize add .` creates it in seconds. Monorepo? `ctx-optimize
   scan` finds every project — confirm the list with the user, then
   `init --scan --yes && add .` builds one store per module + a navigator.
@@ -64,7 +66,8 @@ counted honestly.
 | In a repo with NO store yet | single project: `ctx-optimize init && ctx-optimize add .` (seconds). Monorepo/multi-project: follow `./references/multi-module.md` — scan first, confirm the FULL list with the user, then init |
 | Told code changed / store looks stale | `ctx-optimize add .` (incremental: prunes deleted, re-emits changed) |
 | Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script |
-| Asked to share / get the team's store, or about freshness | follow `./references/sync.md` — scope-aware `remote push`/`pull`, `fresh` gate |
+| User says share / publish / push / pull / export to team / import / load a store | follow `./references/push-pull.md` — scope-aware `remote push`/`pull` |
+| Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `add .` IS the sync; `fresh` gate |
 | Combining several repos/modules into one graph | `ctx-optimize merge <mod>... --into <name>` (opt-in, never automatic) |
 | Wanting a readable map of the module | open the store's `wiki/index.md` (regenerated on every `add`; `ctx-optimize wiki` to force) |
 | Exporting for other tools | `ctx-optimize export --format json|dot|graphml|csv|obsidian|all` |
@@ -77,6 +80,22 @@ the request is a question — query. Do not rebuild. Do not grep. Do not read
 files speculatively.** Need a symbol's signature, doc, or callers? `card` has it —
 only open a file when a hit's `location` demands verbatim code, and then
 read only that range.
+
+## Query craft (misses are usually phrasing, not the store)
+
+- **Query with 2–4 terms, not sentences.** The matcher is lexical
+  (IDF + prefix + trigram): `"ForwardMouseEvent RenderWidgetHost"` beats
+  `"RenderWidgetHostImpl::ForwardMouseEvent definition in render_widget_host_impl.cc"`.
+  Drop filler words, paths, and `::`/`.` qualifiers from queries.
+- **`card` wants the node's LABEL, exactly.** Don't invent id formats
+  (`content.Foo.Bar` guesses waste calls). Unsure of the label? `query` the
+  short name first, copy the exact label from the hit, then `card` it.
+- **Two misses = change tactics, not wording.** Rephrasing the same
+  question a third time is thrash; go to `hubs`, `explain` on a neighbor,
+  or the legitimate grep lanes below.
+- Things the store does NOT index — use grep directly (that's lane 1/2 of
+  THE GATE, say so first): member FIELDS/variables, build files
+  (BUILD.gn, CMake), string literals, config values, comments.
 
 ## Answering discipline (cite or abstain)
 
@@ -120,5 +139,6 @@ model anywhere; you are the judge, the binary only tallies.
   navigator, scope-follows-cwd querying, merge policy
 - `./references/adapters.md` — everything beyond code + markdown: doc
   conversion lane, system adapters, the batch schema
-- `./references/sync.md` — team store sync (scope-aware push/pull) and the
-  freshness gate
+- `./references/sync.md` — sync = keep the graph matching the code (`add .`,
+  `fresh` gate)
+- `./references/push-pull.md` — share/publish/import the store across the team
