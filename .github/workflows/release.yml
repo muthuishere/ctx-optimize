@@ -13,7 +13,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write # goreleaser publishes the GitHub Release + binaries
   id-token: write # OIDC — this is what npm trusted publishing consumes
 
 jobs:
@@ -32,10 +32,12 @@ jobs:
       - run: npm install -g npm@latest && npm --version
       - name: gate
         run: go vet ./... && go test ./...
-      - name: build all platforms
+      - name: build all platforms + publish GitHub Release
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          args: build --clean
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: sync versions to tag
         run: |
           V="${GITHUB_REF_NAME#v}"
