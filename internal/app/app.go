@@ -557,7 +557,8 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		"store": s.Dir, "nodes": len(nodes), "edges": len(edges),
 		"remote": remoteURL, "remote_from": remoteFrom,
 	}
-	if sum, err := metrics.Summarize(s.Dir); err == nil && sum.Total > 0 {
+	sum, sumErr := metrics.Summarize(s.Dir)
+	if sumErr == nil && sum.Total > 0 {
 		st["served"] = sum
 	}
 	if f.bools["json"] {
@@ -568,6 +569,11 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "  (from %s)", remoteFrom)
 	}
 	fmt.Fprintln(stdout)
+	// The money line: what answering from the store (instead of a
+	// grep-and-read chain) has saved so far, per the usage estimator.
+	if sumErr == nil && sum.Total > 0 {
+		fmt.Fprintf(stdout, "served: %d answers · ~%d tokens saved (~$%.2f)\n", sum.Total, sum.EstSaved, sum.EstUSD)
+	}
 	return nil
 }
 
@@ -668,6 +674,17 @@ func loadGraphScoped(f *flags) ([]schema.Node, []schema.Edge, *scope, string, er
 	if err != nil {
 		return nil, nil, nil, "", err
 	}
+	// --root from inside a module: answer repo-wide (what the boundary note
+	// tells users to do), same federated graph the root scope gets.
+	if sc.kind == scopeModule && f.bools["root"] {
+		nodes, edges, err := federatedAll(sc, storeRoot)
+		if err != nil {
+			return nil, nil, nil, "", err
+		}
+		sc.kind = scopeRoot
+		sc.storeKey = sc.rootKey
+		return nodes, edges, sc, storeRoot, nil
+	}
 	if sc.kind == scopeRoot && len(sc.modules) > 0 {
 		nodes, edges, err := loadFederated(sc, storeRoot, nil)
 		return nodes, edges, sc, storeRoot, err
@@ -690,9 +707,9 @@ func loadGraphScoped(f *flags) ([]schema.Node, []schema.Edge, *scope, string, er
 func cmdPath(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) != 2 {
-		return fmt.Errorf(`usage: ctx-optimize path "A" "B"`)
+		return fmt.Errorf(`usage: ctx-optimize path "A" "B" [--root]`)
 	}
-	nodes, edges, err := loadGraph(f)
+	nodes, edges, sc, storeRoot, err := loadGraphScoped(f)
 	if err != nil {
 		return err
 	}
@@ -701,12 +718,38 @@ func cmdPath(args []string, stdout io.Writer) error {
 	stdout = cw
 	st, _ := openStore(f)
 	defer func() { served(st, "path", strings.Join(f.args, " → "), 1, cw, t0) }()
-	steps, err := analyze.ShortestPath(nodes, edges, f.args[0], f.args[1])
-	if err != nil {
-		return err
+	steps, perr := analyze.ShortestPath(nodes, edges, f.args[0], f.args[1])
+	scopeNote := ""
+	// Module-scope miss (an endpoint isn't local): retry repo-wide, labeled.
+	if perr != nil && sc != nil && sc.kind == scopeModule {
+		if fn, fe, ferr := federatedAll(sc, storeRoot); ferr == nil {
+			if s2, err2 := analyze.ShortestPath(fn, fe, f.args[0], f.args[1]); err2 == nil {
+				scopeNote = fmt.Sprintf("[not in %s — answered repo-wide]", sc.moduleName)
+				steps, perr = s2, nil
+				sc = nil // repo-wide now: the boundary note no longer applies
+			}
+		}
+	}
+	if perr != nil {
+		return perr
+	}
+	note := ""
+	if sc != nil && sc.kind == scopeModule &&
+		(crossModuleEcho(sc, storeRoot, f.args[0]) || crossModuleEcho(sc, storeRoot, f.args[1])) {
+		note = boundaryNote
 	}
 	if f.bools["json"] {
-		return emit(stdout, map[string]any{"steps": steps})
+		out := map[string]any{"steps": steps}
+		if note != "" {
+			out["note"] = note
+		}
+		if scopeNote != "" {
+			out["scope"] = scopeNote
+		}
+		return emit(stdout, out)
+	}
+	if scopeNote != "" {
+		fmt.Fprintln(stdout, scopeNote)
 	}
 	if len(steps) == 0 {
 		fmt.Fprintln(stdout, "same node")
@@ -715,6 +758,9 @@ func cmdPath(args []string, stdout io.Writer) error {
 	fmt.Fprintln(stdout, steps[0].From)
 	for _, st := range steps {
 		fmt.Fprintf(stdout, "  %s %s %s\n", st.Dir, st.Relation, st.To)
+	}
+	if note != "" {
+		fmt.Fprintln(stdout, note)
 	}
 	return nil
 }
@@ -929,9 +975,9 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 func cmdAffected(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) != 1 {
-		return fmt.Errorf(`usage: ctx-optimize affected "X" [--depth N] [--relation R]`)
+		return fmt.Errorf(`usage: ctx-optimize affected "X" [--depth N] [--relation R] [--root]`)
 	}
-	nodes, edges, err := loadGraph(f)
+	nodes, edges, sc, storeRoot, err := loadGraphScoped(f)
 	if err != nil {
 		return err
 	}
@@ -950,16 +996,45 @@ func cmdAffected(args []string, stdout io.Writer) error {
 	if r, ok := f.strs["relation"]; ok {
 		relations = append(relations, r)
 	}
-	target, impacts, err := analyze.Affected(nodes, edges, f.args[0], depth, relations)
-	if err != nil {
-		return err
+	target, impacts, aerr := analyze.Affected(nodes, edges, f.args[0], depth, relations)
+	scopeNote := ""
+	// Module-scope miss: the symbol likely lives in a sibling module —
+	// answer repo-wide and say where it was (mirrors cmdCard).
+	if aerr != nil && sc != nil && sc.kind == scopeModule {
+		if fn, fe, ferr := federatedAll(sc, storeRoot); ferr == nil {
+			if t2, i2, err2 := analyze.Affected(fn, fe, f.args[0], depth, relations); err2 == nil {
+				scopeNote = fmt.Sprintf("[not in %s — found in %s]", sc.moduleName, moduleOwnerOf(sc, t2.Source))
+				target, impacts, aerr = t2, i2, nil
+				sc = nil // repo-wide now: the boundary note no longer applies
+			}
+		}
+	}
+	if aerr != nil {
+		return aerr
+	}
+	note := ""
+	if sc != nil && sc.kind == scopeModule && crossModuleEcho(sc, storeRoot, target.Label) {
+		note = boundaryNote
 	}
 	if f.bools["json"] {
-		return emit(stdout, map[string]any{"target": target, "affected": impacts})
+		out := map[string]any{"target": target, "affected": impacts}
+		if note != "" {
+			out["note"] = note
+		}
+		if scopeNote != "" {
+			out["scope"] = scopeNote
+		}
+		return emit(stdout, out)
+	}
+	if scopeNote != "" {
+		fmt.Fprintln(stdout, scopeNote)
 	}
 	fmt.Fprintf(stdout, "changing %s impacts %d nodes (depth %d):\n", target.Label, len(impacts), depth)
 	for _, im := range impacts {
 		fmt.Fprintf(stdout, "  d%d %s  [%s]  via %s on %s\n", im.Depth, im.Node.Label, im.Node.Kind, im.Via, im.DependsOn)
+	}
+	if note != "" {
+		fmt.Fprintln(stdout, note)
 	}
 	return nil
 }

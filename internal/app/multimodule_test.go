@@ -30,6 +30,10 @@ func fakeMonorepo(t *testing.T) string {
 		// must get its own store, and must not be double-extracted by api.
 		"services/api/plugin/go.mod":    "module acme/api/plugin\n",
 		"services/api/plugin/plugin.go": "package plugin\n\nfunc NestedPluginEntry() {}\n",
+		// Same-named hub symbol in BOTH modules: the cross-module echo that
+		// gates the boundary note on module-scoped affected/path.
+		"services/api/shared.go":    "package api\n\nfunc SharedThing() {}\n\nfunc useSharedA() { SharedThing() }\n",
+		"services/worker/shared.go": "package worker\n\nfunc SharedThing() {}\n\nfunc useSharedB() { SharedThing() }\n",
 	}
 	for p, content := range files {
 		full := filepath.Join(repo, filepath.FromSlash(p))
@@ -256,5 +260,89 @@ func TestSingleModuleRepoUnchanged(t *testing.T) {
 	out, _ = runCLI(t, 0, "query", "Solo", "--path", repo)
 	if strings.Contains(out, "[") && strings.Contains(out, "scope") {
 		t.Fatalf("single-module query output must stay label-free: %s", out)
+	}
+}
+
+func TestAffectedBoundaryNote(t *testing.T) {
+	repo := fakeMonorepo(t)
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	runCLI(t, 0, "init", "--scan", "--yes", "--path", repo)
+	runCLI(t, 0, "add", "--path", repo)
+	apiDir := filepath.Join(repo, "services", "api")
+
+	// SharedThing also lives in services/worker's hubs → cross-module echo
+	// → the module-scoped answer must carry the boundary note.
+	out, _ := runCLI(t, 0, "affected", "SharedThing", "--path", apiDir)
+	if !strings.Contains(out, "note: module-scoped") || !strings.Contains(out, "--root") {
+		t.Fatalf("expected boundary note:\n%s", out)
+	}
+	// HandleCheckout exists only in api → no echo → no note.
+	out, _ = runCLI(t, 0, "affected", "HandleCheckout", "--path", apiDir)
+	if strings.Contains(out, "note: module-scoped") {
+		t.Fatalf("note printed without a cross-module echo:\n%s", out)
+	}
+	// --root answers repo-wide: no module boundary, no note.
+	out, _ = runCLI(t, 0, "affected", "HandleCheckout", "--path", apiDir, "--root")
+	if strings.Contains(out, "note: module-scoped") {
+		t.Fatalf("--root must not carry the module note:\n%s", out)
+	}
+	// JSON carries the note as a field, not mixed into the document.
+	out, _ = runCLI(t, 0, "affected", "SharedThing", "--json", "--path", apiDir)
+	var res struct {
+		Note string `json:"note"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("affected --json not parseable: %v\n%s", err, out)
+	}
+	if !strings.Contains(res.Note, "module-scoped") {
+		t.Fatalf("json note missing: %+v", res)
+	}
+}
+
+func TestAffectedEscalatesAcrossModules(t *testing.T) {
+	repo := fakeMonorepo(t)
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	runCLI(t, 0, "init", "--scan", "--yes", "--path", repo)
+	runCLI(t, 0, "add", "--path", repo)
+	apiDir := filepath.Join(repo, "services", "api")
+
+	// RunPayrollJob is not in api: escalate, answer repo-wide, say where.
+	out, _ := runCLI(t, 0, "affected", "RunPayrollJob", "--path", apiDir)
+	if !strings.Contains(out, "found in services/worker") || !strings.Contains(out, "impacts") {
+		t.Fatalf("affected escalation: %s", out)
+	}
+}
+
+func TestPathBoundaryAndEscalation(t *testing.T) {
+	repo := fakeMonorepo(t)
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	runCLI(t, 0, "init", "--scan", "--yes", "--path", repo)
+	runCLI(t, 0, "add", "--path", repo)
+	apiDir := filepath.Join(repo, "services", "api")
+
+	// Both endpoints local, but SharedThing echoes in another module → note.
+	out, _ := runCLI(t, 0, "path", "SharedThing", "useSharedA", "--path", apiDir)
+	if !strings.Contains(out, "note: module-scoped") {
+		t.Fatalf("expected boundary note on path:\n%s", out)
+	}
+	// Endpoints live in a sibling module → escalate repo-wide, labeled.
+	out, _ = runCLI(t, 0, "path", "RunPayrollJob", "loop", "--path", apiDir)
+	if !strings.Contains(out, "answered repo-wide") {
+		t.Fatalf("path escalation: %s", out)
+	}
+}
+
+func TestStatusShowsSavings(t *testing.T) {
+	repo := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	if err := os.WriteFile(filepath.Join(repo, "notes.md"), []byte("# Solo Notes\n\nBody line.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCLI(t, 0, "init", "--path", repo)
+	runCLI(t, 0, "add", "--path", repo)
+	runCLI(t, 0, "query", "Solo", "--path", repo) // records one served answer
+	out, _ := runCLI(t, 0, "status", "--path", repo)
+	if !strings.Contains(out, "tokens saved") || !strings.Contains(out, "served: 1 answers") {
+		t.Fatalf("status must surface the savings line:\n%s", out)
 	}
 }

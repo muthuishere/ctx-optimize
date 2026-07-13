@@ -413,6 +413,12 @@ never scans. What we take from omakase is the UX, not the inference:
    navigator routes; module-level CLAUDE.md pointers = N files to maintain.)
 3. Federated query default K (3?) and how hits are interleaved across modules
    within one budget — per-module quota vs global rank?
+   *Field note (etcd bench, 2026-07-13): the trigram matcher fuzzy-matches
+   almost anything, so zero-hit QUERY escalation is nearly untriggerable on
+   real repos — `card`'s exact-symbol escalation is the reliable ladder
+   rung. If module-scoped query escalation should fire more often, the
+   trigger needs a relevance floor (e.g. escalate when only tier-3 fuzzy
+   hits), not just hit-count zero.*
 4. `--jobs` default cap (NumCPU vs 8 — wasm instance ≈32MB each).
 5. Does the root residual store earn its keep, or should root-level stray
    files fold into the navigator only? (Rec: keep residual — root docs/

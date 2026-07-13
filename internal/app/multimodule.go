@@ -782,3 +782,52 @@ func modulePaths(mods []scan.Module) string {
 	}
 	return strings.Join(ps, ", ")
 }
+
+// boundaryNote is the honesty line for module-scoped graph analysis: the
+// module store cannot contain cross-module edges, so a blast radius or path
+// may be truncated at the boundary.
+const boundaryNote = "note: module-scoped — cross-module edges are not in this graph; run with --root for repo-wide impact"
+
+// federatedAll loads the whole repo's namespaced graph from a module scope —
+// the escalation target for analysis verbs whose symbol isn't local.
+func federatedAll(sc *scope, storeRoot string) ([]schema.Node, []schema.Edge, error) {
+	if len(sc.modules) == 0 {
+		mods, err := expandRootModules(sc)
+		if err != nil {
+			return nil, nil, err
+		}
+		sc.modules = mods
+	}
+	return loadFederated(sc, storeRoot, nil)
+}
+
+// crossModuleEcho reports whether the navigator knows ANOTHER module whose
+// hub directory carries this label — the cheap signal that a module-scoped
+// answer may be truncated at the boundary. No navigator (or no way to
+// check) → true: stay honest rather than silently confident.
+func crossModuleEcho(sc *scope, storeRoot, label string) bool {
+	idx, err := navigator.Load(filepath.Join(storeRoot, filepath.FromSlash(sc.rootKey)))
+	if err != nil || idx == nil {
+		return true
+	}
+	for _, m := range idx.OwnerOf(label) {
+		if m.Path != sc.modulePath {
+			return true
+		}
+	}
+	return false
+}
+
+// moduleOwnerOf maps a namespaced (repo-relative) source path back to the
+// declared module that owns it — for labeling escalated answers.
+func moduleOwnerOf(sc *scope, source string) string {
+	owner := "root"
+	for _, m := range sc.modules {
+		if source == m.Path || strings.HasPrefix(source, m.Path+"/") {
+			if owner == "root" || len(m.Path) > len(owner) {
+				owner = m.Path
+			}
+		}
+	}
+	return owner
+}
