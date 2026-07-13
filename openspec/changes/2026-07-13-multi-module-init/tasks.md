@@ -31,7 +31,13 @@ Gate: `task ci` green before every commit.
 - [x] card: module-miss escalates via federated retry, labeled
       "[not in X — found in Y]"; path/explain/affected get root-scope
       federated graphs via loadGraph
-- [ ] affected/path boundary NOTES (cross-module truncation warnings)
+- [x] affected/path boundary NOTES: module scope appends the honesty line
+      (gated on a navigator cross-module hub echo; unconditional when no
+      navigator can verify), symbol misses escalate repo-wide labeled like
+      card, --root honored by every analysis verb via loadGraphScoped
+- [x] savings metric surfaced: `status` text prints
+      "served: N answers · ~X tokens saved (~$Y)" (dashboard already had
+      the chip + win tiles — no change needed there)
 - [ ] remote push/pull scope prefixes (root push = whole tree)
 
 ## 4. Skill + docs
