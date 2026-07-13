@@ -1,0 +1,63 @@
+{
+  "repo": "https://github.com/etcd-io/etcd",
+  "name": "etcd",
+  "monorepo": true,
+  "comment": "etcd is a REAL multi-module repo (12 go.mod modules: api, client/v3, server, pkg, etcdctl, ...). ctx-optimize builds one store per module + a navigator (init --scan --yes && add .); queries from the root federate across modules. Each question carries a deterministic `smoke` spec: the ctx-optimize argv to run and substrings its output MUST contain (real file paths verified against the store) — so the store's answers are checkable without any model call. `cwd` (optional) runs the smoke command from a module subdir to prove scope resolution.",
+  "questions": [
+    {
+      "id": "q1",
+      "prompt": "Which module implements the client-side Watch API, and where is the watcher's Watch method defined?",
+      "smoke": { "argv": ["card", "watcher.Watch"], "expect": ["client/v3/watch.go"] }
+    },
+    {
+      "id": "q2",
+      "prompt": "Where is the interval tree data structure implemented, and which module owns it?",
+      "smoke": { "argv": ["query", "interval tree insert delete"], "expect": ["pkg/adt/interval_tree.go"] }
+    },
+    {
+      "id": "q3",
+      "prompt": "Which module provides the software transactional memory (STM) helper for building transactions?",
+      "smoke": { "argv": ["query", "concurrency STM transaction"], "expect": ["client/v3/concurrency"] }
+    },
+    {
+      "id": "q4",
+      "prompt": "Where does the etcd server bootstrap process live, and which module owns it?",
+      "smoke": { "argv": ["query", "EtcdServer bootstrap"], "expect": ["server/etcdserver/bootstrap.go"] }
+    },
+    {
+      "id": "q5",
+      "prompt": "Which module owns feature gates, and where is the Enabled check defined?",
+      "smoke": { "argv": ["card", "featureGate.Enabled"], "expect": ["pkg/featuregate/feature_gate.go"] }
+    },
+    {
+      "id": "q6",
+      "prompt": "Which module contains the generated gRPC types for the KV service (Range/Put/DeleteRange RPCs)?",
+      "smoke": { "argv": ["query", "etcdserverpb KV Range RPC"], "expect": ["api/etcdserverpb"] }
+    },
+    {
+      "id": "q7",
+      "prompt": "Which module provides the integration-test cluster helper that creates client/v3 clients, and where is NewClientV3 defined?",
+      "smoke": { "argv": ["query", "etcdctl command client v3 New"], "expect": ["tests/framework/integration/cluster.go"] }
+    },
+    {
+      "id": "q8",
+      "prompt": "Where is the client-side lease KeepAlive implemented, and which module owns it?",
+      "smoke": { "argv": ["card", "lessor.KeepAlive"], "expect": ["client/v3/lease.go"] }
+    },
+    {
+      "id": "q9",
+      "prompt": "Where does the server grant a permission to an auth role, and which module owns that code?",
+      "smoke": { "argv": ["query", "auth store grant role permission"], "expect": ["server/auth/store.go"] }
+    },
+    {
+      "id": "q10",
+      "prompt": "From inside the client/v3 module: where is the watch stream key derived from a context?",
+      "smoke": { "cwd": "client/v3", "argv": ["query", "watch stream key context"], "expect": ["[client-v3]", "watch.go"] }
+    },
+    {
+      "id": "q11",
+      "prompt": "From inside the client/v3 module: where is bootstrapBackend defined? (It lives in a DIFFERENT module — the store must say so and answer anyway.)",
+      "smoke": { "cwd": "client/v3", "argv": ["card", "bootstrapBackend"], "expect": ["not in client-v3", "found in server", "server/etcdserver/bootstrap.go"] }
+    }
+  ]
+}

@@ -16,6 +16,13 @@
 # Usage:
 #   proof/agent/run-bench.sh [--model openai/gpt-4o-mini] [--bin PATH]
 #                            [--questions FILE] [--out DIR] [--repo URL --name N]
+#                            [--monorepo] [--smoke] [--smoke-monorepo]
+#
+# Multi-module: --monorepo builds via `init --scan --yes && add .` (one store
+# per module + navigator; root queries federate). --smoke runs ONLY the free,
+# deterministic checks (smoke.mjs: store answers vs expected file paths — no
+# model, no API key). --smoke-monorepo = --monorepo --smoke with
+# questions-monorepo.json (etcd, 12 modules).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -26,6 +33,8 @@ QFILE="$HERE/questions.json"
 OUT="$HERE/results"
 REPO=""
 NAME=""
+MONOREPO=0
+SMOKE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,11 +44,16 @@ while [ $# -gt 0 ]; do
     --out) OUT="$2"; shift 2;;
     --repo) REPO="$2"; shift 2;;
     --name) NAME="$2"; shift 2;;
+    --monorepo) MONOREPO=1; shift;;
+    --smoke) SMOKE=1; shift;;
+    --smoke-monorepo) MONOREPO=1; SMOKE=1; QFILE="$HERE/questions-monorepo.json"; shift;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
 
-[ -n "${OPENROUTER_API_KEY:-}" ] || { echo "OPENROUTER_API_KEY not set" >&2; exit 2; }
+if [ "$SMOKE" -eq 0 ]; then
+  [ -n "${OPENROUTER_API_KEY:-}" ] || { echo "OPENROUTER_API_KEY not set" >&2; exit 2; }
+fi
 
 # repo + name default from the questions file
 [ -n "$REPO" ] || REPO="$(node -e 'console.log(require(process.argv[1]).repo)' "$QFILE")"
@@ -48,6 +62,10 @@ done
 WORK="$(mktemp -d)"
 CLONE="$WORK/$NAME"
 mkdir -p "$OUT"
+
+# Hermetic store: every run builds into its own store root — results never
+# depend on (or pollute) ~/ctxoptimize on the machine running the bench.
+export CTX_OPTIMIZE_STORE="$WORK/store"
 
 echo "== ctx-optimize headless benchmark =="
 echo "model:   $MODEL"
@@ -84,8 +102,25 @@ echo "      $(find "$CLONE" -type f | wc -l | tr -d ' ') files"
 
 # 4. build the store(s) + agent pointer
 echo "[4/6] building the store ..."
-( cd "$CLONE" && "$BIN" init >/dev/null 2>&1 && "$BIN" add . >/dev/null 2>&1 )
-echo "      ctx-optimize: $("$BIN" status --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log((j.nodes||0)+" nodes, "+(j.edges||0)+" edges")}catch{console.log("store built")}})')"
+if [ "$MONOREPO" -eq 1 ]; then
+  # Multi-module: scan writes every found module into config.json, add fans
+  # out one store per module in parallel and writes the navigator.
+  ( cd "$CLONE" && "$BIN" init --scan --yes >/dev/null 2>&1 && "$BIN" add . >/dev/null 2>&1 )
+  echo "      ctx-optimize: $(node -e 'try{const i=require(process.argv[1]);console.log(i.modules.length+" module stores + navigator")}catch{console.log("multi-module store built")}' "$WORK/store/$NAME/modules.json")"
+else
+  ( cd "$CLONE" && "$BIN" init >/dev/null 2>&1 && "$BIN" add . >/dev/null 2>&1 )
+  echo "      ctx-optimize: $(cd "$CLONE" && "$BIN" status --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log((j.nodes||0)+" nodes, "+(j.edges||0)+" edges")}catch{console.log("store built")}})')"
+fi
+
+# Smoke mode: deterministic, free — verify the store's answers against the
+# expected file paths in the questions file, then stop (no model, no key).
+if [ "$SMOKE" -eq 1 ]; then
+  echo "[5/6] smoke checks (no model calls) ..."
+  node "$HERE/smoke.mjs" --repo "$CLONE" --bin "$BIN" --questions "$QFILE"
+  echo "[6/6] smoke complete"
+  echo "clone kept at: $CLONE (rm -rf $WORK when done)"
+  exit 0
+fi
 
 ARMS="a b"
 if command -v graphify >/dev/null 2>&1; then
