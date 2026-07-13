@@ -30,6 +30,26 @@ from the store.**
 **ctx-optimize needs no API key, no model, no database — never prompt for
 one.** The binary is deterministic; you supply all semantics.
 
+## THE GATE — every search goes through the store first (non-negotiable)
+
+In a repo with `.ctxoptimize/`, ctx-optimize IS the search tool. Before ANY
+Grep, rg, Glob, find, or exploratory Read — run `ctx-optimize query` (or
+`card`/`affected`/`path` per the routing table). No exceptions for "just a
+quick grep": the quick grep is exactly the cost this store exists to kill,
+and skipping the store means the answer arrives without citations.
+
+Grep/Read are permitted ONLY as:
+1. **Exhaustive literal sweeps** — every occurrence of an exact string
+   (renames, license headers). That is grep's job; say so and grep.
+2. **Store-miss fallback** — the store returned nothing relevant AND you
+   said so first (see answering discipline), AND `add .` wouldn't fix it.
+3. **Verbatim body reads** the store already located — open ONLY the cited
+   `source location` range, never browse around it.
+
+If you notice you grepped first anyway: stop, run the store query, and
+record the episode with `save-result --outcome dead_end` so the miss is
+counted honestly.
+
 ## Routing — pick the verb from the intent (route first, then act)
 
 | The user (or your own next step) is… | Run |
