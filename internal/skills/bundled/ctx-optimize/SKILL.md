@@ -44,7 +44,10 @@ one.** The binary is deterministic; you supply all semantics.
 | In a repo with NO store yet | single project: `ctx-optimize init && ctx-optimize add .` (seconds). Monorepo/multi-project (workspaces, many build files): see "Multi-module flow" below — scan first, confirm with the user, then init |
 | Told code changed / store looks stale | `ctx-optimize add .` (incremental: prunes deleted, re-emits changed) |
 | Asked to add docs/PDF/DB/queue/logs | see "Adding content" below — each source type is different |
-| Asked to share / get the team's store | `remote push` / `remote pull` (config-driven, no URL args) |
+| Asked to add a docx/pdf/pptx/xlsx/html doc | convert → markdown → `add .` — follow `./references/ingest-docs.md` |
+| Asked to bring in SharePoint/OneDrive/Drive/wiki content | fetch via the user's broker (`apl`, browser-bridge) → convert → add — follow `./references/ingest-external.md` |
+| Asked to keep imported content fresh / "sync the docs" | make the fetch a repeatable adapter — follow `./references/sync.md` |
+| Asked to share / get the team's store | `remote push` / `remote pull` (config-driven, scope-aware) — details in `./references/sync.md` |
 | Combining several repos/modules | `ctx-optimize merge <mod>... --into <name>` |
 | Wanting a readable map of the module | open the store's `wiki/index.md` (regenerated on every `add`; `ctx-optimize wiki` to force) |
 | Exporting for other tools | `ctx-optimize export --format json|dot|graphml|csv|obsidian|all` |
