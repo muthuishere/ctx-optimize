@@ -69,6 +69,21 @@ func ModuleKey(path string) (string, error) {
 // user-chosen names (ctx-optimize.json "name") through it.
 func SanitizeKey(name string) string { return sanitizeKey(name) }
 
+// SanitizeKeyPath sanitizes a multi-module store key while PRESERVING the
+// path structure: "<rootKey>/<repo-relative-module-path>" mirrors the repo
+// tree under the store root. Each segment is sanitized independently; empty
+// segments collapse.
+func SanitizeKeyPath(key string) string {
+	parts := strings.Split(strings.Trim(key, "/"), "/")
+	out := parts[:0]
+	for _, p := range parts {
+		if s := sanitizeKey(p); s != "" {
+			out = append(out, s)
+		}
+	}
+	return strings.Join(out, "/")
+}
+
 // sanitizeKey keeps a name filesystem- and URL-safe.
 func sanitizeKey(name string) string {
 	var sb strings.Builder
@@ -374,21 +389,41 @@ func (s *Store) manifestPath() string { return filepath.Join(s.Dir, "manifest.js
 // UpdateManifest re-fingerprints every artifact file and writes manifest.json.
 // The manifest itself and config are excluded (config may hold a remote URL
 // that differs per machine; the manifest can't contain its own hash).
+// Mirrored multi-module layouts can NEST one store inside another (a maven
+// module under src/main/resources of its parent, say) — a descendant dir
+// that is itself a store is skipped: it owns its own manifest, and walking
+// it here both lies about this store's content and races a concurrent
+// gather's atomic renames.
 func (s *Store) UpdateManifest() (*Manifest, error) {
 	m := &Manifest{Files: map[string]Entry{}}
 	err := filepath.WalkDir(s.Dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
 			return err
+		}
+		if d.IsDir() {
+			if path == s.Dir {
+				return nil
+			}
+			if _, err := os.Stat(filepath.Join(path, "graph")); err == nil {
+				return filepath.SkipDir // nested module store
+			}
+			if _, err := os.Stat(filepath.Join(path, "manifest.json")); err == nil {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		rel, err := filepath.Rel(s.Dir, path)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if rel == "manifest.json" || rel == "config.json" {
+		if rel == "manifest.json" || rel == "config.json" || strings.HasSuffix(rel, ".tmp") {
 			return nil
 		}
 		h, size, err := hashFile(path)
+		if os.IsNotExist(err) {
+			return nil // transient tmp renamed away mid-walk
+		}
 		if err != nil {
 			return err
 		}

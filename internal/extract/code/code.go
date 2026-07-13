@@ -59,8 +59,19 @@ type resolved struct {
 
 // Extract parses every recognized code file under root — embedded languages
 // plus any grammar packs (see langs.go LoadPacks).
-func Extract(root string) (*schema.Batch, error) {
+func Extract(root string) (*schema.Batch, error) { return ExtractExcluding(root, nil) }
+
+// ExtractExcluding is Extract with subtrees pruned — the multi-module root
+// residual: module dirs (absolute paths) are gathered into their own stores
+// and must not re-enter the parent's batch.
+func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 	ctx := context.Background()
+	skip := map[string]bool{}
+	for _, e := range exclude {
+		if abs, err := filepath.Abs(e); err == nil {
+			skip[abs] = true
+		}
+	}
 
 	packs, err := LoadPacks(root)
 	if err != nil {
@@ -124,6 +135,11 @@ func Extract(root string) (*schema.Batch, error) {
 		}
 		name := d.Name()
 		if d.IsDir() {
+			if len(skip) > 0 {
+				if abs, err := filepath.Abs(path); err == nil && skip[abs] {
+					return filepath.SkipDir
+				}
+			}
 			if path != root && (strings.HasPrefix(name, ".") || name == "node_modules" ||
 				name == "vendor" || name == "target" || name == "dist" || name == "build" ||
 				strings.HasSuffix(name, "-out")) {

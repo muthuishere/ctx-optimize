@@ -21,6 +21,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/muthuishere/ctx-optimize/internal/scan"
 )
 
 const (
@@ -158,6 +160,19 @@ type Config struct {
 	Name     string    `json:"name,omitempty"`
 	Remote   *Remote   `json:"remote,omitempty"`
 	Adapters []Adapter `json:"adapters,omitempty"`
+
+	// Modules is the generated, owned module list of a multi-module root
+	// (written by `init --scan`, hand-editable; globs allowed). Present ⇒
+	// this config is a ROOT: `add` fans out and read verbs resolve scope
+	// against it.
+	Modules []scan.Module `json:"modules,omitempty"`
+	// ModuleOf marks an OPT-IN child config inside a module dir: the value
+	// is the root store key. The upward walk stops here (self-describing
+	// module); most modules have no config at all.
+	ModuleOf string `json:"module_of,omitempty"`
+	// Scan tunes the generator (`scan` / `init --scan`): depth, extra
+	// markers, include/exclude globs.
+	Scan *scan.Options `json:"scan,omitempty"`
 }
 
 func path(repo string) string { return filepath.Join(repo, filepath.FromSlash(FileName)) }

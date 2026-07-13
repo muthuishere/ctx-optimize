@@ -28,7 +28,18 @@ var (
 // Extract walks root and emits one batch covering every .md/.txt file.
 // Node IDs are root-relative paths (path-qualified — the lesson from
 // graphify's bare-name collisions at 287k nodes).
-func Extract(root string) (*schema.Batch, error) {
+func Extract(root string) (*schema.Batch, error) { return ExtractExcluding(root, nil) }
+
+// ExtractExcluding is Extract with subtrees pruned — the multi-module root
+// residual: module dirs (absolute paths) are gathered into their own stores
+// and must not re-enter the parent's batch.
+func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
+	skip := map[string]bool{}
+	for _, e := range exclude {
+		if abs, err := filepath.Abs(e); err == nil {
+			skip[abs] = true
+		}
+	}
 	b := &schema.Batch{Producer: ProducerName}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -36,6 +47,11 @@ func Extract(root string) (*schema.Batch, error) {
 		}
 		name := d.Name()
 		if d.IsDir() {
+			if len(skip) > 0 {
+				if abs, err := filepath.Abs(path); err == nil && skip[abs] {
+					return filepath.SkipDir
+				}
+			}
 			// Skip hidden dirs (.git, .ctxoptimize, …) and the usual noise;
 			// a store must never ingest itself or its own config.
 			if path != root && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || strings.HasSuffix(name, "-out")) {

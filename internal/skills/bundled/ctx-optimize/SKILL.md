@@ -12,7 +12,9 @@ description: >
   onboarding. Fall back to Grep/Read only for what the store lacks. Also
   builds/refreshes/shares the store ("gather this repo", "add the schema /
   kafka topics / docs", "push/pull the store"). No store yet? `ctx-optimize
-  init && ctx-optimize add .` creates it in seconds.
+  init && ctx-optimize add .` creates it in seconds. Monorepo? `ctx-optimize
+  scan` finds every project — confirm the list with the user, then
+  `init --scan --yes && add .` builds one store per module + a navigator.
 ---
 
 # ctx-optimize
@@ -39,7 +41,7 @@ one.** The binary is deterministic; you supply all semantics.
 | Asking "how are A and B connected / trace A to B" | `ctx-optimize path "A" "B" --json` |
 | Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |
 | Asking to see it visually | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link |
-| In a repo with NO store yet | `ctx-optimize init && ctx-optimize add .` (seconds, even on huge repos) |
+| In a repo with NO store yet | single project: `ctx-optimize init && ctx-optimize add .` (seconds). Monorepo/multi-project (workspaces, many build files): see "Multi-module flow" below — scan first, confirm with the user, then init |
 | Told code changed / store looks stale | `ctx-optimize add .` (incremental: prunes deleted, re-emits changed) |
 | Asked to add docs/PDF/DB/queue/logs | see "Adding content" below — each source type is different |
 | Asked to share / get the team's store | `remote push` / `remote pull` (config-driven, no URL args) |
@@ -55,6 +57,38 @@ the request is a question — query. Do not rebuild. Do not grep. Do not read
 files speculatively.** Need a symbol's signature, doc, or callers? `card` has it —
 only open a file when a hit's `location` demands verbatim code, and then
 read only that range.
+
+## Multi-module flow (monorepos — scan, confirm, fan out)
+
+A repo with many projects gets one store PER module plus a root **navigator**
+— never one giant graph. The flow is scan → show → okay → write → add:
+
+1. **Scan (read-only):** `ctx-optimize scan --json` (add `--depth N` if the
+   tree is deep; default 5). This finds ALL projects by build-file markers.
+2. **Show the user the FULL list** — every found project, not a sample. If
+   they say something is missing, re-scan deeper or add globs. Never skip
+   this confirmation and never silently build a single giant graph.
+3. **On okay:** `ctx-optimize init --scan --yes` — writes every found module
+   into `.ctxoptimize/config.json` `modules[]` (generated once; the user owns
+   and edits the list after) and scaffolds the root.
+4. **Gather:** `ctx-optimize add .` at the root fans out one worker per
+   module in parallel (`--jobs N` to tune) and writes the navigator
+   (`modules.json` + `navigator.md` in the root store).
+
+Asking questions after that is automatic — scope follows your cwd:
+
+- **Inside a module dir** → answers come from THAT module's store, labeled
+  `[module]`. Zero hits escalate to root federation automatically.
+- **At the root** → the navigator ranks modules and federates the query
+  across the best-matching ones (`--modules all|a,b` to widen/pin, `--root`
+  to force root scope from inside a module).
+- `card X` inside a module that doesn't own X answers from the owning module
+  and says so (`[not in api — found in services/worker]`).
+- Cross-module edge analysis needs a merged store — offer
+  `ctx-optimize merge <mod>... --into <name>` only when the user wants one
+  graph; it is never automatic.
+- The unified wiki starts at the root store's `wiki/index.md` (the
+  navigator); each module keeps its own full wiki.
 
 ## Answering discipline (cite or abstain)
 

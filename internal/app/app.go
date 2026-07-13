@@ -26,7 +26,6 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/dashboard"
 	"github.com/muthuishere/ctx-optimize/internal/export"
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
-	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/feedback"
 	"github.com/muthuishere/ctx-optimize/internal/grammar"
 	"github.com/muthuishere/ctx-optimize/internal/project"
@@ -54,6 +53,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "ctx-optimize %s (%s, %s)\n", version.Version, version.Commit, version.Date)
 	case "init":
 		err = cmdInit(rest, stdout)
+	case "scan":
+		err = cmdScan(rest, stdout)
 	case "add":
 		err = cmdAdd(rest, stdout, os.Stdin)
 	case "query", "ask": // `ask` — same verb graphify users reach for
@@ -243,6 +244,14 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// Adoption rule: plain init inside a dir an ancestor root already
+	// declares as a module joins that root's world (child config with
+	// module_of, mirrored store) — never a shadow store keyed by basename.
+	if !f.bools["scan"] {
+		if adopted, err := adoptIfDeclaredModule(f, path, stdout); err != nil || adopted {
+			return err
+		}
+	}
 	// Scaffold the committable .ctxoptimize/ (config.json + adapters/ with an
 	// inert template) before opening the store, so the store key can honor a
 	// pre-existing "name".
@@ -252,6 +261,11 @@ func cmdInit(args []string, stdout io.Writer) error {
 	}
 	if err := project.Scaffold(path, name); err != nil {
 		return err
+	}
+	if f.bools["scan"] {
+		if err := initScan(f, path, stdout); err != nil {
+			return err
+		}
 	}
 	pointed, err := project.EnsureAgentPointer(path, name)
 	if err != nil {
@@ -281,7 +295,11 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	if f.strs["path"] == "" && len(f.args) > 0 {
 		f.strs["path"] = f.args[0]
 	}
-	s, err := openStore(f)
+	sc, err := resolveScope(f)
+	if err != nil {
+		return err
+	}
+	storeRoot, err := store.Root(f.strs["store"])
 	if err != nil {
 		return err
 	}
@@ -289,7 +307,13 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	// The --json door UPSERTS (a one-off pipe may be partial); the gather
 	// path below REPLACES per producer (a re-gather is that producer's whole
 	// truth — deleted sources leave the graph, shrink-guarded by --force).
+	// The door targets the SCOPE's store: piped from a module dir, the batch
+	// lands in that module's mirrored store.
 	if src, ok := f.strs["json"]; ok || f.bools["json"] {
+		s, err := store.Open(storeRoot, sc.storeKey)
+		if err != nil {
+			return err
+		}
 		var data []byte
 		if !ok || src == "-" {
 			data, err = io.ReadAll(stdin)
@@ -319,86 +343,31 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 		return nil
 	}
 
-	var batches []*schema.Batch
-	{
-		// Built-in tier-1 producers over the target path. Markdown today;
-		// code languages (tree-sitter wasm) join here.
-		target := f.strs["path"]
-		if target == "" && len(f.args) > 0 {
-			target = f.args[0]
-		}
-		if target == "" {
-			target, _ = os.Getwd()
-		}
-		b, err := markdown.Extract(target)
-		if err != nil {
-			return err
-		}
-		batches = append(batches, b)
-		cb, err := code.Extract(target)
-		if err != nil {
-			return err
-		}
-		if len(cb.Nodes) > 0 {
-			batches = append(batches, cb)
-			fmt.Fprintf(stdout, "code: %d nodes, %d edges\n", len(cb.Nodes), len(cb.Edges))
-		}
-
-		// Adapters: scripts dropped in .ctxoptimize/adapters/ (discovered by
-		// extension) plus any commands declared in config.json — a config
-		// entry wins on a name clash. Each runs with stdout as a batch
-		// through the same fail-closed door. This is `add` = refresh the
-		// world: one command re-gathers all declared sources.
-		pc, err := project.Load(target)
-		if err != nil {
-			return err
-		}
-		adapters := append([]project.Adapter{}, pc.Adapters...)
-		declared := map[string]bool{}
-		for _, a := range adapters {
-			declared[a.Name] = true
-		}
-		discovered, err := project.DiscoverAdapters(target)
-		if err != nil {
-			return err
-		}
-		for _, a := range discovered {
-			if !declared[a.Name] {
-				adapters = append(adapters, a)
-			}
-		}
-		for _, a := range adapters {
-			b, err := runAdapter(target, a)
-			if err != nil {
-				return fmt.Errorf("adapter %s: %w", a.Name, err)
-			}
-			batches = append(batches, b)
-			fmt.Fprintf(stdout, "adapter %s: %d nodes, %d edges\n", a.Name, len(b.Nodes), len(b.Edges))
-		}
+	// Multi-module root: fan out (one worker per module, navigator refresh).
+	if sc.kind == scopeRoot && len(sc.modules) > 0 {
+		return runMultiAdd(sc, f, stdout)
 	}
 
-	totalN, totalPruned := 0, 0
-	for _, b := range batches {
-		n, pruned, err := s.Replace(b, f.bools["force"]) // validates; fail-closed
-		if err != nil {
-			return err
-		}
-		totalN += n
-		totalPruned += pruned
+	// Module scope: gather the WHOLE module dir (asking from a subdir still
+	// refreshes the module, not a shadow store keyed by the subdir).
+	// Single scope: gather the config's dir (or the asked dir when no config
+	// exists anywhere — today's behavior).
+	target := sc.rootDir
+	if sc.kind == scopeModule {
+		target = filepath.Join(sc.rootDir, filepath.FromSlash(sc.modulePath))
 	}
-	pages, err := wiki.Generate(s) // wiki-by-default: every add refreshes it
+	s, err := store.Open(storeRoot, sc.storeKey)
 	if err != nil {
 		return err
 	}
-	if _, err := s.UpdateManifest(); err != nil {
+	if err := gatherInto(s, target, nil, f.bools["force"], stdout); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "added %d nodes", totalN)
-	if totalPruned > 0 {
-		fmt.Fprintf(stdout, ", pruned %d stale", totalPruned)
+	if sc.kind == scopeModule {
+		if err := refreshNavigatorEntry(sc, storeRoot); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintf(stdout, " → %s\n", s.Dir)
-	fmt.Fprintf(stdout, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
 	return nil
 }
 
@@ -432,17 +401,13 @@ func runAdapter(repo string, a project.Adapter) (*schema.Batch, error) {
 func cmdQuery(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) == 0 {
-		return fmt.Errorf("usage: ctx-optimize query \"<question>\" [--budget N] [--json]")
+		return fmt.Errorf("usage: ctx-optimize query \"<question>\" [--budget N] [--json] [--modules all|a,b] [--root]")
 	}
-	s, err := openStore(f)
+	sc, err := resolveScope(f)
 	if err != nil {
 		return err
 	}
-	nodes, err := s.Nodes()
-	if err != nil {
-		return err
-	}
-	edges, err := s.Edges()
+	storeRoot, err := store.Root(f.strs["store"])
 	if err != nil {
 		return err
 	}
@@ -452,13 +417,103 @@ func cmdQuery(args []string, stdout io.Writer) error {
 			budget = b
 		}
 	}
+	q := strings.Join(f.args, " ")
 	t0 := time.Now()
-	res := query.Run(nodes, edges, strings.Join(f.args, " "), budget)
 	cw := &countingWriter{w: stdout}
-	defer func() { served(s, "query", strings.Join(f.args, " "), len(res.Hits), cw, t0) }()
-	if f.bools["json"] {
-		return emit(cw, res)
+
+	// Single scope: today's behavior, byte-identical.
+	if sc.kind == scopeSingle {
+		s, err := store.Open(storeRoot, sc.storeKey)
+		if err != nil {
+			return err
+		}
+		nodes, err := s.Nodes()
+		if err != nil {
+			return err
+		}
+		edges, err := s.Edges()
+		if err != nil {
+			return err
+		}
+		res := query.Run(nodes, edges, q, budget)
+		defer func() { served(s, "query", q, len(res.Hits), cw, t0) }()
+		if f.bools["json"] {
+			return emit(cw, res)
+		}
+		fmt.Fprint(cw, query.Render(res))
+		return nil
 	}
+
+	// Module scope: innermost first — the module's own store; zero hits (or
+	// --root) escalates to root federation. Every block labels its scope.
+	if sc.kind == scopeModule && !f.bools["root"] {
+		s, err := store.Open(storeRoot, sc.storeKey)
+		if err != nil {
+			return err
+		}
+		nodes, err := s.Nodes()
+		if err != nil {
+			return err
+		}
+		edges, err := s.Edges()
+		if err != nil {
+			return err
+		}
+		res := query.Run(nodes, edges, q, budget)
+		if len(res.Hits) > 0 {
+			defer func() { served(s, "query", q, len(res.Hits), cw, t0) }()
+			if f.bools["json"] {
+				return emit(cw, map[string]any{"scope": sc.moduleName, "result": res})
+			}
+			fmt.Fprintf(cw, "[%s]\n", sc.moduleName)
+			fmt.Fprint(cw, query.Render(res))
+			return nil
+		}
+		fmt.Fprintf(cw, "[%s] no hits — escalating to root\n", sc.moduleName)
+	}
+	return federatedQuery(sc, storeRoot, f, q, budget, cw, t0)
+}
+
+// federatedQuery answers from the multi-module root: navigator-ranked top-K
+// module stores (+ the root residual) concatenated into one namespaced pass.
+// Zero hits at K widens to all modules before giving up.
+func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int, cw *countingWriter, t0 time.Time) error {
+	if len(sc.modules) == 0 {
+		mods, err := expandRootModules(sc)
+		if err != nil {
+			return err
+		}
+		sc.modules = mods
+	}
+	const federationK = 3
+	mods, isAll, err := selectModules(sc, storeRoot, f, strings.Fields(q), federationK)
+	if err != nil {
+		return err
+	}
+	nodes, edges, err := loadFederated(sc, storeRoot, mods)
+	if err != nil {
+		return err
+	}
+	res := query.Run(nodes, edges, q, budget)
+	if len(res.Hits) == 0 && !isAll {
+		mods = sc.modules
+		isAll = true
+		if nodes, edges, err = loadFederated(sc, storeRoot, mods); err != nil {
+			return err
+		}
+		res = query.Run(nodes, edges, q, budget)
+	}
+	scopeLabel := "root: all modules"
+	if !isAll {
+		scopeLabel = "root: " + modulePaths(mods)
+	}
+	if rs, err := store.Open(storeRoot, sc.rootKey); err == nil {
+		defer func() { served(rs, "query", q, len(res.Hits), cw, t0) }()
+	}
+	if f.bools["json"] {
+		return emit(cw, map[string]any{"scope": scopeLabel, "result": res})
+	}
+	fmt.Fprintf(cw, "[%s]\n", scopeLabel)
 	fmt.Fprint(cw, query.Render(res))
 	return nil
 }
@@ -586,21 +641,41 @@ func cmdReflect(args []string, stdout io.Writer) error {
 	return nil
 }
 
-// loadGraph is the shared read path for the analysis verbs.
+// loadGraph is the shared read path for the analysis verbs. Scope-aware:
+// single → that store (unchanged); module → the module's mirrored store;
+// multi-module root → the federated concat of every module + the residual
+// (namespaced, collision-free), so path/affected/explain see the whole repo.
 func loadGraph(f *flags) ([]schema.Node, []schema.Edge, error) {
-	s, err := openStore(f)
+	nodes, edges, _, _, err := loadGraphScoped(f)
+	return nodes, edges, err
+}
+
+func loadGraphScoped(f *flags) ([]schema.Node, []schema.Edge, *scope, string, error) {
+	sc, err := resolveScope(f)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, "", err
+	}
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
+	if sc.kind == scopeRoot && len(sc.modules) > 0 {
+		nodes, edges, err := loadFederated(sc, storeRoot, nil)
+		return nodes, edges, sc, storeRoot, err
+	}
+	s, err := store.Open(storeRoot, sc.storeKey)
+	if err != nil {
+		return nil, nil, nil, "", err
 	}
 	nodes, err := s.Nodes()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, "", err
 	}
 	edges, err := s.Edges()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, "", err
 	}
-	return nodes, edges, nil
+	return nodes, edges, sc, storeRoot, nil
 }
 
 func cmdPath(args []string, stdout io.Writer) error {
@@ -665,17 +740,50 @@ func cmdCard(args []string, stdout io.Writer) error {
 	if len(f.args) != 1 {
 		return fmt.Errorf(`usage: ctx-optimize card "X"`)
 	}
-	nodes, edges, err := loadGraph(f)
+	nodes, edges, sc, storeRoot, err := loadGraphScoped(f)
 	if err != nil {
 		return err
 	}
 	t0 := time.Now()
-	c, err := analyze.Card(nodes, edges, f.args[0])
-	if err != nil {
-		return err
-	}
-	c.Body = bodyHead(f.strs["path"], c.Node)
 	cw := &countingWriter{w: stdout}
+	c, cerr := analyze.Card(nodes, edges, f.args[0])
+	bodyRoot := f.strs["path"]
+	if bodyRoot == "" && sc != nil {
+		switch sc.kind {
+		case scopeModule: // module sources are module-relative
+			bodyRoot = filepath.Join(sc.rootDir, filepath.FromSlash(sc.modulePath))
+		case scopeRoot: // federated sources are namespaced repo-relative
+			bodyRoot = sc.rootDir
+		}
+	}
+	// Module-scope miss: don't fail — the symbol likely lives in a sibling
+	// module. Retry against the federated root graph and say where it was.
+	if cerr != nil && sc != nil && sc.kind == scopeModule {
+		if len(sc.modules) == 0 {
+			if sc.modules, err = expandRootModules(sc); err != nil {
+				return cerr
+			}
+		}
+		fn, fe, ferr := loadFederated(sc, storeRoot, nil)
+		if ferr == nil {
+			if fc, ferr2 := analyze.Card(fn, fe, f.args[0]); ferr2 == nil {
+				owner := "root"
+				for _, m := range sc.modules {
+					if strings.HasPrefix(fc.Node.Source, m.Path+"/") {
+						owner = m.Path
+						break
+					}
+				}
+				fmt.Fprintf(cw, "[not in %s — found in %s]\n", sc.moduleName, owner)
+				c, cerr = fc, nil
+				bodyRoot = sc.rootDir // namespaced sources resolve from the repo root
+			}
+		}
+	}
+	if cerr != nil {
+		return cerr
+	}
+	c.Body = bodyHead(bodyRoot, c.Node)
 	st, _ := openStore(f) // path resolution only — cheap; nil is fine
 	defer func() { served(st, "card", f.args[0], 1, cw, t0) }()
 	if f.bools["json"] {
@@ -1428,10 +1536,21 @@ usage: ctx-optimize <command> [flags]
 
 commands:
   init                        scaffold .ctxoptimize/ + prepare the store (--path, default: cwd)
+    --scan [--yes] [--depth N] [--modules "globs"]
+                              multi-module: scan, confirm, write the FULL found
+                              list to config.json modules[] (generated once,
+                              yours to edit after)
+  scan [--depth N] [--json]   READ-ONLY module discovery: prints every project
+                              found + the exact config.json init --scan writes
   add [<path>] [--json -|F]   gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
                               (--force to allow >50%% shrink); --json door upserts
+                              multi-module root: fans out one worker per module
+                              [--jobs N] + refreshes the navigator (no auto-merge)
   query|ask "<question>"      answer from the local store  [--budget N] [--json]
+                              scope = where you ask: module dir → that module,
+                              zero hits escalate; root → navigator-ranked
+                              federation  [--modules all|a,b] [--root]
   path "A" "B"                shortest path between two nodes  [--json]
   explain "X"                 plain-language node + neighborhood  [--json]
   card "X"                    symbol card: signature, doc, location, callers,
