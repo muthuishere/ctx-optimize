@@ -19,9 +19,10 @@ Asking questions after that is automatic — scope follows your cwd:
 
 - **Inside a module dir** → answers come from THAT module's store, labeled
   `[module]`. Zero hits escalate to root federation automatically.
-- **At the root** → the navigator ranks modules and federates the query
-  across the best-matching ones (`--modules all|a,b` to widen/pin, `--root`
-  to force root scope from inside a module).
+- **At the root** → the query searches EVERY module plus the root residual
+  in one pass (graphify-simple: no ranking gate — beam-scale is ~0.6s).
+  `--modules a,b` narrows explicitly; `--root` forces root scope from
+  inside a module.
 - `card X` inside a module that doesn't own X answers from the owning module
   and says so (`[not in api — found in services/worker]`).
 - Cross-module edge analysis needs a merged store — offer

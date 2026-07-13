@@ -32,6 +32,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/query"
 	"github.com/muthuishere/ctx-optimize/internal/remote"
+	"github.com/muthuishere/ctx-optimize/internal/scan"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/skills"
 	"github.com/muthuishere/ctx-optimize/internal/store"
@@ -486,9 +487,11 @@ func cmdQuery(args []string, stdout io.Writer) error {
 	return federatedQuery(sc, storeRoot, f, q, budget, cw, t0)
 }
 
-// federatedQuery answers from the multi-module root: navigator-ranked top-K
-// module stores (+ the root residual) concatenated into one namespaced pass.
-// Zero hits at K widens to all modules before giving up.
+// federatedQuery answers from the multi-module root: EVERY module store (+
+// the root residual) concatenated into one namespaced pass — graphify's
+// one-graph-one-search simplicity, kept because it's cheap (beam's 310
+// modules / 188k nodes load + rank in ~0.6s). No ranking gate, no widen
+// dance; --modules a,b narrows explicitly when the user wants less.
 func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int, cw *countingWriter, t0 time.Time) error {
 	if len(sc.modules) == 0 {
 		mods, err := expandRootModules(sc)
@@ -497,28 +500,30 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 		}
 		sc.modules = mods
 	}
-	const federationK = 3
-	mods, isAll, err := selectModules(sc, storeRoot, f, strings.Fields(q), federationK)
-	if err != nil {
-		return err
+	mods := sc.modules
+	scopeLabel := "root: all modules"
+	if v, ok := f.strs["modules"]; ok && v != "all" {
+		want := map[string]bool{}
+		for _, p := range strings.Split(v, ",") {
+			want[strings.Trim(strings.TrimSpace(p), "/")] = true
+		}
+		var narrowed []scan.Module
+		for _, m := range sc.modules {
+			if want[m.Path] || want[moduleLabel(m.Name, m.Path)] {
+				narrowed = append(narrowed, m)
+			}
+		}
+		if len(narrowed) == 0 {
+			return fmt.Errorf("--modules %q matched nothing; declared: %s", v, modulePaths(sc.modules))
+		}
+		mods = narrowed
+		scopeLabel = "root: " + modulePaths(mods)
 	}
 	nodes, edges, err := loadFederated(sc, storeRoot, mods)
 	if err != nil {
 		return err
 	}
 	res := query.Run(nodes, edges, q, budget)
-	if len(res.Hits) == 0 && !isAll {
-		mods = sc.modules
-		isAll = true
-		if nodes, edges, err = loadFederated(sc, storeRoot, mods); err != nil {
-			return err
-		}
-		res = query.Run(nodes, edges, q, budget)
-	}
-	scopeLabel := "root: all modules"
-	if !isAll {
-		scopeLabel = "root: " + modulePaths(mods)
-	}
 	if rs, err := store.Open(storeRoot, sc.rootKey); err == nil {
 		defer func() { served(rs, "query", q, len(res.Hits), cw, t0) }()
 	}

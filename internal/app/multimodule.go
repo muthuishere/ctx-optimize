@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -704,57 +703,6 @@ func loadFederated(sc *scope, storeRoot string, only []scan.Module) ([]schema.No
 		nodes, edges = append(nodes, mn...), append(edges, me...)
 	}
 	return nodes, edges, nil
-}
-
-// selectModules picks federation targets: --modules all|a,b beats the
-// navigator ranking (top K by term match against name/path/summary/hubs).
-func selectModules(sc *scope, storeRoot string, f *flags, terms []string, k int) ([]scan.Module, bool, error) {
-	if v, ok := f.strs["modules"]; ok {
-		if v == "all" {
-			return sc.modules, true, nil
-		}
-		want := map[string]bool{}
-		for _, p := range strings.Split(v, ",") {
-			want[strings.Trim(strings.TrimSpace(p), "/")] = true
-		}
-		var out []scan.Module
-		for _, m := range sc.modules {
-			if want[m.Path] || want[moduleLabel(m.Name, m.Path)] {
-				out = append(out, m)
-			}
-		}
-		if len(out) == 0 {
-			return nil, false, fmt.Errorf("--modules %q matched nothing; declared: %s", v, modulePaths(sc.modules))
-		}
-		return out, true, nil
-	}
-	rootStore, err := store.Open(storeRoot, sc.rootKey)
-	if err != nil {
-		return nil, false, err
-	}
-	idx, err := navigator.Load(rootStore.Dir)
-	if err != nil {
-		return nil, false, err
-	}
-	if idx == nil { // no navigator yet (add not run): search everything
-		return sc.modules, true, nil
-	}
-	ranked := idx.Rank(terms)
-	if k > len(ranked) {
-		k = len(ranked)
-	}
-	byPath := map[string]scan.Module{}
-	for _, m := range sc.modules {
-		byPath[m.Path] = m
-	}
-	var out []scan.Module
-	for _, e := range ranked[:k] {
-		if m, ok := byPath[e.Path]; ok {
-			out = append(out, m)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
-	return out, len(out) == len(sc.modules), nil
 }
 
 // scopeStoreRels enumerates the store rel paths a sync scope covers,
