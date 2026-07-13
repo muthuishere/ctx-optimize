@@ -47,6 +47,8 @@ jobs:
             const f="npm/package.json", p=require("./"+f), v=process.env.GITHUB_REF_NAME.slice(1);
             for (const k of Object.keys(p.optionalDependencies)) p.optionalDependencies[k]=v;
             require("fs").writeFileSync(f, JSON.stringify(p,null,2)+"\n");'
+      - name: copy README (npm "files" is resolved relative to each package dir)
+        run: cp README.md npm/README.md
       - name: publish platform packages
         run: |
           for d in npm/platforms/*; do
