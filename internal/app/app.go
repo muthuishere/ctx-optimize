@@ -28,6 +28,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/feedback"
+	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/grammar"
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/query"
@@ -60,6 +61,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdQuery(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
+	case "fresh":
+		return cmdFresh(rest, stdout, stderr)
 	case "save-result":
 		err = cmdSaveResult(rest, stdout)
 	case "reflect":
@@ -319,17 +322,17 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 		return nil
 	}
 
+	target := f.strs["path"]
+	if target == "" && len(f.args) > 0 {
+		target = f.args[0]
+	}
+	if target == "" {
+		target, _ = os.Getwd()
+	}
 	var batches []*schema.Batch
 	{
 		// Built-in tier-1 producers over the target path. Markdown today;
 		// code languages (tree-sitter wasm) join here.
-		target := f.strs["path"]
-		if target == "" && len(f.args) > 0 {
-			target = f.args[0]
-		}
-		if target == "" {
-			target, _ = os.Getwd()
-		}
 		b, err := markdown.Extract(target)
 		if err != nil {
 			return err
@@ -392,6 +395,17 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	}
 	if _, err := s.UpdateManifest(); err != nil {
 		return err
+	}
+	// Record source provenance so freshness can later tell whether this store
+	// still reflects the repo. Best-effort: a non-git target records nothing.
+	if abs, aerr := filepath.Abs(target); aerr == nil {
+		if head, headUnix, ok := gitHead(abs); ok {
+			if err := s.RecordSource(freshness.Source{
+				Path: abs, Head: head, HeadUnix: headUnix, AddedUnix: time.Now().Unix(),
+			}); err != nil {
+				return err
+			}
+		}
 	}
 	fmt.Fprintf(stdout, "added %d nodes", totalN)
 	if totalPruned > 0 {
@@ -489,9 +503,11 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	if r != nil {
 		remoteURL = r.URL // raw form: ${VAR} placeholders, never values
 	}
+	reports, overall := freshnessReports(s)
 	st := map[string]any{
 		"store": s.Dir, "nodes": len(nodes), "edges": len(edges),
 		"remote": remoteURL, "remote_from": remoteFrom,
+		"freshness": reports, "fresh": string(overall),
 	}
 	if sum, err := metrics.Summarize(s.Dir); err == nil && sum.Total > 0 {
 		st["served"] = sum
@@ -503,8 +519,78 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	if remoteFrom != "" {
 		fmt.Fprintf(stdout, "  (from %s)", remoteFrom)
 	}
-	fmt.Fprintln(stdout)
+	fmt.Fprintf(stdout, "\nfresh:  %s\n", freshnessLine(reports, overall))
 	return nil
+}
+
+// freshnessReports evaluates every recorded source against its repo's CURRENT
+// git HEAD. Pure comparison in internal/freshness; the git read is best-effort
+// here (a moved/removed repo yields an unknown, never an error).
+func freshnessReports(s *store.Store) ([]freshness.Report, freshness.State) {
+	srcs, err := s.Sources()
+	if err != nil || len(srcs) == 0 {
+		return nil, freshness.Unknown
+	}
+	now := time.Now().Unix()
+	reports := make([]freshness.Report, 0, len(srcs))
+	for _, src := range srcs {
+		curHead, curUnix, _ := gitHead(src.Path)
+		reports = append(reports, freshness.Evaluate(src, curHead, curUnix, now))
+	}
+	return reports, freshness.Overall(reports)
+}
+
+// freshnessLine renders a one-line human verdict for status / fresh.
+func freshnessLine(reports []freshness.Report, overall freshness.State) string {
+	switch overall {
+	case freshness.Fresh:
+		return "✓ up to date with git HEAD"
+	case freshness.Unknown:
+		if len(reports) == 0 {
+			return "(unknown — no git provenance; run `add` in a git repo to enable)"
+		}
+		return "(unknown — source repo not found)"
+	default: // stale
+		for _, r := range reports {
+			if r.State == freshness.Stale {
+				return fmt.Sprintf("✗ STALE — store at %s, repo now at %s; run: ctx-optimize add .",
+					shortSHA(r.StoreHead), shortSHA(r.CurrentHead))
+			}
+		}
+		return "✗ STALE"
+	}
+}
+
+func shortSHA(s string) string {
+	if len(s) > 7 {
+		return s[:7]
+	}
+	if s == "" {
+		return "?"
+	}
+	return s
+}
+
+// cmdFresh is the agent/hook gate: is the store still current with git HEAD?
+// It only READS the store (never creates dirs) and exits 0 fresh / 1 stale /
+// 2 unknown so a hook can decide whether to re-add before trusting an answer.
+func cmdFresh(args []string, stdout, stderr io.Writer) int {
+	f := parseFlags(args)
+	s, err := openStore(f)
+	if err != nil {
+		fmt.Fprintf(stderr, "ctx-optimize: %v\n", err)
+		return 2
+	}
+	reports, overall := freshnessReports(s)
+	if f.bools["json"] {
+		if err := emit(stdout, map[string]any{"fresh": string(overall), "freshness": reports}); err != nil {
+			fmt.Fprintf(stderr, "ctx-optimize: %v\n", err)
+			return 2
+		}
+	} else {
+		fmt.Fprintln(stdout, freshnessLine(reports, overall))
+	}
+	return freshness.ExitCode(overall)
 }
 
 // cmdSaveResult records how a store answer worked out — the agent's side of
@@ -1442,7 +1528,10 @@ commands:
   wiki                        regenerate the markdown wiki in the store's wiki/
                               dir (deterministic, from nodes+edges only; every
                               add already regenerates it)
-  status                      store facts  [--json]
+  status                      store facts + freshness vs git HEAD  [--json]
+  fresh                       is the store current with git HEAD? one-line
+                              verdict; exit 0 fresh / 1 stale / 2 unknown
+                              (agent/hook gate before trusting an answer)  [--json]
   save-result --question Q    record how a store answer worked out
                               [--answer A] [--type query|path|explain|affected]
                               [--nodes "id1,id2"] [--outcome useful|dead_end|corrected]
