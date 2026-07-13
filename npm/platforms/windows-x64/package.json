@@ -3,7 +3,17 @@
   "version": "0.1.0",
   "description": "ctx-optimize prebuilt binary for windows-x64",
   "license": "MIT",
-  "os": ["win32"],
-  "cpu": ["x64"],
-  "files": ["bin/"]
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/muthuishere/ctx-optimize.git"
+  }
 }

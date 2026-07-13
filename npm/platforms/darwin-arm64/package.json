@@ -3,7 +3,17 @@
   "version": "0.1.0",
   "description": "ctx-optimize prebuilt binary for darwin-arm64",
   "license": "MIT",
-  "os": ["darwin"],
-  "cpu": ["arm64"],
-  "files": ["bin/"]
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/muthuishere/ctx-optimize.git"
+  }
 }
