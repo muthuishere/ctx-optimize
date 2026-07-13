@@ -282,4 +282,4 @@ MIT © 2026 Muthukumaran Navaneethakrishnan
 
 ---
 
-Made by [deemwar](https://deemwar.com) — more dev tools and products at [deemwar.com](https://deemwar.com).
+Made by [muthuishere](https://github.com/muthuishere).
