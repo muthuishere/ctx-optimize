@@ -28,7 +28,9 @@ intelligence in the system is the agent you already run.
 > (`card X`: signature + doc + callers/callees, no file read), the
 > **deterministic wiki** (regenerated on every add), the save-result/reflect
 > learning loop, merge/export (json/dot/graphml/csv/obsidian), the live
-> dashboard, and remote init/push/pull. Exact call edges (x/tools + LSP) are
+> dashboard, remote init/push/pull, and **multi-module monorepo support**
+> (`scan` / `init --scan` / parallel fan-out `add` / navigator + federated
+> queries — see below). Exact call edges (x/tools + LSP) are
 > next — see `openspec/` for the plan.
 
 **Site, demos, benchmarks:** https://muthuishere.github.io/ctx-optimize-site/
@@ -92,6 +94,51 @@ ctx-optimize status --json
   committable `.ctxoptimize/` directory.
 - **Remotes are for sync only.** Queries always run on the local folder.
   `push`/`pull` take no URL — the remote is whatever the config says.
+
+## Multi-module — monorepos get one graph per module, plus a navigator
+
+One giant graph for a 300-module monorepo helps nobody: people work in one
+module at a time, and an agent that loads the whole repo's graph pays for
+299 modules it isn't asking about. ctx-optimize builds **one store per
+module** and a small **navigator** that routes questions instead:
+
+```sh
+# find every project in the tree — read-only, prints the exact config it would write
+ctx-optimize scan                # markers: go.mod/go.work, package.json, gradle,
+                                 # maven, Cargo.toml, pyproject… (--depth N, default 5)
+
+# write ALL found modules into the committed config — generated once, then the
+# list is yours: edit, add, prune (.ctxoptimize/config.json modules[])
+ctx-optimize init --scan --yes
+
+# gather: one worker per module, in parallel; stores mirror the repo tree
+ctx-optimize add .               # → ~/ctxoptimize/<repo>/<module-path>/, each with
+                                 #   its own graph + wiki  [--jobs N]
+```
+
+Measured on `apache/beam`: **310 modules discovered at depth 8, all gathered
+in 14.5s at ~9× CPU, zero failures** — including maven modules nested inside
+other modules' resource trees.
+
+The root store holds a **navigator**, not a merged giant graph:
+`modules.json` + `navigator.md` — every module's path, node/edge counts, top
+hub symbols, and README one-liner — plus a unified wiki front page linking
+into each module's own wiki. Query scope then follows your cwd:
+
+```sh
+cd sdks/java/transform-service
+ctx-optimize query "expansion service"  # answers from THIS module's graph, labeled;
+                                        # zero hits auto-escalate repo-wide (--root forces)
+cd -                                    # back at the repo root:
+ctx-optimize query "kafka read"         # navigator ranks modules, federates across the
+                                        # best matches  [--modules all|a,b]
+ctx-optimize card SomeSymbol            # not in your module? answered from the owning
+                                        # module, labeled "[not in X — found in Y]"
+```
+
+`merge <mod>... --into <name>` stays opt-in for when you actually want one
+combined graph. (graphify's monorepo story is manual per-directory builds —
+no discovery, no parallel gather, no navigator.)
 
 ## Proof — reproducible, not our word
 
