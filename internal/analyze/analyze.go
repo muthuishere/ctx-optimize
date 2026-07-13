@@ -14,24 +14,35 @@ import (
 )
 
 // Resolve finds the node meant by a human name: exact id, exact label
-// (case-insensitive), then best token overlap. Deterministic ties by id.
+// (case-insensitive), qualifier-stripped label (`ns::Class::Method` /
+// `pkg.Class.method` → `Method`), then best token overlap. Deterministic
+// ties by id. A total miss suggests the nearest labels — the measured card
+// dead-end pattern (chromium forensics) is an agent guessing qualified id
+// formats and giving up after bare "no node" errors.
 func Resolve(nodes []schema.Node, name string) (*schema.Node, error) {
 	for i := range nodes {
 		if nodes[i].ID == name {
 			return &nodes[i], nil
 		}
 	}
-	lower := strings.ToLower(name)
-	var labelHit *schema.Node
-	for i := range nodes {
-		if strings.ToLower(nodes[i].Label) == lower {
-			if labelHit == nil || nodes[i].ID < labelHit.ID {
-				labelHit = &nodes[i]
+	byLabel := func(want string) *schema.Node {
+		var hit *schema.Node
+		for i := range nodes {
+			if strings.EqualFold(nodes[i].Label, want) {
+				if hit == nil || nodes[i].ID < hit.ID {
+					hit = &nodes[i]
+				}
 			}
 		}
+		return hit
 	}
-	if labelHit != nil {
-		return labelHit, nil
+	if hit := byLabel(name); hit != nil {
+		return hit, nil
+	}
+	if base := lastSegment(name); base != "" && !strings.EqualFold(base, name) {
+		if hit := byLabel(base); hit != nil {
+			return hit, nil
+		}
 	}
 	// Fuzzy: token overlap against label+id.
 	want := query.Tokenize(name)
@@ -55,9 +66,92 @@ func Resolve(nodes []schema.Node, name string) (*schema.Node, error) {
 		}
 	}
 	if best < 0 || bestScore == 0 {
-		return nil, fmt.Errorf("no node matching %q — try `ctx-optimize query %q` to find the right name", name, name)
+		return nil, fmt.Errorf("no node matching %q%s (`ctx-optimize query %q` searches the store)", name, didYouMean(nodes, name), name)
 	}
 	return &nodes[best], nil
+}
+
+// lastSegment strips the qualifier prefixes agents invent: path, `::` chain,
+// dotted chain. Only ever used as a fallback tier after the full name missed.
+func lastSegment(name string) string {
+	s := name
+	for _, sep := range []string{"/", "::", "."} {
+		if i := strings.LastIndex(s, sep); i >= 0 {
+			s = s[i+len(sep):]
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+// didYouMean returns up to three nearest labels by trigram similarity —
+// the difference between a dead end and a one-step correction. Runs only on
+// the total-miss path, so the full scan is acceptable.
+func didYouMean(nodes []schema.Node, name string) string {
+	want := triSet(strings.ToLower(name))
+	base := triSet(strings.ToLower(lastSegment(name)))
+	type cand struct {
+		label string
+		score float64
+	}
+	seen := map[string]bool{}
+	var cands []cand
+	for i := range nodes {
+		l := nodes[i].Label
+		if l == "" || seen[l] {
+			continue
+		}
+		seen[l] = true
+		got := triSet(strings.ToLower(l))
+		s := diceSim(want, got)
+		if b := diceSim(base, got); b > s {
+			s = b
+		}
+		if s >= 0.3 {
+			cands = append(cands, cand{l, s})
+		}
+	}
+	sort.Slice(cands, func(a, b int) bool {
+		if cands[a].score != cands[b].score {
+			return cands[a].score > cands[b].score
+		}
+		return cands[a].label < cands[b].label
+	})
+	if len(cands) == 0 {
+		return ""
+	}
+	if len(cands) > 3 {
+		cands = cands[:3]
+	}
+	labels := make([]string, len(cands))
+	for i, c := range cands {
+		labels[i] = c.label
+	}
+	return " — did you mean: " + strings.Join(labels, ", ") + "?"
+}
+
+func triSet(s string) map[string]bool {
+	t := map[string]bool{}
+	for i := 0; i+3 <= len(s); i++ {
+		t[s[i:i+3]] = true
+	}
+	return t
+}
+
+func diceSim(a, b map[string]bool) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	small, big := a, b
+	if len(b) < len(a) {
+		small, big = b, a
+	}
+	inter := 0
+	for t := range small {
+		if big[t] {
+			inter++
+		}
+	}
+	return 2 * float64(inter) / float64(len(a)+len(b))
 }
 
 // ---- path ----

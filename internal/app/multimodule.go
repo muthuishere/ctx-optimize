@@ -12,14 +12,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
-	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
+	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/navigator"
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/remote"
@@ -611,7 +612,46 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(stdout, "== navigator\n%d modules → %s\n", len(idx.Modules), filepath.Join(rootStore.Dir, "navigator.md"))
+	if orphans := orphanStores(rootStore.Dir, sc.rootKey, tasks); len(orphans) > 0 {
+		fmt.Fprintf(stdout, "note: %d module store(s) on disk are no longer in config.json — never searched, safe to delete under %s: %s\n",
+			len(orphans), rootStore.Dir, strings.Join(orphans, ", "))
+	}
 	return nil
+}
+
+// orphanStores lists module store dirs under the root store that the current
+// config no longer declares. Federation is config-driven so they are inert —
+// but silent leftovers look authoritative, and a user re-adding the module
+// later deserves to know the old data was never consulted meanwhile.
+func orphanStores(rootStoreDir, rootKey string, tasks []gatherTask) []string {
+	declared := map[string]bool{}
+	for _, t := range tasks {
+		declared[t.storeKey] = true
+	}
+	var orphans []string
+	filepath.WalkDir(rootStoreDir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || !d.IsDir() || p == rootStoreDir {
+			return nil
+		}
+		switch d.Name() {
+		case "graph", "wiki", "reflections":
+			return filepath.SkipDir
+		}
+		if _, e := os.Stat(filepath.Join(p, "graph")); e != nil {
+			return nil // plain dir on the way down — keep walking
+		}
+		rel, e := filepath.Rel(rootStoreDir, p)
+		if e != nil {
+			return nil
+		}
+		if !declared[store.SanitizeKeyPath(rootKey+"/"+filepath.ToSlash(rel))] {
+			orphans = append(orphans, filepath.ToSlash(rel))
+			return filepath.SkipDir // one note covers anything nested inside
+		}
+		return nil
+	})
+	sort.Strings(orphans)
+	return orphans
 }
 
 // refreshNavigatorEntry rebuilds the root navigator after a module-scoped

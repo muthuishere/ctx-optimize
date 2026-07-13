@@ -32,9 +32,9 @@ type Source struct {
 type Report struct {
 	Path         string `json:"path"`
 	State        State  `json:"state"`
-	StoreHead    string `json:"store_head"`             // head recorded at add time
-	CurrentHead  string `json:"current_head"`           // head right now (may be "")
-	AgeSeconds   int64  `json:"age_seconds"`            // now - added_unix (store snapshot age)
+	StoreHead    string `json:"store_head"`               // head recorded at add time
+	CurrentHead  string `json:"current_head"`             // head right now (may be "")
+	AgeSeconds   int64  `json:"age_seconds"`              // now - added_unix (store snapshot age)
 	BehindSecond int64  `json:"behind_seconds,omitempty"` // current_head_unix - store_head_unix, when stale & known
 }
 

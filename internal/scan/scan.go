@@ -46,8 +46,8 @@ const DefaultDepth = 5
 // builtinMarkers: a build file in a directory declares a project root.
 var builtinMarkers = map[string]bool{
 	"go.mod": true, "go.work": true,
-	"package.json": true,
-	"pom.xml":      true,
+	"package.json":    true,
+	"pom.xml":         true,
 	"settings.gradle": true, "settings.gradle.kts": true,
 	"build.gradle": true, "build.gradle.kts": true,
 	"Cargo.toml":     true,

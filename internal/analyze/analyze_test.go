@@ -144,3 +144,45 @@ func TestCard(t *testing.T) {
 		}
 	}
 }
+
+// Agents invent qualified id formats (chromium forensics: `content.Foo.Bar`,
+// `Ns::Class::Method`) — the resolver must strip qualifiers, and a total miss
+// must suggest nearest labels instead of dead-ending.
+func TestResolveQualifiersAndDidYouMean(t *testing.T) {
+	nodes, _ := fixture()
+	for _, guess := range []string{
+		"acme::billing::RefundService",
+		"acme.billing.RefundService",
+		"src/billing/RefundService",
+	} {
+		n, err := Resolve(nodes, guess)
+		if err != nil || n.ID != "service" {
+			t.Fatalf("qualified guess %q: %v %v", guess, n, err)
+		}
+	}
+	// Total miss (no token overlap) but trigram-close: must suggest, not dead-end.
+	_, err := Resolve(nodes, "RefndServce")
+	if err == nil {
+		t.Fatal("expected a miss for RefndServce")
+	}
+	if !strings.Contains(err.Error(), "did you mean") || !strings.Contains(err.Error(), "RefundService") {
+		t.Fatalf("miss should suggest nearest labels, got: %v", err)
+	}
+	// Nothing near: plain miss, no noise suggestions.
+	if _, err := Resolve(nodes, "qqqqqq"); err == nil || strings.Contains(err.Error(), "did you mean") {
+		t.Fatalf("far miss must not suggest: %v", err)
+	}
+}
+
+func TestLastSegment(t *testing.T) {
+	for in, want := range map[string]string{
+		"A::B::C":      "C",
+		"pkg.Cls.meth": "meth",
+		"a/b/c.go":     "go",
+		"plain":        "plain",
+	} {
+		if got := lastSegment(in); got != want {
+			t.Fatalf("lastSegment(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
