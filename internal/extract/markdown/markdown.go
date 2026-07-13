@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/muthuishere/ctx-optimize/internal/extract/ignore"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
@@ -40,12 +41,21 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 			skip[abs] = true
 		}
 	}
+	ignored := ignore.New(root) // .gitignore semantics via git itself; nil = no git
 	b := &schema.Batch{Producer: ProducerName}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		name := d.Name()
+		if ignored != nil {
+			if rel, err := filepath.Rel(root, path); err == nil && rel != "." && ignored(filepath.ToSlash(rel)) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
 		if d.IsDir() {
 			if len(skip) > 0 {
 				if abs, err := filepath.Abs(path); err == nil && skip[abs] {

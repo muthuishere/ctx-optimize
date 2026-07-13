@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/muthuishere/ctx-optimize/internal/extract/ignore"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
@@ -128,12 +129,21 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		return e, nil
 	}
 
+	ignored := ignore.New(root) // .gitignore semantics via git itself; nil = no git
 	var files []string
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		name := d.Name()
+		if ignored != nil {
+			if rel, rerr := filepath.Rel(root, path); rerr == nil && rel != "." && ignored(filepath.ToSlash(rel)) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
 		if d.IsDir() {
 			if len(skip) > 0 {
 				if abs, err := filepath.Abs(path); err == nil && skip[abs] {
