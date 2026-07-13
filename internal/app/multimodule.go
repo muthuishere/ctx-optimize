@@ -21,6 +21,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/navigator"
 	"github.com/muthuishere/ctx-optimize/internal/project"
+	"github.com/muthuishere/ctx-optimize/internal/remote"
 	"github.com/muthuishere/ctx-optimize/internal/scan"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/store"
@@ -739,6 +740,29 @@ func selectModules(sc *scope, storeRoot string, f *flags, terms []string, k int)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out, len(out) == len(sc.modules), nil
+}
+
+// scopeStoreRels enumerates the store rel paths a sync scope covers,
+// relative to the ROOT store dir: the whole tree at a multi-module root,
+// just the module's subtree (nested stores included) inside a module.
+func scopeStoreRels(sc *scope, storeRoot string) ([]string, error) {
+	if sc.kind == scopeModule {
+		modDir := filepath.Join(storeRoot, filepath.FromSlash(sc.storeKey))
+		rels, err := remote.LocalStoreRels(modDir)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]string, 0, len(rels))
+		for _, r := range rels {
+			if r == "" {
+				out = append(out, sc.modulePath)
+			} else {
+				out = append(out, sc.modulePath+"/"+r)
+			}
+		}
+		return out, nil
+	}
+	return remote.LocalStoreRels(filepath.Join(storeRoot, filepath.FromSlash(sc.rootKey)))
 }
 
 // expandRootModules loads the root config's module list for a scope that

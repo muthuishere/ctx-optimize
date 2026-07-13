@@ -37,6 +37,26 @@ type Backend interface {
 // ErrNotFound signals an absent remote object (e.g. no manifest yet).
 var ErrNotFound = fmt.Errorf("remote: object not found")
 
+// WithPrefix returns a view of b with every key under prefix — how one
+// remote URL carries a whole multi-module store tree: the backend root maps
+// to the ROOT store dir, each module store syncs under its mirrored rel
+// path. An empty prefix returns b unchanged.
+func WithPrefix(b Backend, prefix string) Backend {
+	prefix = strings.Trim(prefix, "/")
+	if prefix == "" {
+		return b
+	}
+	return &prefixBackend{b: b, prefix: prefix + "/"}
+}
+
+type prefixBackend struct {
+	b      Backend
+	prefix string
+}
+
+func (p *prefixBackend) Put(key string, data []byte) error { return p.b.Put(p.prefix+key, data) }
+func (p *prefixBackend) Get(key string) ([]byte, error)    { return p.b.Get(p.prefix + key) }
+
 // Options carries explicit credentials/endpoint from config (already
 // ${VAR}-resolved). Empty fields fall back to the standard AWS_* env vars at
 // call time. Values live in memory only — never stored, printed, or logged.

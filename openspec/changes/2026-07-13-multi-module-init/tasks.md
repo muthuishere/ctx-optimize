@@ -32,7 +32,11 @@ Gate: `task ci` green before every commit.
       "[not in X — found in Y]"; path/explain/affected get root-scope
       federated graphs via loadGraph
 - [ ] affected/path boundary NOTES (cross-module truncation warnings)
-- [ ] remote push/pull scope prefixes (root push = whole tree)
+- [x] remote push/pull scope prefixes: root = whole store tree (root store
+      + every module store + navigator, stores.json index written last),
+      module = only its prefix (nested stores included); single-module
+      path byte-identical; prefix pull against an index-free single-store
+      remote fails loudly
 
 ## 4. Skill + docs
 - [x] SKILL.md: multi-module flow (scan→show FULL list→okay→init --scan
