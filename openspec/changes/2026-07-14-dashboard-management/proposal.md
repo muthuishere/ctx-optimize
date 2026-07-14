@@ -1,8 +1,39 @@
-# ADR — dashboard as the management surface: see everything, change anything, logged
+# ADR — dashboard FIRST-CLASS: React app, onboarding, viewer, management, logged
 
-Status: DRAFT v1 — owner direction 2026-07-14 ("all should be in dashboard
-and logged so people can change and update anything"). NOT started. Depends
-on: W4 route packs, manifest lane (2026-07-14-manifest-lane).
+Status: DRAFT v2 — owner direction 2026-07-14 ("dashboard first class,
+onboard add edit repo as well along with inbuilt viewer so create a react
+app and embed"). Owner's ask upgrades Phase 2 mutations from ⚖️ to APPROVED
+for: onboarding (scan/init/add), repo config edit, re-gather trigger.
+
+## Decision 0 — first-class React app, embedded, zero runtime network
+
+- `dashboard-ui/` at repo root: Vite + React + TypeScript. Runtime deps
+  minimal (react, react-dom, one bundled graph-viz lib for the viewer —
+  d3-force or cytoscape, VENDORED through the build, never a CDN).
+- Built `dist/` is COMMITTED (the treesitter.wasm precedent: `go install`
+  and CI must never need Node) and embedded via go:embed in
+  internal/dashboard, served by the existing `serve` verb on 127.0.0.1:4747.
+  The single-file UI it replaces is deleted.
+- Contract unchanged at runtime: ZERO external requests — the built bundle
+  is self-contained; CSP-style check in tests (no http(s):// asset refs in
+  dist).
+- Dev loop: `task dashboard-dev` (vite proxy → running serve),
+  `task dashboard-build` (build + copy into embed dir) — dev-only targets,
+  like scripts/wasm/build.sh.
+
+## Decision 0b — onboarding + viewer are core screens
+
+- **Onboard**: pick/enter a repo path → server runs the same code paths the
+  CLI uses (scan → confirm module list → init → add with streamed
+  progress). Edit repo = the config editing below + re-add.
+- **Repos**: every store under the store root listed with freshness,
+  counts, navigator link; add/edit/remove (remove = delete store dir,
+  confirm-gated, audited).
+- **Viewer**: interactive graph per module (nodes/edges from /api/graph,
+  filter by kind/producer, neighborhood expand on click, community coloring
+  once W2's Communities is exposed via API). Budgeted: server caps the
+  payload (top-N by degree + on-demand neighborhoods), never ships 1.5M
+  nodes to a browser.
 
 ## Context
 
@@ -15,6 +46,12 @@ only via CLI/editor. The owner wants the dashboard to be the place a human
 SEES all of it and can CHANGE it, with changes logged.
 
 ## Decision — two phases, mutation stays localhost + audited
+
+### Screens (owner 2026-07-14: "settings and all stuff within and they can
+do all operations there as well") — Repos · Onboard · Viewer · Query ·
+Settings · Changes. Settings = every config key (both levels), every pack
+across all four axes (create/edit/delete with validation preview), adapters,
+remote (init/push/pull triggers). All operations the CLI offers, same doors.
 
 ### Phase 1 — visibility (no writes)
 
