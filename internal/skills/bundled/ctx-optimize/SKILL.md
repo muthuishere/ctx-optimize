@@ -17,6 +17,12 @@ description: >
   init && ctx-optimize add .` creates it in seconds. Monorepo? `ctx-optimize
   scan` finds every project — confirm the list with the user, then
   `init --scan --yes && add .` builds one store per module + a navigator.
+  ALSO the first-class helper for CUSTOMIZING extraction: "add my framework's
+  routes", "extract our custom router / registerRoute", "index our k8s / helm
+  / ingress", "add build-tool dependencies / gradle / pom / csproj", "support
+  language X", "the graph is missing my routes/deps" — routes/manifests/
+  grammar PACKS (drop-in JSON, `routes add` / `manifests add` / `languages
+  add`, name or GitHub URL) plus adapters. Follow `./references/customize.md`.
 ---
 
 # ctx-optimize
@@ -66,6 +72,7 @@ counted honestly.
 | In a repo with NO store yet | single project: `ctx-optimize init && ctx-optimize add .` (seconds). Monorepo/multi-project: follow `./references/multi-module.md` — scan first, confirm the FULL list with the user, then init |
 | Told code changed / store looks stale | `ctx-optimize add .` (incremental: prunes deleted, re-emits changed) |
 | Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script |
+| Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .` |
 | User says share / publish / push / pull / export to team / import / load a store | follow `./references/push-pull.md` — scope-aware `remote push`/`pull` |
 | Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `add .` IS the sync; `fresh` gate |
 | Combining several repos/modules into one graph | `ctx-optimize merge <mod>... --into <name>` (opt-in, never automatic) |
@@ -135,6 +142,9 @@ model anywhere; you are the judge, the binary only tallies.
 
 ## Deep guides
 
+- `./references/customize.md` — make extraction fit ANY stack: framework
+  routes, custom routers, k8s, build-tool deps, new languages — core vs
+  drop-in packs (`routes/manifests/languages add`), the pack doctrine
 - `./references/multi-module.md` — monorepos: scan → confirm → fan-out add,
   navigator, scope-follows-cwd querying, merge policy
 - `./references/adapters.md` — everything beyond code + markdown: doc
