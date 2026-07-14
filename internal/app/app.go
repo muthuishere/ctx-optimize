@@ -1625,6 +1625,27 @@ func serveOps(storeFlag string) *dashboard.Ops {
 		RemoteSync: func(path, verb string, out io.Writer) error {
 			return cmdRemote(append([]string{verb}, withStore([]string{"--path", path})...), out)
 		},
+		AddPack: func(axis, path, source string, global bool, out io.Writer) error {
+			// Same door as `ctx-optimize routes add` / `manifests add`: build
+			// the CLI args and dispatch to the exact command func. Route/
+			// manifest packs live in dirs (repo or machine), not the store, so
+			// no --store threading is needed.
+			args := []string{"add", source}
+			if path != "" {
+				args = append(args, "--path", path)
+			}
+			if global {
+				args = append(args, "--global")
+			}
+			switch axis {
+			case "routes":
+				return cmdRoutes(args, out)
+			case "manifests":
+				return cmdManifests(args, out)
+			default:
+				return fmt.Errorf("unknown pack axis %q (routes|manifests)", axis)
+			}
+		},
 	}
 }
 

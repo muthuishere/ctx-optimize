@@ -38,6 +38,8 @@ header.top h1 {
   letter-spacing: -.01em; color: var(--text); white-space: nowrap;
 }
 header.top h1 em { color: var(--accent); font-style: normal; }
+header.top a.logo { display: inline-flex; }
+header.top a.logo:hover h1 { opacity: .82; }
 header.top .sub {
   color: var(--dim); font-size: .78rem; font-family: var(--mono);
   letter-spacing: .04em;
@@ -126,6 +128,9 @@ a > button { width: 100%; }
 .grow { flex: 1; min-width: 120px; }
 .divider { height: 1px; background: var(--border); margin: 16px 0; border: none; }
 
+.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.grid-cards .card { margin-bottom: 0; }
+.ov-repo { display: flex; flex-direction: column; }
 .stat-grid { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 2px; }
 .stat { display: flex; flex-direction: column; }
 .stat b { font-family: var(--disp); font-size: 1.2rem; color: var(--text); font-weight: 700; }
@@ -234,7 +239,11 @@ table.list td.mono { font-family: var(--mono); font-size: .8rem; color: var(--te
   font-size: .78rem; max-height: 46%; overflow-y: auto; backdrop-filter: blur(6px);
 }
 .viewer .legend .lg-title { font-family: var(--mono); font-size: .66rem; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); margin-bottom: 8px; }
-.viewer .legend .lg-row { display: flex; align-items: center; gap: 9px; padding: 2px 0; color: var(--muted); }
+.viewer .legend .lg-row { display: flex; align-items: center; gap: 9px; padding: 3px 0; color: var(--muted); cursor: pointer; user-select: none; }
+.viewer .legend .lg-row:hover { color: var(--text); }
+.viewer .legend .lg-row.off { opacity: .38; }
+.viewer .legend .lg-row.off i { box-shadow: none; filter: grayscale(1); }
+.viewer .legend .lg-star { color: var(--accent); font-size: .7rem; margin-left: auto; padding-left: 8px; }
 .viewer .legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px currentColor; flex: none; }
 .nb-link { cursor: pointer; color: var(--accent); }
 .nb-link:hover { text-decoration: underline; }

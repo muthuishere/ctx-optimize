@@ -1,18 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
-import { api, mutate, stream } from '../api'
+import { useState } from 'react'
+import { mutate, stream } from '../api'
 import { kindColorMap } from '../App'
+import { useStores } from '../stores'
 import type { StoreInfo } from '../types'
 
 export default function Repos() {
-  const [stores, setStores] = useState<StoreInfo[] | null>(null)
+  const { stores, err: loadErr, refreshing, reload } = useStores()
   const [err, setErr] = useState('')
   const [busyKey, setBusyKey] = useState('')
   const [log, setLog] = useState('')
-
-  const reload = useCallback(() => {
-    api<StoreInfo[]>('/api/stores').then(setStores).catch((e) => setErr(String(e.message || e)))
-  }, [])
-  useEffect(reload, [reload])
 
   const regather = async (s: StoreInfo) => {
     if (!s.source_path) return
@@ -37,8 +33,10 @@ export default function Repos() {
     }
   }
 
-  if (err) return <div className="screenwrap"><div className="err">{err}</div></div>
-  if (!stores) return <div className="screenwrap"><div className="k">loading…</div></div>
+  const showErr = err || loadErr
+  if (!stores) return showErr
+    ? <div className="screenwrap"><div className="err">{showErr}</div></div>
+    : <div className="screenwrap"><div className="k">loading…</div></div>
 
   return (
     <div className="screenwrap">
@@ -49,9 +47,12 @@ export default function Repos() {
             <h2 className="screen">Every store under the root</h2>
           </div>
           <span className="grow" />
+          <button onClick={() => reload()} disabled={refreshing}>{refreshing ? 'reloading…' : 'Reload'}</button>
           <a href="#/onboard"><button className="primary">+ Add repo</button></a>
         </div>
       </div>
+
+      {showErr && <div className="err">{showErr}</div>}
 
       {stores.length === 0 && (
         <div className="empty">

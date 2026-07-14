@@ -61,6 +61,10 @@ type Ops struct {
 	Gather func(path string, out io.Writer) error
 	// RemoteSync is `remote push|pull --path <path>`.
 	RemoteSync func(path, verb string, out io.Writer) error
+	// AddPack installs/scaffolds a routes|manifests pack — `routes add` /
+	// `manifests add`. global routes it to the machine dir; otherwise path's
+	// repo dir. source is a name (scaffold) or a github/json URL (fetch).
+	AddPack func(axis, path, source string, global bool, out io.Writer) error
 }
 
 // Module is one store folder as listed by /api/modules. Multi-module repos
@@ -124,6 +128,7 @@ func NewHandler(root string, ops *Ops) http.Handler {
 	mux.HandleFunc("/api/onboard/confirm", s.mutation("POST", s.handleOnboardConfirm))
 	mux.HandleFunc("/api/repo/add", s.mutation("POST", s.handleRepoAdd))
 	mux.HandleFunc("/api/config", s.mutation("PUT", s.handleConfigSet))
+	mux.HandleFunc("/api/pack", s.mutation("POST", s.handlePackAdd))
 	mux.HandleFunc("/api/store", s.mutation("DELETE", s.handleStoreDelete))
 	mux.HandleFunc("/api/remote/push", s.mutation("POST", s.handleRemote("push")))
 	mux.HandleFunc("/api/remote/pull", s.mutation("POST", s.handleRemote("pull")))
@@ -167,6 +172,11 @@ func (s *server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		keptNodes = topByDegree(nodes, edges, limit)
+		// The v0.3 "special" kinds (routes, deps, k8s resources, tasks,
+		// images, config) are usually low-degree and fall off the top-N cut.
+		// Add them on top so a repo with routes/k8s/deps actually shows them —
+		// capped so a pathological store can't blow the payload.
+		keptNodes = includeSpecialKinds(nodes, keptNodes, min(len(nodes), limit+2000))
 	}
 	keep := make(map[string]bool, len(keptNodes))
 	for _, n := range keptNodes {
@@ -200,6 +210,32 @@ func topByDegree(nodes []schema.Node, edges []schema.Edge, limit int) []schema.N
 	copy(sorted, nodes)
 	sort.SliceStable(sorted, func(i, j int) bool { return deg[sorted[i].ID] > deg[sorted[j].ID] })
 	return sorted[:limit]
+}
+
+// specialKinds are the v0.3 first-class kinds that the degree budget must
+// never drop — they carry the routes/deps/k8s/task signal a low degree hides.
+var specialKinds = map[string]bool{
+	"route": true, "dependency": true, "task": true,
+	"resource": true, "image": true, "config": true,
+}
+
+// includeSpecialKinds appends every special-kind node not already kept, up to
+// an overall cap. Order is preserved so the degree-ranked head stays first.
+func includeSpecialKinds(all, kept []schema.Node, cap int) []schema.Node {
+	have := make(map[string]bool, len(kept))
+	for _, n := range kept {
+		have[n.ID] = true
+	}
+	for _, n := range all {
+		if len(kept) >= cap {
+			break
+		}
+		if specialKinds[n.Kind] && !have[n.ID] {
+			have[n.ID] = true
+			kept = append(kept, n)
+		}
+	}
+	return kept
 }
 
 // neighborhood BFS-expands from center over both edge directions. nil when

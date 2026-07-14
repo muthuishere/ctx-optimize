@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, mutate, stream } from '../api'
 import type { Setup, StoreInfo } from '../types'
 
-// Settings — every config key (both levels, which level set it, edit
-// inline), packs per axis with their file paths, adapters, remote (with
+// Settings — every config key (both levels, which level set it, edit inline),
+// packs per axis (core recognizers + discovered packs with their file paths),
+// an inline "add pack" form for routes/manifests, adapters, and remote (with
 // push/pull triggers). The FILE stays the source of truth: every card names
 // the file it renders.
 const VALUES: Record<string, string[]> = {
@@ -12,6 +13,9 @@ const VALUES: Record<string, string[]> = {
   hooks: ['ALL', 'CLAUDE', 'AGENTS', 'NONE'],
 }
 
+// Axes that accept a new pack from the dashboard (routes add / manifests add).
+const ADDABLE = new Set(['routes', 'manifests'])
+
 export default function Settings() {
   const [setup, setSetup] = useState<Setup | null>(null)
   const [stores, setStores] = useState<StoreInfo[]>([])
@@ -19,6 +23,9 @@ export default function Settings() {
   const [err, setErr] = useState('')
   const [syncLog, setSyncLog] = useState('')
   const [busy, setBusy] = useState('')
+  const [packSrc, setPackSrc] = useState<Record<string, string>>({})
+  const [packScope, setPackScope] = useState<Record<string, string>>({})
+  const [packBusy, setPackBusy] = useState('')
 
   const reload = useCallback((path: string) => {
     const q = path ? '?path=' + encodeURIComponent(path) : ''
@@ -40,6 +47,22 @@ export default function Settings() {
     } catch (e: any) {
       setErr(String(e.message || e))
     }
+  }
+
+  const addPack = async (axis: string) => {
+    const source = (packSrc[axis] || '').trim()
+    if (!source) return
+    const scope = packScope[axis] || (repoPath ? 'project' : 'global')
+    setErr('')
+    setPackBusy(axis)
+    try {
+      await mutate('POST', '/api/pack', { axis, scope, path: repoPath, source })
+      setPackSrc((p) => ({ ...p, [axis]: '' }))
+      reload(repoPath)
+    } catch (e: any) {
+      setErr(String(e.message || e))
+    }
+    setPackBusy('')
   }
 
   const sync = async (verb: string) => {
@@ -74,6 +97,11 @@ export default function Settings() {
             ))}
           </select>
         </div>
+        {!repoPath && stores.length > 0 && (
+          <div className="k" style={{ marginTop: 8, fontSize: '.82rem' }}>
+            Pick a repo to see its project config, packs, adapters and remote. Global config + machine packs show below either way.
+          </div>
+        )}
       </div>
 
       {err && <div className="err">{err}</div>}
@@ -124,15 +152,42 @@ export default function Settings() {
           </div>
           <div className="muted" style={{ fontSize: '.85rem', marginBottom: 10 }}>{a.note}</div>
           {a.error && <div className="err">{a.error}</div>}
+
+          {a.core && a.core.length > 0 && (
+            <div className="row" style={{ gap: 6, marginBottom: 10 }}>
+              <span className="k" style={{ fontSize: '.76rem' }}>core</span>
+              {a.core.map((c) => <span className="chip" key={c}>{c}</span>)}
+            </div>
+          )}
+
           {(a.packs || []).map((p) => (
             <div className="row" key={p.name} style={{ padding: '4px 0' }}>
-              <span className="chip"><b>{p.name}</b> {p.exts.join(' ')}</span>
-              <span className="k mono" style={{ fontSize: '.76rem' }}>{p.wasm}</span>
+              <span className="chip"><b>{p.name}</b>{p.exts ? ' ' + p.exts.join(' ') : ''}{typeof p.rules === 'number' ? ` · ${p.rules} rule${p.rules === 1 ? '' : 's'}` : ''}</span>
+              <span className="k mono" style={{ fontSize: '.76rem' }}>{p.wasm || p.file}</span>
             </div>
           ))}
           {a.kind === 'packs' && (a.packs || []).length === 0 && !a.error && (
-            <div className="k">no packs discovered</div>
+            <div className="k">no packs discovered — {ADDABLE.has(a.axis) ? 'core recognizers still apply; add one below' : 'core recognizers still apply'}</div>
           )}
+
+          {ADDABLE.has(a.axis) && (
+            <div className="row" style={{ gap: 6, marginTop: 12, alignItems: 'stretch' }}>
+              <input type="text" className="grow" placeholder="pack name, or github/json URL"
+                value={packSrc[a.axis] || ''}
+                onChange={(e) => setPackSrc((p) => ({ ...p, [a.axis]: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && addPack(a.axis)} />
+              <select value={packScope[a.axis] || (repoPath ? 'project' : 'global')}
+                onChange={(e) => setPackScope((p) => ({ ...p, [a.axis]: e.target.value }))}>
+                <option value="project" disabled={!repoPath}>project</option>
+                <option value="global">global</option>
+              </select>
+              <button className="primary" disabled={packBusy === a.axis || !(packSrc[a.axis] || '').trim()}
+                onClick={() => addPack(a.axis)}>
+                {packBusy === a.axis ? 'adding…' : 'Add pack'}
+              </button>
+            </div>
+          )}
+
           {(a.adapters || []).map((ad, i) => (
             <div className="row" key={i} style={{ padding: '4px 0' }}>
               <span className="chip"><b>{ad.name}</b></span>
@@ -142,6 +197,9 @@ export default function Settings() {
           ))}
           {a.axis === 'adapters' && !repoPath && (
             <div className="k">pick a project scope above to list its adapters</div>
+          )}
+          {a.axis === 'adapters' && repoPath && (a.adapters || []).length === 0 && (
+            <div className="k">no adapters — drop a .js/.py/.sh into the repo's .ctxoptimize/adapters/</div>
           )}
         </div>
       ))}
