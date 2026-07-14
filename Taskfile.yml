@@ -25,6 +25,26 @@ tasks:
       - ./bin/ctx-optimize version
       - ./bin/ctx-optimize help
 
+  # Dashboard UI targets are DEV-ONLY (need node). The built bundle is
+  # COMMITTED at internal/dashboard/ui/ (treesitter.wasm precedent), so
+  # `task ci` and `go install` never touch npm.
+  dashboard-dev:
+    desc: Vite dev server for dashboard-ui (proxies /api to a running `ctx-optimize serve` on :4747)
+    dir: dashboard-ui
+    cmds:
+      - npm install
+      - npm run dev
+
+  dashboard-build:
+    desc: Build dashboard-ui and copy dist/ into internal/dashboard/ui (the go:embed dir — commit the result)
+    dir: dashboard-ui
+    cmds:
+      - npm ci
+      - npm run build
+      - rm -rf ../internal/dashboard/ui
+      - mkdir -p ../internal/dashboard/ui
+      - cp -R dist/. ../internal/dashboard/ui/
+
   snapshot:
     desc: goreleaser snapshot build (no publish)
     cmds:

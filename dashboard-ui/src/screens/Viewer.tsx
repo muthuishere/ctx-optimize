@@ -1,0 +1,163 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { api } from '../api'
+import { kindColorMap } from '../App'
+import ForceGraph from '../ForceGraph'
+import type { Edge, GraphResponse, Module, Node } from '../types'
+
+// Viewer — force-directed NEIGHBORHOOD graph. The server caps every payload
+// (top-N by degree); clicking a node expands its 1-hop neighborhood via
+// /api/graph?center=<id>&depth=1 and merges it in. The whole graph never
+// ships.
+const LIMIT = 400
+
+export default function Viewer({ initialModule: rawArg }: { initialModule: string }) {
+  const qi = rawArg.indexOf('?')
+  const initialModule = decodeURIComponent(qi < 0 ? rawArg : rawArg.slice(0, qi))
+  const initialCenter = qi < 0 ? '' : new URLSearchParams(rawArg.slice(qi + 1)).get('center') || ''
+
+  const [mods, setMods] = useState<Module[]>([])
+  const [mod, setMod] = useState(initialModule)
+  const [nodes, setNodes] = useState<Map<string, Node>>(new Map())
+  const [edges, setEdges] = useState<Map<string, Edge>>(new Map())
+  const [totals, setTotals] = useState({ nodes: 0, edges: 0, truncated: false })
+  const [selected, setSelected] = useState<string | null>(null)
+  const [producer, setProducer] = useState('')
+  const [err, setErr] = useState('')
+
+  const merge = useCallback((g: GraphResponse, reset: boolean) => {
+    setNodes((prev) => {
+      const m = reset ? new Map<string, Node>() : new Map(prev)
+      for (const n of g.nodes) m.set(n.id, n)
+      return m
+    })
+    setEdges((prev) => {
+      const m = reset ? new Map<string, Edge>() : new Map(prev)
+      for (const e of g.edges) m.set(e.source + '\x00' + e.target + '\x00' + e.relation, e)
+      return m
+    })
+    setTotals({ nodes: g.total_nodes, edges: g.total_edges, truncated: g.truncated })
+  }, [])
+
+  const load = useCallback(async (key: string, center: string) => {
+    setErr('')
+    try {
+      const base = `/api/graph?module=${encodeURIComponent(key)}`
+      const g = await api<GraphResponse>(
+        center ? `${base}&center=${encodeURIComponent(center)}&depth=1&limit=${LIMIT}` : `${base}&limit=${LIMIT}`)
+      merge(g, true)
+      setSelected(center || null)
+    } catch (e: any) {
+      setErr(String(e.message || e))
+    }
+  }, [merge])
+
+  useEffect(() => {
+    api<Module[]>('/api/modules').then((m) => {
+      setMods(m)
+      const key = initialModule || (m.length > 0 ? m[0].key : '')
+      if (key) {
+        setMod(key)
+        load(key, initialCenter)
+      }
+    }).catch((e) => setErr(String(e.message || e)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const expand = useCallback(async (id: string) => {
+    setSelected(id)
+    try {
+      const g = await api<GraphResponse>(
+        `/api/graph?module=${encodeURIComponent(mod)}&center=${encodeURIComponent(id)}&depth=1&limit=${LIMIT}`)
+      merge(g, false)
+    } catch {
+      /* node may be filtered out server-side; selection alone is fine */
+    }
+  }, [mod, merge])
+
+  const producers = useMemo(() => {
+    const s = new Set<string>()
+    for (const n of nodes.values()) s.add(n.metadata?.producer || '(unknown)')
+    return Array.from(s).sort()
+  }, [nodes])
+
+  const shown = useMemo(() => {
+    let list = Array.from(nodes.values())
+    if (producer) list = list.filter((n) => (n.metadata?.producer || '(unknown)') === producer)
+    const keep = new Set(list.map((n) => n.id))
+    const es = Array.from(edges.values()).filter((e) => keep.has(e.source) && keep.has(e.target))
+    return { nodes: list, edges: es }
+  }, [nodes, edges, producer])
+
+  const colors = useMemo(() => kindColorMap(shown.nodes.map((n) => n.kind)), [shown.nodes])
+  const sel = selected ? nodes.get(selected) : undefined
+  const selEdges = useMemo(() => {
+    if (!selected) return []
+    const out: { dir: string; rel: string; id: string }[] = []
+    for (const e of edges.values()) {
+      if (e.source === selected) out.push({ dir: '→', rel: e.relation, id: e.target })
+      if (e.target === selected) out.push({ dir: '←', rel: e.relation, id: e.source })
+    }
+    return out
+  }, [edges, selected])
+
+  return (
+    <div className="viewer">
+      <div className="side">
+        <div className="controls">
+          <select value={mod} onChange={(e) => { setMod(e.target.value); setProducer(''); load(e.target.value, '') }}>
+            {mods.map((m) => (
+              <option key={m.key} value={m.key}>{m.key} ({m.nodes})</option>
+            ))}
+          </select>
+          <select value={producer} onChange={(e) => setProducer(e.target.value)}>
+            <option value="">all producers</option>
+            {producers.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+          <div className="k" style={{ fontSize: 11.5 }}>
+            showing {shown.nodes.length} of {totals.nodes} nodes
+            {totals.truncated ? ' (server-budgeted — click to expand neighborhoods)' : ''}
+          </div>
+          {err && <div className="err">{err}</div>}
+        </div>
+        <div className="detail">
+          {!sel && <span className="k">click a node — its 1-hop neighborhood loads and merges in</span>}
+          {sel && (
+            <div>
+              <h3>{sel.label}</h3>
+              <div className="drow">
+                <span className="chip" style={{ borderColor: colors.get(sel.kind), color: colors.get(sel.kind) }}>{sel.kind}</span>
+                {sel.file_type && <span className="k"> {sel.file_type}</span>}
+              </div>
+              <div className="drow"><span className="k">source </span>{sel.source} {sel.location || ''}</div>
+              <div className="drow"><span className="k">producer </span>{sel.metadata?.producer || ''}</div>
+              {selEdges.slice(0, 30).map((x, i) => (
+                <div className="drow" key={i}>
+                  {x.dir} <span className="k">{x.rel} </span>
+                  <span className="nb-link" onClick={() => expand(x.id)}>{x.id}</span>
+                </div>
+              ))}
+              {selEdges.length > 30 && <div className="drow k">… {selEdges.length - 30} more</div>}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="stage">
+        <ForceGraph
+          nodes={shown.nodes}
+          edges={shown.edges}
+          colors={colors}
+          selectedId={selected}
+          onSelect={(id) => (id ? expand(id) : setSelected(null))}
+        />
+        <div className="legend">
+          {Array.from(colors.entries()).map(([k, c]) => (
+            <div key={k}><i style={{ background: c, color: c }} />{k}</div>
+          ))}
+        </div>
+        <div className="note">drag: pan · wheel: zoom · click: expand neighborhood</div>
+      </div>
+    </div>
+  )
+}

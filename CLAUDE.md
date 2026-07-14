@@ -17,7 +17,8 @@ the validated `add --json` door.
 - `internal/query` — lexical IDF + prefix + trigram tiers + budget; complete hits (S1e: no pointer lists)
 - `internal/analyze` — pure graph verbs: path, explain, affected (reverse impact), hubs; Resolve = id > label > fuzzy tokens
 - store.Replace = producer-scoped truth on `add` (stale nodes pruned; <50% shrink refused without --force); Merge (--json door) stays upsert
-- `internal/dashboard` — `serve|dashboard` verb: embedded single-file UI (go:embed, ZERO external requests — no CDN ever) + read-only JSON API (/api/modules|graph|query); binds 127.0.0.1:4747; read path must never create store dirs
+- `internal/dashboard` — `serve|dashboard` verb: embedded React app (dashboard-ui/ Vite+React+TS, BUILT dist committed at internal/dashboard/ui/ via go:embed — treesitter.wasm precedent, `task ci`/`go install` never need node; ZERO external requests — no CDN ever, CSP-tested). Reads: /api/modules|graph(budgeted, ?center= expand)|query|usage|stores|setup|audit — read path must never create store dirs. Mutations (onboard scan/confirm, repo re-gather, config set, store delete, remote push/pull): loopback-only by RemoteAddr even if --host widened + per-process X-Ctx-Token (GET /api/token, loopback-only) + routed through the SAME cmd funcs the CLI dispatches (Ops closures from internal/app) + every one audited. Dev loop: `task dashboard-dev|dashboard-build`. Binds 127.0.0.1:4747
+- `internal/audit` — append-only `<store-root>/audit.ndjson` (ts, actor dashboard|cli, action, target, before/after sha256; sorted fields, git-diffable); dashboard mutations AND `config` set write it; `log` verb prints it (--json)
 - `internal/skills` — embedded SKILL.md, `install --skills` fans to claude+codex
 - `npm/` — optionalDependencies wrapper (5 platform pkgs, thin launcher, no postinstall)
 

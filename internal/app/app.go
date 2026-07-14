@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/muthuishere/ctx-optimize/internal/analyze"
+	"github.com/muthuishere/ctx-optimize/internal/audit"
 	"github.com/muthuishere/ctx-optimize/internal/dashboard"
 	"github.com/muthuishere/ctx-optimize/internal/export"
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
@@ -93,6 +94,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdRemote(rest, stdout)
 	case "config":
 		err = cmdConfig(rest, stdout)
+	case "log":
+		err = cmdLog(rest, stdout)
 	case "install":
 		err = cmdInstall(rest, stdout)
 	case "hook-context":
@@ -419,17 +422,28 @@ func cmdConfig(args []string, stdout io.Writer) error {
 			return err
 		}
 		if toProject {
+			file := filepath.Join(sc.rootDir, filepath.FromSlash(project.FileName))
+			before := audit.FileHash(file)
 			*k.proj = v
 			if err := project.Save(sc.rootDir, pcfg); err != nil {
 				return err
 			}
-			fmt.Fprintf(stdout, "%s = %s  (project: %s — commit it)\n", f.args[0], v, filepath.Join(sc.rootDir, filepath.FromSlash(project.FileName)))
+			// Same writer the dashboard uses: every mutation door logs.
+			audit.Append(storeRoot, audit.Line{Actor: "cli",
+				Action: "config.set " + f.args[0] + "=" + v, Target: file,
+				BeforeHash: before, AfterHash: audit.FileHash(file)})
+			fmt.Fprintf(stdout, "%s = %s  (project: %s — commit it)\n", f.args[0], v, file)
 			return nil
 		}
+		file := filepath.Join(storeRoot, "config.json")
+		before := audit.FileHash(file)
 		*k.glob = v
 		if err := store.SaveGlobalConfig(storeRoot, gcfg); err != nil {
 			return err
 		}
+		audit.Append(storeRoot, audit.Line{Actor: "cli",
+			Action: "config.set " + f.args[0] + "=" + v, Target: file,
+			BeforeHash: before, AfterHash: audit.FileHash(file)})
 		fmt.Fprintf(stdout, "%s = %s\n", f.args[0], v)
 		return nil
 	}
@@ -1515,16 +1529,20 @@ func writeCSVFiles(dir string, nodes []schema.Node, edges []schema.Edge) error {
 	return export.CSV(nf, ef, nodes, edges)
 }
 
-// cmdServe hosts the local dashboard — embedded single-file UI + read-only
-// JSON API over the store root. Localhost by default: it is a window onto
-// your store, not a service (pass --host to expose deliberately, e.g. behind
-// a tunnel you control).
+// cmdServe hosts the local dashboard — embedded React app + JSON API over
+// the store root. Localhost by default: it is a window onto your store, not
+// a service (pass --host to expose the READ side deliberately, e.g. behind a
+// tunnel you control — mutation endpoints stay loopback-only regardless).
+// The Ops closures below ARE the mutation doors: each one calls the same
+// command function the CLI dispatches to, so the dashboard can do nothing
+// the CLI couldn't.
 func cmdServe(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	root, err := store.Root(f.strs["store"])
 	if err != nil {
 		return err
 	}
+	ops := serveOps(f.strs["store"])
 	host := f.strs["host"]
 	if host == "" {
 		host = "127.0.0.1"
@@ -1551,7 +1569,91 @@ func cmdServe(args []string, stdout io.Writer) error {
 		}
 	}
 	fmt.Fprintf(stdout, "dashboard: %s  (store root: %s) — Ctrl-C to stop\n", link, root)
-	return http.Serve(ln, dashboard.NewHandler(root))
+	return http.Serve(ln, dashboard.NewHandler(root, ops))
+}
+
+// serveOps builds the dashboard's mutation doors. storeFlag rides into every
+// closure so a --store override applies to dashboard-triggered verbs too.
+func serveOps(storeFlag string) *dashboard.Ops {
+	withStore := func(args []string) []string {
+		if storeFlag != "" {
+			return append(args, "--store", storeFlag)
+		}
+		return args
+	}
+	return &dashboard.Ops{
+		Scan: func(path string) (*scan.Result, error) {
+			cfg, err := project.Load(path)
+			if err != nil {
+				return nil, err
+			}
+			opts := scan.Options{}
+			if cfg.Scan != nil {
+				opts = *cfg.Scan
+			}
+			return scan.Scan(path, opts)
+		},
+		OnboardConfirm: func(path, name string, modules []string, out io.Writer) error {
+			if name != "" {
+				cfg, err := project.Load(path)
+				if err != nil {
+					return err
+				}
+				if cfg.Name != name {
+					cfg.Name = name
+					if err := project.Save(path, cfg); err != nil {
+						return err
+					}
+				}
+			}
+			initArgs := []string{"--path", path}
+			if len(modules) > 0 {
+				initArgs = append(initArgs, "--scan", "--yes", "--modules", strings.Join(modules, ","))
+			}
+			if err := cmdInit(withStore(initArgs), out); err != nil {
+				return err
+			}
+			return cmdAdd(withStore([]string{"--path", path}), out, strings.NewReader(""))
+		},
+		Gather: func(path string, out io.Writer) error {
+			return cmdAdd(withStore([]string{"--path", path}), out, strings.NewReader(""))
+		},
+		RemoteSync: func(path, verb string, out io.Writer) error {
+			return cmdRemote(append([]string{verb}, withStore([]string{"--path", path})...), out)
+		},
+	}
+}
+
+// cmdLog prints the append-only mutation audit (<store-root>/audit.ndjson) —
+// read-only, creates nothing.
+func cmdLog(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	root, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	lines, err := audit.List(root)
+	if err != nil {
+		return err
+	}
+	if f.bools["json"] {
+		if lines == nil {
+			lines = []audit.Line{}
+		}
+		return emit(stdout, lines)
+	}
+	if len(lines) == 0 {
+		fmt.Fprintln(stdout, "no changes recorded yet — mutations (dashboard or `config` set) append to "+audit.Path(root))
+		return nil
+	}
+	for _, l := range lines {
+		hashes := ""
+		if l.BeforeHash != "" || l.AfterHash != "" {
+			hashes = "  " + shortSHA(l.BeforeHash) + "→" + shortSHA(l.AfterHash)
+		}
+		fmt.Fprintf(stdout, "%s  %-9s %-24s %s%s\n", l.TS, l.Actor, l.Action, l.Target, hashes)
+	}
+	return nil
 }
 
 func cmdRemote(args []string, stdout io.Writer) error {
@@ -2015,8 +2117,12 @@ commands:
                               csv: --out DIR → nodes.csv + edges.csv (stdout
                               sections without); obsidian + all REQUIRE --out DIR
                               (all → graph.{json,dot,graphml} + csvs + obsidian/)
-  serve|dashboard             local dashboard over the whole store
-                              [--port 4747] [--host 127.0.0.1]
+  serve|dashboard             local dashboard over the whole store: repos,
+                              onboarding, graph viewer, query, settings,
+                              change log  [--port 4747] [--host 127.0.0.1]
+                              (mutations stay loopback-only even with --host)
+  log                         print the mutation audit (<store>/audit.ndjson):
+                              ts, actor, action, target, hashes  [--json]
   languages add <name|url>    add a language: known name (kotlin, ruby, lua…)
                               or any tree-sitter grammar dir/github url —
                               compiles a drop-in pack, no toolchain to install
