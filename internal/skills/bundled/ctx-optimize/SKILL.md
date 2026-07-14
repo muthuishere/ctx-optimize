@@ -1,6 +1,10 @@
 ---
 name: ctx-optimize
 description: >
+  If the repo has a `.ctxoptimize/config.json` — at the root or any parent of
+  your cwd (the CLI walks up to find it) — INVOKE this skill before any
+  Grep/rg/Read. That file is the marker: a pre-built knowledge graph of this
+  codebase already exists, so use it.
   REQUIRED before Grep/rg/Read when exploring code in any repo that contains
   a `.ctxoptimize/` directory — that marker means a pre-built knowledge graph
   of this codebase already exists, and one `ctx-optimize` call answers what a
