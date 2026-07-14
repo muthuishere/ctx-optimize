@@ -32,12 +32,13 @@ const ProducerName = "code"
 const maxFileBytes = 2 << 20
 
 type fileResult struct {
-	nodes []schema.Node
-	edges []schema.Edge
-	calls []callSite
-	decls []declRef
-	err   error
-	path  string
+	nodes  []schema.Node
+	edges  []schema.Edge
+	calls  []callSite
+	decls  []declRef
+	routes []routeSite
+	err    error
+	path   string
 }
 
 type callSite struct {
@@ -257,6 +258,7 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 	batch := &schema.Batch{Producer: ProducerName}
 	var calls []callSite
 	var decls []declRef
+	var routes []routeSite
 	for res := range results {
 		if res.err != nil {
 			// One unparseable file must not kill the gather — skip loudly.
@@ -267,6 +269,7 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		batch.Edges = append(batch.Edges, res.edges...)
 		calls = append(calls, res.calls...)
 		decls = append(decls, res.decls...)
+		routes = append(routes, res.routes...)
 	}
 
 	// Call resolution: same-FILE unique match wins (self.audit resolves in
@@ -307,6 +310,40 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		batch.Edges = append(batch.Edges, schema.Edge{
 			Source: c.callerID, Target: targets[0].id,
 			Relation: "calls", Confidence: "INFERRED", Weight: 1,
+		})
+	}
+
+	// Framework routes (routes.go): route nodes + handles edges. An express
+	// identifier handler resolves exactly like a call site — same pick, same
+	// ambiguity honesty. Duplicate route IDs (same METHOD+path re-registered
+	// in one file) keep the first declaration, deterministically: IDs embed
+	// the file path, and each file's routes arrive in source order.
+	routeSeen := map[string]bool{}
+	for _, r := range routes {
+		if !routeSeen[r.node.ID] {
+			routeSeen[r.node.ID] = true
+			batch.Nodes = append(batch.Nodes, r.node)
+		}
+		target := r.handlerID
+		if target == "" {
+			if r.handlerName == "" {
+				continue // inline anonymous handler — no decl node to point at
+			}
+			t := pick(callSite{callee: r.handlerName, file: r.file})
+			if t == nil {
+				continue
+			}
+			target = t.id
+		}
+		key := r.node.ID + "\x00" + target + "\x00handles"
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		batch.Edges = append(batch.Edges, schema.Edge{
+			Source: r.node.ID, Target: target, Relation: "handles",
+			Confidence: "INFERRED", Weight: 1,
+			Metadata: map[string]string{"synthesized_by": r.channel},
 		})
 	}
 	sortBatch(batch)
@@ -433,9 +470,16 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		return "", false
 	}
 
+	// Route recognition (routes.go) rides this same visit — no second walk.
+	isPy := lang.Name == "python"
+	isJSFam := lang.Name == "javascript" || lang.Name == "typescript" || lang.Name == "tsx"
+	isTS := lang.Name == "typescript" || lang.Name == "tsx"
+
 	type openDecl struct {
-		id    string
-		depth uint32
+		id       string
+		depth    uint32
+		ctrlBase string // NestJS @Controller base path (valid when isCtrl)
+		isCtrl   bool
 	}
 	var stack []openDecl
 	callerAt := func() string {
@@ -498,11 +542,34 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 				Confidence: "EXTRACTED", Weight: 1,
 			})
 			res.decls = append(res.decls, declRef{id: id, label: name, file: rel})
-			stack = append(stack, openDecl{id: id, depth: n.Depth})
+
+			var ctrlBase string
+			var isCtrl bool
+			if isPy && t == "function_definition" {
+				res.routes = append(res.routes, pyDecoratorRoutes(raw, i, typeOf, text, rel, lang.Name, id)...)
+			} else if isTS {
+				switch t {
+				case "class_declaration", "abstract_class_declaration":
+					ctrlBase, isCtrl = nestControllerBase(raw, i, typeOf, text)
+				case "method_definition":
+					for k := len(stack) - 1; k >= 0; k-- {
+						if stack[k].isCtrl {
+							res.routes = append(res.routes, nestMethodRoutes(raw, i, typeOf, text, rel, lang.Name, stack[k].ctrlBase, id)...)
+							break
+						}
+					}
+				}
+			}
+			stack = append(stack, openDecl{id: id, depth: n.Depth, ctrlBase: ctrlBase, isCtrl: isCtrl})
 			continue
 		}
 
 		if lang.Calls[t] {
+			if isJSFam {
+				if site, ok := expressRoute(raw, i, typeOf, text, rel, lang.Name); ok {
+					res.routes = append(res.routes, site)
+				}
+			}
 			if callee, ok := calleeName(i); ok && callee != "" {
 				res.calls = append(res.calls, callSite{callerID: callerAt(), callee: callee, file: rel})
 			}
