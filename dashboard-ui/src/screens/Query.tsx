@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import { kindColorMap, safeDecode } from '../App'
+import { kindColorMap } from '../App'
+import { safeDecode } from '../sanitize'
 import type { Module, QueryResult } from '../types'
 
 // Query — the original UI's query affordance as its own screen: search box

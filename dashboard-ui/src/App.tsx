@@ -85,17 +85,6 @@ export const SPECIAL_COLORS: Record<string, string> = {
 }
 export const SPECIAL_KINDS = Object.keys(SPECIAL_COLORS)
 
-// safeDecode never throws: decodeURIComponent dies on a malformed %-escape (a
-// stray '%' in a route path or symbol id), and screens call it in render — an
-// unguarded throw there blanks the whole page. On failure keep the raw string.
-export function safeDecode(s: string): string {
-  try {
-    return decodeURIComponent(s)
-  } catch {
-    return s
-  }
-}
-
 const PALETTE = ['#4ade80', '#f472b6', '#22d3ee', '#facc15', '#fb7185',
   '#34d399', '#93c5fd', '#fda4af', '#5eead4', '#e879f9']
 

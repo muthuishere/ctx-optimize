@@ -45,6 +45,13 @@ tasks:
       - mkdir -p ../internal/dashboard/ui
       - cp -R dist/. ../internal/dashboard/ui/
 
+  dashboard-test:
+    desc: Vitest unit tests for the dashboard UI (pure logic — sanitize/decode). Not in `task ci` (that gate stays node-free).
+    dir: dashboard-ui
+    cmds:
+      - npm ci
+      - npm test
+
   snapshot:
     desc: goreleaser snapshot build (no publish)
     cmds:
