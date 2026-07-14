@@ -1,8 +1,33 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { kindColorMap, KNOWN_PRODUCERS, producerColorMap, SPECIAL_KINDS } from '../App'
-import ForceGraph from '../ForceGraph'
-import type { Edge, GraphResponse, Module, Node } from '../types'
+import ForceGraph, { MAX_SIM_NODES } from '../ForceGraph'
+import type { Edge, GraphResponse, Module, Node, StoreInfo, StoreLinks } from '../types'
+
+// sourceLinks builds the up-to-three "open" targets for a selected node. It
+// returns null for a node with no source, or whose source is a synthetic URI
+// (pg://, kafka://, k8s://, dep:, http://…) — those are not files on disk and
+// must never become a broken link. A real repo-relative path yields a VS Code
+// deep link and a file:// fallback (always), plus a GitHub blob URL when the
+// store carries a github_base.
+function sourceLinks(node: Node, links: StoreLinks | undefined) {
+  const src = node.source
+  if (!src || src.includes('://') || src.startsWith('dep:')) return null
+  const m = (node.location || '').match(/L(\d+)/)
+  const line = m ? m[1] : ''
+  const out: { label: string; href: string; title: string; blank: boolean }[] = []
+  const abs = links?.repo_abs?.replace(/\/+$/, '')
+  if (abs) {
+    out.push({ label: 'VS Code', href: `vscode://file${abs}/${src}${line ? ':' + line : ''}`, title: 'open in VS Code at the line', blank: false })
+    out.push({ label: 'File', href: `file://${abs}/${src}`, title: 'open the local file', blank: false })
+  }
+  const gh = links?.github_base
+  if (gh) {
+    const frag = node.location ? '#' + node.location : line ? '#L' + line : ''
+    out.push({ label: 'GitHub', href: gh.replace(/\/+$/, '') + '/' + src + frag, title: 'view on GitHub', blank: true })
+  }
+  return out.length > 0 ? out : null
+}
 
 // Viewer — force-directed NEIGHBORHOOD graph. The server caps every payload
 // (top-N by degree; special kinds + a per-producer sample forced in) and
@@ -29,6 +54,9 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
   const [hiddenKinds, setHiddenKinds] = useState<Set<string>>(new Set())
   const [hiddenProducers, setHiddenProducers] = useState<Set<string>>(new Set())
   const [err, setErr] = useState('')
+  // Per-module open-source link bases (repo dir + optional github blob base),
+  // fetched once from /api/stores and keyed by store key.
+  const [storeLinks, setStoreLinks] = useState<Map<string, StoreLinks>>(new Map())
 
   const merge = useCallback((g: GraphResponse, reset: boolean) => {
     setNodes((prev) => {
@@ -66,6 +94,11 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
         load(key, initialCenter)
       }
     }).catch((e) => setErr(String(e.message || e)))
+    // Link bases ride along on /api/stores — best-effort, never fatal to the
+    // graph if it fails (nodes just show no "open" row).
+    api<StoreInfo[]>('/api/stores')
+      .then((s) => setStoreLinks(new Map(s.filter((x) => x.links).map((x) => [x.key, x.links!]))))
+      .catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -83,12 +116,31 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
   // Intersection filter: a node survives only if its kind AND its producer are
   // both enabled. Edges follow the surviving node set.
   const shown = useMemo(() => {
-    const list = Array.from(nodes.values()).filter(
+    let list = Array.from(nodes.values()).filter(
       (n) => !hiddenKinds.has(n.kind) && !hiddenProducers.has(producerOf(n)))
-    const keep = new Set(list.map((n) => n.id))
-    const es = Array.from(edges.values()).filter((e) => keep.has(e.source) && keep.has(e.target))
-    return { nodes: list, edges: es }
-  }, [nodes, edges, hiddenKinds, hiddenProducers])
+    let keep = new Set(list.map((n) => n.id))
+    let es = Array.from(edges.values()).filter((e) => keep.has(e.source) && keep.has(e.target))
+    // Client-side cap (kept in sync with ForceGraph's own): above MAX_SIM_NODES
+    // keep the highest-degree backbone (plus the selected node) so the canvas
+    // never has to simulate thousands of nodes and lock the tab.
+    let total = 0
+    if (list.length > MAX_SIM_NODES) {
+      total = list.length
+      const deg = new Map<string, number>()
+      for (const e of es) {
+        deg.set(e.source, (deg.get(e.source) || 0) + 1)
+        deg.set(e.target, (deg.get(e.target) || 0) + 1)
+      }
+      list = [...list].sort((a, b) => (deg.get(b.id) || 0) - (deg.get(a.id) || 0)).slice(0, MAX_SIM_NODES)
+      if (selected && !list.some((n) => n.id === selected)) {
+        const s = nodes.get(selected)
+        if (s) list[list.length - 1] = s
+      }
+      keep = new Set(list.map((n) => n.id))
+      es = es.filter((e) => keep.has(e.source) && keep.has(e.target))
+    }
+    return { nodes: list, edges: es, cappedFrom: total }
+  }, [nodes, edges, hiddenKinds, hiddenProducers, selected])
 
   // Legends cover every kind / producer currently loaded (hidden or not) so a
   // filtered-out group stays clickable to bring back. Counts are over the whole
@@ -138,6 +190,7 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
   const filtered = hiddenKinds.size > 0 || hiddenProducers.size > 0
 
   const sel = selected ? nodes.get(selected) : undefined
+  const openLinks = sel ? sourceLinks(sel, storeLinks.get(mod)) : null
   const selEdges = useMemo(() => {
     if (!selected) return []
     const out: { dir: string; rel: string; id: string }[] = []
@@ -167,6 +220,11 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
               server-budgeted — click a node to expand its neighborhood
             </div>
           )}
+          {shown.cappedFrom > 0 && (
+            <div className="k" style={{ fontSize: '.78rem' }}>
+              showing {shown.nodes.length} of {shown.cappedFrom} (highest-degree — client cap keeps the tab responsive)
+            </div>
+          )}
           {err && <div className="err">{err}</div>}
         </div>
         <div className="detail">
@@ -179,6 +237,15 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
                 {sel.file_type && <span className="k"> {sel.file_type}</span>}
               </div>
               <div className="drow"><span className="k">source </span><span className="mono">{sel.source} {sel.location || ''}</span></div>
+              {openLinks && (
+                <div className="drow open-row">
+                  <span className="k">open </span>
+                  {openLinks.map((l) => (
+                    <a key={l.label} className="open-btn" href={l.href} title={l.title}
+                      {...(l.blank ? { target: '_blank', rel: 'noreferrer' } : {})}>{l.label}</a>
+                  ))}
+                </div>
+              )}
               <div className="drow">
                 <span className="k">producer </span>
                 <span className="chip" style={{ borderColor: pcolors.get(producerOf(sel)), color: pcolors.get(producerOf(sel)) }}>{producerOf(sel)}</span>

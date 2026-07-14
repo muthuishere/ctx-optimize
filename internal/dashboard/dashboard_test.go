@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -531,6 +532,115 @@ func TestStoresEndpoint(t *testing.T) {
 	if stores[0].Producers["test"] != 2 {
 		t.Fatalf("producers: %+v", stores[0].Producers)
 	}
+	// No source.json ⇒ no repo dir known ⇒ no open-source links, no error.
+	if stores[0].Links != nil {
+		t.Fatalf("links without a source path: %+v", stores[0].Links)
+	}
+}
+
+// TestGithubBaseNormalization pins the origin→blob-base normalization the
+// Viewer's GitHub link rides on: both remote forms git prints (scp-style and
+// https) collapse to the same blob base; a non-GitHub origin and a missing
+// branch yield no base.
+func TestGithubBaseNormalization(t *testing.T) {
+	const want = "https://github.com/owner/repo/blob/main"
+	cases := []struct {
+		origin, branch, want string
+	}{
+		{"git@github.com:owner/repo.git", "main", want},
+		{"https://github.com/owner/repo.git", "main", want},
+		{"https://github.com/owner/repo", "main", want},
+		{"ssh://git@github.com/owner/repo.git", "main", want},
+		{"git@github.com:owner/repo.git", "feature/x", "https://github.com/owner/repo/blob/feature/x"},
+		{"git@gitlab.com:owner/repo.git", "main", ""},           // non-github host
+		{"https://example.com/owner/repo.git", "main", ""},      // non-github host
+		{"git@github.com:owner/repo.git", "", ""},               // detached HEAD
+		{"https://github.com/owner/repo/extra.git", "main", ""}, // not owner/repo
+		{"", "main", ""},
+	}
+	for _, c := range cases {
+		if got := githubBase(c.origin, c.branch); got != c.want {
+			t.Errorf("githubBase(%q, %q) = %q, want %q", c.origin, c.branch, got, c.want)
+		}
+	}
+}
+
+// TestStoresOpenSourceLinks drives /api/stores end-to-end against a store whose
+// source.json points at a REAL git repo: RepoAbs is always the repo dir, and
+// GithubBase tracks the live origin — a GitHub origin (either form) yields the
+// blob base; a non-GitHub origin yields none; neither is ever an error.
+func TestStoresOpenSourceLinks(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	root := t.TempDir()
+	s, err := store.Open(root, "linked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Merge(&schema.Batch{Producer: "code", Nodes: []schema.Node{
+		{ID: "a.go::F", Label: "F", Kind: "function", FileType: "go", Source: "a.go"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	// A real repo dir with a git history, so gitinfo.Remote/branch resolve.
+	repo := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git("-c", "init.defaultBranch=main", "init")
+	git("remote", "add", "origin", "git@github.com:owner/repo.git")
+	git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init")
+	// Point the store at that repo (freshness.Source shape: [{path}]).
+	if err := os.WriteFile(filepath.Join(root, "linked", "source.json"),
+		[]byte(`[{"path":`+strconvQuote(repo)+`}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	linksFor := func() *StoreLinks {
+		var stores []StoreInfo
+		json.Unmarshal(get(t, srvURL(t, root)+"/api/stores", 200), &stores)
+		for _, st := range stores {
+			if st.Key == "linked" {
+				return st.Links
+			}
+		}
+		t.Fatal("store 'linked' not listed")
+		return nil
+	}
+
+	// scp-style github origin → repo dir + blob base.
+	l := linksFor()
+	if l == nil || l.RepoAbs != repo {
+		t.Fatalf("repo_abs: %+v (want %s)", l, repo)
+	}
+	if l.GithubBase != "https://github.com/owner/repo/blob/main" {
+		t.Fatalf("github_base (scp origin): %q", l.GithubBase)
+	}
+
+	// https origin → same blob base.
+	git("remote", "set-url", "origin", "https://github.com/owner/repo.git")
+	if l := linksFor(); l.GithubBase != "https://github.com/owner/repo/blob/main" {
+		t.Fatalf("github_base (https origin): %q", l.GithubBase)
+	}
+
+	// non-github origin → repo dir but NO github base, still no error.
+	git("remote", "set-url", "origin", "git@gitlab.com:owner/repo.git")
+	if l := linksFor(); l.RepoAbs != repo || l.GithubBase != "" {
+		t.Fatalf("non-github links: %+v", l)
+	}
+}
+
+// srvURL spins a throwaway handler over root for a single assertion block.
+func srvURL(t *testing.T, root string) string {
+	t.Helper()
+	srv := httptest.NewServer(NewHandler(root, nil))
+	t.Cleanup(srv.Close)
+	return srv.URL
 }
 
 func TestSetupEndpoint(t *testing.T) {

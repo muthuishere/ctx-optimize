@@ -76,6 +76,51 @@ type StoreInfo struct {
 	Producers  map[string]int     `json:"producers,omitempty"`
 	Reports    []freshness.Report `json:"freshness,omitempty"`
 	Usage      *usage.Summary     `json:"usage,omitempty"`
+	Links      *StoreLinks        `json:"links,omitempty"`
+}
+
+// StoreLinks carries the two bases the Viewer needs to build "open source"
+// links for a node. RepoAbs is the absolute repo dir (the frontend joins
+// <repo>/<source>:<line> into vscode:// and file:// URLs). GithubBase is the
+// blob prefix "https://github.com/<owner>/<repo>/blob/<branch>" — present only
+// when origin is actually a GitHub remote; the frontend appends
+// "/<source>#L<start>-L<end>". Best-effort: no git / no origin / non-GitHub
+// origin ⇒ GithubBase stays empty, never an error.
+type StoreLinks struct {
+	RepoAbs    string `json:"repo_abs,omitempty"`
+	GithubBase string `json:"github_base,omitempty"`
+}
+
+// githubBase normalizes an origin remote + branch into a GitHub blob-URL base.
+// Handles the two forms `git remote get-url` prints — scp-style
+// (git@github.com:owner/repo.git) and https (https://github.com/owner/repo.git)
+// — plus ssh://. Returns "" for a non-GitHub host, a missing branch, or a path
+// that is not owner/repo, so only a real GitHub remote yields a link.
+func githubBase(origin, branch string) string {
+	origin = strings.TrimSpace(origin)
+	if origin == "" || branch == "" {
+		return ""
+	}
+	origin = strings.TrimSuffix(origin, ".git")
+	var path string
+	switch {
+	case strings.HasPrefix(origin, "git@github.com:"):
+		path = strings.TrimPrefix(origin, "git@github.com:")
+	case strings.HasPrefix(origin, "ssh://git@github.com/"):
+		path = strings.TrimPrefix(origin, "ssh://git@github.com/")
+	case strings.HasPrefix(origin, "https://github.com/"):
+		path = strings.TrimPrefix(origin, "https://github.com/")
+	case strings.HasPrefix(origin, "http://github.com/"):
+		path = strings.TrimPrefix(origin, "http://github.com/")
+	default:
+		return "" // not a github.com remote — no link
+	}
+	path = strings.Trim(path, "/")
+	// Must be exactly owner/repo (a single slash) — reject empty or deeper.
+	if path == "" || strings.Count(path, "/") != 1 || strings.HasPrefix(path, "/") {
+		return ""
+	}
+	return "https://github.com/" + path + "/blob/" + branch
 }
 
 func (s *server) handleStores(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +156,14 @@ func (s *server) handleStores(w http.ResponseWriter, r *http.Request) {
 			info.Reports = reports
 			info.SourcePath = srcs[0].Path
 			info.AgeSeconds = reports[0].AgeSeconds
+			// Open-source link bases: repo dir is always usable; a GitHub blob
+			// base only when origin is a real GitHub remote. Best-effort — no
+			// git / no origin ⇒ no github link, never an error.
+			links := &StoreLinks{RepoAbs: srcs[0].Path}
+			if origin, branch, ok := gitinfo.Remote(srcs[0].Path); ok {
+				links.GithubBase = githubBase(origin, branch)
+			}
+			info.Links = links
 		}
 		out = append(out, info)
 	}
