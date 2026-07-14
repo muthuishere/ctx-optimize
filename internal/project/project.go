@@ -259,31 +259,100 @@ func Scaffold(repo, name string) error {
 const pointerBegin = "<!-- ctx-optimize:begin -->"
 const pointerEnd = "<!-- ctx-optimize:end -->"
 
+// gate is the first thing inside every pointer block: the agent must confirm
+// the tool is on PATH before trusting any of the instructions. Not installed
+// ⇒ the whole block is inert (read the code the normal way). This makes the
+// committed CLAUDE.md/AGENTS.md safe on a teammate's machine that never ran
+// `ctx-optimize install` — no failed commands, no confusion.
+const pointerGate = "  <precondition>Run `command -v ctx-optimize` first. If it is NOT installed, IGNORE this entire\n" +
+	"  block and answer by reading the code normally — the store is an optimization, not a requirement\n" +
+	"  (install later with `npm install -g @muthuishere/ctx-optimize`, or download the binary). Everything\n" +
+	"  below applies ONLY when the command exists.</precondition>\n"
+
 func pointerBlock(name string, modules int) string {
 	if modules > 0 {
 		return pointerBegin + "\n" +
-			"This is a MULTI-MODULE repo with a pre-built ctx-optimize knowledge store (`.ctxoptimize/` here,\n" +
-			fmt.Sprintf("data at `~/ctxoptimize/%s/` — one graph per module + a navigator, %d modules declared in config.json).\n", name, modules) +
-			"For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
-			"use it INSTEAD of grep-and-read chains, not in addition to them:\n" +
-			"`ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>`.\n" +
-			"Scope follows your cwd: inside a module dir answers come from that module (zero hits escalate repo-wide);\n" +
-			"at the root the navigator federates across the best-matching modules (`--modules all|a,b` to widen).\n" +
-			"Module map + hubs: `~/ctxoptimize/" + name + "/navigator.md`; unified wiki starts at `~/ctxoptimize/" + name + "/wiki/index.md`.\n" +
-			"Card/query output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source.\n" +
-			"Fresh clone? `ctx-optimize init && ctx-optimize add .` rebuilds every module store in seconds.\n" +
+			"<ctx-optimize>\n" +
+			pointerGate +
+			"  <store>MULTI-MODULE repo, pre-built knowledge store at `~/ctxoptimize/" + name + "/` — " +
+			fmt.Sprintf("one graph per module + a navigator, %d modules declared in `.ctxoptimize/config.json`.</store>\n", modules) +
+			"  <use>For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I\n" +
+			"  change W — use it INSTEAD of grep-and-read chains, not in addition:\n" +
+			"  `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>`.\n" +
+			"  Scope follows your cwd: inside a module dir answers come from that module (zero hits escalate repo-wide);\n" +
+			"  at the root the navigator federates across the best-matching modules (`--modules all|a,b` to widen).\n" +
+			"  Module map + hubs: `~/ctxoptimize/" + name + "/navigator.md`; unified wiki at `~/ctxoptimize/" + name + "/wiki/index.md`.\n" +
+			"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source.</use>\n" +
+			"  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/" + name + "/`? If `.ctxoptimize/config.json` has a\n" +
+			"  `remote`, run `ctx-optimize remote pull`; otherwise `ctx-optimize init && ctx-optimize add .` rebuilds every module store in seconds.</no-local-store>\n" +
+			"</ctx-optimize>\n" +
 			pointerEnd + "\n"
 	}
 	return pointerBegin + "\n" +
-		"This repo has a pre-built ctx-optimize knowledge store (`.ctxoptimize/` here, data at `~/ctxoptimize/" + name + "/`).\n" +
-		"For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
-		"use it INSTEAD of grep-and-read chains, not in addition to them:\n" +
-		"`ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (signature+doc+callers+callees) ·\n" +
-		"`ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>` · wiki at `~/ctxoptimize/" + name + "/wiki/`.\n" +
-		"Card/query output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source;\n" +
-		"open a file only when the answer needs a body the store didn't show. Exhaustive text sweeps\n" +
-		"(every literal occurrence of a string) are still grep's job. Fresh clone? `ctx-optimize init && ctx-optimize add .` rebuilds in seconds.\n" +
+		"<ctx-optimize>\n" +
+		pointerGate +
+		"  <store>Pre-built knowledge store at `~/ctxoptimize/" + name + "/` (config in `.ctxoptimize/` here).</store>\n" +
+		"  <use>For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
+		"  use it INSTEAD of grep-and-read chains, not in addition:\n" +
+		"  `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (signature+doc+callers+callees) ·\n" +
+		"  `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>` · wiki at `~/ctxoptimize/" + name + "/wiki/`.\n" +
+		"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source; open a file only\n" +
+		"  when the answer needs a body the store didn't show. Exhaustive text sweeps (every literal occurrence of a\n" +
+		"  string) are still grep's job.</use>\n" +
+		"  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/" + name + "/`? If `.ctxoptimize/config.json` has a\n" +
+		"  `remote`, run `ctx-optimize remote pull`; otherwise `ctx-optimize init && ctx-optimize add .` rebuilds in seconds.</no-local-store>\n" +
+		"</ctx-optimize>\n" +
 		pointerEnd + "\n"
+}
+
+// RemoveAgentPointer strips ONLY the marker-fenced ctx-optimize block from the
+// repo's CLAUDE.md / AGENTS.md — the inverse of EnsureAgentPointer. It is
+// deliberately conservative:
+//   - content outside the markers is never touched;
+//   - the file is never deleted, even if the block was all it held (the user
+//     may track it) — it is left with its other content, or empty;
+//   - if the markers are MALFORMED (end before begin, or a lone begin/end from
+//     hand-editing or corruption), the file is left EXACTLY as-is and reported
+//     as a warning — guessing the boundaries could eat the user's own text.
+//
+// Returns the files cleaned and, separately, warnings for files skipped as
+// corrupt so the caller can tell the user to fix those by hand.
+func RemoveAgentPointer(repo string) (cleaned []string, warnings []string, err error) {
+	for _, fn := range []string{"CLAUDE.md", "AGENTS.md"} {
+		p := filepath.Join(repo, fn)
+		data, rerr := os.ReadFile(p)
+		if os.IsNotExist(rerr) {
+			continue
+		}
+		if rerr != nil {
+			return cleaned, warnings, rerr
+		}
+		s := string(data)
+		i := strings.Index(s, pointerBegin)
+		j := strings.Index(s, pointerEnd)
+		if i < 0 && j < 0 {
+			continue // no block here — nothing to do
+		}
+		if i < 0 || j < 0 || j < i {
+			warnings = append(warnings, fmt.Sprintf("%s: ctx-optimize markers look damaged — left untouched; remove the block between %s and %s by hand", fn, pointerBegin, pointerEnd))
+			continue
+		}
+		out := strings.TrimRight(s[:i], "\n") + s[j+len(pointerEnd):]
+		out = strings.TrimLeft(out, "\n")
+		if strings.TrimSpace(out) != "" {
+			out = strings.TrimRight(out, "\n") + "\n"
+		} else {
+			out = "" // block was the only content — leave the file empty, don't delete it
+		}
+		if out == s {
+			continue
+		}
+		if werr := os.WriteFile(p, []byte(out), 0o644); werr != nil {
+			return cleaned, warnings, werr
+		}
+		cleaned = append(cleaned, fn)
+	}
+	return cleaned, warnings, nil
 }
 
 // PointerTargets maps the global `instructions` setting to the files init

@@ -106,6 +106,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdHookContext(rest, stdout)
 	case "uninstall":
 		err = cmdUninstall(rest, stdout)
+	case "remove", "purge":
+		err = cmdRemove(rest, stdout)
 	case "help", "-h", "--help":
 		usage(stdout)
 	default:
@@ -2095,6 +2097,97 @@ func cmdUninstall(args []string, stdout io.Writer) error {
 	return nil
 }
 
+// cmdRemove tears down ctx-optimize's footprint for a repo — conservatively.
+// Default: delete the store DATA (ours, under ~/ctxoptimize/, rebuildable with
+// `add .`) and strip the marker-fenced pointer block from CLAUDE.md/AGENTS.md
+// (never deleting the file, never touching corrupted markers). It does NOT
+// delete the committed `.ctxoptimize/` (that's version-controlled — git owns
+// it; opt in with --config) and does NOT remove the global skills (--skills).
+// A dry-run by default; --yes actually removes.
+func cmdRemove(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	sc, err := resolveScope(f)
+	if err != nil {
+		return err
+	}
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	storeDir := filepath.Join(storeRoot, filepath.FromSlash(sc.rootKey))
+	cfgDir := filepath.Join(sc.rootDir, project.Dir)
+	alsoConfig := f.bools["config"] || f.bools["all"]
+	alsoSkills := f.bools["skills"] || f.bools["all"]
+
+	// Plan — show exactly what will go before touching anything.
+	fmt.Fprintf(stdout, "ctx-optimize remove — for %s\n", sc.rootDir)
+	storeExists := false
+	if _, e := os.Stat(storeDir); e == nil {
+		storeExists = true
+		fmt.Fprintf(stdout, "  • store data      %s\n", storeDir)
+	}
+	fmt.Fprintf(stdout, "  • pointer block   CLAUDE.md / AGENTS.md (only the ctx-optimize block)\n")
+	if alsoConfig {
+		fmt.Fprintf(stdout, "  • repo config     %s/  (committed — you'll want to `git rm` it too)\n", project.Dir)
+	} else {
+		fmt.Fprintf(stdout, "  · kept: %s/ (committed config — remove with --config, or `git rm` it)\n", project.Dir)
+	}
+	if alsoSkills {
+		fmt.Fprintf(stdout, "  • global skills   agent CLIs (skill + hooks)\n")
+	} else {
+		fmt.Fprintf(stdout, "  · kept: global skills (remove with --skills or `uninstall --skills`)\n")
+	}
+	if !f.bools["yes"] {
+		fmt.Fprintln(stdout, "\nnothing removed — re-run with --yes to proceed (this is a dry run)")
+		return nil
+	}
+
+	// Store data: only ever a real store dir under the store root, never the
+	// root itself — a bad key must not nuke every store.
+	if storeExists {
+		if sc.rootKey == "" || filepath.Clean(storeDir) == filepath.Clean(storeRoot) {
+			return fmt.Errorf("refusing to remove: resolved store dir is the whole store root")
+		}
+		if err := os.RemoveAll(storeDir); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "removed store data: %s\n", storeDir)
+	}
+	cleaned, warnings, err := project.RemoveAgentPointer(sc.rootDir)
+	if err != nil {
+		return err
+	}
+	for _, fn := range cleaned {
+		fmt.Fprintf(stdout, "removed pointer block from %s\n", fn)
+	}
+	for _, wm := range warnings {
+		fmt.Fprintf(stdout, "warning: %s\n", wm)
+	}
+	if alsoConfig {
+		if _, e := os.Stat(cfgDir); e == nil {
+			if err := os.RemoveAll(cfgDir); err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "removed %s/ — commit the deletion\n", project.Dir)
+		}
+	}
+	if alsoSkills {
+		removed, err := skills.Uninstall()
+		if err != nil {
+			return err
+		}
+		hookFiles, err := skills.RemoveHooks()
+		if err != nil {
+			return err
+		}
+		for _, t := range append(removed, hookFiles...) {
+			fmt.Fprintf(stdout, "removed skill: %s\n", t)
+		}
+	}
+	fmt.Fprintln(stdout, "done.")
+	return nil
+}
+
 // ---- helpers ----
 
 func emit(w io.Writer, v any) error {
@@ -2202,6 +2295,10 @@ commands:
   install                     skills + hooks for every agent CLI detected; report per platform
     --claude|--codex|--copilot|--devin   select platforms · --skills / --hooks narrow scope
   uninstall --skills          remove the agent skill
+  remove [--yes]              tear down this repo's footprint: store data +
+    [--config] [--skills]     CLAUDE.md/AGENTS.md pointer block (dry run without
+                              --yes). --config also deletes committed .ctxoptimize/;
+                              --skills also removes global skills; --all does both
   version                     print version
 
 flags:  --path DIR   module the store is keyed by (default: cwd)
