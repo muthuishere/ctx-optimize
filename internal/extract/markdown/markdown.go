@@ -92,6 +92,9 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		}
 		if isConfig {
 			extractConfig(b, rel, string(data))
+			if ext == ".yaml" || ext == ".yml" {
+				extractYAMLRoutes(b, rel, string(data)) // routes in specs/config (yamlroutes.go)
+			}
 			return nil
 		}
 		extractFile(b, rel, string(data))

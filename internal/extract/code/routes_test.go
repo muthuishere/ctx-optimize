@@ -225,6 +225,7 @@ def fetch_data():
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir()) // hermetic machine route-pack dir
 			root := t.TempDir()
 			for name, content := range tc.files {
 				if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
@@ -286,6 +287,7 @@ func keysOf(m map[string]schema.Node) []string {
 // Route locations cover the whole declaration (decorator line through the
 // handler's end), so `card` cites a range an agent can open directly.
 func TestRouteLocationAndDedup(t *testing.T) {
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir()) // hermetic machine route-pack dir
 	root := t.TempDir()
 	src := `@app.get("/one")
 def one():
@@ -322,10 +324,13 @@ def one_again():
 
 // Zero recognizer hits on this repo's own internal/ tree — the measured
 // false-positive check from the spec (Go code, one embedded html asset).
+// Covers the core recognizers AND frontend routers; a hermetic store root
+// keeps a developer's machine route packs out of the measurement.
 func TestNoRoutesInThisRepo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("parses the whole internal/ tree")
 	}
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
 	batch, err := Extract(filepath.Join("..", "..", "..", "internal"))
 	if err != nil {
 		t.Fatal(err)
