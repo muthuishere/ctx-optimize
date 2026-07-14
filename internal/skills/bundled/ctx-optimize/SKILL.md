@@ -78,7 +78,8 @@ counted honestly.
 | Asking "how are A and B connected / trace A to B" | `ctx-optimize path "A" "B" --json` |
 | Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |
 | Asking to see it visually / manage the store, packs, or config in a UI / onboard repos interactively | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link; follow `./references/dashboard.md` |
-| Setting up / onboarding a repo or monorepo (NO store yet, "index this repo") | follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .` |
+| Repo ALREADY has a committed `.ctxoptimize/config.json` with a `remote` but no local store (a clone / teammate already set it up) | `ctx-optimize remote pull` then `status --json` — do NOT init/add (that rebuilds from source). `init` self-detects this and just prints the pull line. |
+| Setting up / onboarding a repo or monorepo (NO committed config yet, "index this repo") | follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .` |
 | Module's source and tests live in SEPARATE folders (.NET `src/`+`tests/`, Gradle/Nx multi-project, scattered dirs) | YOU read the `.sln`/`settings.gradle`/naming and group them — write a multi-path module `{"name":"Billing","paths":["src/Billing","tests/Billing.Tests"]}` into `config.json` `modules[]` so they gather into ONE store (test→source calls resolve); recipe in `./references/onboarding.md` |
 | Told code changed / store looks stale | `ctx-optimize add .` (incremental: prunes deleted, re-emits changed) |
 | Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script |

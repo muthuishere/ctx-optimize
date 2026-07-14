@@ -265,6 +265,30 @@ func cmdInit(args []string, stdout io.Writer) error {
 			return err
 		}
 	}
+	// Clone case: the repo already carries a COMMITTED config.json with a
+	// remote, and nothing is on disk yet. This isn't a fresh setup — a
+	// teammate already built and published the store. Re-running init here (and
+	// the add that usually follows) would rebuild the graph from source instead
+	// of fetching the prebuilt one. Route to `remote pull` and stop. `--force`
+	// overrides for a deliberate local rebuild.
+	if !f.bools["scan"] && !f.bools["force"] {
+		if _, statErr := os.Stat(filepath.Join(path, filepath.FromSlash(project.FileName))); statErr == nil {
+			cfg, err := project.Load(path)
+			if err != nil {
+				return err
+			}
+			if cfg.Remote != nil && (cfg.Remote.URL != "" || cfg.Remote.Type != "") {
+				if s, err := openStore(f); err == nil {
+					if nodes, err := s.Nodes(); err == nil && len(nodes) == 0 {
+						fmt.Fprintf(stdout, "already configured — this repo has a committed .ctxoptimize/config.json with a remote (%s)\n", cfg.Remote.URL)
+						fmt.Fprintf(stdout, "and no local store yet. Fetch the prebuilt store instead of rebuilding:\n\n    ctx-optimize remote pull\n\n")
+						fmt.Fprintln(stdout, "(re-index from source anyway with `ctx-optimize init --force` then `add .`)")
+						return nil
+					}
+				}
+			}
+		}
+	}
 	// Scaffold the committable .ctxoptimize/ (config.json + adapters/ with an
 	// inert template) before opening the store, so the store key can honor a
 	// pre-existing "name".

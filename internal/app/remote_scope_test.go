@@ -157,3 +157,52 @@ func TestRemoteTreePullPrefixAgainstSingleStoreRemoteFailsLoudly(t *testing.T) {
 		t.Fatalf("expected loud index-missing error, got: %s%s", out, errOut)
 	}
 }
+
+// TestInitOnCloneRoutesToPull: a fresh clone already carries the committed
+// .ctxoptimize/config.json (with a remote) but has no local store. `init` must
+// recognize that and point at `remote pull` — NOT scaffold-and-rebuild — so the
+// team's prebuilt graph is fetched, not re-derived. --force overrides.
+func TestInitOnCloneRoutesToPull(t *testing.T) {
+	// Producer: build + publish a single-project store.
+	repo := t.TempDir()
+	writeFiles(t, repo, map[string]string{"main.go": "package main\n\nfunc Boot() {}\n"})
+	remoteDir := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	runCLI(t, 0, "init", "--path", repo)
+	runCLI(t, 0, "add", "--path", repo)
+	runCLI(t, 0, "remote", "init", "file://"+remoteDir, "--path", repo)
+	runCLI(t, 0, "remote", "push", "--path", repo)
+
+	// Consumer clone: identical committed config + source, empty store root.
+	clone := t.TempDir()
+	cfgData, err := os.ReadFile(filepath.Join(repo, ".ctxoptimize", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFiles(t, clone, map[string]string{
+		"main.go":                  "package main\n\nfunc Boot() {}\n",
+		".ctxoptimize/config.json": string(cfgData),
+	})
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir()) // fresh, empty
+
+	out, _ := runCLI(t, 0, "init", "--path", clone)
+	if !strings.Contains(out, "remote pull") || !strings.Contains(out, "already configured") {
+		t.Fatalf("init on a clone must route to remote pull, got:\n%s", out)
+	}
+	if strings.Contains(out, "store ready") {
+		t.Fatalf("init on a clone must NOT claim a fresh scaffold:\n%s", out)
+	}
+
+	// The pull then populates the store from the prebuilt remote.
+	runCLI(t, 0, "remote", "pull", "--path", clone)
+	st, _ := runCLI(t, 0, "status", "--json", "--path", clone)
+	var status struct {
+		Nodes int `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(st), &status); err != nil {
+		t.Fatalf("status --json: %v\n%s", err, st)
+	}
+	if status.Nodes == 0 {
+		t.Fatalf("pull after the init hint should have populated the store:\n%s", st)
+	}
+}

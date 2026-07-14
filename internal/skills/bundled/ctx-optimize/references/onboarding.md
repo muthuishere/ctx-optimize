@@ -4,6 +4,25 @@ This is the SETUP side. Querying a store that already exists is the routing
 table; building one for the first time is here. `.ctxoptimize/` is the ONLY
 thing written into the user's repo — commit it so the whole team inherits it.
 
+## FIRST: is this repo already set up? (pull, don't rebuild)
+
+Before ANY init/scan/add, check whether the repo already carries a committed
+`.ctxoptimize/config.json` with a `remote`. If it does, a teammate already
+BUILT and PUBLISHED the store — your job is to FETCH it, not re-derive it:
+
+```
+ctx-optimize remote pull      # fills the local store from the team's prebuilt graph
+ctx-optimize status --json    # confirm nodes > 0
+```
+
+`ctx-optimize init` now detects this itself: on a clone with a remote-configured
+config and an empty local store, it prints the `remote pull` line and does
+NOTHING else — do not "fix" that by running `add`. A clone should PULL, never
+init+add (that would rebuild the graph from source and diverge from the team's).
+Only fall through to the build steps below when there is NO committed config
+(genuinely new repo) — or when the user explicitly wants a local re-index
+(`ctx-optimize init --force` then `add .`).
+
 ## Single project (one build root, one language stack)
 
 ```
