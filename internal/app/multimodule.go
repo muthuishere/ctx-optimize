@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
+	"github.com/muthuishere/ctx-optimize/internal/extract/githistory"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/navigator"
@@ -463,6 +464,17 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 	batches = append(batches, cb)
 	if len(cb.Nodes) > 0 {
 		fmt.Fprintf(out, "code: %d nodes, %d edges\n", len(cb.Nodes), len(cb.Edges))
+	}
+	// Co-change lane: edges only, best-effort (non-repo → empty batch).
+	// Always Replace, same reasoning as the code batch — an empty history
+	// must prune previously-stored pairs, not keep them silently.
+	gh, err := githistory.ExtractExcluding(dir, excludes)
+	if err != nil {
+		return err
+	}
+	batches = append(batches, gh)
+	if len(gh.Edges) > 0 {
+		fmt.Fprintf(out, "git-history: %d co-change edges\n", len(gh.Edges))
 	}
 	pc, err := project.Load(dir)
 	if err != nil {
