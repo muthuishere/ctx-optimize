@@ -48,9 +48,20 @@ type scope struct {
 	rootKey    string // root store key
 	storeKey   string // module (or single) store key; == rootKey at root
 	moduleName string // navigator label when kind == scopeModule
-	modulePath string // repo-relative module path when kind == scopeModule
+	modulePath string // federation namespace prefix: module rel-path (single) or "" (multi) when kind == scopeModule
+	mod        *scan.Module // the resolved module when kind == scopeModule (carries Dirs/KeySeg/NSPrefix)
 	cfg        *project.Config
 	modules    []scan.Module // expanded, concrete (root configs only)
+}
+
+// syncPrefix is the remote-layout prefix for a module scope: the store-key
+// segment under the root (mirrors the on-disk store dir). Single-path modules
+// keep their rel path; multi-path modules use the module name.
+func (sc *scope) syncPrefix() string {
+	if sc.mod != nil {
+		return sc.mod.KeySeg()
+	}
+	return sc.modulePath
 }
 
 // resolveScope walks up from --path (default cwd) to the nearest
@@ -133,20 +144,25 @@ func classifyScope(asked, cfgDir string, cfg *project.Config) (*scope, error) {
 	rel = filepath.ToSlash(rel)
 	if rel != "." && !strings.HasPrefix(rel, "..") {
 		// Longest-prefix match: nested modules resolve to the innermost.
+		// A multi-path module matches if the cwd is under ANY of its dirs.
 		var best *scan.Module
+		var bestLen int
 		for i := range mods {
-			p := mods[i].Path
-			if rel == p || strings.HasPrefix(rel, p+"/") {
-				if best == nil || len(p) > len(best.Path) {
-					best = &mods[i]
+			for _, p := range mods[i].Dirs() {
+				if rel == p || strings.HasPrefix(rel, p+"/") {
+					if best == nil || len(p) > bestLen {
+						best = &mods[i]
+						bestLen = len(p)
+					}
 				}
 			}
 		}
 		if best != nil {
 			sc.kind = scopeModule
-			sc.storeKey = store.SanitizeKeyPath(rootKey + "/" + best.Path)
-			sc.moduleName = moduleLabel(best.Name, best.Path)
-			sc.modulePath = best.Path
+			sc.mod = best
+			sc.storeKey = store.SanitizeKeyPath(rootKey + "/" + best.KeySeg())
+			sc.moduleName = moduleLabel(best.Name, best.KeySeg())
+			sc.modulePath = best.NSPrefix()
 			return sc, nil
 		}
 	}
@@ -384,8 +400,9 @@ func adoptIfDeclaredModule(f *flags, path string, stdout io.Writer) (bool, error
 // ---- fan-out add ----
 
 type gatherTask struct {
-	dir      string   // abs dir to gather
-	storeKey string   // mirrored store key
+	base     string   // abs rel-path root for node IDs (rootDir for multi-path; == dirs[0] for single/residual)
+	dirs     []string // abs dirs to gather (one for single-path & residual; several for a multi-path module)
+	storeKey string   // store key
 	label    string   // print label ("services/api" or "." for the root residual)
 	excludes []string // abs subtree roots NOT to walk (child module dirs)
 }
@@ -400,13 +417,33 @@ func planTasks(rootDir, rootKey string, mods []scan.Module, seen map[string]bool
 	var tasks []gatherTask
 	var allDirs []string
 	for _, m := range mods {
+		key := store.SanitizeKeyPath(rootKey + "/" + m.KeySeg())
+		// Multi-path module: gather ALL its scattered dirs into ONE store,
+		// IDs recorded relative to rootDir (base), so test→source calls
+		// resolve in a single pass. No nested-root recursion for these.
+		if m.Multi() {
+			var dirs []string
+			for _, p := range m.Dirs() {
+				abs := filepath.Join(rootDir, filepath.FromSlash(p))
+				if seen[abs] {
+					continue
+				}
+				seen[abs] = true
+				allDirs = append(allDirs, abs)
+				dirs = append(dirs, abs)
+			}
+			if len(dirs) == 0 {
+				continue
+			}
+			tasks = append(tasks, gatherTask{base: rootDir, dirs: dirs, storeKey: key, label: m.KeySeg()})
+			continue
+		}
 		abs := filepath.Join(rootDir, filepath.FromSlash(m.Path))
 		if seen[abs] {
 			continue // gathered once per run; first declaration wins
 		}
 		seen[abs] = true
 		allDirs = append(allDirs, abs)
-		key := store.SanitizeKeyPath(rootKey + "/" + m.Path)
 		childCfg, err := project.Load(abs)
 		if err != nil {
 			return nil, err
@@ -431,31 +468,101 @@ func planTasks(rootDir, rootKey string, mods []scan.Module, seen map[string]bool
 			}
 			continue
 		}
-		tasks = append(tasks, gatherTask{dir: abs, storeKey: key, label: m.Path})
+		tasks = append(tasks, gatherTask{base: abs, dirs: []string{abs}, storeKey: key, label: m.Path})
 	}
 	sep := string(filepath.Separator)
 	for i := range tasks {
 		for _, d := range allDirs {
-			if d != tasks[i].dir && strings.HasPrefix(d, tasks[i].dir+sep) {
+			inTask := false
+			for _, td := range tasks[i].dirs {
+				if d != td && strings.HasPrefix(d, td+sep) {
+					inTask = true
+					break
+				}
+			}
+			if inTask {
 				tasks[i].excludes = append(tasks[i].excludes, d)
 			}
 		}
 	}
-	tasks = append(tasks, gatherTask{dir: rootDir, storeKey: rootKey, label: ".", excludes: allDirs})
+	tasks = append(tasks, gatherTask{base: rootDir, dirs: []string{rootDir}, storeKey: rootKey, label: ".", excludes: allDirs})
 	return tasks, nil
 }
 
-// gatherInto runs the standard single-module gather (markdown + code +
-// adapters) into the given store. All prints go to out (buffered per worker
-// in fan-out mode so scheduling never reorders bytes).
-func gatherInto(s *store.Store, dir string, excludes []string, force bool, out io.Writer) error {
+// relFromBase is the slash-form path of dir under base ("" when dir==base) —
+// the namespace prefix that makes a multi-path module's IDs repo-root-relative.
+func relFromBase(base, dir string) string {
+	r, err := filepath.Rel(base, dir)
+	if err != nil {
+		return ""
+	}
+	if r = filepath.ToSlash(r); r == "." {
+		return ""
+	}
+	return r
+}
+
+// prefixBatch rewrites a batch's node IDs, non-URI sources, and edge endpoints
+// with prefix/ — the SAME namespacing namespacedLoad applies at read time, but
+// baked in at gather time so a multi-path module's scattered dirs land in one
+// store as collision-free, repo-root-relative facts.
+func prefixBatch(b *schema.Batch, prefix string) {
+	if prefix == "" {
+		return
+	}
+	pre := strings.Trim(prefix, "/") + "/"
+	for i := range b.Nodes {
+		b.Nodes[i].ID = pre + b.Nodes[i].ID
+		if b.Nodes[i].Source != "" && !strings.Contains(b.Nodes[i].Source, "://") {
+			b.Nodes[i].Source = pre + b.Nodes[i].Source
+		}
+	}
+	for i := range b.Edges {
+		b.Edges[i].Source = pre + b.Edges[i].Source
+		b.Edges[i].Target = pre + b.Edges[i].Target
+	}
+}
+
+// gatherMerged runs a tier-1 extractor across every dir of a module and
+// concatenates the batches, namespacing each dir's output by its path under
+// base. Single-dir modules (base==dirs[0]) short-circuit to byte-identical
+// legacy output. Used for markdown/manifests/git-history — producers with no
+// cross-dir resolution; code takes a single multi-root pass instead.
+func gatherMerged(base string, dirs, excludes []string, extract func(string, []string) (*schema.Batch, error)) (*schema.Batch, error) {
+	var out *schema.Batch
+	for _, d := range dirs {
+		b, err := extract(d, excludes)
+		if err != nil {
+			return nil, err
+		}
+		prefixBatch(b, relFromBase(base, d))
+		if out == nil {
+			out = &schema.Batch{Producer: b.Producer}
+		}
+		out.Nodes = append(out.Nodes, b.Nodes...)
+		out.Edges = append(out.Edges, b.Edges...)
+	}
+	if out == nil {
+		out = &schema.Batch{}
+	}
+	return out, nil
+}
+
+// gatherInto runs the standard gather (markdown + code + manifests + git +
+// adapters) into the given store. base is the rel-path root for node IDs; dirs
+// is the set of folders to walk (one for a single-path module or the root
+// residual, several for a multi-path module — ADR 2026-07-14). All prints go
+// to out (buffered per worker in fan-out mode so scheduling never reorders).
+func gatherInto(s *store.Store, base string, dirs, excludes []string, force bool, out io.Writer) error {
 	var batches []*schema.Batch
-	b, err := markdown.ExtractExcluding(dir, excludes)
+	b, err := gatherMerged(base, dirs, excludes, markdown.ExtractExcluding)
 	if err != nil {
 		return err
 	}
 	batches = append(batches, b)
-	cb, err := code.ExtractExcluding(dir, excludes)
+	// Code: ONE pass across all dirs (base-relative IDs) so calls resolve
+	// across a multi-path module's scattered folders (test→source).
+	cb, err := code.ExtractPaths(base, dirs, excludes)
 	if err != nil {
 		return err
 	}
@@ -469,7 +576,7 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 	// Manifest lane: build-tool deps/tasks + k8s topology. Always Replace,
 	// same emptied-module reasoning — removing a dependency from
 	// package.json must prune its declares edge, never keep it silently.
-	mb, err := manifests.ExtractExcluding(dir, excludes)
+	mb, err := gatherMerged(base, dirs, excludes, manifests.ExtractExcluding)
 	if err != nil {
 		return err
 	}
@@ -480,7 +587,7 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 	// Co-change lane: edges only, best-effort (non-repo → empty batch).
 	// Always Replace, same reasoning as the code batch — an empty history
 	// must prune previously-stored pairs, not keep them silently.
-	gh, err := githistory.ExtractExcluding(dir, excludes)
+	gh, err := gatherMerged(base, dirs, excludes, githistory.ExtractExcluding)
 	if err != nil {
 		return err
 	}
@@ -488,7 +595,9 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 	if len(gh.Edges) > 0 {
 		fmt.Fprintf(out, "git-history: %d co-change edges\n", len(gh.Edges))
 	}
-	pc, err := project.Load(dir)
+	// Adapters run from base (a multi-path module has no single dir — its
+	// adapters live with the root config).
+	pc, err := project.Load(base)
 	if err != nil {
 		return err
 	}
@@ -497,7 +606,7 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 	for _, a := range adapters {
 		declared[a.Name] = true
 	}
-	discovered, err := project.DiscoverAdapters(dir)
+	discovered, err := project.DiscoverAdapters(base)
 	if err != nil {
 		return err
 	}
@@ -507,7 +616,7 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 		}
 	}
 	for _, a := range adapters {
-		ab, err := runAdapter(dir, a)
+		ab, err := runAdapter(base, a)
 		if err != nil {
 			return fmt.Errorf("adapter %s: %w", a.Name, err)
 		}
@@ -534,7 +643,7 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 	// store still reflects the repo. Best-effort: a non-git dir records
 	// nothing. Every gather path (single, module, fan-out worker) runs
 	// through here, so module stores carry their own provenance.
-	if abs, aerr := filepath.Abs(dir); aerr == nil {
+	if abs, aerr := filepath.Abs(base); aerr == nil {
 		if head, headUnix, ok := gitHead(abs); ok {
 			if err := s.RecordSource(freshness.Source{
 				Path: abs, Head: head, HeadUnix: headUnix, AddedUnix: time.Now().Unix(),
@@ -592,7 +701,7 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 				results[i].err = err
 				return
 			}
-			results[i].err = gatherInto(s, t.dir, t.excludes, force, &results[i].out)
+			results[i].err = gatherInto(s, t.base, t.dirs, t.excludes, force, &results[i].out)
 		}(i)
 	}
 	wg.Wait()
@@ -701,8 +810,8 @@ func refreshNavigatorEntry(sc *scope, storeRoot string) error {
 	entries := make([]navigator.ModuleEntry, 0, len(mods))
 	for _, m := range mods {
 		entries = append(entries, navigator.ModuleEntry{
-			Name: moduleLabel(m.Name, m.Path), Path: m.Path,
-			Store: store.SanitizeKeyPath(sc.rootKey + "/" + m.Path),
+			Name: moduleLabel(m.Name, m.KeySeg()), Path: m.KeySeg(),
+			Store: store.SanitizeKeyPath(sc.rootKey + "/" + m.KeySeg()),
 		})
 	}
 	fresh, err := navigator.Build(sc.rootDir, storeRoot, sc.rootKey, entries)
@@ -762,8 +871,8 @@ func loadFederated(sc *scope, storeRoot string, only []scan.Module) ([]schema.No
 	}
 	nodes, edges = append(nodes, rn...), append(edges, re...)
 	for _, m := range mods {
-		key := store.SanitizeKeyPath(sc.rootKey + "/" + m.Path)
-		mn, me, err := namespacedLoad(storeRoot, key, m.Path)
+		key := store.SanitizeKeyPath(sc.rootKey + "/" + m.KeySeg())
+		mn, me, err := namespacedLoad(storeRoot, key, m.NSPrefix())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -782,12 +891,15 @@ func scopeStoreRels(sc *scope, storeRoot string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Remote layout mirrors the on-disk store dir under the root: the
+		// module's rel path (single) or its name (multi).
+		prefix := sc.syncPrefix()
 		out := make([]string, 0, len(rels))
 		for _, r := range rels {
 			if r == "" {
-				out = append(out, sc.modulePath)
+				out = append(out, prefix)
 			} else {
-				out = append(out, sc.modulePath+"/"+r)
+				out = append(out, prefix+"/"+r)
 			}
 		}
 		return out, nil
@@ -808,7 +920,7 @@ func expandRootModules(sc *scope) ([]scan.Module, error) {
 func modulePaths(mods []scan.Module) string {
 	var ps []string
 	for _, m := range mods {
-		ps = append(ps, m.Path)
+		ps = append(ps, m.KeySeg())
 	}
 	return strings.Join(ps, ", ")
 }
@@ -841,7 +953,7 @@ func crossModuleEcho(sc *scope, storeRoot, label string) bool {
 		return true
 	}
 	for _, m := range idx.OwnerOf(label) {
-		if m.Path != sc.modulePath {
+		if m.Path != sc.syncPrefix() {
 			return true
 		}
 	}
@@ -849,13 +961,18 @@ func crossModuleEcho(sc *scope, storeRoot, label string) bool {
 }
 
 // moduleOwnerOf maps a namespaced (repo-relative) source path back to the
-// declared module that owns it — for labeling escalated answers.
+// declared module that owns it — for labeling escalated answers. A multi-path
+// module owns a source if it falls under ANY of its dirs; its name is reported.
 func moduleOwnerOf(sc *scope, source string) string {
 	owner := "root"
+	ownerLen := 0
 	for _, m := range sc.modules {
-		if source == m.Path || strings.HasPrefix(source, m.Path+"/") {
-			if owner == "root" || len(m.Path) > len(owner) {
-				owner = m.Path
+		for _, p := range m.Dirs() {
+			if source == p || strings.HasPrefix(source, p+"/") {
+				if owner == "root" || len(p) > ownerLen {
+					owner = m.KeySeg()
+					ownerLen = len(p)
+				}
 			}
 		}
 	}

@@ -1,8 +1,12 @@
 # ADR — modules are manifest-defined path SETS, not folder subtrees; test projects are edges, not boundaries
 
-Status: DRAFT v1 — research + design, maintainer discussing 2026-07-14. Nothing
-implemented. This challenges a load-bearing assumption (module == directory
-subtree) and needs a maintainer decision before build.
+Status: ACCEPTED 2026-07-14 (maintainer). **Move 1 is the build** (module =
+name + path set, in the deterministic binary). **Move 2 is REASSIGNED to the
+agent skill** — the binary does NOT parse `.sln`/`settings.gradle`; the host
+agent reads the solution manifest and writes `.ctxoptimize/config.json`
+`modules[]`, keeping the binary deterministic (no manifest-derived module
+guessing in core). **Move 3** (test-coupling `tested_by` edges) stays as a
+follow-on. This changed a load-bearing assumption (module == directory subtree).
 
 ## The two problems (maintainer, 2026-07-14)
 
@@ -70,14 +74,15 @@ resolve store-wide — separating them would sever test→source edges).
 Store layout can no longer strictly mirror the tree → key by sanitized module
 name; the navigator maps name → its paths.
 
-### Move 2 — `.sln` / `settings.gradle` derive modules automatically
-Teach `scan` (or a small manifest reader) to parse a `.sln` (and later
-`settings.gradle`, Nx `workspace`) into modules-as-path-sets: each solution =
-one module whose paths are the `.csproj` dirs it lists; solution folders can
-group further. So `scan` on a .NET repo proposes REAL modules matching the
-solution, not folder guesses. `.csproj` alone (no `.sln`) → each project a
-path; source+test paired by the `.Tests` naming convention when no manifest
-says otherwise (heuristic, INFERRED, overridable).
+### Move 2 — REASSIGNED to the agent skill (NOT in the binary)
+The binary does NOT parse `.sln`/`settings.gradle`. Instead the **agent skill**
+(the host intelligence) reads the solution/Gradle manifest during onboarding and
+writes the `modules[]` path-sets into `.ctxoptimize/config.json` — same door as
+any other config the skill maintains. This keeps the binary deterministic (no
+manifest-derived module *guessing* in core; it only consumes explicit config)
+and puts the fuzzy `.Tests`↔source pairing where an LLM belongs. The skill's
+`references/onboarding.md` gains a ".NET solution / Gradle multi-project" recipe:
+read the manifest, emit `{name, paths[]}` per project group, pair test projects.
 
 ### Move 3 — test projects become an EDGE layer, never a boundary
 Tag test-project / test-file nodes (`is_test` metadata: `*.Tests.csproj`,
@@ -95,15 +100,31 @@ kind/producer facet ("tests") filters them in the viewer.
 - No LLM, no DB, deterministic — all three moves are manifest parsing + AST
   tagging, same contract.
 
-## Open questions (maintainer ⚖️)
-- Store keying when a module spans folders: name-keyed store vs. keep mirrored
-  and add a "members" index. (Leaning name-keyed.)
-- Do we also want the CodeGraph-style "one graph, module = queryable facet"
-  as an alternative to per-module stores for the .NET case, or is Move 1
-  (multi-path store) enough? (Leaning Move 1 — it fits our federation + pack
-  model without a storage rewrite.)
-- Test-pairing heuristic when no `.sln`: `Foo.Tests`↔`Foo` by name — good
-  enough, or require the manifest? (Leaning heuristic + override.)
+## Decisions (maintainer, 2026-07-14) ✅
+- **Store keying:** name-keyed store when a module declares `paths[]`; the
+  navigator maps name → its path set. (Chosen.)
+- **Move 1 over CodeGraph-style one-graph facet:** Move 1 (multi-path store)
+  is enough — fits our federation + pack model without a storage rewrite. (Chosen.)
+- **`.sln`/Gradle parsing:** NOT in the binary — the agent skill does it and
+  writes config (Move 2 reassigned). Test-pairing (`Foo.Tests`↔`Foo`) is the
+  skill's job too. (Chosen.)
+
+## Implemented (2026-07-14)
+- **Move 1: DONE.** `scan.Module` gained `Paths[]` + `Multi()/KeySeg()/Dirs()/
+  NSPrefix()`; `scan.Expand` resolves multi-path modules (name required, globs
+  allowed, missing non-glob path fails loudly). `code.ExtractPaths(base, roots,
+  exclude)` walks scattered dirs in ONE pass (base-relative IDs) so calls
+  resolve across the split; `ExtractExcluding` delegates to it (byte-identical
+  single-path). `gatherInto(base, dirs, …)` + `gatherMerged`/`prefixBatch` bake
+  repo-root-relative IDs; multi-path stores are name-keyed and namespace with
+  "" at read time. Federation, module-scope add/query/card, sync-prefix, and
+  the navigator all branch on `KeySeg`/`NSPrefix`. Tests:
+  `TestMultiPathModuleGathersScatteredFoldersIntoOneStore` (one store, repo-root
+  sources, test→source call resolves) and `TestMultiPathModuleScopeFromSubdir`.
+- **Move 2: DONE (in the skill, not the binary).** `references/onboarding.md`
+  gained the ".NET/Gradle/Nx scattered-module" recipe + a SKILL.md routing row;
+  the host agent reads the manifest and writes `{name, paths[]}`.
+- **Move 3: NOT YET** — test-coupling `tested_by` edges remain a follow-on.
 
 ## Success checks (when built)
 - A .NET repo with `src/Billing` + `tests/Billing.Tests` gathers as ONE

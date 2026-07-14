@@ -384,3 +384,109 @@ func TestEmptiedModuleHitsShrinkGuard(t *testing.T) {
 		t.Fatal("deleted function still in the graph after --force add")
 	}
 }
+
+// writeFiles drops path→content pairs under repo (creating dirs).
+func writeFiles(t *testing.T, repo string, files map[string]string) {
+	t.Helper()
+	for p, content := range files {
+		full := filepath.Join(repo, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestMultiPathModuleGathersScatteredFoldersIntoOneStore is the ADR 2026-07-14
+// Move 1 acceptance: a module = a NAME + a SET of scattered dirs (the .NET
+// src/ + tests/ split). The two folders must land in ONE store keyed by the
+// name, with IDs repo-root-relative, and — the whole point — a call from the
+// test folder to the source folder must RESOLVE (single extraction pass).
+func TestMultiPathModuleGathersScatteredFoldersIntoOneStore(t *testing.T) {
+	repo := t.TempDir()
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+
+	writeFiles(t, repo, map[string]string{
+		".ctxoptimize/config.json": `{"name":"acme","modules":[` +
+			`{"name":"Billing","paths":["src/Billing","tests/Billing.Tests"]}]}`,
+		"src/Billing/billing.go":            "package billing\n\nfunc Charge() {}\n",
+		"tests/Billing.Tests/billing_ck.go": "package tests\n\nfunc VerifyCharge() { Charge() }\n",
+	})
+
+	runCLI(t, 0, "add", "--path", repo)
+
+	// One store, keyed by the module NAME — not two folder-mirrored stores.
+	if _, err := os.Stat(filepath.Join(storeRoot, "acme", "Billing", "graph")); err != nil {
+		t.Fatalf("expected one store acme/Billing: %v", err)
+	}
+	for _, gone := range []string{"src", "tests", "src-Billing", "tests-Billing.Tests"} {
+		if _, err := os.Stat(filepath.Join(storeRoot, "acme", gone, "graph")); err == nil {
+			t.Fatalf("unexpected folder-mirrored store %q — module must be name-keyed", gone)
+		}
+	}
+
+	// Node sources are repo-root-relative so the two folders can't collide.
+	nodes, err := os.ReadFile(filepath.Join(storeRoot, "acme", "Billing", "graph", "nodes.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(nodes), "src/Billing/billing.go") ||
+		!strings.Contains(string(nodes), "tests/Billing.Tests/billing_ck.go") {
+		t.Fatalf("sources not repo-root-relative in the merged store:\n%s", nodes)
+	}
+
+	// The payoff: test→source call resolved across the folder split.
+	out, _ := runCLI(t, 0, "card", "Charge", "--path", repo, "--json")
+	var card struct {
+		CalledBy []string `json:"called_by"`
+	}
+	if err := json.Unmarshal([]byte(out), &card); err != nil {
+		t.Fatalf("card --json: %v\n%s", err, out)
+	}
+	found := false
+	for _, c := range card.CalledBy {
+		if strings.Contains(c, "VerifyCharge") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("test→source call did not resolve across folders; called_by=%v", card.CalledBy)
+	}
+}
+
+// TestMultiPathModuleScopeFromSubdir: asking from inside one of a multi-path
+// module's folders resolves to that module (not a shadow store), and a
+// module-scoped add re-gathers ALL its folders into the one store.
+func TestMultiPathModuleScopeFromSubdir(t *testing.T) {
+	repo := t.TempDir()
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+
+	writeFiles(t, repo, map[string]string{
+		".ctxoptimize/config.json": `{"name":"acme","modules":[` +
+			`{"name":"Billing","paths":["src/Billing","tests/Billing.Tests"]}]}`,
+		"src/Billing/billing.go":            "package billing\n\nfunc Charge() {}\n",
+		"tests/Billing.Tests/billing_ck.go": "package tests\n\nfunc VerifyCharge() { Charge() }\n",
+	})
+	runCLI(t, 0, "add", "--path", repo)
+
+	// Module-scoped add from inside the TEST folder must refresh the whole
+	// Billing store (both folders), keyed by name — not a store for tests/.
+	runCLI(t, 0, "add", "--path", filepath.Join(repo, "tests/Billing.Tests"))
+	nodes, err := os.ReadFile(filepath.Join(storeRoot, "acme", "Billing", "graph", "nodes.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(nodes), "src/Billing/billing.go") {
+		t.Fatalf("module-scoped add from tests/ dropped the src/ folder:\n%s", nodes)
+	}
+
+	// A query from inside the source folder still finds the symbol.
+	out, _ := runCLI(t, 0, "query", "Charge", "--path", filepath.Join(repo, "src/Billing"))
+	if !strings.Contains(out, "Charge") {
+		t.Fatalf("module-scoped query missed Charge:\n%s", out)
+	}
+}

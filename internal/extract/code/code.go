@@ -67,6 +67,15 @@ func Extract(root string) (*schema.Batch, error) { return ExtractExcluding(root,
 // residual: module dirs (absolute paths) are gathered into their own stores
 // and must not re-enter the parent's batch.
 func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
+	return ExtractPaths(root, []string{root}, exclude)
+}
+
+// ExtractPaths gathers a multi-path module (ADR 2026-07-14): several scattered
+// dirs (roots) parsed in ONE pass so calls resolve ACROSS them (test→source),
+// with file paths recorded relative to base (the repo root) so the folders
+// can't collide. Single-path callers pass base==root and roots==[root], which
+// is byte-identical to the old single-root behavior.
+func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch, error) {
 	ctx := context.Background()
 	skip := map[string]bool{}
 	for _, e := range exclude {
@@ -75,13 +84,13 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		}
 	}
 
-	packs, err := LoadPacks(root)
+	packs, err := LoadPacks(base)
 	if err != nil {
 		return nil, err
 	}
 	// Route packs (routepacks.go): declarative call-shaped route rules,
 	// discovered like grammar packs. Malformed packs fail the add loudly.
-	routePacks, err := LoadRoutePacks(root)
+	routePacks, err := LoadRoutePacks(base)
 	if err != nil {
 		return nil, err
 	}
@@ -137,45 +146,51 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		return e, nil
 	}
 
-	ignored := ignore.New(root) // .gitignore semantics via git itself; nil = no git
+	ignored := ignore.New(base) // .gitignore semantics via git itself; nil = no git
+	seenFile := map[string]bool{}
 	var files []string
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		name := d.Name()
-		if ignored != nil {
-			if rel, rerr := filepath.Rel(root, path); rerr == nil && rel != "." && ignored(filepath.ToSlash(rel)) {
-				if d.IsDir() {
+	for _, wr := range roots {
+		err = filepath.WalkDir(wr, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			name := d.Name()
+			if ignored != nil {
+				if rel, rerr := filepath.Rel(base, path); rerr == nil && rel != "." && ignored(filepath.ToSlash(rel)) {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+			}
+			if d.IsDir() {
+				if len(skip) > 0 {
+					if abs, err := filepath.Abs(path); err == nil && skip[abs] {
+						return filepath.SkipDir
+					}
+				}
+				if path != wr && (strings.HasPrefix(name, ".") || name == "node_modules" ||
+					name == "vendor" || name == "target" || name == "dist" || name == "build" ||
+					strings.HasSuffix(name, "-out")) {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-		}
-		if d.IsDir() {
-			if len(skip) > 0 {
-				if abs, err := filepath.Abs(path); err == nil && skip[abs] {
-					return filepath.SkipDir
-				}
+			if resolve(name) == nil {
+				return nil
 			}
-			if path != root && (strings.HasPrefix(name, ".") || name == "node_modules" ||
-				name == "vendor" || name == "target" || name == "dist" || name == "build" ||
-				strings.HasSuffix(name, "-out")) {
-				return filepath.SkipDir
+			if info, err := d.Info(); err == nil && info.Size() > maxFileBytes {
+				return nil
+			}
+			if !seenFile[path] { // scattered roots may nest; count each file once
+				seenFile[path] = true
+				files = append(files, path)
 			}
 			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
-		if resolve(name) == nil {
-			return nil
-		}
-		if info, err := d.Info(); err == nil && info.Size() > maxFileBytes {
-			return nil
-		}
-		files = append(files, path)
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	sort.Strings(files) // deterministic output regardless of walk order
 
@@ -249,7 +264,7 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 					}
 					instances[r.engineKey] = inst
 				}
-				results <- extractFile(ctx, inst, r.lang, symTab[r.engineKey], root, path, packRules)
+				results <- extractFile(ctx, inst, r.lang, symTab[r.engineKey], base, path, packRules)
 			}
 		}()
 	}

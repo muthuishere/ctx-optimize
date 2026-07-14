@@ -34,6 +34,41 @@ module list. Drive this exact loop:
    module in parallel (`--jobs N` to tune), building one store per module
    plus the root navigator (`modules.json` + `navigator.md`).
 
+## Scattered modules — source and tests in SEPARATE folders (.NET, Gradle, Nx)
+
+`scan` finds a module per build-file, mirroring folders. That is wrong when the
+BUILD SYSTEM, not the filesystem, defines a module — the classic case being
+.NET (`src/Billing/Billing.csproj` + `tests/Billing.Tests/Billing.Tests.csproj`
+are ONE logical module in two top-level folders) and Gradle/Nx multi-projects
+whose `projectDir`s are scattered. Splitting them into two stores severs the
+test→source call edges.
+
+**This is YOUR job, not the binary's** — the binary stays deterministic and only
+consumes explicit config; you are the intelligence that reads the manifest and
+figures out the grouping. Scan the repo at whatever depth it takes, read the
+`.sln` / `settings.gradle` / `nx.json` / `project.json` (or infer from the
+`Foo` ↔ `Foo.Tests` naming when there's no manifest), decide which scattered
+folders belong to one module, and write a **multi-path module** into
+`.ctxoptimize/config.json` — a NAME plus a SET of paths, gathered into ONE
+name-keyed store (IDs go repo-root-relative; code extracts in a single pass so
+test→source calls resolve):
+
+```json
+{"name": "acme", "modules": [
+  {"name": "Billing", "paths": ["src/Billing", "tests/Billing.Tests"]},
+  {"name": "Orders",  "paths": ["src/Orders",  "tests/Orders.Tests"]}
+]}
+```
+
+Recipe: (1) locate the solution/settings manifest; (2) list its projects with
+their dirs; (3) group each source project with its test project(s) — by the
+manifest's `ProjectReference`/`include`, else by the `*.Tests`/`*_test`/`*.spec`
+name convention; (4) emit one `{name, paths[]}` per group; (5) `add .`. Paths
+may glob (`"tests/*.Tests"`). Single-path `{"path": "..."}` still works and is
+right for genuinely independent deployables (a service per `go.mod`). Show the
+user the grouping you inferred before writing — you own the guess, they own the
+final list.
+
 ## After onboarding
 
 - Verify: `status --json`, then a `query` — cite a real hit back to the user.

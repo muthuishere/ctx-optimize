@@ -521,15 +521,26 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	// refreshes the module, not a shadow store keyed by the subdir).
 	// Single scope: gather the config's dir (or the asked dir when no config
 	// exists anywhere — today's behavior).
-	target := sc.rootDir
-	if sc.kind == scopeModule {
-		target = filepath.Join(sc.rootDir, filepath.FromSlash(sc.modulePath))
+	// base is the rel-path root for node IDs; dirs are the folders to walk.
+	// A multi-path module (ADR 2026-07-14) gathers ALL its scattered dirs
+	// into the one store, base==rootDir; a single-path module or single repo
+	// gathers one dir.
+	base := sc.rootDir
+	dirs := []string{sc.rootDir}
+	if sc.kind == scopeModule && sc.mod != nil && sc.mod.Multi() {
+		dirs = nil
+		for _, p := range sc.mod.Dirs() {
+			dirs = append(dirs, filepath.Join(sc.rootDir, filepath.FromSlash(p)))
+		}
+	} else if sc.kind == scopeModule {
+		base = filepath.Join(sc.rootDir, filepath.FromSlash(sc.modulePath))
+		dirs = []string{base}
 	}
 	s, err := store.Open(storeRoot, sc.storeKey)
 	if err != nil {
 		return err
 	}
-	if err := gatherInto(s, target, nil, f.bools["force"], stdout); err != nil {
+	if err := gatherInto(s, base, dirs, nil, f.bools["force"], stdout); err != nil {
 		return err
 	}
 	if sc.kind == scopeModule {
@@ -665,7 +676,7 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 		}
 		var narrowed []scan.Module
 		for _, m := range sc.modules {
-			if want[m.Path] || want[moduleLabel(m.Name, m.Path)] {
+			if want[m.KeySeg()] || want[moduleLabel(m.Name, m.KeySeg())] {
 				narrowed = append(narrowed, m)
 			}
 		}
@@ -1058,13 +1069,7 @@ func cmdCard(args []string, stdout io.Writer) error {
 		fn, fe, ferr := loadFederated(sc, storeRoot, nil)
 		if ferr == nil {
 			if fc, ferr2 := analyze.Card(fn, fe, f.args[0]); ferr2 == nil {
-				owner := "root"
-				for _, m := range sc.modules {
-					if strings.HasPrefix(fc.Node.Source, m.Path+"/") {
-						owner = m.Path
-						break
-					}
-				}
+				owner := moduleOwnerOf(sc, fc.Node.Source)
 				fmt.Fprintf(cw, "[not in %s — found in %s]\n", sc.moduleName, owner)
 				c, cerr = fc, nil
 				bodyRoot = sc.rootDir // namespaced sources resolve from the repo root
@@ -1166,7 +1171,7 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 		total := len(nodes)
 		count := 0
 		for _, m := range sc.modules {
-			ms, err := store.Open(storeRoot, store.SanitizeKeyPath(sc.rootKey+"/"+m.Path))
+			ms, err := store.Open(storeRoot, store.SanitizeKeyPath(sc.rootKey+"/"+m.KeySeg()))
 			if err != nil {
 				continue
 			}

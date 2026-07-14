@@ -17,10 +17,53 @@ import (
 )
 
 // Module is one discovered (or declared) module root.
+//
+// Two shapes:
+//   - single-path: {path} (optionally {name} for the navigator label). The
+//     store mirrors the folder; IDs are module-dir-relative. This is the
+//     discovered form and the historical config form.
+//   - multi-path (ADR 2026-07-14): {name, paths[]}. A module is a NAME plus a
+//     SET of scattered folders (e.g. src/Billing + tests/Billing.Tests)
+//     gathered into ONE store keyed by Name, with IDs recorded
+//     repo-root-relative so the folders can't collide and code extracts in a
+//     single pass (test→source calls resolve). `name` is REQUIRED here.
 type Module struct {
-	Path   string `json:"path"`             // repo-relative, slash-form
-	Name   string `json:"name,omitempty"`   // store name override; default derived from Path
-	Marker string `json:"marker,omitempty"` // evidence: which marker declared it (scan output only)
+	Path   string   `json:"path,omitempty"`  // single-path: repo-relative, slash-form
+	Paths  []string `json:"paths,omitempty"` // multi-path: the scattered dirs; when set this is a multi-path module
+	Name   string   `json:"name,omitempty"`  // store name override (single) / store key + REQUIRED (multi)
+	Marker string   `json:"marker,omitempty"` // evidence: which marker declared it (scan output only)
+}
+
+// Multi reports whether this is a multi-path module (keyed by Name, gathered
+// repo-root-relative).
+func (m Module) Multi() bool { return len(m.Paths) > 0 }
+
+// KeySeg is the store-key segment under the root: the mirrored Path for a
+// single-path module, the (sanitized-by-caller) Name for a multi-path one.
+func (m Module) KeySeg() string {
+	if m.Multi() {
+		return m.Name
+	}
+	return m.Path
+}
+
+// Dirs are the repo-relative folders this module gathers.
+func (m Module) Dirs() []string {
+	if m.Multi() {
+		return m.Paths
+	}
+	return []string{m.Path}
+}
+
+// NSPrefix is the federation namespace prefix applied at read time: a
+// single-path store is module-dir-relative (prefixed by Path to make it
+// repo-root-relative), a multi-path store is ALREADY repo-root-relative (no
+// prefix).
+func (m Module) NSPrefix() string {
+	if m.Multi() {
+		return ""
+	}
+	return m.Path
 }
 
 // Options tunes the generator. Zero value = defaults (depth 5, built-in
@@ -189,6 +232,16 @@ func Expand(root string, declared []Module) ([]Module, error) {
 	seen := map[string]bool{}
 	var out []Module
 	for _, m := range declared {
+		if m.Multi() {
+			em, err := expandMulti(absRoot, root, m, seen)
+			if err != nil {
+				return nil, err
+			}
+			if em != nil {
+				out = append(out, *em)
+			}
+			continue
+		}
 		p := strings.Trim(filepath.ToSlash(m.Path), "/")
 		if p == "" || p == "." {
 			continue
@@ -225,8 +278,62 @@ func Expand(root string, declared []Module) ([]Module, error) {
 			out = append(out, Module{Path: rel, Name: name})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	sort.Slice(out, func(i, j int) bool { return out[i].KeySeg() < out[j].KeySeg() })
 	return out, nil
+}
+
+// expandMulti resolves a multi-path module ({name, paths[]}) into one Module
+// carrying the concrete, sorted, repo-relative dirs. Name is required (it is
+// the store key); each path may glob; a non-glob path that doesn't exist is an
+// error, so a typo fails loudly rather than silently dropping source+test.
+func expandMulti(absRoot, root string, m Module, seen map[string]bool) (*Module, error) {
+	name := strings.TrimSpace(m.Name)
+	if name == "" {
+		return nil, fmt.Errorf("multi-path module (paths %v) needs a \"name\" — it is the store key", m.Paths)
+	}
+	dirSet := map[string]bool{}
+	for _, raw := range m.Paths {
+		p := strings.Trim(filepath.ToSlash(raw), "/")
+		if p == "" || p == "." {
+			continue
+		}
+		var dirs []string
+		if strings.ContainsAny(p, "*?[") {
+			matches, _ := filepath.Glob(filepath.Join(absRoot, filepath.FromSlash(p)))
+			sort.Strings(matches)
+			dirs = matches
+		} else {
+			dirs = []string{filepath.Join(absRoot, filepath.FromSlash(p))}
+		}
+		for _, d := range dirs {
+			fi, e := os.Stat(d)
+			if e != nil || !fi.IsDir() {
+				if !strings.ContainsAny(p, "*?[") {
+					return nil, fmt.Errorf("module %q path %q not found under %s", name, raw, root)
+				}
+				continue
+			}
+			rel, e := filepath.Rel(absRoot, d)
+			if e != nil {
+				continue
+			}
+			rel = filepath.ToSlash(rel)
+			if rel == "." || seen[rel] {
+				continue
+			}
+			seen[rel] = true
+			dirSet[rel] = true
+		}
+	}
+	if len(dirSet) == 0 {
+		return nil, nil
+	}
+	paths := make([]string, 0, len(dirSet))
+	for d := range dirSet {
+		paths = append(paths, d)
+	}
+	sort.Strings(paths)
+	return &Module{Name: name, Paths: paths}, nil
 }
 
 // hasMarker reports whether dir directly contains any marker file — used
