@@ -3,6 +3,12 @@
 /dist/
 *.exe
 
+# dashboard UI toolchain (dev-only; the BUILT bundle is committed at
+# internal/dashboard/ui/ so go install / CI never need node)
+/dashboard-ui/node_modules/
+/dashboard-ui/dist/
+/dashboard-ui/tsconfig.tsbuildinfo
+
 # graph output / caches (layout is configurable; ignore common defaults)
 /.ctx-optimize/
 *-out/

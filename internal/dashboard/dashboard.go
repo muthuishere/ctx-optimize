@@ -1,14 +1,34 @@
-// Package dashboard serves the local store visually — a single embedded HTML
-// page (no CDN, no external requests, works offline) plus a tiny read-only
-// JSON API over the same files queries use. It binds localhost by default:
-// this is a window onto YOUR store, not a service. The remote is never
-// touched — like every other read path, the dashboard answers from disk.
+// Package dashboard serves the local store visually — an embedded React app
+// (go:embed, built offline, no CDN, ZERO external requests) plus a JSON API
+// over the same files queries use. It binds localhost by default: this is a
+// window onto YOUR store, not a service. The remote is never touched — like
+// every other read path, the dashboard answers from disk.
+//
+// Reads never create store dirs. Mutations exist too (onboard, re-gather,
+// config edit, store delete, remote sync) but they are triple-guarded:
+//
+//  1. loopback-only — every mutation endpoint refuses a non-loopback peer
+//     even when --host widened the listener (read may widen; write never does);
+//  2. CSRF token — a per-process random token served at GET /api/token
+//     (itself loopback-only) must ride in the X-Ctx-Token header. A hostile
+//     web page can neither read the token (no CORS headers → the response is
+//     opaque cross-origin) nor set the header from a form, so plain CSRF dies;
+//  3. same doors — every mutation calls the SAME command funcs the CLI
+//     dispatches to (injected as Ops closures by the app layer), so the
+//     dashboard can write nothing the CLI couldn't, with the same loud errors.
+//
+// Every mutation appends one line to <store-root>/audit.ndjson (internal/audit).
 package dashboard
 
 import (
 	"bufio"
-	_ "embed"
+	"crypto/rand"
+	"embed"
+	"encoding/hex"
 	"encoding/json"
+	"io"
+	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,12 +37,31 @@ import (
 	"strings"
 
 	"github.com/muthuishere/ctx-optimize/internal/query"
+	"github.com/muthuishere/ctx-optimize/internal/scan"
+	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/store"
 	"github.com/muthuishere/ctx-optimize/internal/usage"
 )
 
-//go:embed index.html
-var indexHTML []byte
+//go:embed all:ui
+var uiFS embed.FS
+
+// Ops are the mutation doors, injected by the CLI layer. Each closure calls
+// the exact command functions the CLI dispatches to — never a parallel
+// implementation. A nil Ops (or nil member) turns that mutation off with a
+// clear error instead of a panic.
+type Ops struct {
+	// Scan previews module discovery for a repo path (read-only, same as
+	// `ctx-optimize scan`).
+	Scan func(path string) (*scan.Result, error)
+	// OnboardConfirm is `init [--scan --yes --modules ...]` + `add .` with
+	// progress streamed to out.
+	OnboardConfirm func(path, name string, modules []string, out io.Writer) error
+	// Gather is `add <path>` — the re-gather trigger.
+	Gather func(path string, out io.Writer) error
+	// RemoteSync is `remote push|pull --path <path>`.
+	RemoteSync func(path, verb string, out io.Writer) error
+}
 
 // Module is one store folder as listed by /api/modules. Multi-module repos
 // nest stores (key "beam/sdks/java/harness"); Root groups them under their
@@ -35,19 +74,36 @@ type Module struct {
 	Summary string `json:"summary,omitempty"`
 }
 
+type server struct {
+	root  string
+	ops   *Ops
+	token string
+}
+
 // NewHandler serves the dashboard for every module under the store root.
-func NewHandler(root string) http.Handler {
+// ops may be nil: the read API works, mutations answer 503.
+func NewHandler(root string, ops *Ops) http.Handler {
+	buf := make([]byte, 24)
+	rand.Read(buf)
+	s := &server{root: root, ops: ops, token: hex.EncodeToString(buf)}
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
+	ui, err := fs.Sub(uiFS, "ui")
+	if err != nil {
+		panic("dashboard ui not embedded: " + err.Error())
+	}
+	mux.Handle("/", http.FileServerFS(ui))
+
+	// The CSRF token: loopback-only, fetched same-origin by the app shell.
+	mux.HandleFunc("/api/token", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopback(r) {
+			jsonError(w, http.StatusForbidden, "token is served to loopback clients only")
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(indexHTML)
+		jsonOK(w, map[string]string{"token": s.token})
 	})
 
+	// ---- reads ----
 	mux.HandleFunc("/api/modules", func(w http.ResponseWriter, r *http.Request) {
 		mods, err := listModules(root)
 		if err != nil {
@@ -56,92 +112,197 @@ func NewHandler(root string) http.Handler {
 		}
 		jsonOK(w, mods)
 	})
+	mux.HandleFunc("/api/graph", s.handleGraph)
+	mux.HandleFunc("/api/query", s.handleQuery)
+	mux.HandleFunc("/api/usage", s.handleUsage)
+	mux.HandleFunc("/api/stores", s.handleStores)
+	mux.HandleFunc("/api/setup", s.handleSetup)
+	mux.HandleFunc("/api/audit", s.handleAudit)
 
-	mux.HandleFunc("/api/graph", func(w http.ResponseWriter, r *http.Request) {
-		s, ok := openModule(w, root, r.URL.Query().Get("module"))
-		if !ok {
-			return
-		}
-		nodes, err := s.Nodes()
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		edges, err := s.Edges()
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		jsonOK(w, map[string]any{"nodes": nodes, "edges": edges})
-	})
-
-	mux.HandleFunc("/api/usage", func(w http.ResponseWriter, r *http.Request) {
-		mod := store.SanitizeKeyPath(r.URL.Query().Get("module"))
-		if mod == "" {
-			jsonError(w, http.StatusBadRequest, "module required")
-			return
-		}
-		mod = filepath.FromSlash(mod)
-		if r.URL.Query().Get("format") == "csv" {
-			f, err := os.Open(usage.Path(filepath.Join(root, mod)))
-			if err != nil {
-				jsonError(w, http.StatusNotFound, "no usage recorded yet")
-				return
-			}
-			defer f.Close()
-			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-			w.Header().Set("Content-Disposition", "attachment; filename=ctx-optimize-usage-"+mod+".csv")
-			w.Write([]byte("ts,verb,arg,hits,bytes,ms\n"))
-			sc := bufio.NewScanner(f)
-			sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-			for sc.Scan() {
-				var e usage.Event
-				if json.Unmarshal(sc.Bytes(), &e) != nil {
-					continue
-				}
-				w.Write([]byte(e.TS.Format("2006-01-02T15:04:05") + "," + e.Verb + "," +
-					strconv.Quote(e.Arg) + "," + strconv.Itoa(e.Hits) + "," +
-					strconv.Itoa(e.Bytes) + "," + strconv.FormatInt(e.MS, 10) + "\n"))
-			}
-			return
-		}
-		sum, err := usage.Summarize(filepath.Join(root, mod))
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(sum)
-	})
-
-	mux.HandleFunc("/api/query", func(w http.ResponseWriter, r *http.Request) {
-		s, ok := openModule(w, root, r.URL.Query().Get("module"))
-		if !ok {
-			return
-		}
-		q := r.URL.Query().Get("q")
-		if q == "" {
-			jsonError(w, http.StatusBadRequest, "missing q parameter")
-			return
-		}
-		budget := 2000
-		if b, err := strconv.Atoi(r.URL.Query().Get("budget")); err == nil && b > 0 {
-			budget = b
-		}
-		nodes, err := s.Nodes()
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		edges, err := s.Edges()
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		jsonOK(w, query.Run(nodes, edges, q, budget))
-	})
+	// ---- mutations (loopback + token + audit; see manage.go) ----
+	mux.HandleFunc("/api/onboard", s.mutation("POST", s.handleOnboardScan))
+	mux.HandleFunc("/api/onboard/confirm", s.mutation("POST", s.handleOnboardConfirm))
+	mux.HandleFunc("/api/repo/add", s.mutation("POST", s.handleRepoAdd))
+	mux.HandleFunc("/api/config", s.mutation("PUT", s.handleConfigSet))
+	mux.HandleFunc("/api/store", s.mutation("DELETE", s.handleStoreDelete))
+	mux.HandleFunc("/api/remote/push", s.mutation("POST", s.handleRemote("push")))
+	mux.HandleFunc("/api/remote/pull", s.mutation("POST", s.handleRemote("pull")))
 
 	return mux
+}
+
+// handleGraph serves a BUDGETED graph view — the server never ships the whole
+// graph of a big store. Without center: the top `limit` nodes by degree
+// (default 600). With center=<node-id>: the BFS neighborhood to `depth`
+// (default 1, max 3) — the expand-on-click door.
+func (s *server) handleGraph(w http.ResponseWriter, r *http.Request) {
+	st, ok := openModule(w, s.root, r.URL.Query().Get("module"))
+	if !ok {
+		return
+	}
+	nodes, err := st.Nodes()
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	edges, err := st.Edges()
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	limit := 600
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = min(v, 5000)
+	}
+	var keptNodes []schema.Node
+	if center := r.URL.Query().Get("center"); center != "" {
+		depth := 1
+		if v, err := strconv.Atoi(r.URL.Query().Get("depth")); err == nil && v > 0 {
+			depth = min(v, 3)
+		}
+		keptNodes = neighborhood(nodes, edges, center, depth, limit)
+		if keptNodes == nil {
+			jsonError(w, http.StatusNotFound, "no node "+center)
+			return
+		}
+	} else {
+		keptNodes = topByDegree(nodes, edges, limit)
+	}
+	keep := make(map[string]bool, len(keptNodes))
+	for _, n := range keptNodes {
+		keep[n.ID] = true
+	}
+	keptEdges := []schema.Edge{}
+	for _, e := range edges {
+		if keep[e.Source] && keep[e.Target] {
+			keptEdges = append(keptEdges, e)
+		}
+	}
+	jsonOK(w, map[string]any{
+		"nodes": keptNodes, "edges": keptEdges,
+		"total_nodes": len(nodes), "total_edges": len(edges),
+		"truncated": len(keptNodes) < len(nodes),
+	})
+}
+
+// topByDegree returns the `limit` best-connected nodes (whole graph when it
+// already fits).
+func topByDegree(nodes []schema.Node, edges []schema.Edge, limit int) []schema.Node {
+	if len(nodes) <= limit {
+		return nodes
+	}
+	deg := make(map[string]int, len(nodes))
+	for _, e := range edges {
+		deg[e.Source]++
+		deg[e.Target]++
+	}
+	sorted := make([]schema.Node, len(nodes))
+	copy(sorted, nodes)
+	sort.SliceStable(sorted, func(i, j int) bool { return deg[sorted[i].ID] > deg[sorted[j].ID] })
+	return sorted[:limit]
+}
+
+// neighborhood BFS-expands from center over both edge directions. nil when
+// the center id does not exist.
+func neighborhood(nodes []schema.Node, edges []schema.Edge, center string, depth, limit int) []schema.Node {
+	byID := make(map[string]schema.Node, len(nodes))
+	for _, n := range nodes {
+		byID[n.ID] = n
+	}
+	if _, ok := byID[center]; !ok {
+		return nil
+	}
+	adj := map[string][]string{}
+	for _, e := range edges {
+		adj[e.Source] = append(adj[e.Source], e.Target)
+		adj[e.Target] = append(adj[e.Target], e.Source)
+	}
+	seen := map[string]bool{center: true}
+	frontier := []string{center}
+	out := []schema.Node{byID[center]}
+	for d := 0; d < depth && len(out) < limit; d++ {
+		var next []string
+		for _, id := range frontier {
+			for _, nb := range adj[id] {
+				if seen[nb] || len(out) >= limit {
+					continue
+				}
+				seen[nb] = true
+				if n, ok := byID[nb]; ok {
+					out = append(out, n)
+					next = append(next, nb)
+				}
+			}
+		}
+		frontier = next
+	}
+	return out
+}
+
+func (s *server) handleQuery(w http.ResponseWriter, r *http.Request) {
+	st, ok := openModule(w, s.root, r.URL.Query().Get("module"))
+	if !ok {
+		return
+	}
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		jsonError(w, http.StatusBadRequest, "missing q parameter")
+		return
+	}
+	budget := 2000
+	if b, err := strconv.Atoi(r.URL.Query().Get("budget")); err == nil && b > 0 {
+		budget = b
+	}
+	nodes, err := st.Nodes()
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	edges, err := st.Edges()
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonOK(w, query.Run(nodes, edges, q, budget))
+}
+
+func (s *server) handleUsage(w http.ResponseWriter, r *http.Request) {
+	mod := store.SanitizeKeyPath(r.URL.Query().Get("module"))
+	if mod == "" {
+		jsonError(w, http.StatusBadRequest, "module required")
+		return
+	}
+	mod = filepath.FromSlash(mod)
+	if r.URL.Query().Get("format") == "csv" {
+		f, err := os.Open(usage.Path(filepath.Join(s.root, mod)))
+		if err != nil {
+			jsonError(w, http.StatusNotFound, "no usage recorded yet")
+			return
+		}
+		defer f.Close()
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=ctx-optimize-usage.csv")
+		w.Write([]byte("ts,verb,arg,hits,bytes,ms\n"))
+		sc := bufio.NewScanner(f)
+		sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+		for sc.Scan() {
+			var e usage.Event
+			if json.Unmarshal(sc.Bytes(), &e) != nil {
+				continue
+			}
+			w.Write([]byte(e.TS.Format("2006-01-02T15:04:05") + "," + e.Verb + "," +
+				strconv.Quote(e.Arg) + "," + strconv.Itoa(e.Hits) + "," +
+				strconv.Itoa(e.Bytes) + "," + strconv.FormatInt(e.MS, 10) + "\n"))
+		}
+		return
+	}
+	sum, err := usage.Summarize(filepath.Join(s.root, mod))
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sum)
 }
 
 // listModules walks the store root for every store dir — including the
@@ -232,6 +393,18 @@ func openModule(w http.ResponseWriter, root, key string) (*store.Store, bool) {
 		return nil, false
 	}
 	return s, true
+}
+
+// isLoopback reports whether the request's PEER (RemoteAddr, not a spoofable
+// header) is a loopback address — the write-side gate that holds even when
+// --host widened the read listener.
+func isLoopback(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func jsonOK(w http.ResponseWriter, v any) {

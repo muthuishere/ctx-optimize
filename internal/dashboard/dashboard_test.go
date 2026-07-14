@@ -3,11 +3,17 @@ package dashboard
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/muthuishere/ctx-optimize/internal/audit"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/store"
 )
@@ -32,7 +38,7 @@ func testServer(t *testing.T) (*httptest.Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(NewHandler(root))
+	srv := httptest.NewServer(NewHandler(root, nil))
 	t.Cleanup(srv.Close)
 	return srv, root
 }
@@ -51,6 +57,37 @@ func get(t *testing.T, url string, wantCode int) []byte {
 	return body
 }
 
+func token(t *testing.T, srv *httptest.Server) string {
+	t.Helper()
+	var tok struct {
+		Token string `json:"token"`
+	}
+	json.Unmarshal(get(t, srv.URL+"/api/token", 200), &tok)
+	if tok.Token == "" {
+		t.Fatal("no token")
+	}
+	return tok.Token
+}
+
+// send issues a mutation with the given token header.
+func send(t *testing.T, method, url, tok, body string) (*http.Response, string) {
+	t.Helper()
+	req, err := http.NewRequest(method, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok != "" {
+		req.Header.Set("X-Ctx-Token", tok)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp, string(b)
+}
+
 func TestDashboard(t *testing.T) {
 	srv, _ := testServer(t)
 
@@ -58,11 +95,6 @@ func TestDashboard(t *testing.T) {
 	page := string(get(t, srv.URL+"/", 200))
 	if !strings.Contains(page, "ctx-optimize") {
 		t.Fatal("index page missing")
-	}
-	for _, external := range []string{"https://cdn", "http://cdn", "unpkg.com", "jsdelivr"} {
-		if strings.Contains(page, external) {
-			t.Fatalf("dashboard must not load external resources: found %s", external)
-		}
 	}
 
 	// Modules list the store folders with counts.
@@ -72,14 +104,29 @@ func TestDashboard(t *testing.T) {
 		t.Fatalf("modules: %+v", mods)
 	}
 
-	// Graph returns the full ndjson content as JSON.
+	// Graph returns the (budgeted) content with totals.
 	var g struct {
-		Nodes []schema.Node `json:"nodes"`
-		Edges []schema.Edge `json:"edges"`
+		Nodes      []schema.Node `json:"nodes"`
+		Edges      []schema.Edge `json:"edges"`
+		TotalNodes int           `json:"total_nodes"`
+		Truncated  bool          `json:"truncated"`
 	}
 	json.Unmarshal(get(t, srv.URL+"/api/graph?module=myrepo", 200), &g)
-	if len(g.Nodes) != 2 || len(g.Edges) != 1 {
-		t.Fatalf("graph: %d nodes %d edges", len(g.Nodes), len(g.Edges))
+	if len(g.Nodes) != 2 || len(g.Edges) != 1 || g.TotalNodes != 2 || g.Truncated {
+		t.Fatalf("graph: %d nodes %d edges total %d trunc %v", len(g.Nodes), len(g.Edges), g.TotalNodes, g.Truncated)
+	}
+
+	// Center expansion: the neighborhood door.
+	json.Unmarshal(get(t, srv.URL+"/api/graph?module=myrepo&center=pg://db/refunds&depth=1", 200), &g)
+	if len(g.Nodes) != 2 {
+		t.Fatalf("center graph: %d nodes", len(g.Nodes))
+	}
+	get(t, srv.URL+"/api/graph?module=myrepo&center=nope", 404)
+
+	// Budget: limit caps nodes, truncated says so.
+	json.Unmarshal(get(t, srv.URL+"/api/graph?module=myrepo&limit=1", 200), &g)
+	if len(g.Nodes) != 1 || !g.Truncated {
+		t.Fatalf("limited graph: %d nodes trunc %v", len(g.Nodes), g.Truncated)
 	}
 
 	// Query runs the same engine as the CLI.
@@ -112,5 +159,226 @@ func TestUnknownModuleDoesNotCreateDirs(t *testing.T) {
 		if m.Key == "typo" {
 			t.Fatal("read path created a store folder")
 		}
+	}
+}
+
+// TestEmbeddedBundleNoExternalRefs scans every embedded UI file for external
+// asset references — the zero-external-requests contract, checked at the
+// bundle level. String mentions (license comments, error-message URLs) are
+// fine; loading anything (src/href/url()/import) from http(s) is not.
+func TestEmbeddedBundleNoExternalRefs(t *testing.T) {
+	bad := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\bsrc\s*=\s*["']https?://`),
+		regexp.MustCompile(`(?i)\bhref\s*=\s*["']https?://`),
+		regexp.MustCompile(`(?i)url\(\s*["']?https?://`),
+		regexp.MustCompile(`(?i)@import\s+["']https?://`),
+		regexp.MustCompile(`(?i)\bimport\(\s*["']https?://`),
+		regexp.MustCompile(`(?i)\bfrom\s*["']https?://`),
+		regexp.MustCompile(`(?i)\bfetch\(\s*["']https?://`),
+	}
+	seen := 0
+	err := fs.WalkDir(uiFS, "ui", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		switch filepath.Ext(path) {
+		case ".html", ".js", ".css", ".mjs", ".svg":
+		default:
+			return nil
+		}
+		seen++
+		data, err := uiFS.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, re := range bad {
+			if loc := re.FindIndex(data); loc != nil {
+				lo, hi := max(loc[0]-40, 0), min(loc[1]+80, len(data))
+				t.Errorf("%s: external asset ref: …%s…", path, data[lo:hi])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen == 0 {
+		t.Fatal("no UI files embedded — is internal/dashboard/ui/ committed?")
+	}
+}
+
+func TestMutationGuards(t *testing.T) {
+	srv, root := testServer(t)
+	tok := token(t, srv)
+
+	// No token → 403; wrong method → 405.
+	resp, _ := send(t, "DELETE", srv.URL+"/api/store", "", `{"key":"myrepo","confirm":true}`)
+	if resp.StatusCode != 403 {
+		t.Fatalf("tokenless mutation: %d", resp.StatusCode)
+	}
+	resp, _ = send(t, "GET", srv.URL+"/api/store", tok, "")
+	if resp.StatusCode != 405 {
+		t.Fatalf("wrong method: %d", resp.StatusCode)
+	}
+
+	// Non-loopback peer → 403 even WITH the token (RemoteAddr, not headers).
+	h := NewHandler(root, nil)
+	req := httptest.NewRequest("DELETE", "/api/store", strings.NewReader(`{"key":"myrepo","confirm":true}`))
+	req.RemoteAddr = "203.0.113.7:55555"
+	req.Header.Set("X-Ctx-Token", tok)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 403 || !strings.Contains(rec.Body.String(), "loopback") {
+		t.Fatalf("non-loopback mutation: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// The token itself is loopback-only too.
+	req = httptest.NewRequest("GET", "/api/token", nil)
+	req.RemoteAddr = "203.0.113.7:55555"
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("non-loopback token fetch: %d", rec.Code)
+	}
+
+	// Reads still answer for a non-loopback peer (--host may widen reads).
+	req = httptest.NewRequest("GET", "/api/modules", nil)
+	req.RemoteAddr = "203.0.113.7:55555"
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("read for non-loopback peer: %d", rec.Code)
+	}
+}
+
+func TestConfigSetValidatedAndAudited(t *testing.T) {
+	srv, root := testServer(t)
+	tok := token(t, srv)
+
+	// Invalid value → the CLI validator's own loud error, nothing written.
+	resp, body := send(t, "PUT", srv.URL+"/api/config", tok, `{"level":"global","key":"instructions","value":"BOGUS"}`)
+	if resp.StatusCode != 400 || !strings.Contains(body, "instructions") {
+		t.Fatalf("invalid value: %d %s", resp.StatusCode, body)
+	}
+
+	// Valid set → file written + audit line with hashes.
+	resp, body = send(t, "PUT", srv.URL+"/api/config", tok, `{"level":"global","key":"instructions","value":"claude"}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("config set: %d %s", resp.StatusCode, body)
+	}
+	gcfg, err := store.LoadGlobalConfig(root)
+	if err != nil || gcfg.Instructions != "CLAUDE" {
+		t.Fatalf("global config after set: %+v %v", gcfg, err)
+	}
+	lines, _ := audit.List(root)
+	if len(lines) != 1 || lines[0].Actor != "dashboard" ||
+		!strings.Contains(lines[0].Action, "config.set instructions=CLAUDE") || lines[0].AfterHash == "" {
+		t.Fatalf("audit after config set: %+v", lines)
+	}
+
+	// Project level needs a real dir; validated the same way.
+	repo := t.TempDir()
+	resp, body = send(t, "PUT", srv.URL+"/api/config", tok,
+		`{"level":"project","path":`+strconvQuote(repo)+`,"key":"hooks","value":"none"}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("project config set: %d %s", resp.StatusCode, body)
+	}
+	data, _ := os.ReadFile(filepath.Join(repo, ".ctxoptimize", "config.json"))
+	if !strings.Contains(string(data), `"hooks": "NONE"`) {
+		t.Fatalf("project config file: %s", data)
+	}
+
+	// The /api/audit feed serves both lines.
+	feed := get(t, srv.URL+"/api/audit", 200)
+	var got []audit.Line
+	json.Unmarshal(feed, &got)
+	if len(got) != 2 {
+		t.Fatalf("audit feed: %d lines", len(got))
+	}
+}
+
+func strconvQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func TestStoreDeleteConfirmGated(t *testing.T) {
+	srv, root := testServer(t)
+	tok := token(t, srv)
+
+	resp, body := send(t, "DELETE", srv.URL+"/api/store", tok, `{"key":"myrepo"}`)
+	if resp.StatusCode != 400 || !strings.Contains(body, "confirm") {
+		t.Fatalf("unconfirmed delete: %d %s", resp.StatusCode, body)
+	}
+	resp, _ = send(t, "DELETE", srv.URL+"/api/store", tok, `{"key":"nope","confirm":true}`)
+	if resp.StatusCode != 404 {
+		t.Fatalf("delete unknown store: %d", resp.StatusCode)
+	}
+	resp, _ = send(t, "DELETE", srv.URL+"/api/store", tok, `{"key":"myrepo","confirm":true}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("confirmed delete: %d", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(root, "myrepo")); !os.IsNotExist(err) {
+		t.Fatal("store dir survived delete")
+	}
+	lines, _ := audit.List(root)
+	if len(lines) != 1 || lines[0].Action != "store.delete" || lines[0].Target != "myrepo" {
+		t.Fatalf("audit after delete: %+v", lines)
+	}
+}
+
+func TestStoresEndpoint(t *testing.T) {
+	srv, _ := testServer(t)
+	var stores []StoreInfo
+	json.Unmarshal(get(t, srv.URL+"/api/stores", 200), &stores)
+	if len(stores) != 1 || stores[0].Key != "myrepo" || stores[0].Nodes != 2 {
+		t.Fatalf("stores: %+v", stores)
+	}
+	if stores[0].Fresh != "unknown" { // no source.json in the fixture
+		t.Fatalf("freshness: %q", stores[0].Fresh)
+	}
+	if stores[0].Producers["test"] != 2 {
+		t.Fatalf("producers: %+v", stores[0].Producers)
+	}
+}
+
+func TestSetupEndpoint(t *testing.T) {
+	srv, root := testServer(t)
+	// No repo grammars leak in from the machine: pin the global grammar dir.
+	t.Setenv("CTX_OPTIMIZE_GRAMMARS", filepath.Join(root, "no-such-grammars"))
+
+	var setup struct {
+		Global struct {
+			File string `json:"file"`
+		} `json:"global"`
+		Effective []configKV       `json:"effective"`
+		Axes      []map[string]any `json:"axes"`
+	}
+	json.Unmarshal(get(t, srv.URL+"/api/setup", 200), &setup)
+	if setup.Global.File == "" || len(setup.Effective) != 3 {
+		t.Fatalf("setup: %+v", setup)
+	}
+	for _, kv := range setup.Effective {
+		if kv.Value != "ALL" || kv.Source != "default" {
+			t.Fatalf("effective default: %+v", kv)
+		}
+	}
+	axes := map[string]bool{}
+	for _, a := range setup.Axes {
+		axes[a["axis"].(string)] = true
+	}
+	for _, want := range []string{"grammars", "routes", "manifests", "adapters"} {
+		if !axes[want] {
+			t.Fatalf("axis %s missing: %v", want, axes)
+		}
+	}
+
+	// With a repo path: project half + adapters axis populated.
+	repo := t.TempDir()
+	os.MkdirAll(filepath.Join(repo, ".ctxoptimize", "adapters"), 0o755)
+	os.WriteFile(filepath.Join(repo, ".ctxoptimize", "adapters", "kafka.js"), []byte("//"), 0o644)
+	body := get(t, srv.URL+"/api/setup?path="+url.QueryEscape(repo), 200)
+	if !strings.Contains(string(body), "kafka") {
+		t.Fatalf("setup with path missing adapter: %s", body)
 	}
 }
