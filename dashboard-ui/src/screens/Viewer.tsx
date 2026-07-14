@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import { kindColorMap, SPECIAL_KINDS } from '../App'
+import { kindColorMap, KNOWN_PRODUCERS, producerColorMap, SPECIAL_KINDS } from '../App'
 import ForceGraph from '../ForceGraph'
 import type { Edge, GraphResponse, Module, Node } from '../types'
 
 // Viewer — force-directed NEIGHBORHOOD graph. The server caps every payload
-// (top-N by degree); clicking a node expands its 1-hop neighborhood via
+// (top-N by degree; special kinds + a per-producer sample forced in) and
+// clicking a node expands its 1-hop neighborhood via
 // /api/graph?center=<id>&depth=1 and merges it in. The whole graph never
-// ships.
+// ships. Two independent filter axes ride over the loaded graph: KIND (the
+// node's shape of thing) and PRODUCER (who emitted it — code, docs, an
+// adapter). A node shows only if BOTH its kind and its producer are enabled.
 const LIMIT = 400
+
+const producerOf = (n: Node) => n.metadata?.producer || '(unknown)'
 
 export default function Viewer({ initialModule: rawArg }: { initialModule: string }) {
   const qi = rawArg.indexOf('?')
@@ -21,8 +26,8 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
   const [edges, setEdges] = useState<Map<string, Edge>>(new Map())
   const [totals, setTotals] = useState({ nodes: 0, edges: 0, truncated: false })
   const [selected, setSelected] = useState<string | null>(null)
-  const [producer, setProducer] = useState('')
-  const [hidden, setHidden] = useState<Set<string>>(new Set())
+  const [hiddenKinds, setHiddenKinds] = useState<Set<string>>(new Set())
+  const [hiddenProducers, setHiddenProducers] = useState<Set<string>>(new Set())
   const [err, setErr] = useState('')
 
   const merge = useCallback((g: GraphResponse, reset: boolean) => {
@@ -75,42 +80,63 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
     }
   }, [mod, merge])
 
-  const producers = useMemo(() => {
-    const s = new Set<string>()
-    for (const n of nodes.values()) s.add(n.metadata?.producer || '(unknown)')
-    return Array.from(s).sort()
-  }, [nodes])
-
+  // Intersection filter: a node survives only if its kind AND its producer are
+  // both enabled. Edges follow the surviving node set.
   const shown = useMemo(() => {
-    let list = Array.from(nodes.values())
-    if (producer) list = list.filter((n) => (n.metadata?.producer || '(unknown)') === producer)
-    list = list.filter((n) => !hidden.has(n.kind))
+    const list = Array.from(nodes.values()).filter(
+      (n) => !hiddenKinds.has(n.kind) && !hiddenProducers.has(producerOf(n)))
     const keep = new Set(list.map((n) => n.id))
     const es = Array.from(edges.values()).filter((e) => keep.has(e.source) && keep.has(e.target))
     return { nodes: list, edges: es }
-  }, [nodes, edges, producer, hidden])
+  }, [nodes, edges, hiddenKinds, hiddenProducers])
 
-  // Legend covers every kind currently in the graph (hidden or not) so a
-  // filtered-out kind stays clickable to bring back. Special kinds lead.
+  // Legends cover every kind / producer currently loaded (hidden or not) so a
+  // filtered-out group stays clickable to bring back. Counts are over the whole
+  // loaded graph, so a group's tally doesn't jump as the other axis toggles.
   const legendKinds = useMemo(() => {
-    const s = new Set<string>()
-    for (const n of nodes.values()) {
-      if (producer && (n.metadata?.producer || '(unknown)') !== producer) continue
-      s.add(n.kind)
-    }
-    const special = SPECIAL_KINDS.filter((k) => s.has(k))
-    const rest = Array.from(s).filter((k) => !SPECIAL_KINDS.includes(k)).sort()
-    return [...special, ...rest]
-  }, [nodes, producer])
+    const counts = new Map<string, number>()
+    for (const n of nodes.values()) counts.set(n.kind, (counts.get(n.kind) || 0) + 1)
+    const keys = Array.from(counts.keys())
+    const special = SPECIAL_KINDS.filter((k) => counts.has(k))
+    const rest = keys.filter((k) => !SPECIAL_KINDS.includes(k)).sort()
+    return { order: [...special, ...rest], counts }
+  }, [nodes])
 
-  const colors = useMemo(() => kindColorMap(legendKinds), [legendKinds])
+  const legendProducers = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const n of nodes.values()) {
+      const p = producerOf(n)
+      counts.set(p, (counts.get(p) || 0) + 1)
+    }
+    const keys = Array.from(counts.keys())
+    const known = KNOWN_PRODUCERS.filter((p) => counts.has(p))
+    const rest = keys.filter((p) => !KNOWN_PRODUCERS.includes(p)).sort()
+    return { order: [...known, ...rest], counts }
+  }, [nodes])
+
+  const colors = useMemo(() => kindColorMap(legendKinds.order), [legendKinds])
+  const pcolors = useMemo(() => producerColorMap(legendProducers.order), [legendProducers])
+
   const toggleKind = useCallback((k: string) => {
-    setHidden((h) => {
+    setHiddenKinds((h) => {
       const n = new Set(h)
       n.has(k) ? n.delete(k) : n.add(k)
       return n
     })
   }, [])
+  const toggleProducer = useCallback((p: string) => {
+    setHiddenProducers((h) => {
+      const n = new Set(h)
+      n.has(p) ? n.delete(p) : n.add(p)
+      return n
+    })
+  }, [])
+  const resetFilters = useCallback(() => {
+    setHiddenKinds(new Set())
+    setHiddenProducers(new Set())
+  }, [])
+  const filtered = hiddenKinds.size > 0 || hiddenProducers.size > 0
+
   const sel = selected ? nodes.get(selected) : undefined
   const selEdges = useMemo(() => {
     if (!selected) return []
@@ -127,15 +153,9 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
       <div className="side">
         <div className="controls">
           <div className="kicker">viewer</div>
-          <select value={mod} onChange={(e) => { setMod(e.target.value); setProducer(''); setHidden(new Set()); load(e.target.value, '') }}>
+          <select value={mod} onChange={(e) => { setMod(e.target.value); resetFilters(); load(e.target.value, '') }}>
             {mods.map((m) => (
               <option key={m.key} value={m.key}>{m.key} ({m.nodes})</option>
-            ))}
-          </select>
-          <select value={producer} onChange={(e) => setProducer(e.target.value)}>
-            <option value="">all producers</option>
-            {producers.map((p) => (
-              <option key={p} value={p}>{p}</option>
             ))}
           </select>
           <div className="row" style={{ gap: 6 }}>
@@ -159,7 +179,10 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
                 {sel.file_type && <span className="k"> {sel.file_type}</span>}
               </div>
               <div className="drow"><span className="k">source </span><span className="mono">{sel.source} {sel.location || ''}</span></div>
-              <div className="drow"><span className="k">producer </span>{sel.metadata?.producer || ''}</div>
+              <div className="drow">
+                <span className="k">producer </span>
+                <span className="chip" style={{ borderColor: pcolors.get(producerOf(sel)), color: pcolors.get(producerOf(sel)) }}>{producerOf(sel)}</span>
+              </div>
               {selEdges.length > 0 && <hr className="divider" style={{ margin: '12px 0' }} />}
               {selEdges.slice(0, 30).map((x, i) => (
                 <div className="drow" key={i}>
@@ -180,20 +203,42 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
           selectedId={selected}
           onSelect={(id) => (id ? expand(id) : setSelected(null))}
         />
-        {legendKinds.length > 0 && (
+        {(legendKinds.order.length > 0 || legendProducers.order.length > 0) && (
           <div className="legend">
-            <div className="lg-title">kinds — click to filter</div>
-            {legendKinds.map((k) => (
-              <div className={'lg-row' + (hidden.has(k) ? ' off' : '')} key={k}
-                onClick={() => toggleKind(k)} title={hidden.has(k) ? 'show ' + k : 'hide ' + k}>
-                <i style={{ background: colors.get(k), color: colors.get(k) }} />
-                {k}
-                {SPECIAL_KINDS.includes(k) && <span className="lg-star" title="first-class kind">★</span>}
+            <div className="lg-head">
+              <span className="lg-title">filters</span>
+              {filtered && <span className="lg-reset" onClick={resetFilters} title="show everything">reset</span>}
+            </div>
+            {legendKinds.order.length > 0 && (
+              <div className="lg-group">
+                <div className="lg-sub">kinds</div>
+                {legendKinds.order.map((k) => (
+                  <div className={'lg-row' + (hiddenKinds.has(k) ? ' off' : '')} key={k}
+                    onClick={() => toggleKind(k)} title={hiddenKinds.has(k) ? 'show ' + k : 'hide ' + k}>
+                    <i style={{ background: colors.get(k), color: colors.get(k) }} />
+                    <span className="lg-name">{k}</span>
+                    {SPECIAL_KINDS.includes(k) && <span className="lg-star" title="first-class kind">★</span>}
+                    <span className="lg-count">{legendKinds.counts.get(k)}</span>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+            {legendProducers.order.length > 0 && (
+              <div className="lg-group">
+                <div className="lg-sub">producers</div>
+                {legendProducers.order.map((p) => (
+                  <div className={'lg-row' + (hiddenProducers.has(p) ? ' off' : '')} key={p}
+                    onClick={() => toggleProducer(p)} title={hiddenProducers.has(p) ? 'show ' + p : 'hide ' + p}>
+                    <i style={{ background: pcolors.get(p), color: pcolors.get(p) }} />
+                    <span className="lg-name">{p}</span>
+                    <span className="lg-count">{legendProducers.counts.get(p)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
-        <div className="note">drag: pan · wheel: zoom · click: expand neighborhood · legend: filter kinds</div>
+        <div className="note">drag: pan · wheel: zoom · click: expand neighborhood · legend: filter kinds & producers</div>
       </div>
     </div>
   )

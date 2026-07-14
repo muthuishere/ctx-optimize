@@ -176,7 +176,14 @@ func (s *server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		// images, config) are usually low-degree and fall off the top-N cut.
 		// Add them on top so a repo with routes/k8s/deps actually shows them —
 		// capped so a pathological store can't blow the payload.
-		keptNodes = includeSpecialKinds(nodes, keptNodes, min(len(nodes), limit+2000))
+		cap := min(len(nodes), limit+2000)
+		keptNodes = includeSpecialKinds(nodes, keptNodes, cap)
+		// Same fairness for PRODUCERS: an adapter (postgres schema, kafka
+		// topics) or a docs/manifest producer whose nodes are all low-degree
+		// can miss the top-N cut entirely, leaving the Viewer's producer
+		// filter with nothing to show. Guarantee every producer a visible
+		// sample so filtering by "postgres" actually surfaces its tables.
+		keptNodes = includeProducerSample(nodes, keptNodes, 60, cap)
 	}
 	keep := make(map[string]bool, len(keptNodes))
 	for _, n := range keptNodes {
@@ -236,6 +243,47 @@ func includeSpecialKinds(all, kept []schema.Node, cap int) []schema.Node {
 		}
 	}
 	return kept
+}
+
+// includeProducerSample guarantees every producer present in the store keeps a
+// visible sample in the payload. Any producer with NO node in the degree-ranked
+// cut gets up to `sample` of its nodes appended, so the Viewer's producer
+// filter (postgres, kafka, an adapter, plain files/docs) always has nodes to
+// toggle. Producers already represented by the degree budget are left as-is —
+// they already have something to show. Order is preserved and the overall cap
+// is respected so a pathological store can't blow the payload.
+func includeProducerSample(all, kept []schema.Node, sample, cap int) []schema.Node {
+	have := make(map[string]bool, len(kept))
+	represented := map[string]bool{}
+	for _, n := range kept {
+		have[n.ID] = true
+		represented[producerOf(n)] = true
+	}
+	added := map[string]int{}
+	for _, n := range all {
+		if len(kept) >= cap {
+			break
+		}
+		if have[n.ID] {
+			continue
+		}
+		p := producerOf(n)
+		if represented[p] || added[p] >= sample {
+			continue
+		}
+		have[n.ID] = true
+		added[p]++
+		kept = append(kept, n)
+	}
+	return kept
+}
+
+// producerOf reads a node's provenance tag, matching the frontend's fallback.
+func producerOf(n schema.Node) string {
+	if p := n.Metadata["producer"]; p != "" {
+		return p
+	}
+	return "(unknown)"
 }
 
 // neighborhood BFS-expands from center over both edge directions. nil when

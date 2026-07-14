@@ -27,6 +27,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/skills"
 	"github.com/muthuishere/ctx-optimize/internal/store"
+	"github.com/muthuishere/ctx-optimize/internal/usage"
 )
 
 // mutation wraps a handler with the write-side guards. Method mismatch is
@@ -74,6 +75,7 @@ type StoreInfo struct {
 	AgeSeconds int64              `json:"age_seconds,omitempty"`
 	Producers  map[string]int     `json:"producers,omitempty"`
 	Reports    []freshness.Report `json:"freshness,omitempty"`
+	Usage      *usage.Summary     `json:"usage,omitempty"`
 }
 
 func (s *server) handleStores(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +92,12 @@ func (s *server) handleStores(w http.ResponseWriter, r *http.Request) {
 			Key: m.Key, Root: m.Root, Nodes: m.Nodes, Edges: m.Edges,
 			Summary: m.Summary, Fresh: string(freshness.Unknown),
 			Producers: producerCounts(filepath.Join(dir, "graph", "nodes.ndjson")),
+		}
+		// Served-counter roll-up: same numbers `status` prints (answers
+		// served + tokens/$ saved). A store with no metrics file yields a
+		// zero summary, never an error — it just contributes 0.
+		if sum, err := usage.Summarize(dir); err == nil {
+			info.Usage = sum
 		}
 		// source.json read directly (never store.Open here: the read path
 		// must not create layout).

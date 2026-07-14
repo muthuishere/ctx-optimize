@@ -38,6 +38,15 @@ export interface FreshnessReport {
   age_seconds: number
 }
 
+// Usage mirrors internal/usage.Summary — the served-counter roll-up (answers
+// served + tokens/$ saved) the `status` verb prints. Only the fields the
+// Overview needs are typed.
+export interface Usage {
+  total_served: number
+  est_tokens_saved: number
+  est_cost_saved_usd: number
+}
+
 export interface StoreInfo {
   key: string
   root: string
@@ -49,6 +58,7 @@ export interface StoreInfo {
   age_seconds?: number
   producers?: Record<string, number>
   freshness?: FreshnessReport[]
+  usage?: Usage
 }
 
 export interface Neighbor {
