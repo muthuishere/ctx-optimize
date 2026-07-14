@@ -40,6 +40,32 @@ const LIMIT = 400
 
 const producerOf = (n: Node) => n.metadata?.producer || '(unknown)'
 
+// sanitizeNode makes ONE node safe to render, or drops it — so a single
+// malformed node (missing id, non-string label/kind from a corrupt store or a
+// buggy adapter) is skipped alone instead of taking down the whole graph.
+// Fields are coerced to the shapes the renderer expects; only a node with no
+// usable id is unrenderable and returns null.
+function sanitizeNode(n: any): Node | null {
+  if (!n || n.id == null) return null
+  const id = String(n.id)
+  return {
+    id,
+    label: typeof n.label === 'string' ? n.label : String(n.label ?? id),
+    kind: typeof n.kind === 'string' ? n.kind : String(n.kind ?? ''),
+    file_type: typeof n.file_type === 'string' ? n.file_type : undefined,
+    source: typeof n.source === 'string' ? n.source : undefined,
+    location: typeof n.location === 'string' ? n.location : undefined,
+    metadata: n.metadata && typeof n.metadata === 'object' ? n.metadata : undefined,
+  }
+}
+
+// sanitizeEdge is the edge equivalent: endpoints and relation must be strings
+// or the edge is dropped (a dangling edge just won't draw — no crash).
+function sanitizeEdge(e: any): Edge | null {
+  if (!e || e.source == null || e.target == null) return null
+  return { source: String(e.source), target: String(e.target), relation: typeof e.relation === 'string' ? e.relation : '' }
+}
+
 export default function Viewer({ initialModule: rawArg }: { initialModule: string }) {
   const qi = rawArg.indexOf('?')
   const initialModule = safeDecode(qi < 0 ? rawArg : rawArg.slice(0, qi))
@@ -59,23 +85,25 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
   const [storeLinks, setStoreLinks] = useState<Map<string, StoreLinks>>(new Map())
 
   const merge = useCallback((g: GraphResponse, reset: boolean) => {
-    // Defensive: a malformed/empty graph response (nodes or edges missing, a
-    // node without an id) must not throw inside the setState updater — that
-    // escapes load()'s try/catch and blanks the graph. Default to [] and skip
-    // idless nodes so one bad payload degrades gracefully.
+    // Per-node/per-edge sanitize: a malformed graph payload must not throw
+    // inside the setState updater (that escapes load()'s try/catch and blanks
+    // the graph). Each bad node is cleaned or dropped ALONE — every good node
+    // still renders. Defaults to [] when the arrays are missing entirely.
     const gnodes = Array.isArray(g?.nodes) ? g.nodes : []
     const gedges = Array.isArray(g?.edges) ? g.edges : []
     setNodes((prev) => {
       const m = reset ? new Map<string, Node>() : new Map(prev)
-      for (const n of gnodes) if (n && n.id != null) m.set(n.id, n)
+      for (const raw of gnodes) {
+        const n = sanitizeNode(raw)
+        if (n) m.set(n.id, n)
+      }
       return m
     })
     setEdges((prev) => {
       const m = reset ? new Map<string, Edge>() : new Map(prev)
-      for (const e of gedges) {
-        if (e && e.source != null && e.target != null) {
-          m.set(e.source + '\x00' + e.target + '\x00' + e.relation, e)
-        }
+      for (const raw of gedges) {
+        const e = sanitizeEdge(raw)
+        if (e) m.set(e.source + '\x00' + e.target + '\x00' + e.relation, e)
       }
       return m
     })

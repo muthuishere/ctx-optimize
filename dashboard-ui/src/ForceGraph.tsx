@@ -225,6 +225,7 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
       const glow = nodes.length <= 600
 
       for (const e of st.edges) {
+       try {
         const a = st.sim.get(e.source)
         const b = st.sim.get(e.target)
         if (!a || !b) continue
@@ -253,8 +254,10 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
         ctx.moveTo(a.x, a.y)
         ctx.lineTo(b.x, b.y)
         ctx.stroke()
+       } catch { /* one bad edge is skipped alone — the rest still draw */ }
       }
       for (const n of nodes) {
+       try {
         const r = (SPECIAL.has(n.kind) ? 5 : 3.5) + Math.min(10, Math.sqrt(n.deg) * 1.4)
         const inFocus = !focus || n.id === focus || neigh.has(n.id)
         const c = st.colors.get(n.kind) || '#94a3b8'
@@ -289,6 +292,7 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
           ctx.fillText(label, n.x + r + 4 / view.k, n.y + 3.5 / view.k)
         }
         ctx.globalAlpha = 1
+       } catch { /* one bad node is skipped alone — the rest still draw */ }
       }
     }
 
