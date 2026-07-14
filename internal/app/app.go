@@ -283,7 +283,7 @@ func cmdInit(args []string, stdout io.Writer) error {
 		name = store.SanitizeKey(cfg.Name)
 	}
 	// Which instruction files to touch is a machine-global choice
-	// (~/ctxoptimize/config.json agents.type: AGENTS | CLAUDE | BOTH).
+	// (~/ctxoptimize/config.json instructions: CLAUDE | AGENTS | ALL | NONE).
 	storeRoot, err := store.Root(f.strs["store"])
 	if err != nil {
 		return err
@@ -292,7 +292,7 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	targets, err := project.PointerTargets(gcfg.Agents.Type)
+	targets, err := project.PointerTargets(gcfg.Instructions)
 	if err != nil {
 		return err
 	}
@@ -310,14 +310,20 @@ func cmdInit(args []string, stdout io.Writer) error {
 	fmt.Fprintf(stdout, "store ready: %s\n%s/ scaffolded — commit it (config.json + adapters/)\n", s.Dir, project.Dir)
 	if len(pointed) > 0 {
 		fmt.Fprintf(stdout, "agent pointer written to %s — commit these too; they make agent CLIs use the store unprompted\n", strings.Join(pointed, " + "))
+	} else if len(targets) == 0 {
+		fmt.Fprintln(stdout, "instructions = NONE (global config) — no CLAUDE.md/AGENTS.md touched")
 	}
 	return nil
 }
 
 // cmdConfig gets/sets machine-global settings (~/ctxoptimize/config.json).
-// One key today: agents.type = AGENTS | CLAUDE | BOTH — which instruction
-// files `init` writes the pointer block into. Meant to be scripted (an npm
-// install step can run `ctx-optimize config agents.type CLAUDE`).
+// Keys are flat artifact nouns, values name who gets the artifact:
+//
+//	instructions = CLAUDE | AGENTS | ALL | NONE  (files init writes)
+//	skills       = CLAUDE | AGENTS | ALL         (dirs install --skills writes)
+//
+// Meant to be scripted (an npm install step can run
+// `ctx-optimize config instructions CLAUDE`).
 func cmdConfig(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	storeRoot, err := store.Root(f.strs["store"])
@@ -328,38 +334,63 @@ func cmdConfig(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	type key struct {
+		get      func() string
+		validate func(string) error
+		set      func(string)
+	}
+	orDefault := func(v, def string) string {
+		if v == "" {
+			return def
+		}
+		return v
+	}
+	keys := map[string]key{
+		"instructions": {
+			get: func() string { return orDefault(gcfg.Instructions, "ALL") },
+			validate: func(v string) error {
+				_, err := project.PointerTargets(v)
+				return err
+			},
+			set: func(v string) { gcfg.Instructions = v },
+		},
+		"skills": {
+			get: func() string { return orDefault(gcfg.Skills, "ALL") },
+			validate: func(v string) error {
+				_, err := skills.SkillTargets(v)
+				return err
+			},
+			set: func(v string) { gcfg.Skills = v },
+		},
+	}
 	switch len(f.args) {
 	case 0: // show everything we manage
-		v := gcfg.Agents.Type
-		if v == "" {
-			v = "BOTH"
+		for _, name := range []string{"instructions", "skills"} {
+			fmt.Fprintf(stdout, "%s = %s\n", name, keys[name].get())
 		}
-		fmt.Fprintf(stdout, "agents.type = %s  (%s)\n", v, filepath.Join(storeRoot, "config.json"))
+		fmt.Fprintf(stdout, "(%s)\n", filepath.Join(storeRoot, "config.json"))
 		return nil
 	case 1, 2:
-		if f.args[0] != "agents.type" {
-			return fmt.Errorf("unknown config key %q — only agents.type for now", f.args[0])
+		k, ok := keys[f.args[0]]
+		if !ok {
+			return fmt.Errorf("unknown config key %q — keys: instructions, skills", f.args[0])
 		}
 		if len(f.args) == 1 {
-			v := gcfg.Agents.Type
-			if v == "" {
-				v = "BOTH"
-			}
-			fmt.Fprintln(stdout, v)
+			fmt.Fprintln(stdout, k.get())
 			return nil
 		}
-		targets, err := project.PointerTargets(f.args[1])
-		if err != nil {
+		v := strings.ToUpper(strings.TrimSpace(f.args[1]))
+		if err := k.validate(v); err != nil {
 			return err
 		}
-		gcfg.Agents.Type = strings.ToUpper(strings.TrimSpace(f.args[1]))
+		k.set(v)
 		if err := store.SaveGlobalConfig(storeRoot, gcfg); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "agents.type = %s — init will touch %s\n", gcfg.Agents.Type, strings.Join(targets, " + "))
+		fmt.Fprintf(stdout, "%s = %s\n", f.args[0], v)
 		return nil
 	}
-	return fmt.Errorf("usage: config [agents.type [AGENTS|CLAUDE|BOTH]]")
+	return fmt.Errorf("usage: config [<key> [<value>]] — keys: instructions, skills")
 }
 
 // cmdAdd is both the built-in producer runner (`add <path>`) and the
@@ -1734,8 +1765,28 @@ func cmdInstall(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// Global `skills` setting narrows which dirs we may write.
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	gcfg, err := store.LoadGlobalConfig(storeRoot)
+	if err != nil {
+		return err
+	}
+	allowedDirs, err := skills.SkillTargets(gcfg.Skills)
+	if err != nil {
+		return err
+	}
+	allowed := map[string]bool{}
+	for _, d := range allowedDirs {
+		allowed[d] = true
+	}
 	installed := map[string]bool{}
 	skillFor := func(dir string) (string, error) {
+		if !allowed[dir] {
+			return "", nil
+		}
 		if installed[dir] {
 			return dir, nil
 		}
@@ -1757,7 +1808,11 @@ func cmdInstall(args []string, stdout io.Writer) error {
 			if err != nil {
 				return err
 			}
-			skillNote = "✓ " + d
+			if d == "" {
+				skillNote = fmt.Sprintf("skipped (global config skills = %s)", strings.ToUpper(gcfg.Skills))
+			} else {
+				skillNote = "✓ " + d
+			}
 		}
 		if doHooks {
 			var p string
@@ -1844,9 +1899,11 @@ commands:
                               yours to edit after)
   scan [--depth N] [--json]   READ-ONLY module discovery: prints every project
                               found + the exact config.json init --scan writes
-  config [agents.type [V]]    machine-global settings (~/ctxoptimize/config.json)
-                              agents.type AGENTS|CLAUDE|BOTH — which instruction
-                              files init writes the pointer block into (default BOTH)
+  config [<key> [<value>]]    machine-global settings (~/ctxoptimize/config.json)
+                              instructions CLAUDE|AGENTS|ALL|NONE — files init
+                              writes the pointer block into (default ALL)
+                              skills CLAUDE|AGENTS|ALL — dirs install --skills
+                              writes (default ALL)
   add [<path>] [--json -|F]   gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
                               (--force to allow >50%% shrink); --json door upserts

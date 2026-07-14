@@ -236,6 +236,7 @@ func TestPointerTargets(t *testing.T) {
 		"both":   "CLAUDE.md AGENTS.md",
 		"CLAUDE": "CLAUDE.md",
 		"agents": "AGENTS.md",
+		"all":    "CLAUDE.md AGENTS.md",
 	} {
 		got, err := PointerTargets(in)
 		if err != nil || strings.Join(got, " ") != want {

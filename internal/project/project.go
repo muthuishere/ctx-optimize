@@ -279,19 +279,22 @@ func pointerBlock(name string, modules int) string {
 		pointerEnd + "\n"
 }
 
-// PointerTargets maps the global agents.type setting to the instruction
-// files init may touch: AGENTS, CLAUDE, or BOTH (default for ""). Anything
-// else is refused — a typo must not silently fall back to writing files.
-func PointerTargets(agentsType string) ([]string, error) {
-	switch strings.ToUpper(strings.TrimSpace(agentsType)) {
-	case "", "BOTH":
+// PointerTargets maps the global `instructions` setting to the files init
+// may touch: CLAUDE, AGENTS, ALL (default for ""; BOTH accepted as alias),
+// or NONE (never touch the repo's instruction files). Anything else is
+// refused — a typo must not silently fall back to writing files.
+func PointerTargets(instructions string) ([]string, error) {
+	switch strings.ToUpper(strings.TrimSpace(instructions)) {
+	case "", "ALL", "BOTH":
 		return []string{"CLAUDE.md", "AGENTS.md"}, nil
 	case "CLAUDE":
 		return []string{"CLAUDE.md"}, nil
 	case "AGENTS":
 		return []string{"AGENTS.md"}, nil
+	case "NONE":
+		return nil, nil
 	}
-	return nil, fmt.Errorf("agents.type %q: want AGENTS, CLAUDE, or BOTH", agentsType)
+	return nil, fmt.Errorf("instructions %q: want CLAUDE, AGENTS, ALL, or NONE", instructions)
 }
 
 // EnsureAgentPointer writes or refreshes the pointer block in the repo's

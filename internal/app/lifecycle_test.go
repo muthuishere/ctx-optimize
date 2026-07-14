@@ -191,53 +191,75 @@ func TestModuleChildConfigAdoption(t *testing.T) {
 	}
 }
 
-// TestGlobalAgentsType: the machine-global agents.type picks which
-// instruction files init touches — CLAUDE, AGENTS, or BOTH (default).
-func TestGlobalAgentsType(t *testing.T) {
+// TestGlobalInstructionsAndSkills: the machine-global flat keys —
+// `instructions` picks which files init touches (CLAUDE|AGENTS|ALL|NONE),
+// `skills` picks which dirs install --skills writes. Legacy v0.2.6
+// {"agents":{"type":...}} configs still read.
+func TestGlobalInstructionsAndSkills(t *testing.T) {
 	storeRoot := t.TempDir()
 	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
 
-	// Default: BOTH, and `config` reports it without creating anything.
-	out, _ := runCLI(t, 0, "config", "agents.type")
-	if strings.TrimSpace(out) != "BOTH" {
-		t.Fatalf("default agents.type: %q", out)
+	// Defaults: ALL for both, listed together.
+	out, _ := runCLI(t, 0, "config")
+	if !strings.Contains(out, "instructions = ALL") || !strings.Contains(out, "skills = ALL") {
+		t.Fatalf("default config listing: %s", out)
 	}
 
-	// Set CLAUDE → init creates only CLAUDE.md.
-	out, _ = runCLI(t, 0, "config", "agents.type", "claude")
-	if !strings.Contains(out, "CLAUDE.md") || strings.Contains(out, "AGENTS.md") {
-		t.Fatalf("set output: %s", out)
-	}
+	// instructions=CLAUDE → init creates only CLAUDE.md.
+	runCLI(t, 0, "config", "instructions", "claude")
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runCLI(t, 0, "init", "--path", repo)
 	if _, err := os.Stat(filepath.Join(repo, "CLAUDE.md")); err != nil {
-		t.Fatal("CLAUDE.md missing with agents.type=CLAUDE")
+		t.Fatal("CLAUDE.md missing with instructions=CLAUDE")
 	}
 	if _, err := os.Stat(filepath.Join(repo, "AGENTS.md")); !os.IsNotExist(err) {
-		t.Fatal("AGENTS.md must not be created with agents.type=CLAUDE")
+		t.Fatal("AGENTS.md must not be created with instructions=CLAUDE")
 	}
 
-	// Flip to AGENTS → a fresh repo gets only AGENTS.md.
-	runCLI(t, 0, "config", "agents.type", "AGENTS")
+	// instructions=NONE → repo untouched, init says so.
+	runCLI(t, 0, "config", "instructions", "NONE")
 	repo2 := t.TempDir()
-	runCLI(t, 0, "init", "--path", repo2)
-	if _, err := os.Stat(filepath.Join(repo2, "AGENTS.md")); err != nil {
-		t.Fatal("AGENTS.md missing with agents.type=AGENTS")
+	out, _ = runCLI(t, 0, "init", "--path", repo2)
+	if !strings.Contains(out, "NONE") {
+		t.Fatalf("init should say instructions are off:\n%s", out)
 	}
-	if _, err := os.Stat(filepath.Join(repo2, "CLAUDE.md")); !os.IsNotExist(err) {
-		t.Fatal("CLAUDE.md must not be created with agents.type=AGENTS")
+	for _, fn := range []string{"CLAUDE.md", "AGENTS.md"} {
+		if _, err := os.Stat(filepath.Join(repo2, fn)); !os.IsNotExist(err) {
+			t.Fatalf("%s created despite instructions=NONE", fn)
+		}
 	}
 
-	// Typos are refused, config unchanged.
-	_, errb := runCLI(t, 1, "config", "agents.type", "CURSOR")
-	if !strings.Contains(errb, "AGENTS, CLAUDE, or BOTH") {
-		t.Fatalf("bad value must be refused: %s", errb)
+	// Typos refused for both keys; config unchanged.
+	_, errb := runCLI(t, 1, "config", "instructions", "CURSOR")
+	if !strings.Contains(errb, "CLAUDE, AGENTS, ALL, or NONE") {
+		t.Fatalf("bad instructions value: %s", errb)
 	}
-	out, _ = runCLI(t, 0, "config", "agents.type")
-	if strings.TrimSpace(out) != "AGENTS" {
+	_, errb = runCLI(t, 1, "config", "skills", "NONE")
+	if !strings.Contains(errb, "CLAUDE, AGENTS, or ALL") {
+		t.Fatalf("bad skills value: %s", errb)
+	}
+	out, _ = runCLI(t, 0, "config", "instructions")
+	if strings.TrimSpace(out) != "NONE" {
 		t.Fatalf("failed set must not change config: %q", out)
+	}
+
+	// skills key round-trips.
+	runCLI(t, 0, "config", "skills", "agents")
+	out, _ = runCLI(t, 0, "config", "skills")
+	if strings.TrimSpace(out) != "AGENTS" {
+		t.Fatalf("skills round-trip: %q", out)
+	}
+
+	// Legacy v0.2.6 file shape reads as instructions.
+	if err := os.WriteFile(filepath.Join(storeRoot, "config.json"),
+		[]byte(`{"agents":{"type":"AGENTS"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _ = runCLI(t, 0, "config", "instructions")
+	if strings.TrimSpace(out) != "AGENTS" {
+		t.Fatalf("legacy agents.type alias broken: %q", out)
 	}
 }

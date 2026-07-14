@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 //go:embed bundled
@@ -60,6 +61,29 @@ func InstallDir(dst string) error {
 		}
 		return os.WriteFile(out, data, 0o644)
 	})
+}
+
+// SkillTargets maps the global `skills` setting to install dirs: CLAUDE
+// (~/.claude/skills), AGENTS (~/.agents/skills), or ALL (default for "";
+// BOTH accepted as alias). Typos are refused, never silently widened.
+func SkillTargets(choice string) ([]string, error) {
+	claude, err := ClaudeSkillDir()
+	if err != nil {
+		return nil, err
+	}
+	agents, err := AgentsSkillDir()
+	if err != nil {
+		return nil, err
+	}
+	switch strings.ToUpper(strings.TrimSpace(choice)) {
+	case "", "ALL", "BOTH":
+		return []string{claude, agents}, nil
+	case "CLAUDE":
+		return []string{claude}, nil
+	case "AGENTS":
+		return []string{agents}, nil
+	}
+	return nil, fmt.Errorf("skills %q: want CLAUDE, AGENTS, or ALL", choice)
 }
 
 // ClaudeSkillDir and AgentsSkillDir are the two standard install targets.
