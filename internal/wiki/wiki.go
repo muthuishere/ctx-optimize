@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	topHubs     = 20 // hub pages: the top-N most-connected nodes
-	relationCap = 30 // per-relation list cap on hub pages ("… N more")
+	topHubs       = 20 // hub pages: the top-N most-connected nodes
+	relationCap   = 30 // per-relation list cap on hub pages ("… N more")
+	subsystemsCap = 30 // index Subsystems rows ("this repo is N subsystems", not a listing)
 )
 
 // Generate renders index + hub + file pages into <store>/wiki and returns the
@@ -42,6 +43,7 @@ func Generate(s *store.Store) (int, error) {
 
 	g := newGraph(nodes, edges)
 	hubs := analyze.Hubs(nodes, edges, topHubs)
+	communities := analyze.Communities(nodes, edges)
 
 	// File pages: one per file node and per markdown document node.
 	var fileNodes []schema.Node
@@ -78,7 +80,7 @@ func Generate(s *store.Store) (int, error) {
 		return writeAtomic(filepath.Join(dir, name), []byte(body))
 	}
 
-	if err := write("index.md", renderIndex(filepath.Base(s.Dir), g, nodes, edges, hubs, fileNodes, hubPage, filePage)); err != nil {
+	if err := write("index.md", renderIndex(filepath.Base(s.Dir), g, nodes, edges, hubs, communities, fileNodes, hubPage, filePage)); err != nil {
 		return 0, err
 	}
 	for _, h := range hubs {
@@ -166,7 +168,7 @@ func (g *graph) item(id string, pageOf map[string]string, self string) string {
 
 // ---- pages ----
 
-func renderIndex(module string, g *graph, nodes []schema.Node, edges []schema.Edge, hubs []analyze.Hub, fileNodes []schema.Node, hubPage, filePage map[string]string) string {
+func renderIndex(module string, g *graph, nodes []schema.Node, edges []schema.Edge, hubs []analyze.Hub, communities []analyze.Community, fileNodes []schema.Node, hubPage, filePage map[string]string) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\n", module)
 	fmt.Fprintf(&sb, "Deterministic wiki generated from the graph (nodes + edges only). Regenerated on every `add`.\n\n")
@@ -188,6 +190,36 @@ func renderIndex(module string, g *graph, nodes []schema.Node, edges []schema.Ed
 	sb.WriteString("\n## Edges by relation\n\n| relation | count |\n|---|---:|\n")
 	for _, r := range sortedKeys(byRel) {
 		fmt.Fprintf(&sb, "| %s | %d |\n", cell(r), byRel[r])
+	}
+
+	sb.WriteString("\n## Subsystems\n\n")
+	if len(communities) == 0 {
+		sb.WriteString("(none)\n")
+	} else {
+		fmt.Fprintf(&sb, "%d architecture neighborhoods detected by deterministic community detection (largest first).\n\n", len(communities))
+		sb.WriteString("| subsystem | size | top hubs | dirs |\n|---|---:|---|---|\n")
+		shown := communities
+		if len(shown) > subsystemsCap {
+			shown = shown[:subsystemsCap]
+		}
+		for _, c := range shown {
+			hubLabels := make([]string, 0, 3)
+			for _, id := range c.Hubs {
+				if len(hubLabels) == 3 {
+					break
+				}
+				label := id
+				if n, ok := g.byID[id]; ok {
+					label = n.Label
+				}
+				hubLabels = append(hubLabels, label)
+			}
+			fmt.Fprintf(&sb, "| %s | %d | %s | %s |\n",
+				cell(c.Label), len(c.Members), cell(strings.Join(hubLabels, ", ")), cell(strings.Join(c.Dirs, ", ")))
+		}
+		if rest := len(communities) - len(shown); rest > 0 {
+			fmt.Fprintf(&sb, "\n… %d more subsystems (smaller than the ones above).\n", rest)
+		}
 	}
 
 	sb.WriteString("\n## Hubs\n\n")

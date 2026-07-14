@@ -58,6 +58,14 @@ func Build(repoRoot, storeRoot, rootKey string, modules []ModuleEntry) (*Index, 
 		m.Nodes, m.Edges = len(nodes), len(edges)
 		m.Hubs = hubLabels(nodes, edges)
 		m.Summary = readmeSummary(filepath.Join(repoRoot, filepath.FromSlash(m.Path)))
+		if m.Summary == "" {
+			// No README to summarize → derive the about line from the graph:
+			// the top community label ("store.go (internal/store)"). Uses the
+			// nodes+edges already loaded above — no extra store reads.
+			if cs := analyze.Communities(nodes, edges); len(cs) > 0 {
+				m.Summary = cs[0].Label
+			}
+		}
 		idx.Modules = append(idx.Modules, m)
 	}
 	sort.Slice(idx.Modules, func(i, j int) bool { return idx.Modules[i].Path < idx.Modules[j].Path })

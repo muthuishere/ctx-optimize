@@ -116,6 +116,34 @@ func TestGeneratePages(t *testing.T) {
 	}
 }
 
+// The index carries a Subsystems section (community detection) and it is
+// byte-stable across two generations.
+func TestIndexSubsystems(t *testing.T) {
+	s := fixtureStore(t)
+	if _, err := Generate(s); err != nil {
+		t.Fatal(err)
+	}
+	idx := readPage(t, s, "index.md")
+	for _, want := range []string{
+		"## Subsystems",
+		"| subsystem | size | top hubs | dirs |",
+		// One connected component of 6 nodes → one community, labelled by
+		// its highest-degree member (main.go) + dominant dir (pkg).
+		"| main.go (pkg) | 6 |",
+		"pkg, docs",
+	} {
+		if !strings.Contains(idx, want) {
+			t.Fatalf("index.md missing %q:\n%s", want, idx)
+		}
+	}
+	if _, err := Generate(s); err != nil {
+		t.Fatal(err)
+	}
+	if again := readPage(t, s, "index.md"); again != idx {
+		t.Fatal("Subsystems index not byte-stable across two generations")
+	}
+}
+
 // Two runs over the same graph must be byte-identical — the wiki is a pure
 // function of nodes+edges.
 func TestByteIdenticalRegeneration(t *testing.T) {
