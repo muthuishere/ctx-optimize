@@ -17,6 +17,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/audit"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/store"
+	"github.com/muthuishere/ctx-optimize/internal/usage"
 )
 
 func testServer(t *testing.T) (*httptest.Server, string) {
@@ -371,14 +372,18 @@ func TestPackAddGuardsAndAudit(t *testing.T) {
 	}
 }
 
-// TestGraphBudgetIncludesSpecialKinds: a degree-0 special-kind node (a route)
-// must survive a tight degree budget that would otherwise cut it.
-func TestGraphBudgetIncludesSpecialKinds(t *testing.T) {
+// TestGraphBudgetIncludesSpecialKindsAndProducers: under a tight degree budget
+// that keeps only the well-connected code, (1) a degree-0 special-kind node (a
+// route) still survives, (2) a whole ADAPTER/DOC producer whose nodes are all
+// low-degree still gets a visible sample so the Viewer's producer filter has
+// something to show, and (3) every emitted node carries its producer tag.
+func TestGraphBudgetIncludesSpecialKindsAndProducers(t *testing.T) {
 	root := t.TempDir()
 	s, err := store.Open(root, "m")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The well-connected core — producer "code".
 	var nodes []schema.Node
 	var edges []schema.Edge
 	for i := 0; i < 5; i++ { // a clique of well-connected functions
@@ -391,7 +396,20 @@ func TestGraphBudgetIncludesSpecialKinds(t *testing.T) {
 	}
 	// One isolated route node (degree 0) — the top-N-by-degree cut would drop it.
 	nodes = append(nodes, schema.Node{ID: "r1", Label: "GET /x", Kind: "route", FileType: "python", Source: "routes.py"})
-	if _, _, err := s.Merge(&schema.Batch{Producer: "test", Nodes: nodes, Edges: edges}); err != nil {
+	if _, _, err := s.Merge(&schema.Batch{Producer: "code", Nodes: nodes, Edges: edges}); err != nil {
+		t.Fatal(err)
+	}
+	// A postgres adapter's tables — all degree 0, a producer with NO node in
+	// the degree cut. Its filter must still have nodes to show.
+	if _, _, err := s.Merge(&schema.Batch{Producer: "postgres-schema", Nodes: []schema.Node{
+		{ID: "pg://db/orders", Label: "orders", Kind: "table", FileType: "schema", Source: "pg://db/orders"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	// A plain doc, likewise low-degree, different producer.
+	if _, _, err := s.Merge(&schema.Batch{Producer: "markdown", Nodes: []schema.Node{
+		{ID: "README.md::intro", Label: "Intro", Kind: "section", FileType: "markdown", Source: "README.md"},
+	}}); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(NewHandler(root, nil))
@@ -401,14 +419,77 @@ func TestGraphBudgetIncludesSpecialKinds(t *testing.T) {
 		Nodes []schema.Node `json:"nodes"`
 	}
 	json.Unmarshal(get(t, srv.URL+"/api/graph?module=m&limit=3", 200), &g)
-	found := false
+	have := map[string]schema.Node{}
 	for _, n := range g.Nodes {
-		if n.ID == "r1" {
-			found = true
+		have[n.ID] = n
+		if n.Metadata["producer"] == "" { // every node carries its provenance tag
+			t.Fatalf("node %s emitted without a producer: %+v", n.ID, n)
 		}
 	}
-	if !found {
+	if _, ok := have["r1"]; !ok {
 		t.Fatalf("special-kind route node dropped by the degree budget: %+v", g.Nodes)
+	}
+	if n, ok := have["pg://db/orders"]; !ok {
+		t.Fatalf("adapter (postgres-schema) node starved by the budget: %+v", g.Nodes)
+	} else if n.Metadata["producer"] != "postgres-schema" {
+		t.Fatalf("adapter node producer not carried: %+v", n)
+	}
+	if _, ok := have["README.md::intro"]; !ok {
+		t.Fatalf("document (markdown) node starved by the budget: %+v", g.Nodes)
+	}
+}
+
+// TestStoresUsageRollup: /api/stores carries each store's served-counter, and
+// summing across two fixture stores gives the global roll-up the Overview
+// shows. A store with no metrics contributes zero, never an error.
+func TestStoresUsageRollup(t *testing.T) {
+	root := t.TempDir()
+	mk := func(key string, events int) {
+		s, err := store.Open(root, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.Merge(&schema.Batch{Producer: "code", Nodes: []schema.Node{
+			{ID: key + ":n", Label: "n", Kind: "function", FileType: "go", Source: "a.go"},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < events; i++ {
+			usage.Record(filepath.Join(root, key), usage.Event{Verb: "query", Bytes: 400})
+		}
+	}
+	mk("repoA", 2)
+	mk("repoB", 3)
+	// A third store with no usage at all — must roll up as zero, not error.
+	mk("repoC", 0)
+
+	srv := httptest.NewServer(NewHandler(root, nil))
+	t.Cleanup(srv.Close)
+
+	var stores []StoreInfo
+	json.Unmarshal(get(t, srv.URL+"/api/stores", 200), &stores)
+	if len(stores) != 3 {
+		t.Fatalf("stores: %d", len(stores))
+	}
+	var served, saved int
+	var usd float64
+	for _, st := range stores {
+		if st.Usage == nil {
+			t.Fatalf("store %s missing usage summary", st.Key)
+		}
+		served += st.Usage.Total
+		saved += st.Usage.EstSaved
+		usd += st.Usage.EstUSD
+	}
+	// 5 events total, each Bytes=400 → saved = 7600 − 400/4 = 7500 tokens.
+	if served != 5 {
+		t.Fatalf("rolled-up answers served: %d (want 5)", served)
+	}
+	if saved != 5*7500 {
+		t.Fatalf("rolled-up tokens saved: %d (want %d)", saved, 5*7500)
+	}
+	if usd <= 0 {
+		t.Fatalf("rolled-up $ saved not positive: %v", usd)
 	}
 }
 

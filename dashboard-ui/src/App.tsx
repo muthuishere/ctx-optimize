@@ -95,3 +95,33 @@ export function kindColorMap(kinds: string[]): Map<string, string> {
   })
   return m
 }
+
+// Producer accents — the PROVENANCE axis, distinct from kind. The tier-1
+// built-ins get fixed, meaning-carrying hues (code = the green core, docs =
+// teal, manifests = amber, git-history = violet); every adapter (postgres,
+// kafka, …) draws a stable per-name hue from a cooler spread so it reads as
+// "brought in from outside" next to the green core.
+export const PRODUCER_COLORS: Record<string, string> = {
+  code: '#4ade80', // green — the core
+  markdown: '#5eead4', // teal — docs
+  manifests: '#fbbf24', // amber — config/manifests
+  'git-history': '#a78bfa', // violet — history
+}
+export const KNOWN_PRODUCERS = Object.keys(PRODUCER_COLORS)
+
+const PRODUCER_PALETTE = ['#38bdf8', '#f472b6', '#fb923c', '#22d3ee',
+  '#c084fc', '#f87171', '#a3e635', '#e879f9', '#93c5fd', '#fda4af']
+
+export function producerColorMap(producers: string[]): Map<string, string> {
+  const m = new Map<string, string>()
+  let i = 0
+  Array.from(new Set(producers)).sort().forEach((p) => {
+    if (PRODUCER_COLORS[p]) {
+      m.set(p, PRODUCER_COLORS[p])
+      return
+    }
+    m.set(p, PRODUCER_PALETTE[i % PRODUCER_PALETTE.length])
+    i++
+  })
+  return m
+}

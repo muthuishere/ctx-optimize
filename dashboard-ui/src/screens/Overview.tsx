@@ -6,23 +6,36 @@ import { useStores } from '../stores'
 // stale, producer breakdown) summed client-side from /api/stores, plus a
 // compact per-repo grid linking into Viewer/Query. Cached, so it paints
 // instantly on re-entry.
+// compact renders a token count as a short human number (12.3K, 4.5M).
+function compact(n: number): string {
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M'
+  if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K'
+  return n.toLocaleString()
+}
+
 export default function Overview() {
   const { stores, err, refreshing, reload } = useStores()
 
   const roll = useMemo(() => {
     const s = stores || []
     let nodes = 0, edges = 0, fresh = 0, stale = 0
+    let served = 0, saved = 0, usd = 0
     const producers: Record<string, number> = {}
     for (const st of s) {
       nodes += st.nodes
       edges += st.edges
       if (st.fresh === 'fresh') fresh++
       else if (st.fresh === 'stale') stale++
+      // Served-counter roll-up: each store contributes 0 when it has no
+      // metrics yet, so the sum is always safe.
+      served += st.usage?.total_served || 0
+      saved += st.usage?.est_tokens_saved || 0
+      usd += st.usage?.est_cost_saved_usd || 0
       for (const [p, n] of Object.entries(st.producers || {})) {
         producers[p] = (producers[p] || 0) + n
       }
     }
-    return { count: s.length, nodes, edges, fresh, stale, producers }
+    return { count: s.length, nodes, edges, fresh, stale, served, saved, usd, producers }
   }, [stores])
 
   if (!stores) return err
@@ -62,6 +75,15 @@ export default function Overview() {
               <div className="stat"><b>{roll.fresh.toLocaleString()}</b><span>fresh</span></div>
               <div className="stat"><b>{roll.stale.toLocaleString()}</b><span>stale</span></div>
             </div>
+            {roll.served > 0 && (
+              <div className="saved-banner" title="each answered read replaces the grep-and-read chain it stood in for; ~$3 / M input tokens">
+                <span className="saved-usd">~${roll.usd < 100 ? roll.usd.toFixed(2) : Math.round(roll.usd).toLocaleString()} saved</span>
+                <span className="saved-dot">·</span>
+                <span>{roll.served.toLocaleString()} answers served</span>
+                <span className="saved-dot">·</span>
+                <span>{compact(roll.saved)} tokens saved</span>
+              </div>
+            )}
             {producers.length > 0 && (
               <div className="row" style={{ marginTop: 16, gap: 6 }}>
                 {producers.map(([p, n]) => (
