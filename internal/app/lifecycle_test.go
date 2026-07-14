@@ -190,3 +190,54 @@ func TestModuleChildConfigAdoption(t *testing.T) {
 		t.Fatalf("module query through child config broke:\n%s", out)
 	}
 }
+
+// TestGlobalAgentsType: the machine-global agents.type picks which
+// instruction files init touches — CLAUDE, AGENTS, or BOTH (default).
+func TestGlobalAgentsType(t *testing.T) {
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+
+	// Default: BOTH, and `config` reports it without creating anything.
+	out, _ := runCLI(t, 0, "config", "agents.type")
+	if strings.TrimSpace(out) != "BOTH" {
+		t.Fatalf("default agents.type: %q", out)
+	}
+
+	// Set CLAUDE → init creates only CLAUDE.md.
+	out, _ = runCLI(t, 0, "config", "agents.type", "claude")
+	if !strings.Contains(out, "CLAUDE.md") || strings.Contains(out, "AGENTS.md") {
+		t.Fatalf("set output: %s", out)
+	}
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCLI(t, 0, "init", "--path", repo)
+	if _, err := os.Stat(filepath.Join(repo, "CLAUDE.md")); err != nil {
+		t.Fatal("CLAUDE.md missing with agents.type=CLAUDE")
+	}
+	if _, err := os.Stat(filepath.Join(repo, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatal("AGENTS.md must not be created with agents.type=CLAUDE")
+	}
+
+	// Flip to AGENTS → a fresh repo gets only AGENTS.md.
+	runCLI(t, 0, "config", "agents.type", "AGENTS")
+	repo2 := t.TempDir()
+	runCLI(t, 0, "init", "--path", repo2)
+	if _, err := os.Stat(filepath.Join(repo2, "AGENTS.md")); err != nil {
+		t.Fatal("AGENTS.md missing with agents.type=AGENTS")
+	}
+	if _, err := os.Stat(filepath.Join(repo2, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatal("CLAUDE.md must not be created with agents.type=AGENTS")
+	}
+
+	// Typos are refused, config unchanged.
+	_, errb := runCLI(t, 1, "config", "agents.type", "CURSOR")
+	if !strings.Contains(errb, "AGENTS, CLAUDE, or BOTH") {
+		t.Fatalf("bad value must be refused: %s", errb)
+	}
+	out, _ = runCLI(t, 0, "config", "agents.type")
+	if strings.TrimSpace(out) != "AGENTS" {
+		t.Fatalf("failed set must not change config: %q", out)
+	}
+}

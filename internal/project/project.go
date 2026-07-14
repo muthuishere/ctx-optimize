@@ -279,14 +279,30 @@ func pointerBlock(name string, modules int) string {
 		pointerEnd + "\n"
 }
 
+// PointerTargets maps the global agents.type setting to the instruction
+// files init may touch: AGENTS, CLAUDE, or BOTH (default for ""). Anything
+// else is refused — a typo must not silently fall back to writing files.
+func PointerTargets(agentsType string) ([]string, error) {
+	switch strings.ToUpper(strings.TrimSpace(agentsType)) {
+	case "", "BOTH":
+		return []string{"CLAUDE.md", "AGENTS.md"}, nil
+	case "CLAUDE":
+		return []string{"CLAUDE.md"}, nil
+	case "AGENTS":
+		return []string{"AGENTS.md"}, nil
+	}
+	return nil, fmt.Errorf("agents.type %q: want AGENTS, CLAUDE, or BOTH", agentsType)
+}
+
 // EnsureAgentPointer writes or refreshes the pointer block in the repo's
-// CLAUDE.md and AGENTS.md. Existing content outside the markers is never
-// touched; missing files are created with just the block. modules > 0
-// switches to the multi-module wording (navigator, scope-follows-cwd).
-func EnsureAgentPointer(repo, name string, modules int) ([]string, error) {
+// agent-instruction files (targets from PointerTargets — global agents.type
+// picks CLAUDE.md, AGENTS.md, or both). Existing content outside the markers
+// is never touched; missing files are created with just the block. modules >
+// 0 switches to the multi-module wording (navigator, scope-follows-cwd).
+func EnsureAgentPointer(repo, name string, modules int, targets []string) ([]string, error) {
 	block := pointerBlock(name, modules)
 	var written []string
-	for _, fn := range []string{"CLAUDE.md", "AGENTS.md"} {
+	for _, fn := range targets {
 		p := filepath.Join(repo, fn)
 		data, err := os.ReadFile(p)
 		switch {

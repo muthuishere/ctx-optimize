@@ -192,10 +192,14 @@ func TestLoadGarbageFails(t *testing.T) {
 
 func TestEnsureAgentPointer(t *testing.T) {
 	dir := t.TempDir()
+	both, err := PointerTargets("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# My repo\nrules here\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	written, err := EnsureAgentPointer(dir, "mymod", 0)
+	written, err := EnsureAgentPointer(dir, "mymod", 0, both)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +211,7 @@ func TestEnsureAgentPointer(t *testing.T) {
 		t.Fatalf("AGENTS.md lost content or missing block:\n%s", ag)
 	}
 	// second run must be a no-op (idempotent)
-	written2, err := EnsureAgentPointer(dir, "mymod", 0)
+	written2, err := EnsureAgentPointer(dir, "mymod", 0, both)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,11 +219,38 @@ func TestEnsureAgentPointer(t *testing.T) {
 		t.Fatalf("second run rewrote files: %v", written2)
 	}
 	// changed name → block replaced in place, exactly one block
-	if _, err := EnsureAgentPointer(dir, "renamed", 0); err != nil {
+	if _, err := EnsureAgentPointer(dir, "renamed", 0, both); err != nil {
 		t.Fatal(err)
 	}
 	ag, _ = os.ReadFile(filepath.Join(dir, "AGENTS.md"))
 	if strings.Count(string(ag), "ctx-optimize:begin") != 1 || !strings.Contains(string(ag), "ctxoptimize/renamed") {
 		t.Fatalf("block not replaced in place:\n%s", ag)
+	}
+}
+
+// agents.type narrows which instruction files init may touch; a typo must
+// error, never silently write.
+func TestPointerTargets(t *testing.T) {
+	for in, want := range map[string]string{
+		"":       "CLAUDE.md AGENTS.md",
+		"both":   "CLAUDE.md AGENTS.md",
+		"CLAUDE": "CLAUDE.md",
+		"agents": "AGENTS.md",
+	} {
+		got, err := PointerTargets(in)
+		if err != nil || strings.Join(got, " ") != want {
+			t.Fatalf("PointerTargets(%q) = %v, %v", in, got, err)
+		}
+	}
+	if _, err := PointerTargets("CURSOR"); err == nil {
+		t.Fatal("unknown agents.type must be refused")
+	}
+	dir := t.TempDir()
+	written, err := EnsureAgentPointer(dir, "m", 0, []string{"AGENTS.md"})
+	if err != nil || len(written) != 1 || written[0] != "AGENTS.md" {
+		t.Fatalf("targeted write: %v %v", written, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatal("CLAUDE.md must not be created when agents.type = AGENTS")
 	}
 }

@@ -91,6 +91,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdLanguages(rest, stdout)
 	case "remote":
 		err = cmdRemote(rest, stdout)
+	case "config":
+		err = cmdConfig(rest, stdout)
 	case "install":
 		err = cmdInstall(rest, stdout)
 	case "hook-context":
@@ -280,7 +282,21 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if cfg.Name != "" {
 		name = store.SanitizeKey(cfg.Name)
 	}
-	pointed, err := project.EnsureAgentPointer(path, name, len(cfg.Modules))
+	// Which instruction files to touch is a machine-global choice
+	// (~/ctxoptimize/config.json agents.type: AGENTS | CLAUDE | BOTH).
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	gcfg, err := store.LoadGlobalConfig(storeRoot)
+	if err != nil {
+		return err
+	}
+	targets, err := project.PointerTargets(gcfg.Agents.Type)
+	if err != nil {
+		return err
+	}
+	pointed, err := project.EnsureAgentPointer(path, name, len(cfg.Modules), targets)
 	if err != nil {
 		return err
 	}
@@ -296,6 +312,54 @@ func cmdInit(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "agent pointer written to %s — commit these too; they make agent CLIs use the store unprompted\n", strings.Join(pointed, " + "))
 	}
 	return nil
+}
+
+// cmdConfig gets/sets machine-global settings (~/ctxoptimize/config.json).
+// One key today: agents.type = AGENTS | CLAUDE | BOTH — which instruction
+// files `init` writes the pointer block into. Meant to be scripted (an npm
+// install step can run `ctx-optimize config agents.type CLAUDE`).
+func cmdConfig(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	gcfg, err := store.LoadGlobalConfig(storeRoot)
+	if err != nil {
+		return err
+	}
+	switch len(f.args) {
+	case 0: // show everything we manage
+		v := gcfg.Agents.Type
+		if v == "" {
+			v = "BOTH"
+		}
+		fmt.Fprintf(stdout, "agents.type = %s  (%s)\n", v, filepath.Join(storeRoot, "config.json"))
+		return nil
+	case 1, 2:
+		if f.args[0] != "agents.type" {
+			return fmt.Errorf("unknown config key %q — only agents.type for now", f.args[0])
+		}
+		if len(f.args) == 1 {
+			v := gcfg.Agents.Type
+			if v == "" {
+				v = "BOTH"
+			}
+			fmt.Fprintln(stdout, v)
+			return nil
+		}
+		targets, err := project.PointerTargets(f.args[1])
+		if err != nil {
+			return err
+		}
+		gcfg.Agents.Type = strings.ToUpper(strings.TrimSpace(f.args[1]))
+		if err := store.SaveGlobalConfig(storeRoot, gcfg); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "agents.type = %s — init will touch %s\n", gcfg.Agents.Type, strings.Join(targets, " + "))
+		return nil
+	}
+	return fmt.Errorf("usage: config [agents.type [AGENTS|CLAUDE|BOTH]]")
 }
 
 // cmdAdd is both the built-in producer runner (`add <path>`) and the
@@ -1780,6 +1844,9 @@ commands:
                               yours to edit after)
   scan [--depth N] [--json]   READ-ONLY module discovery: prints every project
                               found + the exact config.json init --scan writes
+  config [agents.type [V]]    machine-global settings (~/ctxoptimize/config.json)
+                              agents.type AGENTS|CLAUDE|BOTH — which instruction
+                              files init writes the pointer block into (default BOTH)
   add [<path>] [--json -|F]   gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
                               (--force to allow >50%% shrink); --json door upserts
