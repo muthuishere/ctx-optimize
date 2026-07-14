@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -261,5 +262,53 @@ func TestGlobalInstructionsAndSkills(t *testing.T) {
 	out, _ = runCLI(t, 0, "config", "instructions")
 	if strings.TrimSpace(out) != "AGENTS" {
 		t.Fatalf("legacy agents.type alias broken: %q", out)
+	}
+}
+
+// TestConfigHooksAndProjectLevel: the hooks key validates like the others,
+// and --project writes committable overrides that beat global — init obeys
+// the project's instructions even when global says otherwise.
+func TestConfigHooksAndProjectLevel(t *testing.T) {
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+	repo := t.TempDir()
+
+	// hooks key round-trips and rejects junk.
+	runCLI(t, 0, "config", "hooks", "agents")
+	out, _ := runCLI(t, 0, "config", "hooks")
+	if strings.TrimSpace(out) != "AGENTS" {
+		t.Fatalf("hooks round-trip: %q", out)
+	}
+	_, errb := runCLI(t, 1, "config", "hooks", "CURSOR")
+	if !strings.Contains(errb, "CLAUDE, AGENTS, ALL, or NONE") {
+		t.Fatalf("bad hooks value: %s", errb)
+	}
+
+	// Global says NONE; the project pins CLAUDE — project must win at init.
+	runCLI(t, 0, "config", "instructions", "NONE")
+	out, _ = runCLI(t, 0, "config", "instructions", "CLAUDE", "--project", "--path", repo)
+	if !strings.Contains(out, "commit it") {
+		t.Fatalf("project set should point at the committable file: %s", out)
+	}
+	var pc map[string]any
+	data, err := os.ReadFile(filepath.Join(repo, ".ctxoptimize", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &pc); err != nil || pc["instructions"] != "CLAUDE" {
+		t.Fatalf("project config not written: %s (%v)", data, err)
+	}
+	runCLI(t, 0, "init", "--path", repo)
+	if _, err := os.Stat(filepath.Join(repo, "CLAUDE.md")); err != nil {
+		t.Fatal("project instructions=CLAUDE must beat global NONE")
+	}
+	if _, err := os.Stat(filepath.Join(repo, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatal("AGENTS.md must not appear with project instructions=CLAUDE")
+	}
+
+	// Listing from inside the repo shows the winning source.
+	out, _ = runCLI(t, 0, "config", "--path", repo)
+	if !strings.Contains(out, "instructions = CLAUDE  (project)") || !strings.Contains(out, "hooks = AGENTS  (global)") {
+		t.Fatalf("effective listing wrong:\n%s", out)
 	}
 }

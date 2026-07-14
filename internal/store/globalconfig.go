@@ -18,6 +18,10 @@ type GlobalConfig struct {
 	// Skills picks which skill dirs `install --skills` writes:
 	// CLAUDE (~/.claude/skills), AGENTS (~/.agents/skills), or ALL (default).
 	Skills string `json:"skills,omitempty"`
+	// Hooks picks which platforms' prompt-hook files `install` writes:
+	// CLAUDE, AGENTS (codex+copilot), ALL (default), or NONE. Devin needs no
+	// hook file — it reads the Claude hook and AGENTS.md natively.
+	Hooks string `json:"hooks,omitempty"`
 
 	// Legacy v0.2.6 shape ({"agents":{"type":...}}) — read-only alias,
 	// never written back.

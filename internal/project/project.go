@@ -173,6 +173,13 @@ type Config struct {
 	// Scan tunes the generator (`scan` / `init --scan`): depth, extra
 	// markers, include/exclude globs.
 	Scan *scan.Options `json:"scan,omitempty"`
+
+	// Per-project overrides of the machine-global settings (set via
+	// `config <key> <value> --project`); empty means "inherit global".
+	// Committable, so a team can pin a repo's behavior.
+	Instructions string `json:"instructions,omitempty"` // CLAUDE|AGENTS|ALL|NONE
+	Skills       string `json:"skills,omitempty"`       // CLAUDE|AGENTS|ALL
+	Hooks        string `json:"hooks,omitempty"`        // CLAUDE|AGENTS|ALL|NONE
 }
 
 func path(repo string) string { return filepath.Join(repo, filepath.FromSlash(FileName)) }

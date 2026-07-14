@@ -282,8 +282,8 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if cfg.Name != "" {
 		name = store.SanitizeKey(cfg.Name)
 	}
-	// Which instruction files to touch is a machine-global choice
-	// (~/ctxoptimize/config.json instructions: CLAUDE | AGENTS | ALL | NONE).
+	// Which instruction files to touch: project setting first (committed,
+	// team-pinned), then the machine-global config, then ALL.
 	storeRoot, err := store.Root(f.strs["store"])
 	if err != nil {
 		return err
@@ -292,7 +292,11 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	targets, err := project.PointerTargets(gcfg.Instructions)
+	instr := cfg.Instructions
+	if instr == "" {
+		instr = gcfg.Instructions
+	}
+	targets, err := project.PointerTargets(instr)
 	if err != nil {
 		return err
 	}
@@ -316,11 +320,23 @@ func cmdInit(args []string, stdout io.Writer) error {
 	return nil
 }
 
-// cmdConfig gets/sets machine-global settings (~/ctxoptimize/config.json).
-// Keys are flat artifact nouns, values name who gets the artifact:
+// orAll renders an empty settings choice as its default for messages.
+func orAll(v string) string {
+	if v == "" {
+		return "ALL"
+	}
+	return v
+}
+
+// cmdConfig gets/sets settings at two levels, git-style: machine-global
+// (~/ctxoptimize/config.json, the default) and per-project with --project
+// (.ctxoptimize/config.json, committable — a team can pin a repo's
+// behavior). Project overrides global. Keys are flat artifact nouns, values
+// name who gets the artifact:
 //
 //	instructions = CLAUDE | AGENTS | ALL | NONE  (files init writes)
 //	skills       = CLAUDE | AGENTS | ALL         (dirs install --skills writes)
+//	hooks        = CLAUDE | AGENTS | ALL | NONE  (platform hook files install writes)
 //
 // Meant to be scripted (an npm install step can run
 // `ctx-optimize config instructions CLAUDE`).
@@ -334,63 +350,90 @@ func cmdConfig(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	type key struct {
-		get      func() string
-		validate func(string) error
-		set      func(string)
+	// Nearest project config, git-style upward walk from --path/cwd.
+	sc, err := resolveScope(f)
+	if err != nil {
+		return err
 	}
-	orDefault := func(v, def string) string {
-		if v == "" {
-			return def
-		}
-		return v
+	pcfg := sc.cfg
+	if pcfg == nil {
+		pcfg = &project.Config{}
+	}
+	type key struct {
+		validate func(string) error
+		glob     *string
+		proj     *string
 	}
 	keys := map[string]key{
 		"instructions": {
-			get: func() string { return orDefault(gcfg.Instructions, "ALL") },
-			validate: func(v string) error {
-				_, err := project.PointerTargets(v)
-				return err
-			},
-			set: func(v string) { gcfg.Instructions = v },
+			validate: func(v string) error { _, err := project.PointerTargets(v); return err },
+			glob:     &gcfg.Instructions, proj: &pcfg.Instructions,
 		},
 		"skills": {
-			get: func() string { return orDefault(gcfg.Skills, "ALL") },
-			validate: func(v string) error {
-				_, err := skills.SkillTargets(v)
-				return err
-			},
-			set: func(v string) { gcfg.Skills = v },
+			validate: func(v string) error { _, err := skills.SkillTargets(v); return err },
+			glob:     &gcfg.Skills, proj: &pcfg.Skills,
+		},
+		"hooks": {
+			validate: func(v string) error { _, err := skills.HookPlatforms(v); return err },
+			glob:     &gcfg.Hooks, proj: &pcfg.Hooks,
 		},
 	}
-	switch len(f.args) {
-	case 0: // show everything we manage
-		for _, name := range []string{"instructions", "skills"} {
-			fmt.Fprintf(stdout, "%s = %s\n", name, keys[name].get())
+	keyNames := []string{"instructions", "skills", "hooks"}
+	toProject := f.bools["project"]
+	effective := func(k key) (string, string) { // value, source
+		if *k.proj != "" {
+			return *k.proj, "project"
 		}
-		fmt.Fprintf(stdout, "(%s)\n", filepath.Join(storeRoot, "config.json"))
+		if *k.glob != "" {
+			return *k.glob, "global"
+		}
+		return "ALL", "default"
+	}
+	switch len(f.args) {
+	case 0: // list
+		for _, name := range keyNames {
+			v, src := effective(keys[name])
+			if src == "default" {
+				fmt.Fprintf(stdout, "%s = %s\n", name, v)
+			} else {
+				fmt.Fprintf(stdout, "%s = %s  (%s)\n", name, v, src)
+			}
+		}
+		fmt.Fprintf(stdout, "global: %s\n", filepath.Join(storeRoot, "config.json"))
+		if sc.cfg != nil {
+			fmt.Fprintf(stdout, "project: %s\n", filepath.Join(sc.rootDir, filepath.FromSlash(project.FileName)))
+		}
 		return nil
 	case 1, 2:
 		k, ok := keys[f.args[0]]
 		if !ok {
-			return fmt.Errorf("unknown config key %q — keys: instructions, skills", f.args[0])
+			return fmt.Errorf("unknown config key %q — keys: %s", f.args[0], strings.Join(keyNames, ", "))
 		}
 		if len(f.args) == 1 {
-			fmt.Fprintln(stdout, k.get())
+			v, _ := effective(k)
+			fmt.Fprintln(stdout, v)
 			return nil
 		}
 		v := strings.ToUpper(strings.TrimSpace(f.args[1]))
 		if err := k.validate(v); err != nil {
 			return err
 		}
-		k.set(v)
+		if toProject {
+			*k.proj = v
+			if err := project.Save(sc.rootDir, pcfg); err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "%s = %s  (project: %s — commit it)\n", f.args[0], v, filepath.Join(sc.rootDir, filepath.FromSlash(project.FileName)))
+			return nil
+		}
+		*k.glob = v
 		if err := store.SaveGlobalConfig(storeRoot, gcfg); err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "%s = %s\n", f.args[0], v)
 		return nil
 	}
-	return fmt.Errorf("usage: config [<key> [<value>]] — keys: instructions, skills")
+	return fmt.Errorf("usage: config [<key> [<value>]] [--project] — keys: %s", strings.Join(keyNames, ", "))
 }
 
 // cmdAdd is both the built-in producer runner (`add <path>`) and the
@@ -1765,7 +1808,8 @@ func cmdInstall(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	// Global `skills` setting narrows which dirs we may write.
+	// `skills` and `hooks` settings narrow what we may write — project
+	// config first (committed, team-pinned), then machine-global.
 	storeRoot, err := store.Root(f.strs["store"])
 	if err != nil {
 		return err
@@ -1774,13 +1818,26 @@ func cmdInstall(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	allowedDirs, err := skills.SkillTargets(gcfg.Skills)
+	skillsChoice, hooksChoice := gcfg.Skills, gcfg.Hooks
+	if sc, err := resolveScope(f); err == nil && sc.cfg != nil {
+		if sc.cfg.Skills != "" {
+			skillsChoice = sc.cfg.Skills
+		}
+		if sc.cfg.Hooks != "" {
+			hooksChoice = sc.cfg.Hooks
+		}
+	}
+	allowedDirs, err := skills.SkillTargets(skillsChoice)
 	if err != nil {
 		return err
 	}
 	allowed := map[string]bool{}
 	for _, d := range allowedDirs {
 		allowed[d] = true
+	}
+	allowedHooks, err := skills.HookPlatforms(hooksChoice)
+	if err != nil {
+		return err
 	}
 	installed := map[string]bool{}
 	skillFor := func(dir string) (string, error) {
@@ -1809,7 +1866,7 @@ func cmdInstall(args []string, stdout io.Writer) error {
 				return err
 			}
 			if d == "" {
-				skillNote = fmt.Sprintf("skipped (global config skills = %s)", strings.ToUpper(gcfg.Skills))
+				skillNote = fmt.Sprintf("skipped (config skills = %s)", strings.ToUpper(orAll(skillsChoice)))
 			} else {
 				skillNote = "✓ " + d
 			}
@@ -1819,19 +1876,30 @@ func cmdInstall(args []string, stdout io.Writer) error {
 			var changed bool
 			var err error
 			note := ""
-			switch plat {
-			case "claude":
+			switch {
+			case plat == "devin":
+				// Devin writes no hook file: it reads the Claude hook AND
+				// AGENTS.md natively — say which lane covers it here.
+				switch {
+				case allowedHooks["claude"]:
+					hookNote = "✓ covered — devin reads the Claude hook in ~/.claude/settings.json natively"
+				case len(allowedHooks) > 0:
+					hookNote = "✓ covered — devin reads AGENTS.md + ~/.agents/skills natively"
+				default:
+					hookNote = "covered by AGENTS.md alone (global config hooks = NONE)"
+				}
+			case !allowedHooks[plat]:
+				hookNote = fmt.Sprintf("skipped (config hooks = %s)", strings.ToUpper(orAll(hooksChoice)))
+			case plat == "claude":
 				p, changed, err = skills.InstallClaudeHook()
-			case "codex":
+			case plat == "codex":
 				p, changed, err = skills.InstallCodexHook()
 				note = " · trust it once: run `/hooks` inside codex"
-			case "copilot":
+			case plat == "copilot":
 				p, changed, err = skills.InstallCopilotHook()
 				note = " · sessionStart (its prompt event can't inject context)"
-			case "devin":
-				hookNote = "✓ covered — devin reads the Claude hook in ~/.claude/settings.json natively"
 			}
-			if plat != "devin" {
+			if plat != "devin" && allowedHooks[plat] {
 				switch {
 				case err != nil:
 					hookNote = fmt.Sprintf("skipped (%v)", err)
@@ -1899,11 +1967,18 @@ commands:
                               yours to edit after)
   scan [--depth N] [--json]   READ-ONLY module discovery: prints every project
                               found + the exact config.json init --scan writes
-  config [<key> [<value>]]    machine-global settings (~/ctxoptimize/config.json)
+  config [<key> [<value>]] [--project]
+                              settings, git-style two levels: machine-global
+                              (~/ctxoptimize/config.json) or --project
+                              (.ctxoptimize/config.json, committable);
+                              project overrides global
                               instructions CLAUDE|AGENTS|ALL|NONE — files init
                               writes the pointer block into (default ALL)
                               skills CLAUDE|AGENTS|ALL — dirs install --skills
                               writes (default ALL)
+                              hooks CLAUDE|AGENTS|ALL|NONE — platform hook
+                              files install writes (devin needs none: it reads
+                              the Claude hook and AGENTS.md natively)
   add [<path>] [--json -|F]   gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
                               (--force to allow >50%% shrink); --json door upserts

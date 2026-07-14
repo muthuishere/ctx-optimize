@@ -86,6 +86,25 @@ func SkillTargets(choice string) ([]string, error) {
 	return nil, fmt.Errorf("skills %q: want CLAUDE, AGENTS, or ALL", choice)
 }
 
+// HookPlatforms maps the global `hooks` setting to the platforms whose hook
+// files install may write: CLAUDE (~/.claude/settings.json — also read
+// natively by Devin), AGENTS (the AGENTS.md-family CLIs: codex + copilot),
+// ALL (default for ""; BOTH accepted as alias), or NONE. Devin itself never
+// gets a hook file — it reads the Claude hook and AGENTS.md natively.
+func HookPlatforms(choice string) (map[string]bool, error) {
+	switch strings.ToUpper(strings.TrimSpace(choice)) {
+	case "", "ALL", "BOTH":
+		return map[string]bool{"claude": true, "codex": true, "copilot": true}, nil
+	case "CLAUDE":
+		return map[string]bool{"claude": true}, nil
+	case "AGENTS":
+		return map[string]bool{"codex": true, "copilot": true}, nil
+	case "NONE":
+		return map[string]bool{}, nil
+	}
+	return nil, fmt.Errorf("hooks %q: want CLAUDE, AGENTS, ALL, or NONE", choice)
+}
+
 // ClaudeSkillDir and AgentsSkillDir are the two standard install targets.
 func ClaudeSkillDir() (string, error) {
 	home, err := os.UserHomeDir()
