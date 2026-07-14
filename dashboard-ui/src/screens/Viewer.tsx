@@ -104,6 +104,7 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
     <div className="viewer">
       <div className="side">
         <div className="controls">
+          <div className="kicker">viewer</div>
           <select value={mod} onChange={(e) => { setMod(e.target.value); setProducer(''); load(e.target.value, '') }}>
             {mods.map((m) => (
               <option key={m.key} value={m.key}>{m.key} ({m.nodes})</option>
@@ -115,14 +116,19 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
               <option key={p} value={p}>{p}</option>
             ))}
           </select>
-          <div className="k" style={{ fontSize: 11.5 }}>
-            showing {shown.nodes.length} of {totals.nodes} nodes
-            {totals.truncated ? ' (server-budgeted — click to expand neighborhoods)' : ''}
+          <div className="row" style={{ gap: 6 }}>
+            <span className="chip">nodes <b>{shown.nodes.length}</b> / {totals.nodes}</span>
+            <span className="chip">edges <b>{shown.edges.length}</b></span>
           </div>
+          {totals.truncated && (
+            <div className="k" style={{ fontSize: '.78rem' }}>
+              server-budgeted — click a node to expand its neighborhood
+            </div>
+          )}
           {err && <div className="err">{err}</div>}
         </div>
         <div className="detail">
-          {!sel && <span className="k">click a node — its 1-hop neighborhood loads and merges in</span>}
+          {!sel && <span className="k">Click a node — its 1-hop neighborhood loads and merges in.</span>}
           {sel && (
             <div>
               <h3>{sel.label}</h3>
@@ -130,12 +136,13 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
                 <span className="chip" style={{ borderColor: colors.get(sel.kind), color: colors.get(sel.kind) }}>{sel.kind}</span>
                 {sel.file_type && <span className="k"> {sel.file_type}</span>}
               </div>
-              <div className="drow"><span className="k">source </span>{sel.source} {sel.location || ''}</div>
+              <div className="drow"><span className="k">source </span><span className="mono">{sel.source} {sel.location || ''}</span></div>
               <div className="drow"><span className="k">producer </span>{sel.metadata?.producer || ''}</div>
+              {selEdges.length > 0 && <hr className="divider" style={{ margin: '12px 0' }} />}
               {selEdges.slice(0, 30).map((x, i) => (
                 <div className="drow" key={i}>
                   {x.dir} <span className="k">{x.rel} </span>
-                  <span className="nb-link" onClick={() => expand(x.id)}>{x.id}</span>
+                  <span className="nb-link mono" onClick={() => expand(x.id)}>{x.id}</span>
                 </div>
               ))}
               {selEdges.length > 30 && <div className="drow k">… {selEdges.length - 30} more</div>}
@@ -151,11 +158,14 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
           selectedId={selected}
           onSelect={(id) => (id ? expand(id) : setSelected(null))}
         />
-        <div className="legend">
-          {Array.from(colors.entries()).map(([k, c]) => (
-            <div key={k}><i style={{ background: c, color: c }} />{k}</div>
-          ))}
-        </div>
+        {colors.size > 0 && (
+          <div className="legend">
+            <div className="lg-title">kinds</div>
+            {Array.from(colors.entries()).map(([k, c]) => (
+              <div className="lg-row" key={k}><i style={{ background: c, color: c }} />{k}</div>
+            ))}
+          </div>
+        )}
         <div className="note">drag: pan · wheel: zoom · click: expand neighborhood</div>
       </div>
     </div>

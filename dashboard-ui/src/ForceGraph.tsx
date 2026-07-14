@@ -172,7 +172,7 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
         const b = st.sim.get(e.target)
         if (!a || !b) continue
         const hot = focus && (e.source === focus || e.target === focus)
-        ctx.strokeStyle = hot ? 'rgba(34,211,238,.9)' : focus ? 'rgba(124,137,166,.07)' : 'rgba(124,137,166,.22)'
+        ctx.strokeStyle = hot ? 'rgba(74,222,128,.9)' : focus ? 'rgba(148,163,184,.07)' : 'rgba(148,163,184,.2)'
         ctx.lineWidth = (hot ? 1.8 : 1) / view.k
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
@@ -205,9 +205,9 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
         if (view.k > 0.5 && (n.id === focus || neigh.has(n.id) || (!focus && n.deg > 3))) {
           ctx.font = `${11 / view.k}px ui-monospace, monospace`
           ctx.lineWidth = 3 / view.k
-          ctx.strokeStyle = 'rgba(7,11,20,.85)'
+          ctx.strokeStyle = 'rgba(10,12,16,.85)'
           ctx.strokeText(n.label, n.x + r + 4 / view.k, n.y + 3.5 / view.k)
-          ctx.fillStyle = n.id === focus ? '#ffffff' : 'rgba(226,232,244,.92)'
+          ctx.fillStyle = n.id === focus ? '#ffffff' : 'rgba(232,237,244,.92)'
           ctx.fillText(n.label, n.x + r + 4 / view.k, n.y + 3.5 / view.k)
         }
         ctx.globalAlpha = 1
