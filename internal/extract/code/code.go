@@ -79,6 +79,13 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Route packs (routepacks.go): declarative call-shaped route rules,
+	// discovered like grammar packs. Malformed packs fail the add loudly.
+	routePacks, err := LoadRoutePacks(root)
+	if err != nil {
+		return nil, err
+	}
+	packRules := compileRoutePacks(routePacks)
 	// A pack extension beats the embedded set — users can override built-ins.
 	packByExt := map[string]*Pack{}
 	for i := range packs {
@@ -242,7 +249,7 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 					}
 					instances[r.engineKey] = inst
 				}
-				results <- extractFile(ctx, inst, r.lang, symTab[r.engineKey], root, path)
+				results <- extractFile(ctx, inst, r.lang, symTab[r.engineKey], root, path, packRules)
 			}
 		}()
 	}
@@ -350,7 +357,7 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 	return batch, nil
 }
 
-func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int][]string, root, path string) fileResult {
+func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int][]string, root, path string, packRules map[string][]packRule) fileResult {
 	res := fileResult{path: path}
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -564,13 +571,26 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 			continue
 		}
 
+		// React Router JSX (frontend_routes.go): <Route path="…" …/> — the
+		// js grammar parses JSX too, so .jsx and .tsx both land here.
+		if isJSFam && (t == "jsx_element" || t == "jsx_self_closing_element") {
+			if site, ok := jsxRouteSite(raw, i, typeOf, text, rel, lang.Name); ok {
+				res.routes = append(res.routes, site)
+			}
+			continue
+		}
+
 		if lang.Calls[t] {
 			if isJSFam {
 				if site, ok := expressRoute(raw, i, typeOf, text, rel, lang.Name); ok {
 					res.routes = append(res.routes, site)
 				}
+				res.routes = append(res.routes, frontendRouterRoutes(raw, i, typeOf, text, rel, lang.Name)...)
 			}
 			if callee, ok := calleeName(i); ok && callee != "" {
+				if rules := packRules[callee]; len(rules) > 0 {
+					res.routes = append(res.routes, packRouteSites(raw, i, typeOf, text, rel, lang.Name, rules)...)
+				}
 				res.calls = append(res.calls, callSite{callerID: callerAt(), callee: callee, file: rel})
 			}
 			continue

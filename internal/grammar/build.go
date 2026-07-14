@@ -191,6 +191,16 @@ func resolveGrammarDir(source, ref, work string, stdout io.Writer) (string, erro
 	return findParserDir(filepath.Join(dst, entries[0].Name()))
 }
 
+// UntarGz extracts a gzipped tarball into dir, sanitizing paths — shared by
+// grammar builds and route-pack installs (`routes add <github-url>`).
+func UntarGz(data []byte, dir string) error {
+	gz, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	return untarTo(tar.NewReader(gz), dir)
+}
+
 // findParserDir locates src/parser.c at the root or one level down
 // (tree-sitter-typescript style multi-grammar repos).
 func findParserDir(root string) (string, error) {
