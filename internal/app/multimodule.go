@@ -20,6 +20,7 @@ import (
 
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
 	"github.com/muthuishere/ctx-optimize/internal/extract/githistory"
+	"github.com/muthuishere/ctx-optimize/internal/extract/manifests"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/navigator"
@@ -464,6 +465,17 @@ func gatherInto(s *store.Store, dir string, excludes []string, force bool, out i
 	batches = append(batches, cb)
 	if len(cb.Nodes) > 0 {
 		fmt.Fprintf(out, "code: %d nodes, %d edges\n", len(cb.Nodes), len(cb.Edges))
+	}
+	// Manifest lane: build-tool deps/tasks + k8s topology. Always Replace,
+	// same emptied-module reasoning — removing a dependency from
+	// package.json must prune its declares edge, never keep it silently.
+	mb, err := manifests.ExtractExcluding(dir, excludes)
+	if err != nil {
+		return err
+	}
+	batches = append(batches, mb)
+	if len(mb.Nodes) > 0 || len(mb.Edges) > 0 {
+		fmt.Fprintf(out, "manifests: %d nodes, %d edges\n", len(mb.Nodes), len(mb.Edges))
 	}
 	// Co-change lane: edges only, best-effort (non-repo → empty batch).
 	// Always Replace, same reasoning as the code batch — an empty history
