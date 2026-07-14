@@ -81,10 +81,24 @@ Owner prompt: "seems like we need to have mcp server so a standalone graph
 instead of multiple download — don't know."
 
 The standing contract (CLAUDE.md, VISION.md): **"no LLM calls, no DB
-drivers, no embeddings, no MCP — ever."** Two of the four biggest
-competitors ship MCP as their primary distribution surface. This decision is
-therefore a *contract amendment question*, not a feature question — spelled
-out honestly:
+drivers, no embeddings, no MCP — ever."** This decision is a *contract
+amendment question*, not a feature question — spelled out honestly.
+
+**UPDATE 2026-07-14 (market research):** MCP is not one distribution option
+among several — it is THE winning pattern in this category. The two breakout
+leaders both ship MCP as their primary surface: CodeGraph (~47K stars, MIT,
+SQLite + 42 MCP tools, 38 languages) and GitNexus (~42K stars, zero-server
+LadybugDB + 16 MCP tools). Independent write-ups frame "local-first graph
+served over MCP" as the pattern that won the category. Serena is LSP-as-MCP.
+Our skill+hook+pointer mechanism reaches Claude Code / Codex / Copilot /
+Devin but is INVISIBLE to the growing set of MCP-only hosts (Cursor, Kiro,
+AntiGravity, Gemini CLI, generic MCP clients). This reframes the ⚖️: **the
+"no MCP" letter of the contract is now a real adoption ceiling, not a purity
+badge.** Recommend flipping Option B to a build, on the stdio/read-only/
+stdlib terms below — the contract's SPIRIT (deterministic, no network
+listener, no model, agent is the only intelligence) survives; only the "no
+MCP" clause is retired. Sources: rywalker.com/research/code-intelligence-tools,
+knolli.ai graphify-alternatives, the CodeGraph/GitNexus repos.
 
 ### Option A — status quo (skill + hook + pointer block)
 
