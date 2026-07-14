@@ -158,11 +158,12 @@ func TestRemoteTreePullPrefixAgainstSingleStoreRemoteFailsLoudly(t *testing.T) {
 	}
 }
 
-// TestInitOnCloneRoutesToPull: a fresh clone already carries the committed
+// TestInitOnCloneAutoPulls: a fresh clone already carries the committed
 // .ctxoptimize/config.json (with a remote) but has no local store. `init` must
-// recognize that and point at `remote pull` — NOT scaffold-and-rebuild — so the
-// team's prebuilt graph is fetched, not re-derived. --force overrides.
-func TestInitOnCloneRoutesToPull(t *testing.T) {
+// see the push/pull config and FETCH the prebuilt graph itself — not
+// scaffold-and-rebuild from source. The store is populated right after init,
+// with no separate pull step.
+func TestInitOnCloneAutoPulls(t *testing.T) {
 	// Producer: build + publish a single-project store.
 	repo := t.TempDir()
 	writeFiles(t, repo, map[string]string{"main.go": "package main\n\nfunc Boot() {}\n"})
@@ -186,15 +187,14 @@ func TestInitOnCloneRoutesToPull(t *testing.T) {
 	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir()) // fresh, empty
 
 	out, _ := runCLI(t, 0, "init", "--path", clone)
-	if !strings.Contains(out, "remote pull") || !strings.Contains(out, "already configured") {
-		t.Fatalf("init on a clone must route to remote pull, got:\n%s", out)
+	if !strings.Contains(out, "already configured") || !strings.Contains(out, "fetching") {
+		t.Fatalf("init on a clone must auto-fetch the prebuilt graph, got:\n%s", out)
 	}
-	if strings.Contains(out, "store ready") {
-		t.Fatalf("init on a clone must NOT claim a fresh scaffold:\n%s", out)
+	if strings.Contains(out, "scaffolded") {
+		t.Fatalf("init on a clone must NOT scaffold a fresh store:\n%s", out)
 	}
 
-	// The pull then populates the store from the prebuilt remote.
-	runCLI(t, 0, "remote", "pull", "--path", clone)
+	// init itself populated the store — no separate pull needed.
 	st, _ := runCLI(t, 0, "status", "--json", "--path", clone)
 	var status struct {
 		Nodes int `json:"nodes"`
@@ -203,6 +203,6 @@ func TestInitOnCloneRoutesToPull(t *testing.T) {
 		t.Fatalf("status --json: %v\n%s", err, st)
 	}
 	if status.Nodes == 0 {
-		t.Fatalf("pull after the init hint should have populated the store:\n%s", st)
+		t.Fatalf("init on a clone should have auto-pulled the store:\n%s", st)
 	}
 }

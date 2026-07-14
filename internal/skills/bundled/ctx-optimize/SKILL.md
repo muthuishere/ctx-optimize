@@ -95,7 +95,6 @@ counted honestly.
 | Exporting for other tools | `ctx-optimize export --format json|dot|graphml|csv|obsidian|all` |
 | Asked for a language we don't cover | `ctx-optimize languages add <name>` (kotlin, ruby, lua, swift, …— `languages list` shows all) or `languages add <github-url>`; then review the suggested .json mapping |
 | Just answered a question from the store | `ctx-optimize save-result --question Q --answer A --type T --nodes "id1,id2" --outcome useful` |
-| User wants ctx-optimize GONE from a repo ("remove/uninstall it", "tear it down") | `ctx-optimize remove` (dry run — shows the plan) then `ctx-optimize remove --yes`. Deletes store data + strips the CLAUDE.md/AGENTS.md block; keeps committed `.ctxoptimize/` unless `--config`, keeps global skills unless `--skills`. It never deletes a user's file or touches damaged markers. |
 | `ctx-optimize` command NOT FOUND when you try to run it | The binary isn't installed (this skill is global; the binary is separate). Tell the user: `npm install -g @muthuishere/ctx-optimize` (or download the release binary). If they can't/won't install it, DON'T loop on the error — fall back to Grep/Read; the store is an optimization, not a requirement. |
 | Starting a session in a repo with a store | `ctx-optimize reflect` — then read `reflections/LESSONS.md` in the store |
 

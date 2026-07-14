@@ -106,8 +106,6 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdHookContext(rest, stdout)
 	case "uninstall":
 		err = cmdUninstall(rest, stdout)
-	case "remove", "purge":
-		err = cmdRemove(rest, stdout)
 	case "help", "-h", "--help":
 		usage(stdout)
 	default:
@@ -268,11 +266,11 @@ func cmdInit(args []string, stdout io.Writer) error {
 		}
 	}
 	// Clone case: the repo already carries a COMMITTED config.json with a
-	// remote, and nothing is on disk yet. This isn't a fresh setup — a
-	// teammate already built and published the store. Re-running init here (and
-	// the add that usually follows) would rebuild the graph from source instead
-	// of fetching the prebuilt one. Route to `remote pull` and stop. `--force`
-	// overrides for a deliberate local rebuild.
+	// remote (push/pull configured), and nothing is on disk yet. This isn't a
+	// fresh setup — a teammate already built and published the store, so init
+	// FETCHES it (remote pull) instead of rebuilding from source. If the pull
+	// can't complete (creds/network not set up yet) fall back to the manual
+	// hint rather than hard-failing. `--force` skips this for a local rebuild.
 	if !f.bools["scan"] && !f.bools["force"] {
 		if _, statErr := os.Stat(filepath.Join(path, filepath.FromSlash(project.FileName))); statErr == nil {
 			cfg, err := project.Load(path)
@@ -282,9 +280,18 @@ func cmdInit(args []string, stdout io.Writer) error {
 			if cfg.Remote != nil && (cfg.Remote.URL != "" || cfg.Remote.Type != "") {
 				if s, err := openStore(f); err == nil {
 					if nodes, err := s.Nodes(); err == nil && len(nodes) == 0 {
-						fmt.Fprintf(stdout, "already configured — this repo has a committed .ctxoptimize/config.json with a remote (%s)\n", cfg.Remote.URL)
-						fmt.Fprintf(stdout, "and no local store yet. Fetch the prebuilt store instead of rebuilding:\n\n    ctx-optimize remote pull\n\n")
-						fmt.Fprintln(stdout, "(re-index from source anyway with `ctx-optimize init --force` then `add .`)")
+						fmt.Fprintf(stdout, "already configured (remote %s) with no local store — fetching the prebuilt graph:\n", cfg.Remote.URL)
+						sc, scErr := resolveScope(f)
+						storeRoot, srErr := store.Root(f.strs["store"])
+						if scErr == nil && srErr == nil {
+							if pErr := runSync("pull", sc, storeRoot, false, stdout); pErr != nil {
+								fmt.Fprintf(stdout, "couldn't pull automatically (%v)\nset the remote's credentials, then run: ctx-optimize remote pull\n", pErr)
+							} else {
+								fmt.Fprintln(stdout, "done — the store is ready; query it directly (no rebuild needed).")
+							}
+							return nil
+						}
+						fmt.Fprintln(stdout, "run: ctx-optimize remote pull")
 						return nil
 					}
 				}
@@ -1778,62 +1785,70 @@ func cmdRemote(args []string, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
-		rootStore, err := store.Open(storeRoot, sc.rootKey)
-		if err != nil {
-			return err
-		}
-		r, _, err := resolveRemote(sc.rootDir, rootStore)
-		if err != nil {
-			return err
-		}
-		if r == nil {
-			return fmt.Errorf("no remote — run `ctx-optimize remote init <url>` (writes %s)", project.FileName)
-		}
-		b, err := openBackend(r)
-		if err != nil {
-			return err
-		}
-		var res *remote.Result
-		switch {
-		case sc.kind == scopeSingle:
-			// Today's path, byte-identical: one store at the backend root.
-			single, err := store.Open(storeRoot, sc.storeKey)
-			if err != nil {
-				return err
-			}
-			if sub == "push" {
-				res, err = remote.Push(single, b)
-			} else {
-				res, err = remote.Pull(single, b)
-			}
-			if err != nil {
-				return err
-			}
-		case sub == "push":
-			rels, err := scopeStoreRels(sc, storeRoot)
-			if err != nil {
-				return err
-			}
-			if res, err = remote.PushTree(storeRoot, sc.rootKey, rels, b); err != nil {
-				return err
-			}
-		default: // pull
-			prefix := ""
-			if sc.kind == scopeModule {
-				prefix = sc.modulePath
-			}
-			if res, err = remote.PullTree(storeRoot, sc.rootKey, prefix, b); err != nil {
-				return err
-			}
-		}
-		if f.bools["json"] {
-			return emit(stdout, res)
-		}
-		fmt.Fprintf(stdout, "%s: %d transferred, %d unchanged\n", sub, len(res.Transferred), res.Skipped)
-		return nil
+		return runSync(sub, sc, storeRoot, f.bools["json"], stdout)
 	default:
 		return fmt.Errorf("unknown remote subcommand %q", sub)
 	}
+}
+
+// runSync executes one push/pull for a resolved scope — the shared engine
+// behind `remote push|pull` AND init's auto-pull on a configured clone. Errors
+// (no remote, missing creds, network) propagate so the caller decides whether
+// to fail or fall back.
+func runSync(sub string, sc *scope, storeRoot string, asJSON bool, stdout io.Writer) error {
+	rootStore, err := store.Open(storeRoot, sc.rootKey)
+	if err != nil {
+		return err
+	}
+	r, _, err := resolveRemote(sc.rootDir, rootStore)
+	if err != nil {
+		return err
+	}
+	if r == nil {
+		return fmt.Errorf("no remote — run `ctx-optimize remote init <url>` (writes %s)", project.FileName)
+	}
+	b, err := openBackend(r)
+	if err != nil {
+		return err
+	}
+	var res *remote.Result
+	switch {
+	case sc.kind == scopeSingle:
+		// Today's path, byte-identical: one store at the backend root.
+		single, err := store.Open(storeRoot, sc.storeKey)
+		if err != nil {
+			return err
+		}
+		if sub == "push" {
+			res, err = remote.Push(single, b)
+		} else {
+			res, err = remote.Pull(single, b)
+		}
+		if err != nil {
+			return err
+		}
+	case sub == "push":
+		rels, err := scopeStoreRels(sc, storeRoot)
+		if err != nil {
+			return err
+		}
+		if res, err = remote.PushTree(storeRoot, sc.rootKey, rels, b); err != nil {
+			return err
+		}
+	default: // pull
+		prefix := ""
+		if sc.kind == scopeModule {
+			prefix = sc.modulePath
+		}
+		if res, err = remote.PullTree(storeRoot, sc.rootKey, prefix, b); err != nil {
+			return err
+		}
+	}
+	if asJSON {
+		return emit(stdout, res)
+	}
+	fmt.Fprintf(stdout, "%s: %d transferred, %d unchanged\n", sub, len(res.Transferred), res.Skipped)
+	return nil
 }
 
 // cmdLanguages manages language packs. add: a known name ("kotlin"), any
@@ -2097,97 +2112,6 @@ func cmdUninstall(args []string, stdout io.Writer) error {
 	return nil
 }
 
-// cmdRemove tears down ctx-optimize's footprint for a repo — conservatively.
-// Default: delete the store DATA (ours, under ~/ctxoptimize/, rebuildable with
-// `add .`) and strip the marker-fenced pointer block from CLAUDE.md/AGENTS.md
-// (never deleting the file, never touching corrupted markers). It does NOT
-// delete the committed `.ctxoptimize/` (that's version-controlled — git owns
-// it; opt in with --config) and does NOT remove the global skills (--skills).
-// A dry-run by default; --yes actually removes.
-func cmdRemove(args []string, stdout io.Writer) error {
-	f := parseFlags(args)
-	sc, err := resolveScope(f)
-	if err != nil {
-		return err
-	}
-	storeRoot, err := store.Root(f.strs["store"])
-	if err != nil {
-		return err
-	}
-	storeDir := filepath.Join(storeRoot, filepath.FromSlash(sc.rootKey))
-	cfgDir := filepath.Join(sc.rootDir, project.Dir)
-	alsoConfig := f.bools["config"] || f.bools["all"]
-	alsoSkills := f.bools["skills"] || f.bools["all"]
-
-	// Plan — show exactly what will go before touching anything.
-	fmt.Fprintf(stdout, "ctx-optimize remove — for %s\n", sc.rootDir)
-	storeExists := false
-	if _, e := os.Stat(storeDir); e == nil {
-		storeExists = true
-		fmt.Fprintf(stdout, "  • store data      %s\n", storeDir)
-	}
-	fmt.Fprintf(stdout, "  • pointer block   CLAUDE.md / AGENTS.md (only the ctx-optimize block)\n")
-	if alsoConfig {
-		fmt.Fprintf(stdout, "  • repo config     %s/  (committed — you'll want to `git rm` it too)\n", project.Dir)
-	} else {
-		fmt.Fprintf(stdout, "  · kept: %s/ (committed config — remove with --config, or `git rm` it)\n", project.Dir)
-	}
-	if alsoSkills {
-		fmt.Fprintf(stdout, "  • global skills   agent CLIs (skill + hooks)\n")
-	} else {
-		fmt.Fprintf(stdout, "  · kept: global skills (remove with --skills or `uninstall --skills`)\n")
-	}
-	if !f.bools["yes"] {
-		fmt.Fprintln(stdout, "\nnothing removed — re-run with --yes to proceed (this is a dry run)")
-		return nil
-	}
-
-	// Store data: only ever a real store dir under the store root, never the
-	// root itself — a bad key must not nuke every store.
-	if storeExists {
-		if sc.rootKey == "" || filepath.Clean(storeDir) == filepath.Clean(storeRoot) {
-			return fmt.Errorf("refusing to remove: resolved store dir is the whole store root")
-		}
-		if err := os.RemoveAll(storeDir); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "removed store data: %s\n", storeDir)
-	}
-	cleaned, warnings, err := project.RemoveAgentPointer(sc.rootDir)
-	if err != nil {
-		return err
-	}
-	for _, fn := range cleaned {
-		fmt.Fprintf(stdout, "removed pointer block from %s\n", fn)
-	}
-	for _, wm := range warnings {
-		fmt.Fprintf(stdout, "warning: %s\n", wm)
-	}
-	if alsoConfig {
-		if _, e := os.Stat(cfgDir); e == nil {
-			if err := os.RemoveAll(cfgDir); err != nil {
-				return err
-			}
-			fmt.Fprintf(stdout, "removed %s/ — commit the deletion\n", project.Dir)
-		}
-	}
-	if alsoSkills {
-		removed, err := skills.Uninstall()
-		if err != nil {
-			return err
-		}
-		hookFiles, err := skills.RemoveHooks()
-		if err != nil {
-			return err
-		}
-		for _, t := range append(removed, hookFiles...) {
-			fmt.Fprintf(stdout, "removed skill: %s\n", t)
-		}
-	}
-	fmt.Fprintln(stdout, "done.")
-	return nil
-}
-
 // ---- helpers ----
 
 func emit(w io.Writer, v any) error {
@@ -2295,10 +2219,6 @@ commands:
   install                     skills + hooks for every agent CLI detected; report per platform
     --claude|--codex|--copilot|--devin   select platforms · --skills / --hooks narrow scope
   uninstall --skills          remove the agent skill
-  remove [--yes]              tear down this repo's footprint: store data +
-    [--config] [--skills]     CLAUDE.md/AGENTS.md pointer block (dry run without
-                              --yes). --config also deletes committed .ctxoptimize/;
-                              --skills also removes global skills; --all does both
   version                     print version
 
 flags:  --path DIR   module the store is keyed by (default: cwd)

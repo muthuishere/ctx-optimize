@@ -305,56 +305,6 @@ func pointerBlock(name string, modules int) string {
 		pointerEnd + "\n"
 }
 
-// RemoveAgentPointer strips ONLY the marker-fenced ctx-optimize block from the
-// repo's CLAUDE.md / AGENTS.md — the inverse of EnsureAgentPointer. It is
-// deliberately conservative:
-//   - content outside the markers is never touched;
-//   - the file is never deleted, even if the block was all it held (the user
-//     may track it) — it is left with its other content, or empty;
-//   - if the markers are MALFORMED (end before begin, or a lone begin/end from
-//     hand-editing or corruption), the file is left EXACTLY as-is and reported
-//     as a warning — guessing the boundaries could eat the user's own text.
-//
-// Returns the files cleaned and, separately, warnings for files skipped as
-// corrupt so the caller can tell the user to fix those by hand.
-func RemoveAgentPointer(repo string) (cleaned []string, warnings []string, err error) {
-	for _, fn := range []string{"CLAUDE.md", "AGENTS.md"} {
-		p := filepath.Join(repo, fn)
-		data, rerr := os.ReadFile(p)
-		if os.IsNotExist(rerr) {
-			continue
-		}
-		if rerr != nil {
-			return cleaned, warnings, rerr
-		}
-		s := string(data)
-		i := strings.Index(s, pointerBegin)
-		j := strings.Index(s, pointerEnd)
-		if i < 0 && j < 0 {
-			continue // no block here — nothing to do
-		}
-		if i < 0 || j < 0 || j < i {
-			warnings = append(warnings, fmt.Sprintf("%s: ctx-optimize markers look damaged — left untouched; remove the block between %s and %s by hand", fn, pointerBegin, pointerEnd))
-			continue
-		}
-		out := strings.TrimRight(s[:i], "\n") + s[j+len(pointerEnd):]
-		out = strings.TrimLeft(out, "\n")
-		if strings.TrimSpace(out) != "" {
-			out = strings.TrimRight(out, "\n") + "\n"
-		} else {
-			out = "" // block was the only content — leave the file empty, don't delete it
-		}
-		if out == s {
-			continue
-		}
-		if werr := os.WriteFile(p, []byte(out), 0o644); werr != nil {
-			return cleaned, warnings, werr
-		}
-		cleaned = append(cleaned, fn)
-	}
-	return cleaned, warnings, nil
-}
-
 // PointerTargets maps the global `instructions` setting to the files init
 // may touch: CLAUDE, AGENTS, ALL (default for ""; BOTH accepted as alias),
 // or NONE (never touch the repo's instruction files). Anything else is
