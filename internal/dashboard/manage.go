@@ -9,6 +9,7 @@ package dashboard
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -241,7 +242,9 @@ func (s *server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	axes = append(axes, grammarAxis)
 	routeAxis := map[string]any{"axis": "routes", "kind": "packs",
-		"note": "core: fastapi/flask/express/nestjs/angular/react-router/vue-router/openapi/drupal/ingress — packs add call-shaped custom frameworks (`ctx-optimize routes add <name|github-url>`)"}
+		"core": []string{"fastapi", "flask", "express", "nestjs", "angular",
+			"react-router", "vue-router", "openapi", "drupal", "ingress"},
+		"note": "core recognizers ship built-in — packs add call-shaped custom frameworks (`ctx-optimize routes add <name|github-url>`)"}
 	if packs, err := code.LoadRoutePacks(packsRepo); err != nil {
 		routeAxis["error"] = err.Error()
 	} else {
@@ -253,7 +256,8 @@ func (s *server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	axes = append(axes, routeAxis)
 	manifestAxis := map[string]any{"axis": "manifests", "kind": "packs",
-		"note": "core: npm/maven/csproj+sln/go.mod/gradle/k8s — packs add custom structured manifests (`ctx-optimize manifests add <name|github-url>`)"}
+		"core": []string{"npm", "maven", "csproj", "sln", "go.mod", "gradle", "k8s"},
+		"note": "core recognizers ship built-in — packs add custom structured manifests (`ctx-optimize manifests add <name|github-url>`)"}
 	if packs, err := manifests.LoadManifestPacks(packsRepo); err != nil {
 		manifestAxis["error"] = err.Error()
 	} else {
@@ -514,6 +518,57 @@ func setKey(fields map[string]*string, key, value string) {
 	if f, ok := fields[key]; ok {
 		*f = value
 	}
+}
+
+// handlePackAdd installs or scaffolds a routes|manifests pack through the SAME
+// door the CLI's `routes add` / `manifests add` verbs use (the injected Ops
+// closure calls those cmd funcs). scope=global lands the pack in the machine
+// dir; scope=project needs a repo dir and lands it in <repo>/.ctxoptimize/.
+// source is a bare name (scaffold a review-me template) or a github/json URL
+// (fetch). A bad name/url surfaces the CLI's own loud error.
+func (s *server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Axis   string `json:"axis"`   // routes|manifests
+		Scope  string `json:"scope"`  // project|global
+		Path   string `json:"path"`   // repo dir, required when scope=project
+		Source string `json:"source"` // pack name or github/json URL
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if req.Axis != "routes" && req.Axis != "manifests" {
+		jsonError(w, http.StatusBadRequest, `axis must be "routes" or "manifests"`)
+		return
+	}
+	if strings.TrimSpace(req.Source) == "" {
+		jsonError(w, http.StatusBadRequest, "source required — a pack name or a github/json URL")
+		return
+	}
+	global := req.Scope == "global"
+	if !global {
+		if req.Scope != "project" {
+			jsonError(w, http.StatusBadRequest, `scope must be "project" or "global"`)
+			return
+		}
+		if !validRepoPath(w, req.Path) {
+			return
+		}
+	}
+	if s.ops == nil || s.ops.AddPack == nil {
+		jsonError(w, http.StatusServiceUnavailable, "pack add unavailable in this handler")
+		return
+	}
+	var buf bytes.Buffer
+	if err := s.ops.AddPack(req.Axis, req.Path, req.Source, global, &buf); err != nil {
+		// The CLI's own loud error — surface it verbatim to the UI.
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.record(req.Axis+".pack.add "+req.Source, req.Path, "", "")
+	jsonOK(w, map[string]string{
+		"axis": req.Axis, "scope": req.Scope, "source": req.Source,
+		"output": strings.TrimSpace(buf.String()),
+	})
 }
 
 // handleStoreDelete removes one store dir — confirm-gated, sanitized, and

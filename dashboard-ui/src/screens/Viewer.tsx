@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import { kindColorMap } from '../App'
+import { kindColorMap, SPECIAL_KINDS } from '../App'
 import ForceGraph from '../ForceGraph'
 import type { Edge, GraphResponse, Module, Node } from '../types'
 
@@ -22,6 +22,7 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
   const [totals, setTotals] = useState({ nodes: 0, edges: 0, truncated: false })
   const [selected, setSelected] = useState<string | null>(null)
   const [producer, setProducer] = useState('')
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [err, setErr] = useState('')
 
   const merge = useCallback((g: GraphResponse, reset: boolean) => {
@@ -83,12 +84,33 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
   const shown = useMemo(() => {
     let list = Array.from(nodes.values())
     if (producer) list = list.filter((n) => (n.metadata?.producer || '(unknown)') === producer)
+    list = list.filter((n) => !hidden.has(n.kind))
     const keep = new Set(list.map((n) => n.id))
     const es = Array.from(edges.values()).filter((e) => keep.has(e.source) && keep.has(e.target))
     return { nodes: list, edges: es }
-  }, [nodes, edges, producer])
+  }, [nodes, edges, producer, hidden])
 
-  const colors = useMemo(() => kindColorMap(shown.nodes.map((n) => n.kind)), [shown.nodes])
+  // Legend covers every kind currently in the graph (hidden or not) so a
+  // filtered-out kind stays clickable to bring back. Special kinds lead.
+  const legendKinds = useMemo(() => {
+    const s = new Set<string>()
+    for (const n of nodes.values()) {
+      if (producer && (n.metadata?.producer || '(unknown)') !== producer) continue
+      s.add(n.kind)
+    }
+    const special = SPECIAL_KINDS.filter((k) => s.has(k))
+    const rest = Array.from(s).filter((k) => !SPECIAL_KINDS.includes(k)).sort()
+    return [...special, ...rest]
+  }, [nodes, producer])
+
+  const colors = useMemo(() => kindColorMap(legendKinds), [legendKinds])
+  const toggleKind = useCallback((k: string) => {
+    setHidden((h) => {
+      const n = new Set(h)
+      n.has(k) ? n.delete(k) : n.add(k)
+      return n
+    })
+  }, [])
   const sel = selected ? nodes.get(selected) : undefined
   const selEdges = useMemo(() => {
     if (!selected) return []
@@ -105,7 +127,7 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
       <div className="side">
         <div className="controls">
           <div className="kicker">viewer</div>
-          <select value={mod} onChange={(e) => { setMod(e.target.value); setProducer(''); load(e.target.value, '') }}>
+          <select value={mod} onChange={(e) => { setMod(e.target.value); setProducer(''); setHidden(new Set()); load(e.target.value, '') }}>
             {mods.map((m) => (
               <option key={m.key} value={m.key}>{m.key} ({m.nodes})</option>
             ))}
@@ -158,15 +180,20 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
           selectedId={selected}
           onSelect={(id) => (id ? expand(id) : setSelected(null))}
         />
-        {colors.size > 0 && (
+        {legendKinds.length > 0 && (
           <div className="legend">
-            <div className="lg-title">kinds</div>
-            {Array.from(colors.entries()).map(([k, c]) => (
-              <div className="lg-row" key={k}><i style={{ background: c, color: c }} />{k}</div>
+            <div className="lg-title">kinds — click to filter</div>
+            {legendKinds.map((k) => (
+              <div className={'lg-row' + (hidden.has(k) ? ' off' : '')} key={k}
+                onClick={() => toggleKind(k)} title={hidden.has(k) ? 'show ' + k : 'hide ' + k}>
+                <i style={{ background: colors.get(k), color: colors.get(k) }} />
+                {k}
+                {SPECIAL_KINDS.includes(k) && <span className="lg-star" title="first-class kind">★</span>}
+              </div>
             ))}
           </div>
         )}
-        <div className="note">drag: pan · wheel: zoom · click: expand neighborhood</div>
+        <div className="note">drag: pan · wheel: zoom · click: expand neighborhood · legend: filter kinds</div>
       </div>
     </div>
   )

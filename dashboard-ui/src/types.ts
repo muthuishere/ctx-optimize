@@ -83,11 +83,15 @@ export interface ConfigKV {
   source: string
 }
 
-export interface GrammarPack {
+// Pack covers all three axis shapes: grammar packs carry exts/wasm/config,
+// route & manifest packs carry rules/file.
+export interface Pack {
   name: string
-  exts: string[]
-  wasm: string
-  config: string
+  exts?: string[]
+  wasm?: string
+  config?: string
+  rules?: number
+  file?: string
 }
 
 export interface AdapterInfo {
@@ -100,7 +104,8 @@ export interface Axis {
   axis: string
   kind: string
   note: string
-  packs?: GrammarPack[]
+  core?: string[]
+  packs?: Pack[]
   adapters?: AdapterInfo[]
   error?: string
 }

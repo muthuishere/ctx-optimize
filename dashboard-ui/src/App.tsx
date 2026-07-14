@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Overview from './screens/Overview'
 import Repos from './screens/Repos'
 import Onboard from './screens/Onboard'
 import Query from './screens/Query'
@@ -7,12 +8,12 @@ import Settings from './screens/Settings'
 import Changes from './screens/Changes'
 
 // Hash routing keeps the app a single embedded file server: only "/" is ever
-// requested. Routes: #/repos #/onboard #/query/<module> #/viewer/<module>
-// #/settings #/changes
+// requested. Routes: #/overview #/repos #/onboard #/query/<module>
+// #/viewer/<module> #/settings #/changes. The logo lands on #/overview.
 function useHash(): string {
-  const [hash, setHash] = useState(window.location.hash || '#/repos')
+  const [hash, setHash] = useState(window.location.hash || '#/overview')
   useEffect(() => {
-    const on = () => setHash(window.location.hash || '#/repos')
+    const on = () => setHash(window.location.hash || '#/overview')
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)
   }, [])
@@ -34,13 +35,15 @@ export default function App() {
   // keys and node ids may contain any character once URI-encoded).
   const h = hash.replace(/^#\//, '')
   const i = h.indexOf('/')
-  const route = (i < 0 ? h : h.slice(0, i)) || 'repos'
+  const route = (i < 0 ? h : h.slice(0, i)) || 'overview'
   const arg = i < 0 ? '' : h.slice(i + 1)
 
   return (
     <div className="app">
       <header className="top">
-        <h1>ctx-<em>optimize</em></h1>
+        <a href="#/overview" className="logo" title="Overview">
+          <h1>ctx-<em>optimize</em></h1>
+        </a>
         <span className="sub">gather once · answer from the store</span>
         <nav className="tabs">
           {TABS.map(([r, label]) => (
@@ -51,6 +54,7 @@ export default function App() {
         </nav>
       </header>
       <main className={'body' + (route === 'viewer' ? ' nopad' : '')}>
+        {(route === 'overview' || route === '') && <Overview />}
         {route === 'repos' && <Repos />}
         {route === 'onboard' && <Onboard />}
         {route === 'query' && <Query initialModule={arg} />}
@@ -62,14 +66,32 @@ export default function App() {
   )
 }
 
-// Stable per-kind colors, shared by Query and Viewer. Green-forward to match
-// the site accent, then a calm spread of hues for the remaining kinds.
-const PALETTE = ['#4ade80', '#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#34d399',
-  '#fb7185', '#22d3ee', '#fb923c', '#e879f9', '#facc15', '#a3e635',
-  '#93c5fd', '#fda4af', '#5eead4', '#c4b5fd']
+// Stable per-kind colors, shared by Query, Viewer and Overview. The v0.3
+// "special" kinds get distinct vivid hues so routes/deps/k8s/tasks/images
+// read at a glance; everything else draws from a calm green-forward spread.
+export const SPECIAL_COLORS: Record<string, string> = {
+  route: '#a3e635', // lime
+  dependency: '#fbbf24', // amber
+  resource: '#38bdf8', // blue (k8s / infra)
+  task: '#2dd4bf', // teal
+  image: '#c084fc', // violet
+  config: '#fb923c', // orange
+}
+export const SPECIAL_KINDS = Object.keys(SPECIAL_COLORS)
+
+const PALETTE = ['#4ade80', '#f472b6', '#22d3ee', '#facc15', '#fb7185',
+  '#34d399', '#93c5fd', '#fda4af', '#5eead4', '#e879f9']
 
 export function kindColorMap(kinds: string[]): Map<string, string> {
   const m = new Map<string, string>()
-  Array.from(new Set(kinds)).sort().forEach((k, i) => m.set(k, PALETTE[i % PALETTE.length]))
+  let i = 0
+  Array.from(new Set(kinds)).sort().forEach((k) => {
+    if (SPECIAL_COLORS[k]) {
+      m.set(k, SPECIAL_COLORS[k])
+      return
+    }
+    m.set(k, PALETTE[i % PALETTE.length])
+    i++
+  })
   return m
 }

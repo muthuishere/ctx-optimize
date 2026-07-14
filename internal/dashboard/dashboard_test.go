@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -302,6 +303,115 @@ func strconvQuote(s string) string {
 	return string(b)
 }
 
+// TestPackAddGuardsAndAudit drives /api/pack with a STUB Ops.AddPack: the
+// mutation guards (token, method), the request validation (axis, source,
+// scope/path), the loud-error passthrough, and the audit line all get checked
+// without touching the real pack installer (that lives in the app-layer test).
+func TestPackAddGuardsAndAudit(t *testing.T) {
+	root := t.TempDir()
+	var gotAxis, gotSource string
+	var gotGlobal bool
+	ops := &Ops{AddPack: func(axis, path, source string, global bool, out io.Writer) error {
+		if source == "bad name" {
+			return fmt.Errorf("route pack name %q: letters, digits, - and _ only", source)
+		}
+		gotAxis, gotSource, gotGlobal = axis, source, global
+		fmt.Fprintln(out, "scaffolded")
+		return nil
+	}}
+	srv := httptest.NewServer(NewHandler(root, ops))
+	t.Cleanup(srv.Close)
+	tok := token(t, srv)
+
+	// Guards: no token → 403; wrong method → 405.
+	resp, _ := send(t, "POST", srv.URL+"/api/pack", "", `{"axis":"routes","scope":"global","source":"myroutes"}`)
+	if resp.StatusCode != 403 {
+		t.Fatalf("tokenless pack add: %d", resp.StatusCode)
+	}
+	resp, _ = send(t, "GET", srv.URL+"/api/pack", tok, "")
+	if resp.StatusCode != 405 {
+		t.Fatalf("wrong method: %d", resp.StatusCode)
+	}
+
+	// Validation: bad axis, empty source, project scope w/ bogus dir.
+	resp, body := send(t, "POST", srv.URL+"/api/pack", tok, `{"axis":"nope","scope":"global","source":"x"}`)
+	if resp.StatusCode != 400 || !strings.Contains(body, "axis") {
+		t.Fatalf("bad axis: %d %s", resp.StatusCode, body)
+	}
+	resp, _ = send(t, "POST", srv.URL+"/api/pack", tok, `{"axis":"routes","scope":"global","source":"  "}`)
+	if resp.StatusCode != 400 {
+		t.Fatalf("empty source: %d", resp.StatusCode)
+	}
+	resp, _ = send(t, "POST", srv.URL+"/api/pack", tok, `{"axis":"routes","scope":"project","path":"/no/such/dir","source":"x"}`)
+	if resp.StatusCode != 400 {
+		t.Fatalf("bogus project path: %d", resp.StatusCode)
+	}
+
+	// The installer's loud error surfaces verbatim as a 400.
+	resp, body = send(t, "POST", srv.URL+"/api/pack", tok, `{"axis":"routes","scope":"global","source":"bad name"}`)
+	if resp.StatusCode != 400 || !strings.Contains(body, "letters, digits") {
+		t.Fatalf("ops error passthrough: %d %s", resp.StatusCode, body)
+	}
+
+	// Happy path → 200, right args passed, audited as "<axis>.pack.add <src>".
+	resp, body = send(t, "POST", srv.URL+"/api/pack", tok, `{"axis":"manifests","scope":"global","source":"deps"}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("pack add: %d %s", resp.StatusCode, body)
+	}
+	if gotAxis != "manifests" || gotSource != "deps" || !gotGlobal {
+		t.Fatalf("ops args: axis=%q source=%q global=%v", gotAxis, gotSource, gotGlobal)
+	}
+	lines, _ := audit.List(root)
+	if len(lines) == 0 {
+		t.Fatal("no audit line for pack add")
+	}
+	last := lines[len(lines)-1]
+	if last.Actor != "dashboard" || last.Action != "manifests.pack.add deps" {
+		t.Fatalf("audit line: %+v", last)
+	}
+}
+
+// TestGraphBudgetIncludesSpecialKinds: a degree-0 special-kind node (a route)
+// must survive a tight degree budget that would otherwise cut it.
+func TestGraphBudgetIncludesSpecialKinds(t *testing.T) {
+	root := t.TempDir()
+	s, err := store.Open(root, "m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nodes []schema.Node
+	var edges []schema.Edge
+	for i := 0; i < 5; i++ { // a clique of well-connected functions
+		nodes = append(nodes, schema.Node{ID: fmt.Sprintf("f%d", i), Label: fmt.Sprintf("f%d", i), Kind: "function", FileType: "go", Source: "a.go"})
+	}
+	for i := 0; i < 5; i++ {
+		for j := i + 1; j < 5; j++ {
+			edges = append(edges, schema.Edge{Source: fmt.Sprintf("f%d", i), Target: fmt.Sprintf("f%d", j), Relation: "calls", Confidence: "INFERRED"})
+		}
+	}
+	// One isolated route node (degree 0) — the top-N-by-degree cut would drop it.
+	nodes = append(nodes, schema.Node{ID: "r1", Label: "GET /x", Kind: "route", FileType: "python", Source: "routes.py"})
+	if _, _, err := s.Merge(&schema.Batch{Producer: "test", Nodes: nodes, Edges: edges}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(NewHandler(root, nil))
+	t.Cleanup(srv.Close)
+
+	var g struct {
+		Nodes []schema.Node `json:"nodes"`
+	}
+	json.Unmarshal(get(t, srv.URL+"/api/graph?module=m&limit=3", 200), &g)
+	found := false
+	for _, n := range g.Nodes {
+		if n.ID == "r1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("special-kind route node dropped by the degree budget: %+v", g.Nodes)
+	}
+}
+
 func TestStoreDeleteConfirmGated(t *testing.T) {
 	srv, root := testServer(t)
 	tok := token(t, srv)
@@ -373,12 +483,46 @@ func TestSetupEndpoint(t *testing.T) {
 		}
 	}
 
-	// With a repo path: project half + adapters axis populated.
+	// With a repo path: project half + adapters axis + the repo's OWN route
+	// pack all show. Pin the store root so machine packs stay out.
+	t.Setenv("CTX_OPTIMIZE_STORE", filepath.Join(root, "no-machine-packs"))
 	repo := t.TempDir()
 	os.MkdirAll(filepath.Join(repo, ".ctxoptimize", "adapters"), 0o755)
 	os.WriteFile(filepath.Join(repo, ".ctxoptimize", "adapters", "kafka.js"), []byte("//"), 0o644)
+	os.MkdirAll(filepath.Join(repo, ".ctxoptimize", "routes"), 0o755)
+	os.WriteFile(filepath.Join(repo, ".ctxoptimize", "routes", "myroutes.json"),
+		[]byte(`{"name":"myroutes","rules":[{"call":"registerRoute","path_arg":0,"handler_arg":1,"method":"GET"}]}`), 0o644)
 	body := get(t, srv.URL+"/api/setup?path="+url.QueryEscape(repo), 200)
 	if !strings.Contains(string(body), "kafka") {
 		t.Fatalf("setup with path missing adapter: %s", body)
+	}
+	// The project-scoped route pack surfaces under the routes axis.
+	var withPath struct {
+		Axes []struct {
+			Axis  string           `json:"axis"`
+			Core  []string         `json:"core"`
+			Packs []map[string]any `json:"packs"`
+		} `json:"axes"`
+	}
+	json.Unmarshal(body, &withPath)
+	foundPack, foundCore := false, false
+	for _, a := range withPath.Axes {
+		if a.Axis != "routes" {
+			continue
+		}
+		if len(a.Core) > 0 {
+			foundCore = true
+		}
+		for _, p := range a.Packs {
+			if p["name"] == "myroutes" {
+				foundPack = true
+			}
+		}
+	}
+	if !foundPack {
+		t.Fatalf("project route pack missing from setup: %s", body)
+	}
+	if !foundCore {
+		t.Fatalf("routes axis missing core recognizer list: %s", body)
 	}
 }

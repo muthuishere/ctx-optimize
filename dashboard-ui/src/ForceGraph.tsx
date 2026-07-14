@@ -1,6 +1,14 @@
 import { useEffect, useRef } from 'react'
 import type { Edge, Node } from './types'
 
+// High-impact relations are drawn thick + bright; structural ones thin + dim.
+// (Defined here, not imported, to keep ForceGraph free of module cycles.)
+const HIGH_IMPACT = new Set(['handles', 'declares', 'selects', 'routes_to',
+  'mounts', 'uses_image', 'co_changed_with'])
+const LOW_IMPACT = new Set(['contains', 'imports'])
+// First-class kinds are drawn slightly larger so they stand out at any degree.
+const SPECIAL = new Set(['route', 'dependency', 'task', 'resource', 'image', 'config'])
+
 // Hand-rolled canvas force layout — ported from the original single-file UI
 // (grid-approximated repulsion + springs + mild centering). Zero graph-viz
 // dependencies: the physics is ~60 lines and the store graphs it draws are
@@ -172,15 +180,33 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
         const b = st.sim.get(e.target)
         if (!a || !b) continue
         const hot = focus && (e.source === focus || e.target === focus)
-        ctx.strokeStyle = hot ? 'rgba(74,222,128,.9)' : focus ? 'rgba(148,163,184,.07)' : 'rgba(148,163,184,.2)'
-        ctx.lineWidth = (hot ? 1.8 : 1) / view.k
+        let stroke: string
+        let lw: number
+        if (hot) {
+          stroke = 'rgba(74,222,128,.95)'
+          lw = 2.1
+        } else if (focus) {
+          stroke = 'rgba(148,163,184,.06)'
+          lw = 1
+        } else if (HIGH_IMPACT.has(e.relation)) {
+          stroke = 'rgba(110,231,183,.55)' // bright emerald — the load-bearing edges
+          lw = 1.7
+        } else if (LOW_IMPACT.has(e.relation)) {
+          stroke = 'rgba(148,163,184,.13)' // structural scaffolding — thin + dim
+          lw = 0.7
+        } else {
+          stroke = 'rgba(148,163,184,.28)'
+          lw = 1
+        }
+        ctx.strokeStyle = stroke
+        ctx.lineWidth = lw / view.k
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
         ctx.lineTo(b.x, b.y)
         ctx.stroke()
       }
       for (const n of nodes) {
-        const r = 3.5 + Math.min(10, Math.sqrt(n.deg) * 1.4)
+        const r = (SPECIAL.has(n.kind) ? 5 : 3.5) + Math.min(10, Math.sqrt(n.deg) * 1.4)
         const inFocus = !focus || n.id === focus || neigh.has(n.id)
         const c = st.colors.get(n.kind) || '#94a3b8'
         ctx.globalAlpha = inFocus ? 1 : 0.28

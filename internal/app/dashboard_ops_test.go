@@ -136,6 +136,74 @@ func TestDashboardOnboardFlow(t *testing.T) {
 	}
 }
 
+// TestDashboardPackAdd drives POST /api/pack wired to the REAL Ops: it
+// scaffolds a routes pack into the repo's .ctxoptimize/ through the same door
+// `ctx-optimize routes add` uses, surfaces the CLI's loud error on a bad
+// source, and audits the add.
+func TestDashboardPackAdd(t *testing.T) {
+	repo := t.TempDir()
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+
+	srv := httptest.NewServer(dashboard.NewHandler(storeRoot, serveOps(storeRoot)))
+	defer srv.Close()
+
+	var tok struct {
+		Token string `json:"token"`
+	}
+	resp, err := http.Get(srv.URL + "/api/token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	json.NewDecoder(resp.Body).Decode(&tok)
+	resp.Body.Close()
+
+	post := func(body string) (int, string) {
+		t.Helper()
+		req, _ := http.NewRequest("POST", srv.URL+"/api/pack", strings.NewReader(body))
+		req.Header.Set("X-Ctx-Token", tok.Token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	q, _ := json.Marshal(repo)
+
+	// Scaffold a project-scoped routes pack — the real `routes add` door.
+	code, body := post(`{"axis":"routes","scope":"project","path":` + string(q) + `,"source":"myroutes"}`)
+	if code != 200 {
+		t.Fatalf("pack add: %d %s", code, body)
+	}
+	packFile := filepath.Join(repo, ".ctxoptimize", "routes", "myroutes.json")
+	if _, err := os.Stat(packFile); err != nil {
+		t.Fatalf("scaffolded pack file missing: %v", err)
+	}
+
+	// A bad source name fails with the CLI's own loud error, surfaced as 400.
+	code, body = post(`{"axis":"routes","scope":"project","path":` + string(q) + `,"source":"bad name"}`)
+	if code != 400 || !strings.Contains(body, "letters") {
+		t.Fatalf("bad source: %d %s", code, body)
+	}
+
+	// The successful add is audited.
+	lines, err := audit.List(storeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, l := range lines {
+		if l.Actor == "dashboard" && l.Action == "routes.pack.add myroutes" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("pack add not audited: %+v", lines)
+	}
+}
+
 // TestConfigSetWritesAudit: the CLI door logs through the same writer.
 func TestConfigSetWritesAudit(t *testing.T) {
 	storeRoot := t.TempDir()
