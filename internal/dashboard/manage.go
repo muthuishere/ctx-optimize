@@ -20,6 +20,7 @@ import (
 
 	"github.com/muthuishere/ctx-optimize/internal/audit"
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
+	"github.com/muthuishere/ctx-optimize/internal/extract/manifests"
 	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/gitinfo"
 	"github.com/muthuishere/ctx-optimize/internal/project"
@@ -217,13 +218,12 @@ func (s *server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	resp["effective"] = effective
 
-	// Axes. Grammar packs are discoverable files (view via their paths);
-	// routes/manifests are built into the code producer on this build (no
-	// pack loader) — say so instead of pretending.
+	// Axes. Every extension axis lists its discoverable pack files (the file
+	// stays the source of truth); core recognizers are noted alongside.
 	axes := []map[string]any{}
 	packsRepo := repoPath
 	if packsRepo == "" {
-		packsRepo = s.root // no repo selected: global grammars dir only
+		packsRepo = s.root // no repo selected: global dirs only
 	}
 	grammarAxis := map[string]any{"axis": "grammars", "kind": "packs",
 		"note": "drop <name>.wasm + <name>.json into ~/ctxoptimize/grammars/ or <repo>/.ctxoptimize/grammars/ (view-only here; build with `ctx-optimize languages add`)"}
@@ -240,10 +240,30 @@ func (s *server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		grammarAxis["packs"] = list
 	}
 	axes = append(axes, grammarAxis)
-	axes = append(axes, map[string]any{"axis": "routes", "kind": "builtin",
-		"note": "route extraction (FastAPI/Flask/Express/Nest) is built into the code producer on this build — no route packs to edit"})
-	axes = append(axes, map[string]any{"axis": "manifests", "kind": "builtin",
-		"note": "manifest/config-file extraction (package.json, pom.xml, go.mod, Dockerfile, …) is built into the code producer — no manifest packs to edit"})
+	routeAxis := map[string]any{"axis": "routes", "kind": "packs",
+		"note": "core: fastapi/flask/express/nestjs/angular/react-router/vue-router/openapi/drupal/ingress — packs add call-shaped custom frameworks (`ctx-optimize routes add <name|github-url>`)"}
+	if packs, err := code.LoadRoutePacks(packsRepo); err != nil {
+		routeAxis["error"] = err.Error()
+	} else {
+		list := []map[string]any{}
+		for _, p := range packs {
+			list = append(list, map[string]any{"name": p.Name, "rules": len(p.Rules), "file": p.File})
+		}
+		routeAxis["packs"] = list
+	}
+	axes = append(axes, routeAxis)
+	manifestAxis := map[string]any{"axis": "manifests", "kind": "packs",
+		"note": "core: npm/maven/csproj+sln/go.mod/gradle/k8s — packs add custom structured manifests (`ctx-optimize manifests add <name|github-url>`)"}
+	if packs, err := manifests.LoadManifestPacks(packsRepo); err != nil {
+		manifestAxis["error"] = err.Error()
+	} else {
+		list := []map[string]any{}
+		for _, p := range packs {
+			list = append(list, map[string]any{"name": p.Name, "rules": len(p.Rules), "file": p.File})
+		}
+		manifestAxis["packs"] = list
+	}
+	axes = append(axes, manifestAxis)
 	adapterAxis := map[string]any{"axis": "adapters", "kind": "scripts",
 		"note": "drop .js/.py/.sh into <repo>/.ctxoptimize/adapters/ — dropping the file IS the registration"}
 	if repoPath != "" {
