@@ -1,0 +1,5 @@
+# Machine-local benchmark corpora (cloned per README) and their outputs —
+# never committed; results.json (the honest measured numbers) is what we track.
+corpus-*/
+ctxstore-*/
+graphify-out/
