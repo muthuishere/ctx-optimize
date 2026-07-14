@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import ErrorBoundary from './ErrorBoundary'
 import Overview from './screens/Overview'
 import Repos from './screens/Repos'
 import Onboard from './screens/Onboard'
@@ -54,13 +55,18 @@ export default function App() {
         </nav>
       </header>
       <main className={'body' + (route === 'viewer' ? ' nopad' : '')}>
-        {(route === 'overview' || route === '') && <Overview />}
-        {route === 'repos' && <Repos />}
-        {route === 'onboard' && <Onboard />}
-        {route === 'query' && <Query initialModule={arg} />}
-        {route === 'viewer' && <Viewer initialModule={arg} />}
-        {route === 'settings' && <Settings />}
-        {route === 'changes' && <Changes />}
+        {/* One boundary per route: a screen that throws shows a fallback
+            instead of blanking the whole app, and the shell/nav stays live so
+            switching tabs recovers. Keyed by route+arg so navigating resets it. */}
+        <ErrorBoundary key={route + '/' + arg} label={'the ' + route + ' view'}>
+          {(route === 'overview' || route === '') && <Overview />}
+          {route === 'repos' && <Repos />}
+          {route === 'onboard' && <Onboard />}
+          {route === 'query' && <Query initialModule={arg} />}
+          {route === 'viewer' && <Viewer initialModule={arg} />}
+          {route === 'settings' && <Settings />}
+          {route === 'changes' && <Changes />}
+        </ErrorBoundary>
       </main>
     </div>
   )
@@ -78,6 +84,17 @@ export const SPECIAL_COLORS: Record<string, string> = {
   config: '#fb923c', // orange
 }
 export const SPECIAL_KINDS = Object.keys(SPECIAL_COLORS)
+
+// safeDecode never throws: decodeURIComponent dies on a malformed %-escape (a
+// stray '%' in a route path or symbol id), and screens call it in render — an
+// unguarded throw there blanks the whole page. On failure keep the raw string.
+export function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
+}
 
 const PALETTE = ['#4ade80', '#f472b6', '#22d3ee', '#facc15', '#fb7185',
   '#34d399', '#93c5fd', '#fda4af', '#5eead4', '#e879f9']

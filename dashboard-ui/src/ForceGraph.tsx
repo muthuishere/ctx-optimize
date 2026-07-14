@@ -278,12 +278,15 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
           ctx.stroke()
         }
         if (view.k > 0.5 && (n.id === focus || neigh.has(n.id) || (!focus && n.deg > 3))) {
+          // Coerce the label defensively: a node with a missing/non-string
+          // label (corrupt store, adapter bug) must not break the draw loop.
+          const label = typeof n.label === 'string' ? n.label : String(n.label ?? n.id ?? '')
           ctx.font = `${11 / view.k}px ui-monospace, monospace`
           ctx.lineWidth = 3 / view.k
           ctx.strokeStyle = 'rgba(10,12,16,.85)'
-          ctx.strokeText(n.label, n.x + r + 4 / view.k, n.y + 3.5 / view.k)
+          ctx.strokeText(label, n.x + r + 4 / view.k, n.y + 3.5 / view.k)
           ctx.fillStyle = n.id === focus ? '#ffffff' : 'rgba(232,237,244,.92)'
-          ctx.fillText(n.label, n.x + r + 4 / view.k, n.y + 3.5 / view.k)
+          ctx.fillText(label, n.x + r + 4 / view.k, n.y + 3.5 / view.k)
         }
         ctx.globalAlpha = 1
       }
@@ -296,14 +299,22 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
       raf = 0
       if (!alive) return
       let busy = false
-      if (st.ticking > 0) {
-        st.ticking--
-        const moved = step()
-        if (moved < 0.15) st.ticking = 0 // layout settled — stop early
-        busy = true
-      }
-      if (busy || needsDraw) {
-        draw()
+      try {
+        if (st.ticking > 0) {
+          st.ticking--
+          const moved = step()
+          if (moved < 0.15) st.ticking = 0 // layout settled — stop early
+          busy = true
+        }
+        if (busy || needsDraw) {
+          draw()
+          needsDraw = false
+        }
+      } catch (e) {
+        // A bad frame must not wedge the tab or blank the graph: log, stop
+        // physics, and let the loop go idle rather than throwing every frame.
+        console.error('ctx-optimize graph draw error:', e)
+        st.ticking = 0
         needsDraw = false
       }
       if (st.ticking > 0 || needsDraw) raf = requestAnimationFrame(loop)

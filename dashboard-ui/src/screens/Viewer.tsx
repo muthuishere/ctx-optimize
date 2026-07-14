@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import { kindColorMap, KNOWN_PRODUCERS, producerColorMap, SPECIAL_KINDS } from '../App'
+import { kindColorMap, KNOWN_PRODUCERS, producerColorMap, safeDecode, SPECIAL_KINDS } from '../App'
 import ForceGraph, { MAX_SIM_NODES } from '../ForceGraph'
 import type { Edge, GraphResponse, Module, Node, StoreInfo, StoreLinks } from '../types'
 
@@ -42,7 +42,7 @@ const producerOf = (n: Node) => n.metadata?.producer || '(unknown)'
 
 export default function Viewer({ initialModule: rawArg }: { initialModule: string }) {
   const qi = rawArg.indexOf('?')
-  const initialModule = decodeURIComponent(qi < 0 ? rawArg : rawArg.slice(0, qi))
+  const initialModule = safeDecode(qi < 0 ? rawArg : rawArg.slice(0, qi))
   const initialCenter = qi < 0 ? '' : new URLSearchParams(rawArg.slice(qi + 1)).get('center') || ''
 
   const [mods, setMods] = useState<Module[]>([])
@@ -59,17 +59,27 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
   const [storeLinks, setStoreLinks] = useState<Map<string, StoreLinks>>(new Map())
 
   const merge = useCallback((g: GraphResponse, reset: boolean) => {
+    // Defensive: a malformed/empty graph response (nodes or edges missing, a
+    // node without an id) must not throw inside the setState updater — that
+    // escapes load()'s try/catch and blanks the graph. Default to [] and skip
+    // idless nodes so one bad payload degrades gracefully.
+    const gnodes = Array.isArray(g?.nodes) ? g.nodes : []
+    const gedges = Array.isArray(g?.edges) ? g.edges : []
     setNodes((prev) => {
       const m = reset ? new Map<string, Node>() : new Map(prev)
-      for (const n of g.nodes) m.set(n.id, n)
+      for (const n of gnodes) if (n && n.id != null) m.set(n.id, n)
       return m
     })
     setEdges((prev) => {
       const m = reset ? new Map<string, Edge>() : new Map(prev)
-      for (const e of g.edges) m.set(e.source + '\x00' + e.target + '\x00' + e.relation, e)
+      for (const e of gedges) {
+        if (e && e.source != null && e.target != null) {
+          m.set(e.source + '\x00' + e.target + '\x00' + e.relation, e)
+        }
+      }
       return m
     })
-    setTotals({ nodes: g.total_nodes, edges: g.total_edges, truncated: g.truncated })
+    setTotals({ nodes: g?.total_nodes || 0, edges: g?.total_edges || 0, truncated: !!g?.truncated })
   }, [])
 
   const load = useCallback(async (key: string, center: string) => {

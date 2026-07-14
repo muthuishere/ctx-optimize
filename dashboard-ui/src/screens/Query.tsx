@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import { kindColorMap } from '../App'
+import { kindColorMap, safeDecode } from '../App'
 import type { Module, QueryResult } from '../types'
 
 // Query — the original UI's query affordance as its own screen: search box
 // against /api/query, complete hit cards (label, kind, source:location,
 // score, neighbors).
 export default function Query({ initialModule: rawModule }: { initialModule: string }) {
-  const initialModule = decodeURIComponent(rawModule)
+  const initialModule = safeDecode(rawModule)
   const [mods, setMods] = useState<Module[]>([])
   const [mod, setMod] = useState(initialModule)
   const [q, setQ] = useState('')

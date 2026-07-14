@@ -83,6 +83,21 @@ h3.sub { font-family: var(--disp); font-size: 1.05rem; font-weight: 700; letter-
   font-size: .9rem;
 }
 
+/* ErrorBoundary fallback — shown when a screen throws so the page never blanks. */
+.errboundary { display: flex; align-items: center; justify-content: center; min-height: 60vh; padding: 24px; }
+.errboundary-card {
+  max-width: 560px; width: 100%; background: var(--panel); border: 1px solid var(--border2);
+  border-left: 3px solid var(--contrast); border-radius: var(--r); padding: 22px 24px;
+}
+.errboundary-title { font-family: var(--disp); font-weight: 700; font-size: 1.05rem; color: var(--contrast); margin-bottom: 8px; }
+.errboundary-msg { color: var(--muted); font-size: .9rem; line-height: 1.5; margin-bottom: 12px; }
+.errboundary-detail {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--r);
+  padding: 10px 12px; font-size: .82rem; color: var(--text); white-space: pre-wrap;
+  word-break: break-word; max-height: 160px; overflow: auto; margin: 0 0 14px;
+}
+.errboundary-actions { display: flex; gap: 10px; }
+
 /* ---- form controls ---- */
 input[type=text], select, textarea {
   background: var(--bg2); color: var(--text);
