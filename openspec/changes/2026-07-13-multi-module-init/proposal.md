@@ -1,6 +1,6 @@
 # ADR — multi-module init: deep scan, per-module stores, top-level navigator
 
-Status: DRAFT v2 — after owner discussion 2026-07-13. Decisions marked ⚖️ are
+Status: DRAFT v2 — after maintainer discussion 2026-07-13. Decisions marked ⚖️ are
 still open; everything else is decided.
 
 ## Context
@@ -19,7 +19,7 @@ ctx-optimize today is strictly single-module:
 - Extraction is parallel *within* one add (wazero instance per worker
   goroutine) but there is no orchestration *across* modules.
 - The skill layer told agents to "init && add ." — with no module awareness,
-  so on monorepos it silently built the too-big single graph (owner-observed
+  so on monorepos it silently built the too-big single graph (maintainer-observed
   failure that triggered this ADR).
 
 ### Prior art — graphify (read from `~/muthu/gitworkspace/graphifyread`)
@@ -197,7 +197,7 @@ The root store's first-class artifact is not a giant graph — it is a small
   the output says so when it detects the boundary.
 - `serve` reads the navigator for a module switcher; per-module dashboards
   come free (stores are just stores).
-- **ONE wiki, many module graphs (owner call 2026-07-13).** Graphs are "just
+- **ONE wiki, many module graphs (maintainer call 2026-07-13).** Graphs are "just
   modules" — but the wiki is unified: `~/ctxoptimize/<root>/wiki/` is a
   single browsable tree whose front page IS the navigator and whose module
   sections relative-link into each module store's own wiki (they live under
@@ -256,7 +256,7 @@ verb (`query`/`card`/`affected`/`path`/`explain`/`serve`/`status`):
      (Considered and REJECTED: a committed `.ctx-optimize-module.json`
      marker per module — the walk is already a handful of stats, and the
      marker re-creates duplicated identity + N generated files across the
-     repo. Owner concurred 2026-07-13.)
+     repo. Maintainer concurred 2026-07-13.)
 5. Boundary honesty: a module-scoped `affected`/`path` whose blast radius
    crosses into another module says so in the output ("crosses into
    services/worker — federate with --root, or build a merged store for
@@ -308,7 +308,7 @@ same verb — no graphify-style global singleton.
 
 ## Counter-proposal under discussion — the omakase design (DHH lens)
 
-Owner asked for a Rails-style rethink (2026-07-13). Applying *convention over
+Maintainer asked for a Rails-style rethink (2026-07-13). Applying *convention over
 configuration* to everything above:
 
 **The heresy in v2:** `modules[]` in config.json is a SECOND copy of truth the
@@ -357,7 +357,7 @@ change was itself committed and reviewed — tracking it is correct, freezing
 is the bug. Escape hatch stays: a repo that hates its manifests writes
 explicit module globs in config and convention defers to it.
 
-**Resolution (owner, 2026-07-13): the Rails-GENERATOR pattern, not runtime
+**Resolution (maintainer, 2026-07-13): the Rails-GENERATOR pattern, not runtime
 inference.** The repo-level `config.json` stays and holds ALL the modules —
 but as *generated, owned code*: `scan`/`init --scan` writes the full found
 list (like `rails generate` writes files), and from then on the user owns it
@@ -400,7 +400,7 @@ never scans. What we take from omakase is the UX, not the inference:
 ## Open questions ⚖️
 
 1. ~~Scaffold child `.ctxoptimize/` in each module, or root-only?~~
-   **RESOLVED (owner, 2026-07-13): root-only by default** — `init --scan`
+   **RESOLVED (maintainer, 2026-07-13): root-only by default** — `init --scan`
    writes ONE `.ctxoptimize/` at the root; modules get no config dir (no
    tool-spray across N packages, one source of truth). A child config is
    OPT-IN and honored when present (module needs own adapters/remote, or
@@ -426,7 +426,7 @@ never scans. What we take from omakase is the UX, not the inference:
 
 ## Traceability
 
-- Owner direction (2026-07-13): `scan` is its own verb, separate from `init`
+- Maintainer direction (2026-07-13): `scan` is its own verb, separate from `init`
   (scan = see, init = write) and opt-in; depth ≥5 and configurable; single
   giant graph.json rejected; per-project graphs mirroring folder structure;
   merge strictly optional; top-level navigator wanted; scan must find ALL

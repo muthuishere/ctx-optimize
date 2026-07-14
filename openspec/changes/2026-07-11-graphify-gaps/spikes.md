@@ -82,11 +82,11 @@ symbol cards (deletes the measured pointer-chase waste) + exact impact analysis
 (x/tools/LSP — capability grep lacks and graphify gets wrong)** in one pure-Go
 binary (wazero/WASM), aimed at grep-hostile/legacy codebases + onboarding, with
 honest agent-baseline benchmarks as positioning. The composite is a projection:
-measured pieces, unmeasured sum. Owner decides: build on the composite bet,
+measured pieces, unmeasured sum. Maintainer decides: build on the composite bet,
 run one composite prototype spike first, or stop.
 
-### S1d · The kernel test (owner challenge — "Linux showed progress, why?")
-- **Owner's counter-evidence:** his graphify run on Linux kernel block/ showed
+### S1d · The kernel test (maintainer challenge — "Linux showed progress, why?")
+- **Maintainer's counter-evidence:** his graphify run on Linux kernel block/ showed
   progress. Reconciliation hypothesis — S1/S1b tested the two most grep-friendly
   codebases on earth (modern Go, predictable naming); **the graph pays off where
   naming fails**: legacy C/C++, macros, function pointers, huge files, obscure
@@ -113,7 +113,7 @@ run one composite prototype spike first, or stop.
   **The terrain law (across all three A/Bs):** graph value is inversely
   proportional to greppability — brain (clean Go): graph −11%; k8s (hyper-
   greppable): graph +31% WORSE; kernel C (opaque naming): graph −23%. It's not
-  size, it's whether names betray structure. Owner's Linux observation
+  size, it's whether names betray structure. Maintainer's Linux observation
   CONFIRMED directionally.
   **But 23% < the 50% bar even on best terrain.** The bare pointer-list query
   is a modest win, not a product-carrying one. Identified lever: symbol-grade
@@ -144,7 +144,7 @@ run one composite prototype spike first, or stop.
 ### S3 · Precise edges (the wedge)
 - **Question:** does LSP/SCIP fix the 2,487-reliable-vs-7,718-guessed problem?
 - **Method:** drive `gopls` call-hierarchy + parse `scip-go` on the same repo as
-  the owner's spike; compare edge precision vs tree-sitter name-resolution.
+  the maintainer's spike; compare edge precision vs tree-sitter name-resolution.
 - **Pass:** ≥90% precision on sampled edges; runs headless.
 - **Result (2026-07-11): ✅ PASS — exact edges are cheap; and the assumption
   flipped.** Verified ALL 65 of graphify's INFERRED call edges vs type-checked
@@ -221,7 +221,7 @@ artifacts. **Pass:** local query <100ms; push = changed files only.
 - **S15** SKILL.md drive test (agent drives subcommands cleanly) — _pending_
 - **S16** toolnexus headless (`run --once`, model-free binary) — _pending_
 
-### S1e · Read-call forensics (owner's question: why so many reads?)
+### S1e · Read-call forensics (maintainer's question: why so many reads?)
 - **Method:** parsed all 4 A/B transcripts (tool_use/tool_result pairs), classified
   every Read by what preceded it, measured waste by never-cited files.
 - **Result (2026-07-11): ✅ ANSWERED — reads are pointer-chases, not discovery.**
@@ -268,7 +268,7 @@ artifacts. **Pass:** local query <100ms; push = changed files only.
 - **Consequence (per the pre-commitment):** do not lead with universal token
   savings; lead with onboarding savings + impact correctness + the equalizer
   story. Fix D1–D3, re-run arm B, publish both runs.
-- **Tier addendum (same day, owner-requested):** repeated on Claude Code
+- **Tier addendum (same day, maintainer-requested):** repeated on Claude Code
   haiku + sonnet, 40× corpus (3,987 kernel files → 274,812 nodes / 3,989
   wiki pages gathered in 5.5s; query 1.7s / card 1.1s at that scale).
   Haiku −1.1% tok / −29% turns / 11-11; Sonnet +5.2% tok / −13% turns /
@@ -280,6 +280,6 @@ artifacts. **Pass:** local query <100ms; push = changed files only.
   Codex mini unavailable on ChatGPT accounts (400, measured).
 
 ## Killed by decisions (no spike needed)
-- Vector store / embeddings comparisons — owner: no embeddings, ever.
-- Lance/Postgres query engines — owner: no DB.
-- S3 live-read latency — owner: S3 is sync-only, queries are local.
+- Vector store / embeddings comparisons — maintainer: no embeddings, ever.
+- Lance/Postgres query engines — maintainer: no DB.
+- S3 live-read latency — maintainer: S3 is sync-only, queries are local.

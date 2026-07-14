@@ -80,7 +80,7 @@ paths); cross-batch edges are the schema's design intent.
 
 ## Deferred
 
-- **Ownership (⚖️ privacy)**: per-file author/owner attribution from the
+- **Ownership (⚖️ privacy)**: per-file author/maintainer attribution from the
   same window was considered and deliberately NOT built in v1. It would
   require person nodes (or person-valued metadata) — that embeds names/emails
   from git history into a store that gets pushed to shared remotes, and the

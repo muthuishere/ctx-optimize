@@ -56,4 +56,4 @@ schema. Check off as done; each substantive slice ends on a green `task check`.
 - Docs / papers / images / video ingest (graphify breadth we are not chasing)
 - Exports: Obsidian / HTML / SVG / GraphML / Neo4j / FalkorDB
 - git merge-driver, global cross-repo store
-- MCP — **never** (owner decision)
+- MCP — **never** (maintainer decision)

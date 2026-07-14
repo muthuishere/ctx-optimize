@@ -1,7 +1,7 @@
 # ADR — framework-aware routes + cross-language bridges (CodeGraph parity, our architecture)
 
-Status: DRAFT v1 — owner review pending 2026-07-14. Separate change from
-`2026-07-14-competitive-wedge/` on owner instruction; nothing implemented.
+Status: DRAFT v1 — maintainer review pending 2026-07-14. Separate change from
+`2026-07-14-competitive-wedge/` on maintainer instruction; nothing implemented.
 
 ## Context
 

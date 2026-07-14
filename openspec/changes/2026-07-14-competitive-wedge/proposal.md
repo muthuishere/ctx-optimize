@@ -1,11 +1,11 @@
 # ADR — competitive wedge: head-to-head benchmarks + the serving-surface question (MCP / standalone graph)
 
-Status: DRAFT v1 — owner review pending 2026-07-14. Decisions marked ⚖️ are
+Status: DRAFT v1 — maintainer review pending 2026-07-14. Decisions marked ⚖️ are
 open; nothing here is implemented yet.
 
 ## Context — the lane is crowded and features alone won't win
 
-Market snapshot (owner-supplied, 2026-07-14):
+Market snapshot (maintainer-supplied, 2026-07-14):
 
 | player | traction | notes |
 |---|---|---|
@@ -15,7 +15,7 @@ Market snapshot (owner-supplied, 2026-07-14):
 | potpie | $2.2M funded | Neo4j-backed (heavy infra) |
 | Serena | — | LSP-as-MCP: no graph, live language server |
 
-graphify's exploitable gaps (owner analysis): **static file dump** (not live),
+graphify's exploitable gaps (maintainer analysis): **static file dump** (not live),
 **cloud-model dependence**, **Python/DX friction**, **weak multi-repo merge**.
 Our position against each gap is already built — but *unmeasured against
 them*:
@@ -77,18 +77,18 @@ publish the numbers that don't flatter us too.
 
 ## Decision 2 ⚖️ — serving surface: MCP verb, standalone graph service, or neither
 
-Owner prompt: "seems like we need to have mcp server so a standalone graph
+Maintainer prompt: "seems like we need to have mcp server so a standalone graph
 instead of multiple download — don't know."
 
 The standing contract (CLAUDE.md, VISION.md): **"no LLM calls, no DB
 drivers, no embeddings, no MCP — ever."** This decision is a *contract
 amendment question*, not a feature question — spelled out honestly.
 
-**DECISION 2026-07-14 (owner, FINAL): NO MCP — ever. The agent skill is the
+**DECISION 2026-07-14 (maintainer, FINAL): NO MCP — ever. The agent skill is the
 plan, and we are not going back.** Research established MCP as the dominant
 distribution pattern (CodeGraph ~47K / GitNexus ~42K both ship it; write-ups
 call "local graph over MCP" the category winner; Serena is LSP-as-MCP). The
-owner weighed that and deliberately chose the OTHER bet: distribute via the
+maintainer weighed that and deliberately chose the OTHER bet: distribute via the
 **agent-skill + hook + committed pointer**, which is richer than a fixed MCP
 tool list — it teaches when/how to use the store, carries the query-craft
 rules, and drives onboarding + customization end-to-end on Claude Code /
@@ -96,7 +96,7 @@ Codex / Copilot / Devin. The acknowledged tradeoff, kept honest on the public
 compare page: MCP-only hosts (Cursor, Kiro, Gemini CLI) require wiring the CLI
 in by hand; there will be no MCP server. **Option B below is REJECTED, not
 deferred — the "no MCP" clause of the contract STANDS.** (Supersedes an
-earlier draft note that leaned toward building it; the owner's call is final.)
+earlier draft note that leaned toward building it; the maintainer's call is final.)
 Research sources retained for the record: rywalker.com/research/code-intelligence-tools,
 knolli.ai graphify-alternatives, the CodeGraph/GitNexus repos.
 
@@ -133,7 +133,7 @@ heaviest amendment, and `remote push/pull` (S3) already solves team sharing
 at ~zero infra. Recommend: **no**, unless benchmark feedback shows pull
 friction is real. The incremental pull is cheap by design.
 
-### Recommendation (owner decided ✅)
+### Recommendation (maintainer decided ✅)
 
 1. Ship Decision 1 (benchmarks) — it's cheap, it's our lane (deterministic
    speed + honesty), and it produces the launch story. STILL ACTIVE.

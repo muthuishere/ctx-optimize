@@ -1,6 +1,6 @@
 # ADR — manifest lane: build tools + k8s topology as first-class graph, core + packs
 
-Status: DRAFT v1 — owner-approved direction 2026-07-14 ("i need build tools
+Status: DRAFT v1 — maintainer-approved direction 2026-07-14 ("i need build tools
 separately as well … similar like routes"); implementation NOT started.
 Sequencing: blocked on W4 (frontend/custom/yaml routes) merging first — both
 touch the config extraction surface.

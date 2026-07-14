@@ -37,7 +37,7 @@ covering everything graphify does.
 - **Reuse from citenexus-Go:** `models.*` (LLM wire clients, for the wiki
   distiller only); optionally `bm25`, `chunker`, `tokenize`, `lang` from the
   deterministic kernel.
-- **NOT used (owner decision 2026-07-11 — no embeddings):** all vector storage
+- **NOT used (maintainer decision 2026-07-11 — no embeddings):** all vector storage
   (`LanceVectorStore` cgo adapter, `PostgresVectorStore`). No vector search
   engine anywhere in the product.
 - **Build ourselves (NOT in citenexus-Go — Python-only today):** LLM-wiki
@@ -47,7 +47,7 @@ covering everything graphify does.
   build/query/path/persist. Port ideas from citenexus-Python
   (`wiki/store.py::integrate_document`) and graphify (lexical query).
 
-## Retrieval model (owner decision — NO embeddings)
+## Retrieval model (maintainer decision — NO embeddings)
 
 Three layers, all model-free at query time:
 1. **Lexical scoring** — IDF + trigram matching over node labels/text
@@ -80,7 +80,7 @@ name, never baked in.
 - **WHEN** the user runs `add` / `query` / `path` / `explain`
 - **THEN** they succeed against local artifacts with no outbound call
 
-### Requirement: No MCP; consumption via agent skill over the local store (owner decision)
+### Requirement: No MCP; consumption via agent skill over the local store (maintainer decision)
 ctx-optimize SHALL NOT ship or require an MCP server. Consumption is an agent skill
 that drives CLI subcommands against the **local** artifact folder (after an optional
 pull from a remote).
@@ -91,7 +91,7 @@ pull from a remote).
 - **THEN** ctx-optimize pulls the artifacts once and answers all queries from the
   local folder — no server running anywhere, no live remote reads
 
-### Requirement: Local folder store + sync adapters for reuse (addresses G1; owner #1751)
+### Requirement: Local folder store + sync adapters for reuse (addresses G1; maintainer #1751)
 The working store SHALL be a **local folder** of plain, diffable artifacts
 (columnar files where scale needs it). Remotes (S3 or others) SHALL be **sync
 adapters only** — push/pull for sync and reuse, never a live query target. A
@@ -150,7 +150,7 @@ optional per-language **LSP/SCIP** producer, behind the same schema. Both tree-s
 - **WHEN** the user builds with the LSP producer
 - **THEN** call edges are EXTRACTED-grade (exact references), not name-guessed
 
-### Requirement: Incremental, scalable wiki (owner: "incremental like graphify, better")
+### Requirement: Incremental, scalable wiki (maintainer: "incremental like graphify, better")
 Building or rebuilding SHALL be incremental. Invalidation SHALL key on **content
 hash** (mtime/size only as a fast-path gate), with separate structural vs LLM hashes
 so a structural change never re-bills the LLM. The re-distill unit SHALL be the

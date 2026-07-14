@@ -1,8 +1,8 @@
 # ADR — dashboard FIRST-CLASS: React app, onboarding, viewer, management, logged
 
-Status: DRAFT v2 — owner direction 2026-07-14 ("dashboard first class,
+Status: DRAFT v2 — maintainer direction 2026-07-14 ("dashboard first class,
 onboard add edit repo as well along with inbuilt viewer so create a react
-app and embed"). Owner's ask upgrades Phase 2 mutations from ⚖️ to APPROVED
+app and embed"). Maintainer's ask upgrades Phase 2 mutations from ⚖️ to APPROVED
 for: onboarding (scan/init/add), repo config edit, re-gather trigger.
 
 ## Decision 0 — first-class React app, embedded, zero runtime network
@@ -42,12 +42,12 @@ for: onboarding (scan/init/add), repo config edit, re-gather trigger.
 read path never creates store dirs. Meanwhile the extension surface has
 grown to four axes (grammar packs, route packs, manifest packs, adapters)
 plus two config levels (global, project) — all plain files, editable today
-only via CLI/editor. The owner wants the dashboard to be the place a human
+only via CLI/editor. The maintainer wants the dashboard to be the place a human
 SEES all of it and can CHANGE it, with changes logged.
 
 ## Decision — two phases, mutation stays localhost + audited
 
-### Screens (owner 2026-07-14: "settings and all stuff within and they can
+### Screens (maintainer 2026-07-14: "settings and all stuff within and they can
 do all operations there as well") — Repos · Onboard · Viewer · Query ·
 Settings · Changes. Settings = every config key (both levels), every pack
 across all four axes (create/edit/delete with validation preview), adapters,

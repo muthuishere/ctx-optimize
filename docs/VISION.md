@@ -1,9 +1,9 @@
 # Vision & running design notes
 
-## ARCHITECTURE POSITION (2026-07-11, post-Tier-A, owner-corrected) —
+## ARCHITECTURE POSITION (2026-07-11, post-Tier-A, maintainer-corrected) —
 ## deterministic code wiki: graphify's zero-LLM build, Karpathy's FORM, citenexus's discipline
 
-**Owner correction (final):** NO LLM work in the product. Not an LLM-distilled
+**Maintainer correction (final):** NO LLM work in the product. Not an LLM-distilled
 wiki. The core principle stands: no DB, no AI for most of everything. The build
 lane is graphify-style — deterministic, seconds-fast, zero tokens (kernel block/
 = 2.1s / 0 tokens). The output takes the Karpathy wiki's FORM (index + pages +
@@ -47,7 +47,7 @@ build (no tokens), so measure before architecture lock.
 
 ## REVISION (2026-07-11, later) — citenexus DROPPED from the core; docs-in-the-graph
 
-Owner questioned the citenexus dependency; resolution: **not needed in the core.**
+Maintainer questioned the citenexus dependency; resolution: **not needed in the core.**
 citenexus's value is an ANSWERING pipeline (faithfulness gate, cite-or-abstain
 generation) — machinery for products that call LLMs to answer. We never answer;
 the HOST AGENT answers. We serve context. What remains of the doc lane (extract
@@ -60,9 +60,9 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
 - PDFs/docx: DEFERRED; when needed the SKILL converts (tiny bundled python
   script or the host agent) → markdown → same producer.
 
-### Product qualities (owner, 2026-07-11) — fast · answers · zero ceremony · refresh-the-world
+### Product qualities (maintainer, 2026-07-11) — fast · answers · zero ceremony · refresh-the-world
 1. **graphify-fast is a HARD budget, not a nice-to-have — and Go is chosen to
-   BEAT it, multithreaded (owner).** graphify's measured effective rate:
+   BEAT it, multithreaded (maintainer).** graphify's measured effective rate:
    ~48 files/s (Python ProcessPool, 18 workers; k8s 19.6k files = 6m46s).
    Ours: S2 measured 219–537 files/s PER single-threaded wasm worker; one wazero
    instance per goroutine worker (no GIL, no fork overhead) → 10 workers ≈
@@ -92,7 +92,7 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
    the store current. One-liner: **gather once, refresh cheaply, answer from
    the store — never go everywhere every time.**
 
-### The open adapter door (owner, 2026-07-11) — two producer tiers, one contract
+### The open adapter door (maintainer, 2026-07-11) — two producer tiers, one contract
 - **Tier 1, compiled into the Go binary (deterministic, zero-dep):** code langs
   (wasm tree-sitter), markdown/txt, exact edges. NOTHING else — no DB drivers,
   no format libs. "No DB" holds literally in the binary.
@@ -117,11 +117,11 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
   its chunker parameters and light-index/pages/log layout are ported as
   PATTERNS, never imported.
 
-## Store layout (owner, default) — central, file-based, multi-module
+## Store layout (maintainer, default) — central, file-based, multi-module
 ```
 ~/.ctx-optimize/store/<module-key>/       # user-home central store, keyed by module
   graph/ … wiki/ … cards/ … manifest.json
-  hooks/                                  # per-store DYNAMIC adapters (owner, 2026-07-11)
+  hooks/                                  # per-store DYNAMIC adapters (maintainer, 2026-07-11)
     custom_adapter1.py                    #   any executable emitting the node/edge
     postgres_schema.sh                    #   JSON schema on stdout → the validated
     kafka_topics.py                       #   `add --json` door; discovered by `refresh`
@@ -141,7 +141,7 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
 - **Push/pull anywhere:** plain files + manifest → sync adapters (S3, rsync, …),
   incremental. Layout configurable; user-home is only the default.
 
-## FINAL INTEGRATION CONTRACT (2026-07-11, owner) — three layers, "we are not those people"
+## FINAL INTEGRATION CONTRACT (2026-07-11, maintainer) — three layers, "we are not those people"
 ### (superseded in part by the revision above: citenexus is now OPTIONAL at the skill layer, not a core doc lane)
 
 1. **ctx-optimize binary (Go):** deterministic code engine ONLY — graph, symbol
@@ -196,7 +196,7 @@ reading files, re-reading them. ctx-optimize flips that: build a knowledge graph
 of the codebase once, then let the agent answer "where / who-calls / what-breaks"
 in a few precise hops. Optimize the context, not the search.
 
-## Intent (from the owner, verbatim-ish)
+## Intent (from the maintainer, verbatim-ish)
 
 - Works the **same way as graphify**, but uses **citenexus (Go)** as a library
   for the **LLM-wiki** and for **injecting documents**.
@@ -225,9 +225,9 @@ in a few precise hops. Optimize the context, not the search.
   change.)
 - graphify is **MIT** — reuse as reference freely; reimplement in Go.
 
-## Round 2 decisions (2026-07-11) — the owner's calls
+## Round 2 decisions (2026-07-11) — the maintainer's calls
 
-- **NO MCP.** Firm — we do not ship an MCP server. (Owner is against MCP on
+- **NO MCP.** Firm — we do not ship an MCP server. (Maintainer is against MCP on
   principle.) This removes the "live MCP backend" wedge entirely.
 - **Consumption = S3-hosted wiki + an agent skill over a token-auth URL.** The
   LLM-wiki/graph lives in **S3 as parquet** (or a columnar/Lance format). We ship
@@ -235,22 +235,22 @@ in a few precise hops. Optimize the context, not the search.
   toolnexus headless) drives `ctx-optimize` commands that read from S3. Sharing =
   hand over the URL + token. This is the #1751 "central shareable store" idea
   realized **without a server** — the non-MCP answer to graphify's static dump.
-- **citenexus = the Go library ONLY** (owner: "all from golang only — Go has the
+- **citenexus = the Go library ONLY** (maintainer: "all from golang only — Go has the
   Rust capabilities too"). No Rust/cgo split. ctx-optimize depends on
   **citenexus-Go** for:
   1. **"convert anything → wiki"** + the **scalable LLM-wiki** that syncs to a
      **folder or S3**.
   2. **Graph storage** — its folder-level / S3-level / multi-level backends.
   (Confirm the Go API actually exposes both when we reach that phase — light
-  check, not a blocker; proceeding on the owner's read.)
+  check, not a blocker; proceeding on the maintainer's read.)
 - **Extraction = Go + go-tree-sitter.** Launch languages: **Go, TS/JS, Python,
   Rust, Java, C#** (6). Broaden later behind the same emit schema.
 - **Storage = plain, syncable artifacts in folder or S3** (via citenexus-Go),
   parquet/columnar for the scalable wiki. Matches the dir-as-database idiom.
-- **citenexus will NOT host code-graph** (owner decision, recorded in
+- **citenexus will NOT host code-graph** (maintainer decision, recorded in
   citenexus/INPROGRESS). Code lives here.
 
-### Owner's spike finding (load-bearing) — tree-sitter edges are imprecise
+### Maintainer's spike finding (load-bearing) — tree-sitter edges are imprecise
 A throwaway Rust tree-sitter spike over the citenexus repo (352 files / 4 langs /
 ~1,900 symbols) showed name-based resolution cannot give a trustworthy call graph:
 **2,487 reliable vs 7,718 guessed edges**, 1,405 ambiguous sites, god-nodes
@@ -266,7 +266,7 @@ weakness too. Implications for ctx-optimize:
 
 ## Open architecture questions (to discuss)
 
-1. **PIVOTAL — verify citenexus-Go actually exposes wiki + storage.** Owner's read
+1. **PIVOTAL — verify citenexus-Go actually exposes wiki + storage.** Maintainer's read
    is "all from golang only — Go has the Rust capabilities too." Confirm the Go
    port exports (a) a convert-anything → wiki / LLM-wiki, and (b) folder/S3
    (ideally parquet/Lance) storage a Go program can import. Earlier recon

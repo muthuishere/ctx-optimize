@@ -2,4 +2,4 @@ schema: spec-driven
 created: 2026-07-13
 title: store freshness signal (store vs git HEAD)
 status: draft
-owner: muthuishere
+maintainer: muthuishere

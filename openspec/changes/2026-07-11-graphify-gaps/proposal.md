@@ -8,7 +8,7 @@ AI coding agent finds the right context in a few precise hops instead of burning
 tokens on search.
 
 This change captures **graphify's structural gaps** (from market recon + an
-owner spike, 2026-07-11) and turns each into a **requirement** ctx-optimize must
+maintainer spike, 2026-07-11) and turns each into a **requirement** ctx-optimize must
 satisfy. It is the founding spec: what we build and *why we are different*.
 
 ## Why (positioning)
@@ -19,13 +19,13 @@ gaps and shipping in our house style.
 
 **graphify gaps addressed here:**
 - **G1 — static file dump, not a live/shareable store.** Emits files; can't be
-  shared or synced cleanly (owner's upstream issue #1751 was exactly this).
+  shared or synced cleanly (maintainer's upstream issue #1751 was exactly this).
 - **G2 — cloud-model dependence.** Forces LLM calls / cloud providers; heavy
   user demand for local / bring-your-own-model / configurable base URL.
 - **G3 — Python & DX friction.** Confusing `graphifyy` name, inline `python -c`
   in the skill, no `uv`, install pain, "overkill for small repos."
 - **G4 — imprecise call graph.** tree-sitter + name-based resolution can't
-  resolve edges: owner's spike measured **2,487 reliable vs 7,718 guessed** edges
+  resolve edges: maintainer's spike measured **2,487 reliable vs 7,718 guessed** edges
   (1,405 ambiguous) and god-nodes polluted by `get`/`append`/`new`.
 - **G5 — fixed `graphify-out/` layout.** Output structure is hardcoded.
 - **G6 — weak multi-repo merge.** "How do I combine graphs?" is an open ask.
@@ -47,7 +47,7 @@ gaps and shipping in our house style.
 
 ## Out of scope (explicitly)
 
-- **No MCP server.** Owner is against MCP. Consumption is an agent skill reading
+- **No MCP server.** Maintainer is against MCP. Consumption is an agent skill reading
   the stored artifacts (folder/S3) — never a running server.
 - **No LLM inside the binary.** Agent-skill-first; headless via toolnexus with a
   runtime-selected provider.
@@ -63,7 +63,7 @@ emit-schema-as-contract is proven by graphify's own non-tree-sitter producers
 
 ## Dependency note (open)
 
-Wiki + storage lean on **citenexus-Go**. Owner's read: "all from golang only —
+Wiki + storage lean on **citenexus-Go**. Maintainer's read: "all from golang only —
 Go has the Rust capabilities too." A scout is verifying the Go port actually
 exposes convert-anything → wiki + folder/S3 storage today; if the rich wiki is
 Python-only, that capability is built in citenexus-Go first (dependency ordering).

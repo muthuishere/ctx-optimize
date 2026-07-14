@@ -1,6 +1,6 @@
 # Standing critique — what's good, what's not, and the honest token answer
 
-Written 2026-07-11 at the owner's request, from measured spike data only. This
+Written 2026-07-11 at the maintainer's request, from measured spike data only. This
 file is the counter-weight to VISION.md — read both.
 
 ## Can we reduce token usage? Honest answer: yes, bounded, terrain-dependent.
@@ -55,7 +55,7 @@ grep arms produced a wrong gatekeeper the store got right), the
 weak-harness equalizer effect, and wall time. Pivot positioning accordingly;
 fix the D1–D3 defects the proof surfaced before re-measuring.
 
-## The wiki answer (owner asked: better wiki, or is graphify-style enough?)
+## The wiki answer (maintainer asked: better wiki, or is graphify-style enough?)
 - **Tier 1 (graphify-style index):** enough for navigation only — forfeits the
   conceptual class (the strongest measured axis). Not enough alone.
 - **Tier 2 (better deterministic wiki, zero LLM):** widen the harvest beyond doc

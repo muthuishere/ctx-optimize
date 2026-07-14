@@ -112,7 +112,7 @@ What is matched / deliberately skipped:
   key present, not an identifier). `.vue` SFCs are not parsed — only the
   `.js/.ts` router module, which is where routes live in practice.
 
-## ⚖️ Decision: call-shaped custom routes are ROUTE PACKS, not config (2026-07-14, owner)
+## ⚖️ Decision: call-shaped custom routes are ROUTE PACKS, not config (2026-07-14, maintainer)
 
 Doctrine: **core embedded + drop-in packs, exactly like grammar packs.**
 Core = the big frameworks (recognizer code above) + yaml shapes (below);
