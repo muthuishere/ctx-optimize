@@ -14,9 +14,15 @@ description: >
   kafka topics / docs", "push the store", "pull the store", "share the
   graph", "publish the store", "export to the team", "import/load a
   teammate's store", "sync the graph with the code"). No store yet? `ctx-optimize
-  init && ctx-optimize add .` creates it in seconds. Monorepo? `ctx-optimize
-  scan` finds every project — confirm the list with the user, then
+  init && ctx-optimize add .` creates it in seconds. ONBOARDING a repo or
+  monorepo — "set up ctx-optimize on this repo", "onboard this repo/monorepo",
+  "index this project" — follow `./references/onboarding.md`: monorepos
+  `scan` first, confirm the FULL found list with the user, then
   `init --scan --yes && add .` builds one store per module + a navigator.
+  Want to SEE the store or manage it visually — "open the dashboard", "see the
+  graph", "manage packs/config visually", "onboard repos interactively" —
+  `ctx-optimize serve` opens a local 127.0.0.1:4747 UI (Overview / Repos /
+  Query / Viewer / Settings / Changes); follow `./references/dashboard.md`.
   ALSO the first-class helper for CUSTOMIZING extraction: "add my framework's
   routes", "extract our custom router / registerRoute", "index our k8s / helm
   / ingress", "add build-tool dependencies / gradle / pom / csproj", "support
@@ -27,13 +33,16 @@ description: >
 
 # ctx-optimize
 
-One local knowledge store per repo — source code (12 embedded languages: go,
-python, js, ts/tsx, java, c, c++, c#, rust, zig, sql; any other language via
-a drop-in grammar pack — `<name>.wasm` + `<name>.json` in
+One local knowledge store per repo that you answer from. It indexes, in v0.3,
+far more than code: **source code** (12 embedded languages: go, python,
+js, ts/tsx, java, c, c++, c#, rust, zig, sql; any other language via a
+drop-in grammar pack — `<name>.wasm` + `<name>.json` in
 `~/ctxoptimize/grammars/` or `.ctxoptimize/grammars/`; kotlin/swift/dart
-packs ship in the repo's `grammars/`), markdown/txt docs, and anything else
-via adapters — that you answer from. **Gather once, refresh cheaply, answer
-from the store.**
+packs ship in the repo's `grammars/`), **markdown/txt docs**, framework
+**routes**, build-tool **dependencies** (npm/maven/gradle/go.mod/csproj),
+**Kubernetes topology**, **config** keys, **git co-change** (which files move
+together), and detected **subsystems** — plus anything else via adapters.
+**Gather once, refresh cheaply, answer from the store.**
 
 **ctx-optimize needs no API key, no model, no database — never prompt for
 one.** The binary is deterministic; you supply all semantics.
@@ -68,8 +77,8 @@ counted honestly.
 | Asking "what breaks if X changes / blast radius / impact" | `ctx-optimize affected "X" --depth 2 --json` |
 | Asking "how are A and B connected / trace A to B" | `ctx-optimize path "A" "B" --json` |
 | Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |
-| Asking to see it visually | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link |
-| In a repo with NO store yet | single project: `ctx-optimize init && ctx-optimize add .` (seconds). Monorepo/multi-project: follow `./references/multi-module.md` — scan first, confirm the FULL list with the user, then init |
+| Asking to see it visually / manage the store, packs, or config in a UI / onboard repos interactively | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link; follow `./references/dashboard.md` |
+| Setting up / onboarding a repo or monorepo (NO store yet, "index this repo") | follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .` |
 | Told code changed / store looks stale | `ctx-optimize add .` (incremental: prunes deleted, re-emits changed) |
 | Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script |
 | Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .` |
@@ -142,6 +151,11 @@ model anywhere; you are the judge, the binary only tallies.
 
 ## Deep guides
 
+- `./references/onboarding.md` — set up a store on a NEW repo or monorepo:
+  scan → confirm the full module list → `init --scan --yes && add .`, verify
+- `./references/dashboard.md` — `serve` as the visual management surface:
+  Overview / Repos (onboard, re-gather, remove) / Query / Viewer / Settings
+  (packs + config) / Changes (audit); local, read-safe, mutations audited
 - `./references/customize.md` — make extraction fit ANY stack: framework
   routes, custom routers, k8s, build-tool deps, new languages — core vs
   drop-in packs (`routes/manifests/languages add`), the pack doctrine

@@ -21,6 +21,27 @@ committable so the whole team inherits them:
 packs. Repo packs beat machine (`~/ctxoptimize/…`) packs on name collision. A
 malformed pack fails the `add` loudly — never silently skipped.
 
+**Kinds you'll see in the graph** (name them when you answer): `route`
+(`GET /users/{id}`), `dependency` (`dep:npm/express`), `task` (a build/CI
+target), `resource` (a k8s object, `k8s://ns/kind/name`), `image` (a
+container image), `config` (a key from a `.properties`/`.yaml`/manifest
+file). If the user's X isn't showing as one of these, that's the signal to
+run the decision tree below.
+
+## Is it core, or does it need a pack? (the decision, once)
+
+1. **List first, always.** `routes list` / `manifests list` / `languages
+   list`. If their framework / build tool / language is there → it's core →
+   just `ctx-optimize add .` and confirm with a query. No pack. Done.
+2. **Not listed but declarative?** A call-shaped route
+   (`registerRoute("/x", h)`), a structured manifest (`*.deps.json`), or a
+   known/tree-sitter language → **scaffold a pack** (`routes add` /
+   `manifests add` / `languages add`), edit the rule, drop `_review`,
+   `add .`, verify.
+3. **Not expressible as a flat rule?** (middleware chains, predicates/joins,
+   a live system) → an **adapter** (`adapters.md`), not a bigger pack — say
+   so plainly.
+
 ## Routes — is the framework core, or does it need a pack?
 
 1. **First check `routes list`.** If the user's framework is already core,
@@ -97,20 +118,13 @@ toolchain to install — zig is auto-fetched, sha256-verified). Review the
 auto-suggested `.json` node-type mapping (marked `_review`), then `add .`.
 See the routing table's language row.
 
-## The workflow you drive for the user
+## Close the loop
 
-1. `routes list` / `manifests list` / `languages list` — is it already core?
-   If yes, just `add .` and confirm with a query. Done.
-2. Not core but declarative (call-shaped route / structured manifest / known
-   language): scaffold the pack, edit the rule to their real shape, drop
-   `_review`, `add .`, verify with a query/card.
-3. Not expressible declaratively: an adapter (`adapters.md`) — you introspect
-   and print a batch.
-4. Commit `.ctxoptimize/` — the pack travels with the repo, the whole team's
-   agents inherit it.
-5. Everything is also visible and editable in the dashboard
-   (`ctx-optimize serve` → Settings): every pack across all four axes, with
-   its file path. Changes there are audited (`ctx-optimize log`).
+- **Commit `.ctxoptimize/`** — the pack travels with the repo; the whole
+  team's agents inherit it on their next `add`.
+- **Manage packs visually** — `ctx-optimize serve` → Settings lists every
+  pack across all four axes with its file path and lets you add more from the
+  UI; changes are audited (`ctx-optimize log`). See `./references/dashboard.md`.
 
 Never edit the Go binary. Never hand-write graph nodes. The pack (or adapter)
 IS the customization, and it's a plain committable file.
