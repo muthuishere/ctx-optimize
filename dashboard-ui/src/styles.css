@@ -271,6 +271,16 @@ table.list td.mono { font-family: var(--mono); font-size: .8rem; color: var(--te
 .nb-link { cursor: pointer; color: var(--accent); }
 .nb-link:hover { text-decoration: underline; }
 
+/* open-source links on the selected node: small green-outline buttons */
+.viewer .side .detail .open-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.open-btn {
+  display: inline-block; padding: 2px 9px; border-radius: var(--r-sm);
+  border: 1px solid var(--accent-dim); color: var(--accent);
+  background: rgba(74, 222, 128, .06); font-family: var(--mono); font-size: .72rem;
+  letter-spacing: .02em; cursor: pointer; user-select: none; line-height: 1.6;
+}
+.open-btn:hover { background: rgba(74, 222, 128, .16); border-color: var(--accent); }
+
 /* ---- stepper (onboard) ---- */
 .stepper { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
 .step { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: .82rem; }

@@ -47,6 +47,14 @@ export interface Usage {
   est_cost_saved_usd: number
 }
 
+// StoreLinks mirrors internal/dashboard.StoreLinks — the two bases the Viewer
+// joins into "open source" links for a selected node. github_base is present
+// only when the repo's origin is a real GitHub remote.
+export interface StoreLinks {
+  repo_abs?: string
+  github_base?: string
+}
+
 export interface StoreInfo {
   key: string
   root: string
@@ -59,6 +67,7 @@ export interface StoreInfo {
   producers?: Record<string, number>
   freshness?: FreshnessReport[]
   usage?: Usage
+  links?: StoreLinks
 }
 
 export interface Neighbor {

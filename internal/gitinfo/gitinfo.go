@@ -22,6 +22,22 @@ func Head(dir string) (head string, unixTime int64, ok bool) {
 	return head, unixTime, true
 }
 
+// Remote reads the origin remote URL and the current branch name — the two
+// facts the dashboard needs to build a GitHub blob link. ok=false when there
+// is no origin (or git is absent). branch is "" on a detached HEAD, which the
+// caller treats as "no per-branch link".
+func Remote(dir string) (origin, branch string, ok bool) {
+	origin = strings.TrimSpace(run(dir, "remote", "get-url", "origin"))
+	if origin == "" {
+		return "", "", false
+	}
+	branch = strings.TrimSpace(run(dir, "rev-parse", "--abbrev-ref", "HEAD"))
+	if branch == "HEAD" { // detached — no branch to anchor a blob URL on
+		branch = ""
+	}
+	return origin, branch, true
+}
+
 func run(dir string, args ...string) string {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	out, err := cmd.Output() // stderr discarded: a non-repo/failure is just "unknown"

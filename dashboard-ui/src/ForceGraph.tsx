@@ -9,10 +9,25 @@ const LOW_IMPACT = new Set(['contains', 'imports'])
 // First-class kinds are drawn slightly larger so they stand out at any degree.
 const SPECIAL = new Set(['route', 'dependency', 'task', 'resource', 'image', 'config'])
 
+// MAX_SIM_NODES caps how many nodes the physics/renderer will ever touch. The
+// server already budgets its payloads, but the producer-sample fairness pass
+// (up to 60 per producer) plus expand-on-click can still stack up — so the
+// client defends itself too. Above the cap we keep the highest-degree nodes
+// (the useful backbone) and drop the rest; the O(n·neighbours) tick stays cheap
+// and the main thread never locks. Kept in sync with the Viewer's own cap so
+// the "showing N of M" note is honest.
+export const MAX_SIM_NODES = 1200
+
 // Hand-rolled canvas force layout — ported from the original single-file UI
 // (grid-approximated repulsion + springs + mild centering). Zero graph-viz
 // dependencies: the physics is ~60 lines and the store graphs it draws are
-// server-budgeted, so nothing heavier is warranted.
+// server-budgeted + client-capped, so nothing heavier is warranted.
+//
+// The RAF loop SETTLES AND STOPS: each data change seeds a bounded run of
+// physics ticks, and once motion falls below a threshold (or the tick budget
+// runs out) the loop cancels itself — the tab is not animating a static graph
+// forever. Interaction (drag / zoom / hover / expand / filter) wakes it again
+// for exactly as many frames as it needs, then it sleeps.
 
 interface SimNode extends Node {
   x: number
@@ -42,27 +57,40 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
     hovered: null as string | null,
     ticking: 0,
     onSelect: (_: string | null) => {},
+    wake: () => {}, // set by the animation effect; wakes a settled/stopped loop
   })
 
   // Merge incoming graph data into the running simulation: existing nodes
   // keep their positions (expand-on-click grows the picture in place).
   useEffect(() => {
     const st = stateRef.current
-    const keep = new Set(nodes.map((n) => n.id))
-    for (const id of Array.from(st.sim.keys())) if (!keep.has(id)) st.sim.delete(id)
     const deg = new Map<string, number>()
     for (const e of edges) {
       deg.set(e.source, (deg.get(e.source) || 0) + 1)
       deg.set(e.target, (deg.get(e.target) || 0) + 1)
     }
-    const R = Math.sqrt(nodes.length) * 60 + 60
+    // Defensive client cap: never simulate more than MAX_SIM_NODES. If more
+    // arrive, keep the highest-degree backbone (plus the selected node) and
+    // drop the tail — the O(n) tick and the O(edges) draw stay bounded.
+    let simNodes = nodes
+    if (nodes.length > MAX_SIM_NODES) {
+      const ranked = [...nodes].sort((a, b) => (deg.get(b.id) || 0) - (deg.get(a.id) || 0))
+      simNodes = ranked.slice(0, MAX_SIM_NODES)
+      if (selectedId && !simNodes.some((n) => n.id === selectedId)) {
+        const sel = nodes.find((n) => n.id === selectedId)
+        if (sel) simNodes[simNodes.length - 1] = sel
+      }
+    }
+    const keep = new Set(simNodes.map((n) => n.id))
+    for (const id of Array.from(st.sim.keys())) if (!keep.has(id)) st.sim.delete(id)
+    const R = Math.sqrt(simNodes.length) * 60 + 60
     let i = 0
-    for (const n of nodes) {
+    for (const n of simNodes) {
       const prev = st.sim.get(n.id)
       if (prev) {
         Object.assign(prev, n, { x: prev.x, y: prev.y, vx: prev.vx, vy: prev.vy, deg: deg.get(n.id) || 0 })
       } else {
-        const a = (i / Math.max(1, nodes.length)) * Math.PI * 2
+        const a = (i / Math.max(1, simNodes.length)) * Math.PI * 2
         const r = R * (0.3 + 0.7 * ((i * 2654435761 % 997) / 997))
         st.sim.set(n.id, { ...n, x: Math.cos(a) * r, y: Math.sin(a) * r, vx: 0, vy: 0, deg: deg.get(n.id) || 0 })
       }
@@ -72,7 +100,7 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
     st.colors = colors
     st.selected = selectedId
     st.onSelect = onSelect
-    if (!st.fitted && nodes.length > 0) {
+    if (!st.fitted && simNodes.length > 0) {
       const cv = canvasRef.current
       if (cv) {
         const r = cv.getBoundingClientRect()
@@ -82,7 +110,9 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
         st.fitted = true
       }
     }
+    // Seed a bounded settle run and wake the (possibly stopped) loop.
     st.ticking = 300
+    st.wake()
   }, [nodes, edges, colors, selectedId, onSelect])
 
   useEffect(() => {
@@ -91,11 +121,24 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
     const st = stateRef.current
     let raf = 0
     let alive = true
+    let needsDraw = true // a redraw is pending (view/hover changed but physics is idle)
+
+    // wake restarts a stopped loop; requestDraw also flags a one-off repaint.
+    // The raf===0 guard keeps exactly one loop alive — no stacking.
+    const wake = () => {
+      if (alive && raf === 0) raf = requestAnimationFrame(loop)
+    }
+    const requestDraw = () => {
+      needsDraw = true
+      wake()
+    }
+    st.wake = wake
 
     const resize = () => {
       const r = cv.getBoundingClientRect()
       cv.width = r.width * devicePixelRatio
       cv.height = r.height * devicePixelRatio
+      requestDraw()
     }
     resize()
     window.addEventListener('resize', resize)
@@ -154,14 +197,20 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
         b.vx -= (dx / d) * f * 10
         b.vy -= (dy / d) * f * 10
       }
+      let moved = 0
       for (const n of nodes) {
         n.vx -= n.x * 0.0009
         n.vy -= n.y * 0.0009
-        n.x += Math.max(-8, Math.min(8, n.vx))
-        n.y += Math.max(-8, Math.min(8, n.vy))
+        const dx = Math.max(-8, Math.min(8, n.vx))
+        const dy = Math.max(-8, Math.min(8, n.vy))
+        n.x += dx
+        n.y += dy
         n.vx *= 0.85
         n.vy *= 0.85
+        const m = Math.abs(dx) + Math.abs(dy)
+        if (m > moved) moved = m
       }
+      return moved // peak per-node motion this tick — used to detect "settled"
     }
 
     const draw = () => {
@@ -240,16 +289,26 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
       }
     }
 
+    // The settle-and-stop loop. It runs only while there is physics left to
+    // simulate (st.ticking) or a repaint is pending (needsDraw); otherwise it
+    // sets raf=0 and returns, leaving the tab idle until the next wake().
     const loop = () => {
+      raf = 0
       if (!alive) return
+      let busy = false
       if (st.ticking > 0) {
         st.ticking--
-        step()
+        const moved = step()
+        if (moved < 0.15) st.ticking = 0 // layout settled — stop early
+        busy = true
       }
-      draw()
-      raf = requestAnimationFrame(loop)
+      if (busy || needsDraw) {
+        draw()
+        needsDraw = false
+      }
+      if (st.ticking > 0 || needsDraw) raf = requestAnimationFrame(loop)
     }
-    raf = requestAnimationFrame(loop)
+    wake()
 
     const nodeAt = (e: MouseEvent): SimNode | null => {
       const r = cv.getBoundingClientRect()
@@ -279,10 +338,15 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
         drag.x = e.clientX
         drag.y = e.clientY
         drag.moved = true
+        requestDraw() // pan changed the view — repaint (no physics needed)
         return
       }
       const n = nodeAt(e)
-      st.hovered = n ? n.id : null
+      const hid = n ? n.id : null
+      if (hid !== st.hovered) {
+        st.hovered = hid
+        requestDraw() // hover highlight changed — one repaint, then idle
+      }
       cv.style.cursor = n ? 'pointer' : 'grab'
     }
     const up = (e: MouseEvent) => {
@@ -302,6 +366,7 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
       st.view.x = mx - (mx - st.view.x) * f
       st.view.y = my - (my - st.view.y) * f
       st.view.k *= f
+      requestDraw() // zoom changed the view — repaint
     }
     cv.addEventListener('mousedown', down)
     window.addEventListener('mousemove', move)
@@ -311,6 +376,8 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
     return () => {
       alive = false
       cancelAnimationFrame(raf)
+      raf = 0
+      st.wake = () => {} // detach: a stale merge-effect wake must not revive a dead loop
       window.removeEventListener('resize', resize)
       cv.removeEventListener('mousedown', down)
       window.removeEventListener('mousemove', move)
