@@ -3,9 +3,11 @@
 // Kubernetes Ingress. Rides the SAME config lane as extractConfig — the
 // secret-name refusals and the maxConfigBytes cap gate this walk too.
 //
-// No YAML library (stdlib-only rule): a small indentation-based line walker,
-// deterministic and good-enough for exactly these three shapes. Anything the
-// walker can't confidently read is skipped silently — never guessed.
+// No YAML library (stdlib-only rule): the shared indentation-based line
+// walker (internal/extract/yamlwalk, also used by the manifests producer's
+// k8s lane) — deterministic and good-enough for exactly these three shapes.
+// Anything the walker can't confidently read is skipped silently — never
+// guessed.
 //
 // What each channel matches:
 //
@@ -31,104 +33,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/muthuishere/ctx-optimize/internal/extract/yamlwalk"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
-
-// yline is one meaningful YAML line: indentation (a `- ` list marker counts
-// as two columns of indent, so a list item's keys align with its siblings),
-// an optional key, an unquoted scalar value, and the 1-based line number.
-type yline struct {
-	indent int
-	key    string
-	val    string
-	list   bool
-	num    int
-}
-
-// parseYAMLLines flattens one YAML document into ylines. Blank lines,
-// comments, and tab-indented lines (YAML forbids tabs; we refuse rather than
-// misread) are dropped.
-func parseYAMLLines(lines []string, offset int) []yline {
-	var out []yline
-	for idx, line := range lines {
-		num := offset + idx + 1
-		t := strings.TrimRight(line, " \t\r")
-		if t == "" {
-			continue
-		}
-		ind := 0
-		for ind < len(t) && t[ind] == ' ' {
-			ind++
-		}
-		if ind < len(t) && t[ind] == '\t' {
-			continue
-		}
-		content := t[ind:]
-		if strings.HasPrefix(content, "#") || content == "-" {
-			continue
-		}
-		isList := false
-		if strings.HasPrefix(content, "- ") {
-			isList = true
-			ind += 2
-			content = strings.TrimLeft(content[2:], " ")
-		}
-		key, val := splitKeyVal(content)
-		out = append(out, yline{indent: ind, key: key, val: val, list: isList, num: num})
-	}
-	return out
-}
-
-// splitKeyVal splits `key: value` at the first colon followed by a space (or
-// end of line) — URLs (`http://…`) stay whole. A colon-less line is a scalar.
-// Surrounding quotes and trailing comments are stripped from the value.
-func splitKeyVal(s string) (key, val string) {
-	ci := -1
-	for j := 0; j < len(s); j++ {
-		if s[j] == ':' && (j == len(s)-1 || s[j+1] == ' ') {
-			ci = j
-			break
-		}
-	}
-	if ci < 0 {
-		return "", cleanScalar(s)
-	}
-	key = strings.Trim(strings.TrimSpace(s[:ci]), `"'`)
-	return key, cleanScalar(strings.TrimSpace(s[ci+1:]))
-}
-
-// cleanScalar unquotes a scalar or cuts an unquoted trailing comment.
-func cleanScalar(v string) string {
-	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') {
-		if end := strings.IndexByte(v[1:], v[0]); end >= 0 {
-			return v[1 : 1+end]
-		}
-	}
-	if i := strings.Index(v, " #"); i >= 0 {
-		v = v[:i]
-	}
-	return strings.TrimSpace(v)
-}
-
-// yspan returns the index just past the block owned by ls[i]: every following
-// line indented deeper than ls[i].
-func yspan(ls []yline, i int) int {
-	j := i + 1
-	for j < len(ls) && ls[j].indent > ls[i].indent {
-		j++
-	}
-	return j
-}
-
-// yitemSpan is yspan for a LIST ITEM: sibling keys of the item share its
-// indent (the dash counted), so the item ends at a dedent or the next dash.
-func yitemSpan(ls []yline, i int) int {
-	j := i + 1
-	for j < len(ls) && (ls[j].indent > ls[i].indent || (ls[j].indent == ls[i].indent && !ls[j].list)) {
-		j++
-	}
-	return j
-}
 
 // yamlRoute is one recognized route pending emission.
 type yamlRoute struct {
@@ -151,7 +58,7 @@ func extractYAMLRoutes(b *schema.Batch, rel, content string) {
 		if end <= start {
 			return
 		}
-		ls := parseYAMLLines(all[start:end], start)
+		ls := yamlwalk.Parse(all[start:end], start)
 		routes = append(routes, openAPIRoutes(ls)...)
 		if isDrupal {
 			routes = append(routes, drupalRoutes(ls)...)
@@ -206,10 +113,10 @@ var openAPIMethods = map[string]string{
 
 // openAPIRoutes: top-level openapi:/swagger: marks the document; paths:
 // children starting with "/" are paths; their method children are routes.
-func openAPIRoutes(ls []yline) []yamlRoute {
+func openAPIRoutes(ls []yamlwalk.Line) []yamlRoute {
 	isAPI := false
 	for _, l := range ls {
-		if l.indent == 0 && !l.list && (l.key == "openapi" || l.key == "swagger") {
+		if l.Indent == 0 && !l.List && (l.Key == "openapi" || l.Key == "swagger") {
 			isAPI = true
 			break
 		}
@@ -219,36 +126,36 @@ func openAPIRoutes(ls []yline) []yamlRoute {
 	}
 	var out []yamlRoute
 	for i := 0; i < len(ls); i++ {
-		if ls[i].indent != 0 || ls[i].list || ls[i].key != "paths" {
+		if ls[i].Indent != 0 || ls[i].List || ls[i].Key != "paths" {
 			continue
 		}
-		end := yspan(ls, i)
+		end := yamlwalk.Span(ls, i)
 		if i+1 >= end {
 			continue
 		}
-		pathIndent := ls[i+1].indent
+		pathIndent := ls[i+1].Indent
 		for j := i + 1; j < end; j++ {
-			if ls[j].indent != pathIndent || !strings.HasPrefix(ls[j].key, "/") {
+			if ls[j].Indent != pathIndent || !strings.HasPrefix(ls[j].Key, "/") {
 				continue
 			}
-			pend := yspan(ls, j)
+			pend := yamlwalk.Span(ls, j)
 			if j+1 >= pend {
 				continue
 			}
-			mIndent := ls[j+1].indent
+			mIndent := ls[j+1].Indent
 			for k := j + 1; k < pend; k++ {
-				if ls[k].indent != mIndent {
+				if ls[k].Indent != mIndent {
 					continue
 				}
-				verb, ok := openAPIMethods[strings.ToLower(ls[k].key)]
+				verb, ok := openAPIMethods[strings.ToLower(ls[k].Key)]
 				if !ok {
 					continue
 				}
-				r := yamlRoute{method: verb, path: ls[j].key, line: ls[k].num, channel: "openapi-route"}
-				mend := yspan(ls, k)
+				r := yamlRoute{method: verb, path: ls[j].Key, line: ls[k].Num, channel: "openapi-route"}
+				mend := yamlwalk.Span(ls, k)
 				for m := k + 1; m < mend; m++ {
-					if ls[m].key == "operationId" && ls[m].val != "" {
-						r.handler = ls[m].val
+					if ls[m].Key == "operationId" && ls[m].Val != "" {
+						r.handler = ls[m].Val
 						break
 					}
 				}
@@ -263,39 +170,39 @@ func openAPIRoutes(ls []yline) []yamlRoute {
 // list or block list) makes one node per method; absent methods = the
 // method-less ROUTE token. _controller: 'Class::method' → handles to the
 // last :: segment.
-func drupalRoutes(ls []yline) []yamlRoute {
+func drupalRoutes(ls []yamlwalk.Line) []yamlRoute {
 	var out []yamlRoute
 	for i := 0; i < len(ls); i++ {
-		if ls[i].indent != 0 || ls[i].list || ls[i].key == "" {
+		if ls[i].Indent != 0 || ls[i].List || ls[i].Key == "" {
 			continue
 		}
-		end := yspan(ls, i)
+		end := yamlwalk.Span(ls, i)
 		path, pathLine := "", 0
 		var methods []string
 		handler := ""
 		for j := i + 1; j < end; j++ {
-			switch ls[j].key {
+			switch ls[j].Key {
 			case "path":
-				if path == "" && strings.HasPrefix(ls[j].val, "/") {
-					path, pathLine = ls[j].val, ls[j].num
+				if path == "" && strings.HasPrefix(ls[j].Val, "/") {
+					path, pathLine = ls[j].Val, ls[j].Num
 				}
 			case "methods":
-				if v := ls[j].val; strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
+				if v := ls[j].Val; strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
 					for _, m := range strings.Split(strings.Trim(v, "[]"), ",") {
 						if m = strings.ToUpper(strings.Trim(strings.TrimSpace(m), `"'`)); m != "" {
 							methods = append(methods, m)
 						}
 					}
 				} else {
-					for k := j + 1; k < end && ls[k].indent > ls[j].indent; k++ {
-						if ls[k].list && ls[k].key == "" && ls[k].val != "" {
-							methods = append(methods, strings.ToUpper(ls[k].val))
+					for k := j + 1; k < end && ls[k].Indent > ls[j].Indent; k++ {
+						if ls[k].List && ls[k].Key == "" && ls[k].Val != "" {
+							methods = append(methods, strings.ToUpper(ls[k].Val))
 						}
 					}
 				}
 			case "_controller":
-				if idx := strings.LastIndex(ls[j].val, "::"); idx >= 0 {
-					handler = ls[j].val[idx+2:]
+				if idx := strings.LastIndex(ls[j].Val, "::"); idx >= 0 {
+					handler = ls[j].Val[idx+2:]
 				}
 			}
 		}
@@ -315,10 +222,10 @@ func drupalRoutes(ls []yline) []yamlRoute {
 // ingressRoutes: kind: Ingress documents — path: literals under a top-level
 // spec: block become routes; the item's backend service name is the handles
 // target. Best-effort by design.
-func ingressRoutes(ls []yline) []yamlRoute {
+func ingressRoutes(ls []yamlwalk.Line) []yamlRoute {
 	isIngress := false
 	for _, l := range ls {
-		if l.indent == 0 && !l.list && l.key == "kind" && l.val == "Ingress" {
+		if l.Indent == 0 && !l.List && l.Key == "kind" && l.Val == "Ingress" {
 			isIngress = true
 			break
 		}
@@ -328,27 +235,27 @@ func ingressRoutes(ls []yline) []yamlRoute {
 	}
 	var out []yamlRoute
 	for i := 0; i < len(ls); i++ {
-		if ls[i].indent != 0 || ls[i].key != "spec" {
+		if ls[i].Indent != 0 || ls[i].Key != "spec" {
 			continue
 		}
-		end := yspan(ls, i)
+		end := yamlwalk.Span(ls, i)
 		for j := i + 1; j < end; j++ {
-			if ls[j].key != "path" || !strings.HasPrefix(ls[j].val, "/") {
+			if ls[j].Key != "path" || !strings.HasPrefix(ls[j].Val, "/") {
 				continue
 			}
-			r := yamlRoute{method: "ROUTE", path: ls[j].val, line: ls[j].num, channel: "ingress-route"}
-			iend := yitemSpan(ls, j)
+			r := yamlRoute{method: "ROUTE", path: ls[j].Val, line: ls[j].Num, channel: "ingress-route"}
+			iend := yamlwalk.ItemSpan(ls, j)
 			if iend > end {
 				iend = end
 			}
 			for k := j + 1; k < iend; k++ {
-				if ls[k].key != "service" {
+				if ls[k].Key != "service" {
 					continue
 				}
-				send := yspan(ls, k)
+				send := yamlwalk.Span(ls, k)
 				for m := k + 1; m < send; m++ {
-					if ls[m].key == "name" && ls[m].val != "" {
-						r.handler = ls[m].val
+					if ls[m].Key == "name" && ls[m].Val != "" {
+						r.handler = ls[m].Val
 						break
 					}
 				}

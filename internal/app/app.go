@@ -91,6 +91,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdLanguages(rest, stdout)
 	case "routes":
 		err = cmdRoutes(rest, stdout)
+	case "manifests":
+		err = cmdManifests(rest, stdout)
 	case "remote":
 		err = cmdRemote(rest, stdout)
 	case "config":
@@ -2029,6 +2031,12 @@ commands:
                               or install from a github repo / pack-.json url
   routes list                 core route recognizers + discovered packs
   routes remove <name>        delete a route pack (repo first, then global)
+  manifests add <name|url>    manifest pack: scaffold <name>.json in
+                              .ctxoptimize/manifests/ (--global: ~/ctxoptimize/manifests),
+                              or install from a github repo / pack-.json url
+  manifests list              core manifest recognizers (npm, maven, csproj/sln,
+                              go.mod, gradle, k8s) + discovered packs
+  manifests remove <name>     delete a manifest pack (repo first, then global)
   remote init <url> [--local] write remote to .ctxoptimize/config.json
                               (committable; --local = this machine's store only)
   remote push|pull            incremental sync with the configured remote (no url —
