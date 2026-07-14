@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, mutate, stream } from '../api'
+import { kindColorMap } from '../App'
 import type { StoreInfo } from '../types'
 
 export default function Repos() {
@@ -36,50 +37,70 @@ export default function Repos() {
     }
   }
 
-  if (err) return <div className="err">{err}</div>
-  if (!stores) return <div className="k">loading…</div>
+  if (err) return <div className="screenwrap"><div className="err">{err}</div></div>
+  if (!stores) return <div className="screenwrap"><div className="k">loading…</div></div>
 
   return (
-    <div>
-      <div className="row" style={{ marginBottom: 14 }}>
-        <h2 className="screen" style={{ margin: 0 }}>Repos — every store under the root</h2>
-        <span className="grow" />
-        <a href="#/onboard"><button className="primary">+ add repo</button></a>
+    <div className="screenwrap">
+      <div className="head">
+        <div className="row">
+          <div>
+            <div className="kicker">repos</div>
+            <h2 className="screen">Every store under the root</h2>
+          </div>
+          <span className="grow" />
+          <a href="#/onboard"><button className="primary">+ Add repo</button></a>
+        </div>
       </div>
+
       {stores.length === 0 && (
-        <div className="card">
-          <span className="k">no stores yet — </span>
-          <a href="#/onboard">onboard a repo</a>
-          <span className="k"> or run `ctx-optimize add` in one.</span>
+        <div className="empty">
+          <h3>No stores yet</h3>
+          <p>Gather a repository into a knowledge graph — scan the layout, pick the modules, and the store answers what a grep-and-read chain would.</p>
+          <a href="#/onboard"><button className="primary">Onboard a repo</button></a>
         </div>
       )}
-      {stores.map((s) => (
-        <div className="card" key={s.key}>
-          <div className="row">
-            <h3 style={{ margin: 0 }}>{s.key}</h3>
-            <span className={'badge ' + s.fresh}>{s.fresh}</span>
-            <span className="k" style={{ fontSize: 12 }}>
-              {s.nodes} nodes · {s.edges} edges
-              {s.age_seconds ? ` · gathered ${ago(s.age_seconds)} ago` : ''}
-            </span>
-            <span className="grow" />
-            <a href={'#/viewer/' + encodeURIComponent(s.key)}><button>viewer</button></a>
-            <a href={'#/query/' + encodeURIComponent(s.key)}><button>query</button></a>
-            <button disabled={!s.source_path || busyKey !== ''} onClick={() => regather(s)}>
-              {busyKey === s.key ? 're-gathering…' : 're-gather'}
-            </button>
-            <button className="danger" onClick={() => remove(s)}>remove</button>
+
+      {stores.map((s) => {
+        const producers = Object.entries(s.producers || {}).sort((a, b) => b[1] - a[1])
+        const pcolors = kindColorMap(producers.map(([p]) => p))
+        return (
+          <div className="card" key={s.key}>
+            <div className="card-title">
+              <h3>{s.key}</h3>
+              <span className={'badge ' + s.fresh}>{s.fresh}</span>
+              <span className="grow" />
+              <a href={'#/viewer/' + encodeURIComponent(s.key)}><button>Viewer</button></a>
+              <a href={'#/query/' + encodeURIComponent(s.key)}><button>Query</button></a>
+              <button disabled={!s.source_path || busyKey !== ''} onClick={() => regather(s)}>
+                {busyKey === s.key ? 're-gathering…' : 'Re-gather'}
+              </button>
+              <button className="danger" onClick={() => remove(s)}>Remove</button>
+            </div>
+
+            <div className="stat-grid">
+              <div className="stat"><b>{s.nodes.toLocaleString()}</b><span>nodes</span></div>
+              <div className="stat"><b>{s.edges.toLocaleString()}</b><span>edges</span></div>
+              {s.age_seconds ? (
+                <div className="stat"><b>{ago(s.age_seconds)}</b><span>gathered ago</span></div>
+              ) : null}
+            </div>
+
+            {s.summary && <div className="muted" style={{ marginTop: 12, fontSize: '.88rem' }}>{s.summary}</div>}
+
+            <div className="row" style={{ marginTop: 14, gap: 6 }}>
+              {s.source_path && <span className="chip">src <b>{s.source_path}</b></span>}
+              {producers.map(([p, n]) => (
+                <span className="chip" key={p} style={{ borderColor: pcolors.get(p), color: pcolors.get(p) }}>
+                  {p} <b>{n}</b>
+                </span>
+              ))}
+            </div>
+
+            {busyKey === s.key && log && <pre className="stream">{log}</pre>}
           </div>
-          {s.summary && <div className="k" style={{ marginTop: 6, fontSize: 12 }}>{s.summary}</div>}
-          <div className="row" style={{ marginTop: 8, gap: 5 }}>
-            {s.source_path && <span className="chip">src <b>{s.source_path}</b></span>}
-            {Object.entries(s.producers || {}).sort((a, b) => b[1] - a[1]).map(([p, n]) => (
-              <span className="chip" key={p}>{p} <b>{n}</b></span>
-            ))}
-          </div>
-          {busyKey === s.key && log && <pre className="stream">{log}</pre>}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

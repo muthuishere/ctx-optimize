@@ -40,7 +40,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        <h1>ctx-optimize</h1>
+        <h1>ctx-<em>optimize</em></h1>
         <span className="sub">gather once · answer from the store</span>
         <nav className="tabs">
           {TABS.map(([r, label]) => (
@@ -62,9 +62,10 @@ export default function App() {
   )
 }
 
-// Stable per-kind colors, shared by Query and Viewer.
-const PALETTE = ['#38bdf8', '#f472b6', '#a3e635', '#fbbf24', '#a78bfa', '#34d399',
-  '#fb7185', '#22d3ee', '#fb923c', '#e879f9', '#facc15', '#4ade80',
+// Stable per-kind colors, shared by Query and Viewer. Green-forward to match
+// the site accent, then a calm spread of hues for the remaining kinds.
+const PALETTE = ['#4ade80', '#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#34d399',
+  '#fb7185', '#22d3ee', '#fb923c', '#e879f9', '#facc15', '#a3e635',
   '#93c5fd', '#fda4af', '#5eead4', '#c4b5fd']
 
 export function kindColorMap(kinds: string[]): Map<string, string> {

@@ -13,6 +13,7 @@ export default function Query({ initialModule: rawModule }: { initialModule: str
   const [q, setQ] = useState('')
   const [res, setRes] = useState<QueryResult | null>(null)
   const [err, setErr] = useState('')
+  const [ran, setRan] = useState(false)
 
   useEffect(() => {
     api<Module[]>('/api/modules').then((m) => {
@@ -27,6 +28,7 @@ export default function Query({ initialModule: rawModule }: { initialModule: str
     try {
       setRes(await api<QueryResult>(
         `/api/query?module=${encodeURIComponent(mod)}&q=${encodeURIComponent(q)}`))
+      setRan(true)
     } catch (e: any) {
       setErr(String(e.message || e))
       setRes(null)
@@ -39,24 +41,44 @@ export default function Query({ initialModule: rawModule }: { initialModule: str
   )
 
   return (
-    <div style={{ maxWidth: 860 }}>
-      <h2 className="screen">Query — same engine the agent uses</h2>
-      <div className="row" style={{ marginBottom: 14 }}>
-        <select value={mod} onChange={(e) => { setMod(e.target.value); setRes(null) }}>
+    <div className="screenwrap">
+      <div className="head">
+        <div className="kicker">query</div>
+        <h2 className="screen">Same engine the agent uses</h2>
+        <p className="screen-sub">Ranked, cited hits with signatures and neighbors — lexical IDF + prefix + trigram tiers, budgeted.</p>
+      </div>
+
+      <div className="row" style={{ marginBottom: 20 }}>
+        <select value={mod} onChange={(e) => { setMod(e.target.value); setRes(null); setRan(false) }}>
           {mods.map((m) => (
             <option key={m.key} value={m.key}>{m.key} ({m.nodes})</option>
           ))}
         </select>
         <input
-          type="text" className="grow" placeholder="ask the store… (Enter)"
+          type="text" className="grow" placeholder="ask the store…  (Enter to run)"
           value={q} onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && run()}
           autoFocus
         />
-        <button className="primary" onClick={run} disabled={!q.trim()}>query</button>
+        <button className="primary" onClick={run} disabled={!q.trim()}>Query</button>
       </div>
+
       {err && <div className="err">{err}</div>}
-      {res && res.hits.length === 0 && <div className="k">no matches</div>}
+
+      {!ran && !err && (
+        <div className="empty">
+          <h3>Ask the store anything</h3>
+          <p>Where is X, how does Y work, who calls Z. Pick a module and type a question — the store answers in one hop.</p>
+        </div>
+      )}
+
+      {ran && res && res.hits.length === 0 && (
+        <div className="empty">
+          <h3>No matches</h3>
+          <p>Nothing in <b>{mod}</b> matched "{q}". Try broader terms or a different module.</p>
+        </div>
+      )}
+
       {(res?.hits || []).map((h) => (
         <div className="hit" key={h.node.id} style={{ ['--kc' as any]: colors.get(h.node.kind) }}>
           <div>
@@ -64,7 +86,7 @@ export default function Query({ initialModule: rawModule }: { initialModule: str
             <span className="kind">{h.node.kind}</span>
           </div>
           <div className="meta">
-            {h.node.source}{h.node.location ? ' ' + h.node.location : ''} · score {h.score}
+            {h.node.source}{h.node.location ? ' ' + h.node.location : ''} · <span className="score">score {h.score}</span>
             {h.node.metadata?.producer ? ` · ${h.node.metadata.producer}` : ''}
           </div>
           {(h.neighbors || []).length > 0 && (
@@ -77,7 +99,7 @@ export default function Query({ initialModule: rawModule }: { initialModule: str
               )}
             </div>
           )}
-          <div style={{ marginTop: 5 }}>
+          <div style={{ marginTop: 10 }}>
             <a href={'#/viewer/' + encodeURIComponent(mod) + '?center=' + encodeURIComponent(h.node.id)}>
               open in viewer →
             </a>

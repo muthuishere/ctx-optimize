@@ -54,16 +54,20 @@ export default function Settings() {
     setBusy('')
   }
 
-  if (!setup) return err ? <div className="err">{err}</div> : <div className="k">loading…</div>
+  if (!setup) return err ? <div className="screenwrap"><div className="err">{err}</div></div> : <div className="screenwrap"><div className="k">loading…</div></div>
 
   return (
-    <div style={{ maxWidth: 860 }}>
-      <h2 className="screen">Settings</h2>
+    <div className="screenwrap narrow">
+      <div className="head">
+        <div className="kicker">settings</div>
+        <h2 className="screen">Config, packs & remote</h2>
+        <p className="screen-sub">The file stays the source of truth — every card names the file it renders. Edits are audited.</p>
+      </div>
 
       <div className="card">
         <div className="row">
-          <span className="k">project scope</span>
-          <select value={repoPath} onChange={(e) => { setRepoPath(e.target.value); reload(e.target.value) }}>
+          <span className="k">Project scope</span>
+          <select className="grow" value={repoPath} onChange={(e) => { setRepoPath(e.target.value); reload(e.target.value) }}>
             <option value="">(global only)</option>
             {stores.map((s) => (
               <option key={s.key} value={s.source_path}>{s.key} — {s.source_path}</option>
@@ -75,16 +79,16 @@ export default function Settings() {
       {err && <div className="err">{err}</div>}
 
       <div className="card">
-        <h3>config keys</h3>
-        <table className="list">
+        <h3>Config keys</h3>
+        <div className="tablewrap"><table className="list">
           <thead>
             <tr><th>key</th><th>effective</th><th>set by</th><th>set global</th>{repoPath && <th>set project</th>}</tr>
           </thead>
           <tbody>
             {setup.effective.map((kv) => (
               <tr key={kv.key}>
-                <td>{kv.key}</td>
-                <td><b>{kv.value}</b></td>
+                <td className="mono">{kv.key}</td>
+                <td><b style={{ color: 'var(--text)' }}>{kv.value}</b></td>
                 <td className="k">{kv.source}</td>
                 <td>
                   <select value={kv.source === 'global' ? kv.value : ''}
@@ -105,8 +109,8 @@ export default function Settings() {
               </tr>
             ))}
           </tbody>
-        </table>
-        <div className="k" style={{ marginTop: 8, fontSize: 11.5 }}>
+        </table></div>
+        <div className="k mono" style={{ marginTop: 12, fontSize: '.78rem' }}>
           global: {setup.global.file}
           {setup.project ? <> · project: {setup.project.file} (committable)</> : null}
         </div>
@@ -114,23 +118,26 @@ export default function Settings() {
 
       {setup.axes.map((a) => (
         <div className="card" key={a.axis}>
-          <h3>{a.axis} <span className="chip">{a.kind}</span></h3>
-          <div className="k" style={{ fontSize: 12, marginBottom: 6 }}>{a.note}</div>
+          <div className="card-title">
+            <h3>{a.axis}</h3>
+            <span className="chip">{a.kind}</span>
+          </div>
+          <div className="muted" style={{ fontSize: '.85rem', marginBottom: 10 }}>{a.note}</div>
           {a.error && <div className="err">{a.error}</div>}
           {(a.packs || []).map((p) => (
-            <div className="row" key={p.name} style={{ padding: '3px 0' }}>
+            <div className="row" key={p.name} style={{ padding: '4px 0' }}>
               <span className="chip"><b>{p.name}</b> {p.exts.join(' ')}</span>
-              <span className="k" style={{ fontSize: 11.5 }}>{p.wasm}</span>
+              <span className="k mono" style={{ fontSize: '.76rem' }}>{p.wasm}</span>
             </div>
           ))}
           {a.kind === 'packs' && (a.packs || []).length === 0 && !a.error && (
             <div className="k">no packs discovered</div>
           )}
           {(a.adapters || []).map((ad, i) => (
-            <div className="row" key={i} style={{ padding: '3px 0' }}>
+            <div className="row" key={i} style={{ padding: '4px 0' }}>
               <span className="chip"><b>{ad.name}</b></span>
-              <span style={{ fontSize: 12 }}>{ad.run}</span>
-              <span className="k" style={{ fontSize: 11.5 }}>{ad.file}</span>
+              <span className="mono" style={{ fontSize: '.82rem' }}>{ad.run}</span>
+              <span className="k mono" style={{ fontSize: '.76rem' }}>{ad.file}</span>
             </div>
           ))}
           {a.axis === 'adapters' && !repoPath && (
@@ -140,20 +147,20 @@ export default function Settings() {
       ))}
 
       <div className="card">
-        <h3>remote</h3>
+        <h3>Remote</h3>
         {setup.remote ? (
           <div className="row">
             <span className="chip"><b>{setup.remote.url}</b></span>
             <span className="k">from {setup.remote.from}</span>
             <span className="grow" />
-            <button disabled={!!busy} onClick={() => sync('push')}>{busy === 'push' ? 'pushing…' : 'push'}</button>
-            <button disabled={!!busy} onClick={() => sync('pull')}>{busy === 'pull' ? 'pulling…' : 'pull'}</button>
+            <button disabled={!!busy} onClick={() => sync('push')}>{busy === 'push' ? 'pushing…' : 'Push'}</button>
+            <button disabled={!!busy} onClick={() => sync('pull')}>{busy === 'pull' ? 'pulling…' : 'Pull'}</button>
           </div>
         ) : (
           <div className="k">
             {repoPath
-              ? 'no remote configured — run `ctx-optimize remote init <url>` in the repo'
-              : 'pick a project scope above to see its remote'}
+              ? 'No remote configured — run `ctx-optimize remote init <url>` in the repo.'
+              : 'Pick a project scope above to see its remote.'}
           </div>
         )}
         {syncLog && <pre className="stream">{syncLog}</pre>}
