@@ -26,7 +26,7 @@ description: >
   Want to SEE the store or manage it visually — "open the dashboard", "see the
   graph", "manage packs/config visually", "onboard repos interactively" —
   `ctx-optimize serve` opens a local 127.0.0.1:4747 UI (Overview / Repos /
-  Query / Viewer / Settings / Changes); follow `./references/dashboard.md`.
+  Onboard / Query / Viewer / Settings / Changes); follow `./references/dashboard.md`.
   ALSO the first-class helper for CUSTOMIZING extraction: "add my framework's
   routes", "extract our custom router / registerRoute", "index our k8s / helm
   / ingress", "add build-tool dependencies / gradle / pom / csproj", "support
@@ -50,6 +50,17 @@ together), and detected **subsystems** — plus anything else via adapters.
 
 **ctx-optimize needs no API key, no model, no database — never prompt for
 one.** The binary is deterministic; you supply all semantics.
+
+## The complete command surface
+
+`./references/activation-routing.xml` is the full router: **every** ctx-optimize
+verb as a `<route>` with its trigger `<when>`, `<goal>`, and exact `<cmd>` —
+answer (query/card/affected/path/explain/hubs/wiki/status/fresh), build
+(init/scan/add/multi-path modules), customize (routes/manifests/languages/
+adapters), share (remote init/push/pull), export (merge/export), learn
+(save-result/reflect), and manage (serve/config/log/install/uninstall/version).
+Consult it whenever you're unsure which verb or flag fits — nothing is hidden
+there. The table below is the hot path; the XML is the whole map.
 
 ## THE GATE — every search goes through the store first (non-negotiable)
 

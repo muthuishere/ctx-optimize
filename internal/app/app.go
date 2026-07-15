@@ -2085,6 +2085,41 @@ func cmdInstall(args []string, stdout io.Writer) error {
 		}
 		fmt.Fprintf(stdout, "%-9s skill %s\n%-9s hook  %s\n", plat, skillNote, "", hookNote)
 	}
+	// GLOBAL always-on rule — the standing instruction across every repo:
+	// use the store before grep where one exists, and OFFER to create the
+	// config where none does. Written to the user's global agent-instruction
+	// files for the installed platforms (claude→~/.claude/CLAUDE.md,
+	// codex→~/.codex/AGENTS.md), mirroring how the skill installs globally.
+	if doSkills {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		var gtargets []string
+		for _, plat := range plats {
+			switch plat {
+			case "claude":
+				if allowed[claudeDir] {
+					gtargets = append(gtargets, filepath.Join(home, ".claude", "CLAUDE.md"))
+				}
+			case "codex":
+				if allowed[agentsDir] {
+					gtargets = append(gtargets, filepath.Join(home, ".codex", "AGENTS.md"))
+				}
+			}
+		}
+		if len(gtargets) > 0 {
+			written, err := project.EnsureGlobalPointer(gtargets)
+			if err != nil {
+				return err
+			}
+			if len(written) > 0 {
+				fmt.Fprintf(stdout, "\nglobal rule: added the always-on \"knowledge graph before grep\" block to %s\n", strings.Join(written, ", "))
+			} else {
+				fmt.Fprintf(stdout, "\nglobal rule: already present (%s)\n", strings.Join(gtargets, ", "))
+			}
+		}
+	}
 	fmt.Fprintf(stdout, "\nper-repo trigger: run `ctx-optimize init` in each repo — writes the CLAUDE.md + AGENTS.md pointer block (commit them; the whole team's agents inherit it)\n")
 	return nil
 }
@@ -2108,6 +2143,20 @@ func cmdUninstall(args []string, stdout io.Writer) error {
 	}
 	for _, t := range removed {
 		fmt.Fprintf(stdout, "removed skill: %s\n", t)
+	}
+	// Strip the global always-on rule that install wrote (marker-fenced, so
+	// content outside it is preserved; a no-op when it was never installed).
+	if home, err := os.UserHomeDir(); err == nil {
+		gremoved, err := project.RemoveGlobalPointer([]string{
+			filepath.Join(home, ".claude", "CLAUDE.md"),
+			filepath.Join(home, ".codex", "AGENTS.md"),
+		})
+		if err != nil {
+			return err
+		}
+		for _, t := range gremoved {
+			fmt.Fprintf(stdout, "removed global rule from: %s\n", t)
+		}
 	}
 	return nil
 }

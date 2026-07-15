@@ -255,3 +255,69 @@ func TestPointerTargets(t *testing.T) {
 		t.Fatal("CLAUDE.md must not be created when agents.type = AGENTS")
 	}
 }
+
+func TestGlobalPointerLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "CLAUDE.md")
+	// pre-existing user content that must survive install/uninstall.
+	const user = "# My global instructions\n\nAlways answer in English.\n"
+	if err := os.WriteFile(p, []byte(user), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// install writes the block, appended after the user's content.
+	written, err := EnsureGlobalPointer([]string{p})
+	if err != nil || len(written) != 1 {
+		t.Fatalf("EnsureGlobalPointer: %v written=%v", err, written)
+	}
+	got, _ := os.ReadFile(p)
+	s := string(got)
+	if !strings.Contains(s, user) {
+		t.Fatal("user content lost")
+	}
+	if !strings.Contains(s, globalBegin) || !strings.Contains(s, "knowledge graph before grep") {
+		t.Fatal("global block missing")
+	}
+	if !strings.Contains(s, "ctx-optimize init && ctx-optimize add .") {
+		t.Fatal("create-config guidance missing from global block")
+	}
+
+	// idempotent: second call reports no change.
+	if w, err := EnsureGlobalPointer([]string{p}); err != nil || len(w) != 0 {
+		t.Fatalf("second install not idempotent: %v changed=%v", err, w)
+	}
+
+	// uninstall strips only the block, keeps the user's content.
+	removed, err := RemoveGlobalPointer([]string{p})
+	if err != nil || len(removed) != 1 {
+		t.Fatalf("RemoveGlobalPointer: %v removed=%v", err, removed)
+	}
+	after, _ := os.ReadFile(p)
+	if strings.Contains(string(after), globalBegin) {
+		t.Fatal("global markers not removed")
+	}
+	if !strings.Contains(string(after), "Always answer in English.") {
+		t.Fatalf("user content lost on uninstall:\n%s", after)
+	}
+}
+
+func TestGlobalPointerCreatesMissingFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "nested", "AGENTS.md") // dir does not exist
+	written, err := EnsureGlobalPointer([]string{p})
+	if err != nil || len(written) != 1 {
+		t.Fatalf("EnsureGlobalPointer on missing file: %v written=%v", err, written)
+	}
+	got, _ := os.ReadFile(p)
+	if !strings.Contains(string(got), globalEnd) {
+		t.Fatal("block not written to freshly created file")
+	}
+}
+
+func TestRemoveGlobalPointerNoMarkersNoop(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "CLAUDE.md")
+	os.WriteFile(p, []byte("# just user content\n"), 0o644)
+	removed, err := RemoveGlobalPointer([]string{p})
+	if err != nil || len(removed) != 0 {
+		t.Fatalf("expected no-op, got removed=%v err=%v", removed, err)
+	}
+}

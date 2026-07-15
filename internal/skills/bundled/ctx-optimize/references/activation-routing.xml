@@ -1,0 +1,252 @@
+<activation-routing skill="ctx-optimize" version="1.0">
+
+  <!-- The COMPLETE command surface, routed by intent. Every ctx-optimize verb
+       is a <route> below: match the user's ask (or your own next step) to a
+       <when>, run its <cmd> exactly, read its <ref> for depth. Nothing hidden —
+       if a capability exists in the CLI, it is a route here. -->
+
+  <defaults>
+    <rule>THE GATE: in any repo with a `.ctxoptimize/` dir (root or a parent of cwd), ctx-optimize IS the search tool. Before ANY Grep/rg/Glob/find or exploratory Read, run the matching read route below.</rule>
+    <rule>Questions never rebuild. If `status --json` shows nodes > 0 and the ask is a question — route to a read verb (query/card/affected/path/explain/hubs). Do NOT run `add`, do NOT grep, do NOT open files speculatively.</rule>
+    <rule>Cite or abstain. Every read verb returns COMPLETE hits (id, label, kind, source, location, neighbors). Answer from what it returned, cite `source location`, never invent a node or edge. Say EXTRACTED (parsed fact) vs INFERRED (name-matched) when it matters.</rule>
+    <rule>Grep is allowed only as: (1) exhaustive literal string sweeps — every occurrence of an exact string; (2) a store-miss fallback AFTER you said the store returned nothing AND `add .` wouldn't fix it; (3) a verbatim read of a range the store already located. Say which lane you are in.</rule>
+    <rule>The binary is deterministic — no API key, no model, no database, no network except your configured remote. Never prompt for any of them.</rule>
+    <rule>Output is JSON with `--json` on every read verb; prefer it when you will parse, drop it when you will quote to the user.</rule>
+    <rule>Global flags on any verb: `--path DIR` (which module the store is keyed by, default cwd) · `--store DIR` (store root, default $CTX_OPTIMIZE_STORE or ~/ctxoptimize).</rule>
+    <rule>Command missing (`ctx-optimize` not found)? The binary is separate from this global skill. Tell the user `npm install -g @muthuishere/ctx-optimize` (or download the release). If they decline, stop looping — fall back to Grep/Read; the store is an optimization, not a requirement.</rule>
+  </defaults>
+
+  <routes>
+
+    <!-- ============ ANSWER: read the graph (the hot path) ============ -->
+
+    <route id="query" group="answer">
+      <when>any question about the codebase, where is X, how does Y work, who uses Z, find the code that does W, search for, look up, locate</when>
+      <goal>The default answer verb. Ranked, cited hits with signatures — replaces a grep-and-read chain.</goal>
+      <cmd>ctx-optimize query "&lt;2-4 terms&gt;" --json  [--budget N] [--modules all|a,b] [--root]</cmd>
+      <note>Query with 2-4 terms, not sentences; drop paths and `::`/`.` qualifiers. Scope follows cwd: a module dir answers from that module (zero hits escalate); the repo root federates via the navigator (`--modules` widens, `--root` forces root).</note>
+    </route>
+
+    <route id="card" group="answer">
+      <when>need a symbol's signature, doc, callers, or callees; about to open a file just to read one function's shape</when>
+      <goal>The card IS the read — signature + doc + location + callers + callees without opening the file.</goal>
+      <cmd>ctx-optimize card "&lt;exact label&gt;" --json</cmd>
+      <note>Wants the node's LABEL exactly. Unsure? `query` the short name, copy the label from the hit, then `card` it. Open a file only when a hit's `location` demands verbatim code — then read only that range.</note>
+    </route>
+
+    <route id="affected" group="answer">
+      <when>what breaks if X changes, blast radius, impact, reverse dependencies, who depends on this, is it safe to change</when>
+      <goal>Reverse impact — everything that transitively reaches X.</goal>
+      <cmd>ctx-optimize affected "&lt;X&gt;" --depth 2 --json  [--relation R]</cmd>
+    </route>
+
+    <route id="path" group="answer">
+      <when>how are A and B connected, trace A to B, what links these, is there a dependency between</when>
+      <goal>Shortest path between two nodes.</goal>
+      <cmd>ctx-optimize path "&lt;A&gt;" "&lt;B&gt;" --json</cmd>
+    </route>
+
+    <route id="explain" group="answer">
+      <when>what is X, explain X, give me an overview of X</when>
+      <goal>Plain-language node + its neighborhood.</goal>
+      <cmd>ctx-optimize explain "&lt;X&gt;" --json</cmd>
+    </route>
+
+    <route id="hubs" group="answer">
+      <when>what's important here, where do I start, key files, god nodes, most connected, orient me in this repo</when>
+      <goal>Most-connected nodes — the orientation map for an unfamiliar repo.</goal>
+      <cmd>ctx-optimize hubs --top 10 --json</cmd>
+    </route>
+
+    <route id="wiki" group="answer">
+      <when>readable map of the module, architecture overview doc, human-readable summary of the graph</when>
+      <goal>Open the store's generated wiki (regenerated on every `add`).</goal>
+      <cmd>open ~/ctxoptimize/&lt;name&gt;/wiki/index.md   # force regen: ctx-optimize wiki</cmd>
+    </route>
+
+    <route id="status" group="answer">
+      <when>is there a store, how big is it, store facts, node/edge counts, is the graph current</when>
+      <goal>Store facts + freshness vs git HEAD. Use as the pre-answer gate: nodes &gt; 0 ⇒ query, don't rebuild.</goal>
+      <cmd>ctx-optimize status --json</cmd>
+    </route>
+
+    <route id="fresh" group="answer">
+      <when>is the graph up to date, is the store stale, should I re-gather before trusting this</when>
+      <goal>One-line freshness verdict; exit 0 fresh / 1 stale / 2 unknown — the agent/hook gate before trusting an answer.</goal>
+      <cmd>ctx-optimize fresh --json</cmd>
+    </route>
+
+    <!-- ============ BUILD &amp; REFRESH: gather the graph ============ -->
+
+    <route id="onboard-clone" group="build">
+      <when>fresh clone, teammate already set up ctx-optimize, committed .ctxoptimize/config.json with a remote but no local store</when>
+      <goal>Fetch the prebuilt graph instead of rebuilding from source.</goal>
+      <cmd>ctx-optimize remote pull  &amp;&amp;  ctx-optimize status --json</cmd>
+      <note>Do NOT init/add — that rebuilds. `init` self-detects this case and just prints the pull line.</note>
+    </route>
+
+    <route id="onboard-new" group="build">
+      <when>set up ctx-optimize on this repo, onboard this repo, index this project, gather this codebase, no committed config yet</when>
+      <goal>Create the config + gather the store. Single project vs monorepo differ.</goal>
+      <cmd>single: ctx-optimize init &amp;&amp; ctx-optimize add .</cmd>
+      <cmd>monorepo: ctx-optimize scan  → confirm the FULL found list with the user →  ctx-optimize init --scan --yes &amp;&amp; ctx-optimize add .</cmd>
+      <ref>references/onboarding.md</ref>
+    </route>
+
+    <route id="scan" group="build">
+      <when>preview modules, what would be indexed, dry-run the layout before committing</when>
+      <goal>READ-ONLY module discovery: prints every project found + the exact config.json `init --scan` would write.</goal>
+      <cmd>ctx-optimize scan --json  [--depth N]</cmd>
+    </route>
+
+    <route id="add" group="build">
+      <when>code changed, re-gather, refresh the store, sync the graph with the code, gather again</when>
+      <goal>Incremental gather — built-ins + every adapter in `.ctxoptimize/adapters/`; prunes deleted, re-emits changed. `add .` IS the sync.</goal>
+      <cmd>ctx-optimize add .  [--jobs N] [--force]</cmd>
+      <note>Refuses a &gt;50% shrink without `--force`. Multi-module root fans out one worker per module and refreshes the navigator (no auto-merge).</note>
+      <ref>references/sync.md</ref>
+    </route>
+
+    <route id="multi-path-module" group="build">
+      <when>a module's source and tests live in SEPARATE folders (.NET src/+tests/, Gradle/Nx multi-project, scattered dirs)</when>
+      <goal>Group scattered folders into ONE store so test→source calls resolve across the split.</goal>
+      <cmd>YOU read the .sln/settings.gradle/naming, then write into config.json modules[]: {"name":"Billing","paths":["src/Billing","tests/Billing.Tests"]}  → ctx-optimize add .</cmd>
+      <ref>references/onboarding.md</ref>
+    </route>
+
+    <!-- ============ CUSTOMIZE: teach the extractor your stack ============ -->
+
+    <route id="routes-pack" group="customize">
+      <when>index my framework's routes, custom router, registerRoute, the graph is missing my endpoints/handlers</when>
+      <goal>Route recognizers — check core first, else scaffold a drop-in pack.</goal>
+      <cmd>ctx-optimize routes list   # is it already core?</cmd>
+      <cmd>ctx-optimize routes add &lt;name|github-url&gt;  [--global]   → edit the rule → ctx-optimize add .</cmd>
+      <cmd>ctx-optimize routes remove &lt;name&gt;</cmd>
+      <ref>references/customize.md</ref>
+    </route>
+
+    <route id="manifests-pack" group="customize">
+      <when>index build-tool deps, gradle/pom/csproj/go.mod, our k8s/helm/ingress, dependency graph is missing X</when>
+      <goal>Manifest recognizers (npm, maven, csproj/sln, go.mod, gradle, k8s) — core first, else a pack.</goal>
+      <cmd>ctx-optimize manifests list</cmd>
+      <cmd>ctx-optimize manifests add &lt;name|github-url&gt;  [--global]  → ctx-optimize add .</cmd>
+      <cmd>ctx-optimize manifests remove &lt;name&gt;</cmd>
+      <ref>references/customize.md</ref>
+    </route>
+
+    <route id="languages-pack" group="customize">
+      <when>support language X, my language isn't indexed, add kotlin/ruby/swift/etc.</when>
+      <goal>12 languages are embedded; any other via a drop-in tree-sitter grammar pack (no toolchain to install).</goal>
+      <cmd>ctx-optimize languages list   # embedded + addable-by-name + packs</cmd>
+      <cmd>ctx-optimize languages add &lt;name|github-url&gt;   → review the suggested .json mapping → ctx-optimize add .</cmd>
+      <cmd>ctx-optimize languages remove &lt;name&gt;</cmd>
+      <ref>references/customize.md</ref>
+    </route>
+
+    <route id="adapters" group="customize">
+      <when>index docs/PDF/DB schema/kafka topics/logs/anything non-code, add the schema, ingest a system</when>
+      <goal>Anything beyond code+markdown: docs convert to markdown then `add .`; systems get an adapter script in `.ctxoptimize/adapters/` that prints batch JSON.</goal>
+      <cmd>drop a .js/.py/.sh adapter in .ctxoptimize/adapters/  → ctx-optimize add .</cmd>
+      <ref>references/adapters.md</ref>
+    </route>
+
+    <!-- ============ SHARE: sync the store across a team ============ -->
+
+    <route id="remote-init" group="share">
+      <when>configure a remote, set up sharing, point the store at s3/a folder</when>
+      <goal>Write the remote into config.json (committable) so the team pulls one graph.</goal>
+      <cmd>ctx-optimize remote init &lt;url&gt;  [--local]</cmd>
+      <ref>references/push-pull.md</ref>
+    </route>
+
+    <route id="remote-sync" group="share">
+      <when>share / publish / push the store, pull the store, export to team, import/load a teammate's store</when>
+      <goal>Incremental sync with the configured remote (no url — config.json is the source of truth). Scope follows cwd.</goal>
+      <cmd>ctx-optimize remote push   |   ctx-optimize remote pull</cmd>
+      <ref>references/push-pull.md</ref>
+    </route>
+
+    <!-- ============ COMBINE &amp; EXPORT ============ -->
+
+    <route id="merge" group="export">
+      <when>combine several modules/repos into one graph, one merged view</when>
+      <goal>Opt-in merge (never automatic).</goal>
+      <cmd>ctx-optimize merge &lt;mod&gt;... --into &lt;name&gt;</cmd>
+    </route>
+
+    <route id="export" group="export">
+      <when>export the graph for another tool, Gephi/Neo4j/Obsidian, get json/dot/graphml/csv</when>
+      <goal>Dump the graph in an interchange format.</goal>
+      <cmd>ctx-optimize export --format json|dot|graphml|csv|obsidian|all  [--out FILE|DIR]</cmd>
+      <note>csv/obsidian/all REQUIRE --out DIR.</note>
+    </route>
+
+    <!-- ============ LEARN: the deterministic memory loop ============ -->
+
+    <route id="save-result" group="learn">
+      <when>just answered a question from the store (record how it went)</when>
+      <goal>Record the episode, citing the node ids you used, so the store learns what helps.</goal>
+      <cmd>ctx-optimize save-result --question "Q" --answer "A" --type query|path|explain|affected --nodes "id1,id2" --outcome useful|dead_end|corrected [--correction "C"]</cmd>
+    </route>
+
+    <route id="reflect" group="learn">
+      <when>starting a session in a repo with a store; what has this store learned</when>
+      <goal>Aggregate saved results (half-life decay) into LESSONS.md — preferred nodes, dead ends, corrections.</goal>
+      <cmd>ctx-optimize reflect  [--half-life-days N] [--min-corroboration N] [--json]   → read ~/ctxoptimize/&lt;name&gt;/reflections/LESSONS.md</cmd>
+    </route>
+
+    <!-- ============ MANAGE &amp; INTROSPECT ============ -->
+
+    <route id="dashboard" group="manage">
+      <when>see it visually, open the dashboard, manage packs/config/repos in a UI, onboard interactively, view the graph</when>
+      <goal>Local web UI over the whole store: Overview / Repos / Onboard / Query / Viewer / Settings / Changes.</goal>
+      <cmd>ctx-optimize serve  [--port 4747] [--host 127.0.0.1]   → give the printed 127.0.0.1:4747 link</cmd>
+      <note>Mutations stay loopback-only even with --host; every mutation is audited.</note>
+      <ref>references/dashboard.md</ref>
+    </route>
+
+    <route id="config" group="manage">
+      <when>change settings, set instructions/skills/hooks targets, name the store, machine vs project config</when>
+      <goal>Git-style two-level settings: machine-global (~/ctxoptimize/config.json) or --project (.ctxoptimize/config.json, committable; project overrides global).</goal>
+      <cmd>ctx-optimize config [&lt;key&gt; [&lt;value&gt;]] [--project]</cmd>
+      <note>Keys: instructions CLAUDE|AGENTS|ALL|NONE (which files init writes the pointer into) · skills CLAUDE|AGENTS|ALL · hooks CLAUDE|AGENTS|ALL|NONE.</note>
+    </route>
+
+    <route id="log" group="manage">
+      <when>what changed the store, audit trail, who ran what mutation</when>
+      <goal>Print the append-only mutation audit (ts, actor, action, target, hashes).</goal>
+      <cmd>ctx-optimize log --json</cmd>
+    </route>
+
+    <route id="install" group="manage">
+      <when>install ctx-optimize for my agent, wire up the skill/hooks, set it up globally</when>
+      <goal>Install skills + hooks for every detected agent CLI, and write the global "knowledge graph before grep" rule into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md.</goal>
+      <cmd>ctx-optimize install  [--claude|--codex|--copilot|--devin] [--skills] [--hooks]</cmd>
+    </route>
+
+    <route id="uninstall" group="manage">
+      <when>remove ctx-optimize, uninstall the skill</when>
+      <goal>Remove the agent skill and the global rule.</goal>
+      <cmd>ctx-optimize uninstall --skills</cmd>
+    </route>
+
+    <route id="version" group="manage">
+      <when>what version, is it installed</when>
+      <goal>Print the version.</goal>
+      <cmd>ctx-optimize version</cmd>
+    </route>
+
+  </routes>
+
+  <disambiguation>
+    <rule>A store exists and the ask is a question ⇒ ALWAYS a read route (query/card/…), never `add`, never grep. Rebuild only when the user says the code changed or `fresh` reports stale.</rule>
+    <rule>Committed config with a `remote` but no local store ⇒ `remote pull`, not `init`/`add` (that rebuilds from source).</rule>
+    <rule>`card` needs the exact label; `path`/`explain`/`affected` accept id, exact label, or fuzzy name — if resolution surprises you, show the resolved node id you used.</rule>
+    <rule>Two query misses = change tactics, not wording: go to `hubs`, `explain` a neighbor, or a legitimate grep lane. A third rephrase is thrash.</rule>
+    <rule>Things the store does NOT index — member fields/variables, build files (BUILD.gn, CMake), string literals, config values, comments — use grep directly (lane 1), and say so first.</rule>
+    <rule>"Add my routes/deps/language" ⇒ check `routes|manifests|languages list` FIRST (often already core → just `add .`) before scaffolding a pack.</rule>
+    <rule>Non-code input (docs, DB, queue) ⇒ the adapters route, not a built-in verb.</rule>
+    <rule>Never claim a node/edge/path the CLI didn't output; report counts (added/pruned/transferred) as printed.</rule>
+  </disambiguation>
+
+</activation-routing>

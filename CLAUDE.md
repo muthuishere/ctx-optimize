@@ -32,3 +32,22 @@ the validated `add --json` door.
 - Spec-driven: decisions live in `openspec/` + `docs/VISION.md` (+ `docs/CRITIQUE.md`
   as the standing counter-weight). Every claim traces to a measured spike.
 - Conventional commits; never add Co-authored-by.
+
+<!-- ctx-optimize:begin -->
+<ctx-optimize>
+  <precondition>Run `command -v ctx-optimize` first. If it is NOT installed, IGNORE this entire
+  block and answer by reading the code normally — the store is an optimization, not a requirement
+  (install later with `npm install -g @muthuishere/ctx-optimize`, or download the binary). Everything
+  below applies ONLY when the command exists.</precondition>
+  <store>Pre-built knowledge store at `~/ctxoptimize/ctx-optimize/` (config in `.ctxoptimize/` here).</store>
+  <use>For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —
+  use it INSTEAD of grep-and-read chains, not in addition:
+  `ctx-optimize query "<terms>"` · `ctx-optimize card <symbol>` (signature+doc+callers+callees) ·
+  `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>` · wiki at `~/ctxoptimize/ctx-optimize/wiki/`.
+  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source; open a file only
+  when the answer needs a body the store didn't show. Exhaustive text sweeps (every literal occurrence of a
+  string) are still grep's job.</use>
+  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/ctx-optimize/`? If `.ctxoptimize/config.json` has a
+  `remote`, run `ctx-optimize remote pull`; otherwise `ctx-optimize init && ctx-optimize add .` rebuilds in seconds.</no-local-store>
+</ctx-optimize>
+<!-- ctx-optimize:end -->

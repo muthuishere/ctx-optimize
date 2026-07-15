@@ -332,37 +332,145 @@ func EnsureAgentPointer(repo, name string, modules int, targets []string) ([]str
 	block := pointerBlock(name, modules)
 	var written []string
 	for _, fn := range targets {
-		p := filepath.Join(repo, fn)
-		data, err := os.ReadFile(p)
-		switch {
-		case os.IsNotExist(err):
-			if err := os.WriteFile(p, []byte(block), 0o644); err != nil {
-				return written, err
-			}
-		case err != nil:
+		changed, err := upsertMarkedBlock(filepath.Join(repo, fn), pointerBegin, pointerEnd, block)
+		if err != nil {
 			return written, err
-		default:
-			s := string(data)
-			if i := strings.Index(s, pointerBegin); i >= 0 {
-				j := strings.Index(s, pointerEnd)
-				if j < i {
-					return written, fmt.Errorf("%s: malformed ctx-optimize markers", fn)
-				}
-				s = s[:i] + strings.TrimSuffix(block, "\n") + s[j+len(pointerEnd):]
-			} else {
-				if !strings.HasSuffix(s, "\n") {
-					s += "\n"
-				}
-				s += "\n" + block
-			}
-			if s == string(data) {
-				continue
-			}
-			if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+		}
+		if changed {
+			written = append(written, fn)
+		}
+	}
+	return written, nil
+}
+
+// upsertMarkedBlock writes block between begin/end markers in the file at p:
+// creates the file (block only) when absent, replaces an existing marked
+// region in place, or appends the block otherwise. Content outside the markers
+// is never touched. Returns whether the file changed. This is the one insert
+// primitive behind both the per-repo pointer and the global always-on block.
+func upsertMarkedBlock(p, begin, end, block string) (bool, error) {
+	data, err := os.ReadFile(p)
+	switch {
+	case os.IsNotExist(err):
+		return true, os.WriteFile(p, []byte(block), 0o644)
+	case err != nil:
+		return false, err
+	}
+	s := string(data)
+	if i := strings.Index(s, begin); i >= 0 {
+		j := strings.Index(s, end)
+		if j < i {
+			return false, fmt.Errorf("%s: malformed ctx-optimize markers", filepath.Base(p))
+		}
+		s = s[:i] + strings.TrimSuffix(block, "\n") + s[j+len(end):]
+	} else {
+		if !strings.HasSuffix(s, "\n") {
+			s += "\n"
+		}
+		s += "\n" + block
+	}
+	if s == string(data) {
+		return false, nil
+	}
+	return true, os.WriteFile(p, []byte(s), 0o644)
+}
+
+// removeMarkedBlock strips a marked region (and a trailing blank line) from the
+// file at p if present. Missing file or missing markers is a no-op. Returns
+// whether the file changed.
+func removeMarkedBlock(p, begin, end string) (bool, error) {
+	data, err := os.ReadFile(p)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	s := string(data)
+	i := strings.Index(s, begin)
+	if i < 0 {
+		return false, nil
+	}
+	j := strings.Index(s, end)
+	if j < i {
+		return false, fmt.Errorf("%s: malformed ctx-optimize markers", filepath.Base(p))
+	}
+	out := strings.TrimRight(s[:i], "\n")
+	rest := s[j+len(end):]
+	if out != "" && rest != "" {
+		out += "\n"
+	}
+	out += strings.TrimLeft(rest, "\n")
+	if out != "" && !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	if out == s {
+		return false, nil
+	}
+	return true, os.WriteFile(p, []byte(out), 0o644)
+}
+
+const globalBegin = "<!-- ctx-optimize:global:begin -->"
+const globalEnd = "<!-- ctx-optimize:global:end -->"
+
+// globalBlock is the always-on instruction written into the user's GLOBAL
+// agent-instruction files (~/.claude/CLAUDE.md, ~/.codex/AGENTS.md) by
+// `install`. Unlike the per-repo pointer it names no repo — it is a standing
+// rule that applies across every project: use the store before grep when one
+// exists, and OFFER to create the config when it doesn't. Self-gating on
+// `command -v ctx-optimize`, so it is inert if the tool was later removed.
+func globalBlock() string {
+	return globalBegin + "\n" +
+		"## ctx-optimize — knowledge graph before grep\n\n" +
+		"If `command -v ctx-optimize` succeeds, then in ANY repo you work in:\n\n" +
+		"- **Store present** — a `.ctxoptimize/` directory at the repo root or any parent of your cwd\n" +
+		"  means a pre-built knowledge graph of that codebase already exists. Use it BEFORE any\n" +
+		"  Grep/rg/Glob/find or exploratory Read: `ctx-optimize query \"<terms>\"` · `card <symbol>`\n" +
+		"  (signature+doc+callers+callees) · `affected <symbol>` (blast radius) · `path <a> <b>`.\n" +
+		"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source;\n" +
+		"  open a file only for a body the store didn't show. Exhaustive literal-string sweeps stay grep's job.\n" +
+		"- **No `.ctxoptimize/` yet** — before you start a grep-and-read chain on a real codebase, OFFER to\n" +
+		"  build the graph: `ctx-optimize init && ctx-optimize add .` writes `.ctxoptimize/config.json`\n" +
+		"  (commit it) and gathers the store in seconds; `ctx-optimize serve` opens the dashboard. For a\n" +
+		"  monorepo, `ctx-optimize scan` first, confirm the module list, then `ctx-optimize init --scan --yes && add .`.\n" +
+		"- **Not installed** (the command is missing) — ignore this block and read the code the normal way.\n" +
+		globalEnd + "\n"
+}
+
+// EnsureGlobalPointer writes/refreshes the always-on block in the given global
+// instruction files (absolute paths). Missing files are created. Returns the
+// paths actually changed.
+func EnsureGlobalPointer(targets []string) ([]string, error) {
+	block := globalBlock()
+	var written []string
+	for _, p := range targets {
+		if dir := filepath.Dir(p); dir != "" {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return written, err
 			}
 		}
-		written = append(written, fn)
+		changed, err := upsertMarkedBlock(p, globalBegin, globalEnd, block)
+		if err != nil {
+			return written, err
+		}
+		if changed {
+			written = append(written, p)
+		}
 	}
 	return written, nil
+}
+
+// RemoveGlobalPointer strips the always-on block from the given global files.
+func RemoveGlobalPointer(targets []string) ([]string, error) {
+	var removed []string
+	for _, p := range targets {
+		changed, err := removeMarkedBlock(p, globalBegin, globalEnd)
+		if err != nil {
+			return removed, err
+		}
+		if changed {
+			removed = append(removed, p)
+		}
+	}
+	return removed, nil
 }
