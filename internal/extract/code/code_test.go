@@ -237,3 +237,56 @@ func TestSignatureAndDoc(t *testing.T) {
 		t.Errorf("class doc should be empty, got %q", d)
 	}
 }
+
+func TestIsMinified(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{"normal wrapped code", "package x\n\nfunc a() {}\nfunc b() {}\n", false},
+		{"long but wrapped file", strings.Repeat("const x = someReasonableCall(a, b, c)\n", 5000), false},
+		{"minified single line", "!function(){" + strings.Repeat("var a=1;", 20000) + "}();", true},
+		{"empty", "", false},
+	}
+	for _, c := range cases {
+		if got := isMinified([]byte(c.src)); got != c.want {
+			t.Errorf("%s: isMinified = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// A minified .js file in a gathered tree contributes NO nodes — it is dropped
+// by shape, so bundlers' output never pollutes hubs/query.
+func TestExtractSkipsMinifiedFile(t *testing.T) {
+	dir := t.TempDir()
+	// real hand-written module
+	if err := os.WriteFile(filepath.Join(dir, "real.js"),
+		[]byte("export function greet(name) {\n  return 'hi ' + name\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// minified bundle: one enormous line, under maxFileBytes
+	if err := os.WriteFile(filepath.Join(dir, "bundle.min.js"),
+		[]byte("!function(){"+strings.Repeat("var a=1;", 20000)+"}();"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := ExtractPaths(dir, []string{dir}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range batch.Nodes {
+		if strings.Contains(n.Source, "bundle.min.js") {
+			t.Fatalf("minified file leaked a node: %s (%s)", n.Label, n.Source)
+		}
+	}
+	// the real file must still be indexed
+	var sawGreet bool
+	for _, n := range batch.Nodes {
+		if n.Label == "greet" {
+			sawGreet = true
+		}
+	}
+	if !sawGreet {
+		t.Fatal("real file's greet() was not indexed")
+	}
+}

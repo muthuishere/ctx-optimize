@@ -31,6 +31,32 @@ const ProducerName = "code"
 // maxFileBytes skips generated monsters (bundles, lock outputs).
 const maxFileBytes = 2 << 20
 
+// minifiedLineBytes: a source line longer than this marks a minified/generated
+// file (hand-written code wraps; bundlers strip newlines). ~50k covers the
+// longest realistic hand-written line (embedded data, long strings) while
+// catching minified JS/CSS whose "lines" run to hundreds of KB.
+const minifiedLineBytes = 50 * 1024
+
+// isMinified reports whether src looks machine-generated (minified) — judged by
+// its longest line. Pure shape heuristic: no extension list to keep current,
+// works for any language a bundler targets.
+func isMinified(src []byte) bool {
+	longest := 0
+	start := 0
+	for i, b := range src {
+		if b == '\n' {
+			if i-start > longest {
+				longest = i - start
+			}
+			start = i + 1
+		}
+	}
+	if len(src)-start > longest { // trailing line (no final newline)
+		longest = len(src) - start
+	}
+	return longest > minifiedLineBytes
+}
+
 type fileResult struct {
 	nodes  []schema.Node
 	edges  []schema.Edge
@@ -378,6 +404,13 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 	if err != nil {
 		res.err = err
 		return res
+	}
+	// Minified/generated bundles (committed dist, *.min.js, webpack output) are
+	// under maxFileBytes yet parse into thousands of junk symbols that dominate
+	// hubs/query. Detect by shape — one enormous line — and skip so the graph
+	// stays the hand-written code the agent actually asks about.
+	if isMinified(src) {
+		return res // no nodes/edges/err: silently drop, like an ignored file
 	}
 	raw, err := inst.Parse(ctx, lang.ID, src)
 	if err != nil {
