@@ -107,11 +107,13 @@
       <ref>references/sync.md</ref>
     </route>
 
-    <route id="multi-path-module" group="build">
-      <when>a module's source and tests live in SEPARATE folders (.NET src/+tests/, Gradle/Nx multi-project, scattered dirs)</when>
-      <goal>Group scattered folders into ONE store so test→source calls resolve across the split.</goal>
-      <cmd>YOU read the .sln/settings.gradle/naming, then write into config.json modules[]: {"name":"Billing","paths":["src/Billing","tests/Billing.Tests"]}  → ctx-optimize add .</cmd>
-      <ref>references/onboarding.md</ref>
+    <route id="multi-project" group="build">
+      <when>multi-project repo, .NET solution, Gradle/Maven/Nx monorepo, a module's source and tests live in SEPARATE folders, parse the .sln/settings.gradle/pom, scattered dirs into one module</when>
+      <goal>Derive modules[] from the BUILD SYSTEM (not folders) and write the config — YOUR job, per a dedicated parser asset. Group src+tests so test→source calls resolve.</goal>
+      <cmd>detect the build system → ./modules/index.md routes to the parser → group src+tests → write config.json modules[] (e.g. {"name":"Billing","paths":["src/Billing","tests/Billing.Tests"]}) → ctx-optimize add .</cmd>
+      <ref>references/config-json.md  (schema + how to create the config)</ref>
+      <ref>references/modules/index.md  (detect + dispatch)</ref>
+      <ref>references/modules/dotnet-sln.md · gradle.md · maven.md · js-workspaces.md · naming-fallback.md</ref>
     </route>
 
     <!-- ============ CUSTOMIZE: teach the extractor your stack ============ -->

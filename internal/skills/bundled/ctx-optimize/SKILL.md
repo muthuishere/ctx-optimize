@@ -95,7 +95,7 @@ counted honestly.
 | Asking to see it visually / manage the store, packs, or config in a UI / onboard repos interactively | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link; follow `./references/dashboard.md` |
 | Repo ALREADY has a committed `.ctxoptimize/config.json` with a `remote` but no local store (a clone / teammate already set it up) | `ctx-optimize remote pull` then `status --json` — do NOT init/add (that rebuilds from source). `init` self-detects this and just prints the pull line. |
 | Setting up / onboarding a repo or monorepo (NO committed config yet, "index this repo") | follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .` |
-| Module's source and tests live in SEPARATE folders (.NET `src/`+`tests/`, Gradle/Nx multi-project, scattered dirs) | YOU read the `.sln`/`settings.gradle`/naming and group them — write a multi-path module `{"name":"Billing","paths":["src/Billing","tests/Billing.Tests"]}` into `config.json` `modules[]` so they gather into ONE store (test→source calls resolve); recipe in `./references/onboarding.md` |
+| Multi-project repo (.NET `.sln`, Gradle/Maven/Nx monorepo) or a module whose source and tests live in SEPARATE folders | Derive `modules[]` from the BUILD SYSTEM, not folders — detect it and follow the per-system parser: `./references/modules/index.md` routes to `dotnet-sln.md` / `gradle.md` / `maven.md` / `js-workspaces.md` / `naming-fallback.md`; config schema in `./references/config-json.md`. Group src+tests into one multi-path module `{"name","paths":[...]}` so test→source calls resolve |
 | Told code changed / store looks stale | `ctx-optimize add .` (incremental: prunes deleted, re-emits changed) |
 | Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script |
 | Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .` |
@@ -171,6 +171,11 @@ model anywhere; you are the judge, the binary only tallies.
 
 - `./references/onboarding.md` — set up a store on a NEW repo or monorepo:
   scan → confirm the full module list → `init --scan --yes && add .`, verify
+- `./references/config-json.md` — the `.ctxoptimize/config.json` contract:
+  full schema, the two module shapes, how to author it (a separate step from add)
+- `./references/modules/` — multi-project layout, one parser asset per build
+  system: `index.md` (detect+dispatch) → `dotnet-sln.md`, `gradle.md`,
+  `maven.md`, `js-workspaces.md`, `naming-fallback.md`
 - `./references/dashboard.md` — `serve` as the visual management surface:
   Overview / Repos (onboard, re-gather, remove) / Query / Viewer / Settings
   (packs + config) / Changes (audit); local, read-safe, mutations audited
