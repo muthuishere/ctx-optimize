@@ -1,10 +1,26 @@
 version: '3'
 
+# Local builds stamp the same version vars goreleaser injects in CI, derived
+# from git — otherwise every local binary reports "0.0.0-dev (none, unknown)"
+# and you can't tell which build you're actually running.
+vars:
+  PKG: github.com/muthuishere/ctx-optimize/internal/version
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo none
+  DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
+  LDFLAGS: >-
+    -X {{.PKG}}.Version={{.VERSION}}
+    -X {{.PKG}}.Commit={{.COMMIT}}
+    -X {{.PKG}}.Date={{.DATE}}
+
 tasks:
   build:
-    desc: Build the CLI
+    desc: Build the CLI (version stamped from git)
     cmds:
-      - go build -o bin/ctx-optimize ./cmd/ctx-optimize
+      - go build -ldflags "{{.LDFLAGS}}" -o bin/ctx-optimize ./cmd/ctx-optimize
 
   test:
     desc: Run all tests
@@ -58,10 +74,14 @@ tasks:
       - goreleaser release --snapshot --clean --skip=publish
 
   local-install:
-    desc: Symlink bin/ctx-optimize into /usr/local/bin
+    desc: Symlink bin/ctx-optimize onto PATH (a symlink, so `task build` keeps it current — a copy goes stale and silently reports an old version)
     deps: [build]
+    vars:
+      BINDIR: '{{.BINDIR | default (printf "%s/.local/bin" .HOME)}}'
     cmds:
-      - ln -sf "$(pwd)/bin/ctx-optimize" /usr/local/bin/ctx-optimize
+      - mkdir -p "{{.BINDIR}}"
+      - ln -sf "$(pwd)/bin/ctx-optimize" "{{.BINDIR}}/ctx-optimize"
+      - '"{{.BINDIR}}/ctx-optimize" version'
 
   install-skills:
     desc: Install the agent skill via the built binary

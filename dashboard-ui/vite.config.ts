@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -14,5 +15,11 @@ export default defineConfig({
     outDir: 'dist',
     // One predictable bundle; no external requests ever (CSP-tested Go-side).
     assetsInlineLimit: 8192,
+  },
+  // jsdom so component tests actually MOUNT and run their effects — the only
+  // way to catch a crash that lives in a useEffect body (e.g. a TDZ throw).
+  // Pure-logic tests (sanitize) don't care which environment they get.
+  test: {
+    environment: 'jsdom',
   },
 })

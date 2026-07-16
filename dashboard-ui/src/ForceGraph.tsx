@@ -299,7 +299,13 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
     // The settle-and-stop loop. It runs only while there is physics left to
     // simulate (st.ticking) or a repaint is pending (needsDraw); otherwise it
     // sets raf=0 and returns, leaving the tab idle until the next wake().
-    const loop = () => {
+    //
+    // Declared as a hoisted `function`, NOT a `const` arrow: wake() closes over
+    // loop and the resize() call above runs synchronously on mount — long
+    // before this point. A const would still be in its temporal dead zone
+    // there, throwing "Cannot access 'loop' before initialization" and taking
+    // the whole Viewer down through the error boundary.
+    function loop() {
       raf = 0
       if (!alive) return
       let busy = false
