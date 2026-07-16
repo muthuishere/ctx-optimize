@@ -102,8 +102,10 @@ func judgeSet(t *testing.T, base, setPath string) {
 	runCLI(t, "add", gatherRoot, "--path", gatherRoot, "--store", storeRoot)
 
 	total := 0.0
+	marks := map[string]float64{}
 	for _, q := range set.Questions {
 		mark := judgeOne(t, q, gatherRoot, storeRoot)
+		marks[q.ID] = mark
 		total += mark
 		tag := "    "
 		if q.Gap != "" {
@@ -115,6 +117,14 @@ func judgeSet(t *testing.T, base, setPath string) {
 		}
 	}
 	t.Logf("SCORE %s: %.1f / %d  (floor %.1f)", set.Corpus, total, len(set.Questions), set.MinScore)
+	if recordingEnabled() {
+		if err := appendHistory(historyLine{Kind: "judge", Corpus: set.Corpus, Score: total, Floor: set.MinScore, Marks: marks}); err != nil {
+			t.Errorf("audit record failed: %v", err)
+		}
+		if err := writeScoreboard(set.Corpus, total, set.MinScore, set.Questions, marks); err != nil {
+			t.Errorf("scoreboard write failed: %v", err)
+		}
+	}
 	if total < set.MinScore {
 		t.Errorf("judged score %.1f fell below the floor %.1f — a previously-answerable question broke", total, set.MinScore)
 	}

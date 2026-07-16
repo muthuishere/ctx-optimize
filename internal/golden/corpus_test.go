@@ -151,6 +151,12 @@ func runCorpus(t *testing.T, base, specPath string) {
 		}
 	}
 	t.Logf("%s@%s: %d nodes, %d edges, gather %.1fs", spec.Repo, spec.Ref, nodes, edges, gatherWall.Seconds())
+	if recordingEnabled() {
+		name := strings.TrimSuffix(filepath.Base(specPath), ".json")
+		if err := appendHistory(historyLine{Kind: "corpus", Corpus: name, Nodes: nodes, Edges: edges, GatherMS: gatherWall.Milliseconds()}); err != nil {
+			t.Errorf("audit record failed: %v", err)
+		}
+	}
 
 	// Performance is part of the golden contract — a gather that got an order
 	// of magnitude slower is as broken as one that lost nodes.
