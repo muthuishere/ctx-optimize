@@ -10,7 +10,39 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.3.8] — 2026-07-16
+
 ### Added
+
+- **`sync` — the fast lane.** `ctx-optimize sync` re-gathers the repo you're
+  in (code, docs, manifests, git; prunes deleted, re-emits changed, refreshes
+  wiki + navigator) but **skips adapter scripts**, which can be arbitrarily
+  slow (DB dumps, doc converters). Skipping is safe: replace is
+  producer-scoped, so adapter nodes stay put — `sync` prints how many were
+  skipped. Takes no path by design (`add <path>` for another repo);
+  `add . --no-adapters` is the same thing spelled long.
+
+- **`adapters <list|run [name]>` — the slow lane, on demand.** Re-run every
+  adapter script or just one by name when the external system changed (schema
+  migrated, topics moved) — running one adapter never disturbs the code
+  graph. Skill surfaces (SKILL.md routing, sync.md, adapters.md,
+  activation-routing.xml) all route the two lanes.
+
+- **`init` scaffolds `remote.example.md`** next to config.json — the
+  push/pull setup as commented recipes (git-repo host and S3/R2 bucket),
+  since JSON can't carry comments. `${NAME}` is baked in at scaffold time;
+  every other `${VAR}` survives verbatim for env-time resolution. Scaffold
+  templates now live as real files under `internal/project/templates/`
+  (go:embed), not backtick-escaped Go strings.
+
+- **`init --instructions CLAUDE|AGENTS|ALL|NONE`** picks which agent
+  instruction files get the pointer block (persists to config; re-running
+  `init` is idempotent — identical pointer content is never rewritten).
+
+- **Agent pointers route BY INTENT.** Every surface (global block, per-repo
+  pointer, SKILL.md frontmatter + hot-path table) now teaches the intent
+  router — find→`query` · inspect→`card` · edit→`change-plan` ·
+  impact→`affected` — instead of a flat verb list.
 
 - **`change-plan` — the first composed one-call verb (A2 + A1 + tests-for).**
   `ctx-optimize change-plan "X"` answers "I'm about to change X" in ONE
