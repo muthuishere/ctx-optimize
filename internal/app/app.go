@@ -60,6 +60,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdScan(rest, stdout)
 	case "add":
 		err = cmdAdd(rest, stdout, os.Stdin)
+	case "sync": // fast lane: `add .` minus adapter scripts — always the repo you're in
+		if f := parseFlags(rest); len(f.args) > 0 {
+			err = fmt.Errorf("sync takes no path — it always syncs the repo you're in (use `add <path>` for another repo)")
+		} else {
+			err = cmdAdd(append(rest, ".", "--no-adapters"), stdout, os.Stdin)
+		}
+	case "adapters":
+		err = cmdAdapters(rest, stdout)
 	case "query", "ask": // `ask` — same verb graphify users reach for
 		err = cmdQuery(rest, stdout)
 	case "status":
@@ -596,7 +604,7 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	if err != nil {
 		return err
 	}
-	if err := gatherInto(s, base, dirs, nil, f.bools["force"], stdout); err != nil {
+	if err := gatherInto(s, base, dirs, nil, f.bools["force"], f.bools["no-adapters"], stdout); err != nil {
 		return err
 	}
 	if sc.kind == scopeModule {
@@ -632,6 +640,82 @@ func runAdapter(repo string, a project.Adapter) (*schema.Batch, error) {
 		return nil, fmt.Errorf("stdout is not a batch: %w", err)
 	}
 	return &b, nil
+}
+
+// cmdAdapters is the slow lane split out of the gather: `sync` skips adapter
+// scripts, this verb runs them on demand (all, or one by name). Replace stays
+// producer-scoped, so running one adapter never disturbs the code graph.
+func cmdAdapters(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	sub := "list"
+	if len(f.args) > 0 {
+		sub = f.args[0]
+	}
+	sc, err := resolveScope(f)
+	if err != nil {
+		return err
+	}
+	base := sc.rootDir
+	adapters, err := repoAdapters(base)
+	if err != nil {
+		return err
+	}
+	switch sub {
+	case "list":
+		if len(adapters) == 0 {
+			fmt.Fprintln(stdout, "no adapters — drop .js/.py/.sh scripts in .ctxoptimize/adapters/ (see example.js.sample)")
+			return nil
+		}
+		for _, a := range adapters {
+			fmt.Fprintf(stdout, "%s\t%s\n", a.Name, a.Run)
+		}
+		return nil
+	case "run":
+		name := ""
+		if len(f.args) > 1 {
+			name = f.args[1]
+		}
+		storeRoot, err := store.Root(f.strs["store"])
+		if err != nil {
+			return err
+		}
+		s, err := store.Open(storeRoot, sc.storeKey)
+		if err != nil {
+			return err
+		}
+		ran := 0
+		for _, a := range adapters {
+			if name != "" && a.Name != name {
+				continue
+			}
+			ab, err := runAdapter(base, a)
+			if err != nil {
+				return fmt.Errorf("adapter %s: %w", a.Name, err)
+			}
+			if _, _, err := s.Replace(ab, f.bools["force"]); err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "adapter %s: %d nodes, %d edges\n", a.Name, len(ab.Nodes), len(ab.Edges))
+			ran++
+		}
+		if ran == 0 {
+			if name != "" {
+				return fmt.Errorf("no adapter named %q — `ctx-optimize adapters list` shows what exists", name)
+			}
+			fmt.Fprintln(stdout, "no adapters — drop .js/.py/.sh scripts in .ctxoptimize/adapters/ (see example.js.sample)")
+			return nil
+		}
+		pages, err := wiki.Generate(s)
+		if err != nil {
+			return err
+		}
+		if _, err := s.UpdateManifest(); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
+		return nil
+	}
+	return fmt.Errorf("usage: ctx-optimize adapters <list | run [name]>")
 }
 
 func cmdQuery(args []string, stdout io.Writer) error {
@@ -2230,9 +2314,14 @@ commands:
                               the Claude hook and AGENTS.md natively)
   add [<path>] [--json -|F]   gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
-                              (--force to allow >50%% shrink); --json door upserts
+                              (--force to allow >50%% shrink); --no-adapters skips
+                              scripts; --json door upserts
                               multi-module root: fans out one worker per module
                               [--jobs N] + refreshes the navigator (no auto-merge)
+  sync                        fast re-gather of the repo you're in: "add ." minus
+                              adapter scripts (code/docs/manifests/git only)
+  adapters <list|run [name]>  the slow lane sync skips: run adapter scripts
+                              (DB, docs, queues) on demand — all, or one by name
   query|ask "<question>"      answer from the local store  [--budget N] [--json]
                               scope = where you ask: module dir → that module,
                               zero hits escalate; root → navigator-ranked

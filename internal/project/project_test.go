@@ -170,6 +170,18 @@ func TestScaffold(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("template should be inert: %+v", got)
 	}
+	// remote.example.md: ${NAME} is baked in, every other ${VAR} survives
+	// verbatim (they resolve from env at sync time, not scaffold time).
+	rt, err := os.ReadFile(filepath.Join(repo, Dir, "remote.example.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rt), "ctx-stores/my-repo") {
+		t.Fatal("remote.example.md missing ${NAME} substitution")
+	}
+	if !strings.Contains(string(rt), "${TEAM_KEY_ID}") || !strings.Contains(string(rt), "${HOME}") {
+		t.Fatal("remote.example.md must keep non-NAME placeholders verbatim")
+	}
 	// Idempotent: re-scaffold never clobbers an edited config.
 	c.Name = "edited"
 	Save(repo, c)

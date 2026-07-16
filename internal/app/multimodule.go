@@ -548,12 +548,39 @@ func gatherMerged(base string, dirs, excludes []string, extract func(string, []s
 	return out, nil
 }
 
+// repoAdapters merges declared (config) and discovered (dropped-script)
+// adapters for a repo, declared names winning.
+func repoAdapters(base string) ([]project.Adapter, error) {
+	pc, err := project.Load(base)
+	if err != nil {
+		return nil, err
+	}
+	adapters := append([]project.Adapter{}, pc.Adapters...)
+	declared := map[string]bool{}
+	for _, a := range adapters {
+		declared[a.Name] = true
+	}
+	discovered, err := project.DiscoverAdapters(base)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range discovered {
+		if !declared[a.Name] {
+			adapters = append(adapters, a)
+		}
+	}
+	return adapters, nil
+}
+
 // gatherInto runs the standard gather (markdown + code + manifests + git +
 // adapters) into the given store. base is the rel-path root for node IDs; dirs
 // is the set of folders to walk (one for a single-path module or the root
 // residual, several for a multi-path module — ADR 2026-07-14). All prints go
 // to out (buffered per worker in fan-out mode so scheduling never reorders).
-func gatherInto(s *store.Store, base string, dirs, excludes []string, force bool, out io.Writer) error {
+// skipAdapters is the fast lane (`sync` / `add --no-adapters`): adapter
+// scripts can be arbitrarily slow (DB dumps, doc converters), and skipping
+// them is safe because Replace is producer-scoped — their nodes stay put.
+func gatherInto(s *store.Store, base string, dirs, excludes []string, force, skipAdapters bool, out io.Writer) error {
 	var batches []*schema.Batch
 	b, err := gatherMerged(base, dirs, excludes, markdown.ExtractExcluding)
 	if err != nil {
@@ -597,31 +624,23 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force bool
 	}
 	// Adapters run from base (a multi-path module has no single dir — its
 	// adapters live with the root config).
-	pc, err := project.Load(base)
+	adapters, err := repoAdapters(base)
 	if err != nil {
 		return err
 	}
-	adapters := append([]project.Adapter{}, pc.Adapters...)
-	declared := map[string]bool{}
-	for _, a := range adapters {
-		declared[a.Name] = true
-	}
-	discovered, err := project.DiscoverAdapters(base)
-	if err != nil {
-		return err
-	}
-	for _, a := range discovered {
-		if !declared[a.Name] {
-			adapters = append(adapters, a)
+	if skipAdapters {
+		if len(adapters) > 0 {
+			fmt.Fprintf(out, "adapters: %d skipped — run `ctx-optimize adapters run` to refresh them\n", len(adapters))
 		}
-	}
-	for _, a := range adapters {
-		ab, err := runAdapter(base, a)
-		if err != nil {
-			return fmt.Errorf("adapter %s: %w", a.Name, err)
+	} else {
+		for _, a := range adapters {
+			ab, err := runAdapter(base, a)
+			if err != nil {
+				return fmt.Errorf("adapter %s: %w", a.Name, err)
+			}
+			batches = append(batches, ab)
+			fmt.Fprintf(out, "adapter %s: %d nodes, %d edges\n", a.Name, len(ab.Nodes), len(ab.Edges))
 		}
-		batches = append(batches, ab)
-		fmt.Fprintf(out, "adapter %s: %d nodes, %d edges\n", a.Name, len(ab.Nodes), len(ab.Edges))
 	}
 	totalN, totalPruned := 0, 0
 	for _, b := range batches {
@@ -701,7 +720,7 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 				results[i].err = err
 				return
 			}
-			results[i].err = gatherInto(s, t.base, t.dirs, t.excludes, force, &results[i].out)
+			results[i].err = gatherInto(s, t.base, t.dirs, t.excludes, force, f.bools["no-adapters"], &results[i].out)
 		}(i)
 	}
 	wg.Wait()

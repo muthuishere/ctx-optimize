@@ -14,6 +14,7 @@
 package project
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -213,28 +214,27 @@ func Save(repo string, c *Config) error {
 	return os.WriteFile(path(repo), append(data, '\n'), 0o644)
 }
 
-const adapterTemplate = `#!/usr/bin/env node
-// ctx-optimize adapter template. Rename to <name>.js to arm it — every
-// .js/.py/.sh in this directory runs on ` + "`ctx-optimize add`" + `.
-// Print ONE batch (nodes + edges) to stdout; anything invalid is rejected
-// whole. Secrets: read process.env, never hardcode values.
-const batch = {
-  producer: "example",
-  nodes: [
-    // {id: "kafka://orders", label: "orders", kind: "topic",
-    //  file_type: "messaging", source: "kafka://orders"}
-  ],
-  edges: [
-    // {source: "kafka://orders", target: "svc://billing",
-    //  relation: "consumed_by", confidence: "EXTRACTED"}
-  ],
-};
-console.log(JSON.stringify(batch));
-`
+// The scaffolded files live under templates/ as real files (go:embed) so
+// they stay editable as what they are — a JS script and a markdown page —
+// instead of backtick-escaped Go strings.
+//
+// adapterTemplate → adapters/example.js.sample (inert until renamed).
+//
+//go:embed templates/example.js.sample
+var adapterTemplate string
+
+// remoteTemplate → remote.example.md — JSON config can't carry comments, so
+// the "commented-out" push/pull setup lives in this inert sibling file (same
+// pattern as example.js.sample). ${NAME} is replaced at scaffold time; every
+// other ${VAR} survives verbatim. Only env-var NAMES ever appear here, never
+// values.
+//
+//go:embed templates/remote.example.md
+var remoteTemplate string
 
 // Scaffold creates the .ctxoptimize/ layout in the repo: config.json (with
-// the module name) and adapters/ seeded with an inert template. Existing
-// files are never overwritten.
+// the module name) and adapters/ seeded with an inert template, plus
+// remote.example.md (push/pull recipes). Existing files are never overwritten.
 func Scaffold(repo, name string) error {
 	if err := os.MkdirAll(filepath.Join(repo, filepath.FromSlash(AdaptersDir)), 0o755); err != nil {
 		return err
@@ -246,7 +246,14 @@ func Scaffold(repo, name string) error {
 	}
 	tmpl := filepath.Join(repo, filepath.FromSlash(AdaptersDir), "example.js.sample")
 	if _, err := os.Stat(tmpl); os.IsNotExist(err) {
-		return os.WriteFile(tmpl, []byte(adapterTemplate), 0o644)
+		if err := os.WriteFile(tmpl, []byte(adapterTemplate), 0o644); err != nil {
+			return err
+		}
+	}
+	rt := filepath.Join(repo, Dir, "remote.example.md")
+	if _, err := os.Stat(rt); os.IsNotExist(err) {
+		body := strings.ReplaceAll(remoteTemplate, "${NAME}", name)
+		return os.WriteFile(rt, []byte(body), 0o644)
 	}
 	return nil
 }
