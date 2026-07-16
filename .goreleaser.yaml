@@ -35,12 +35,27 @@ checksum:
   name_template: checksums.txt
 
 changelog:
+  # Conventional commits here carry a SCOPE (`docs(skills):`, `chore(bench):`),
+  # so a bare `^docs:` never matched and the noise leaked into the v0.3.6 notes.
+  # `(\(.+\))?` makes the scope optional; `^Merge`/`^merge` drops merge commits.
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
-      - "^chore:"
+      - '^docs(\(.+\))?:'
+      - '^test(\(.+\))?:'
+      - '^ci(\(.+\))?:'
+      - '^chore(\(.+\))?:'
+      - '^style(\(.+\))?:'
+      - '^spec(\(.+\))?:'
+      - '^[Mm]erge '
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.+\))?:'
+      order: 1
+    - title: Other
+      order: 99
 
 release:
   github:
