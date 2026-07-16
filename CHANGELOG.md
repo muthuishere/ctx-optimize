@@ -10,6 +10,8 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.3.9] — 2026-07-16
+
 ### Added
 
 - **`update` — refresh every installed surface after a binary upgrade.**
