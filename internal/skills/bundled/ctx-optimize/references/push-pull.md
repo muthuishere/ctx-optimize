@@ -50,9 +50,8 @@ mv .ctxoptimize/pull.js.sample .ctxoptimize/pull.js
 
 The scripts clone/pull `~/ctx-stores`, copy the store tree in/out, and
 commit+push. Store artifacts are sorted ndjson — git diffs and merges them
-cleanly. Teammate on a fresh machine: clone the code repo,
-`ctx-optimize remote pull` (or just `init` — it auto-runs the declared pull
-when the local store is empty).
+cleanly. Teammate on a fresh machine: clone the code repo, `ctx-optimize up`
+(runs the declared pull; falls back to a local gather).
 
 ## Lane B — S3-compatible bucket (AWS, R2, MinIO — needs the aws CLI)
 

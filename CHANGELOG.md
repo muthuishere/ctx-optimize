@@ -18,6 +18,19 @@ ships no transport of its own — `remote push` / `remote pull` run the
 commands you declare in the committed config. The built-in `file://` +
 `s3://` transports and `remote init` are gone.
 
+### Added
+
+- **`up` — THE fresh-clone command** (ADR
+  `openspec/changes/2026-07-16-up-verb/`). One idempotent verb makes the
+  store exist and be current, whatever it takes: empty store + declared
+  `remote.pull` → run it (falls back to a local gather, loudly); empty
+  store, no remote → gather; store stale vs git HEAD → fast re-gather
+  (adapter scripts skipped); fresh → no-op. `up` never scaffolds —
+  authoring a config stays with `init`, which on a pull-declaring clone
+  now just redirects to `up` instead of pulling itself. Every onboarding
+  surface (pointer blocks, skill routes, docs) now says: fresh clone?
+  `ctx-optimize up`. CI gate: `ctx-optimize up && ctx-optimize fresh`.
+
 ### Changed
 
 - **`remote push` / `remote pull` execute declared commands.**

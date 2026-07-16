@@ -159,11 +159,10 @@ func TestRemoteMigrationErrors(t *testing.T) {
 	}
 }
 
-// TestInitOnCloneAutoPulls: a fresh clone already carries the committed
-// .ctxoptimize/ (config with remote.pull + the transport script) but has no
-// local store. `init` must run the declared pull itself — not
-// scaffold-and-rebuild from source. The store is populated right after init.
-func TestInitOnCloneAutoPulls(t *testing.T) {
+// TestUpOnClone: a fresh clone carries the committed .ctxoptimize/ (config
+// with remote.pull + the transport script) but no local store. `up` runs
+// the declared pull; `init` has no job and redirects to `up`.
+func TestUpOnClone(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("transport script uses sh")
 	}
@@ -195,15 +194,17 @@ func TestInitOnCloneAutoPulls(t *testing.T) {
 	})
 	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir()) // fresh, empty
 
+	// init is author-side: it redirects instead of pulling or rebuilding.
 	out, _ := runCLI(t, 0, "init", "--path", clone)
-	if !strings.Contains(out, "already configured") || !strings.Contains(out, "fetching") {
-		t.Fatalf("init on a clone must auto-fetch the prebuilt graph, got:\n%s", out)
-	}
-	if strings.Contains(out, "scaffolded") {
-		t.Fatalf("init on a clone must NOT scaffold a fresh store:\n%s", out)
+	if !strings.Contains(out, "ctx-optimize up") || strings.Contains(out, "scaffolded") {
+		t.Fatalf("init on a clone must redirect to up, got:\n%s", out)
 	}
 
-	// init itself populated the store — no separate pull needed.
+	// up pulls the prebuilt store.
+	out, _ = runCLI(t, 0, "up", "--path", clone)
+	if !strings.Contains(out, "pulling the team's prebuilt graph") || !strings.Contains(out, "store ready (pulled)") {
+		t.Fatalf("up on a clone must pull, got:\n%s", out)
+	}
 	st, _ := runCLI(t, 0, "status", "--json", "--path", clone)
 	var status struct {
 		Nodes int `json:"nodes"`
@@ -212,6 +213,51 @@ func TestInitOnCloneAutoPulls(t *testing.T) {
 		t.Fatalf("status --json: %v\n%s", err, st)
 	}
 	if status.Nodes == 0 {
-		t.Fatalf("init on a clone should have auto-pulled the store:\n%s", st)
+		t.Fatalf("up should have pulled the store:\n%s", st)
+	}
+
+	// Second up: store present, no git provenance in the pulled tree of this
+	// clone dir → reports present, touches nothing.
+	out, _ = runCLI(t, 0, "up", "--path", clone)
+	if !strings.Contains(out, "store present") && !strings.Contains(out, "up to date") {
+		t.Fatalf("idempotent up must no-op, got:\n%s", out)
+	}
+}
+
+// up's fallback ladder: a broken pull command falls back to gathering from
+// source, loudly; with no remote at all it gathers directly.
+func TestUpFallsBackToGather(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("transport script uses sh")
+	}
+	// Broken pull → gather fallback.
+	repo := t.TempDir()
+	writeFiles(t, repo, map[string]string{"main.go": "package main\n\nfunc Boot() {}\n"})
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	runCLI(t, 0, "init", "--path", repo)
+	cfg, err := project.Load(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Remote = &project.Remote{Pull: "exit 7"}
+	if err := project.Save(repo, cfg); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := runCLI(t, 0, "up", "--path", repo)
+	if !strings.Contains(out, "pull failed") || !strings.Contains(out, "gathering from source") {
+		t.Fatalf("broken pull must fall back loudly:\n%s", out)
+	}
+	if !strings.Contains(out, "added") {
+		t.Fatalf("fallback gather did not run:\n%s", out)
+	}
+
+	// No remote at all → straight to gather.
+	repo2 := t.TempDir()
+	writeFiles(t, repo2, map[string]string{"main.go": "package main\n\nfunc Boot() {}\n"})
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	runCLI(t, 0, "init", "--path", repo2)
+	out, _ = runCLI(t, 0, "up", "--path", repo2)
+	if !strings.Contains(out, "no remote.pull declared") || !strings.Contains(out, "added") {
+		t.Fatalf("up without a remote must gather:\n%s", out)
 	}
 }

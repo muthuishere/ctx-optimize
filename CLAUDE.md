@@ -10,7 +10,7 @@ the validated `add --json` door.
 - `cmd/ctx-optimize/` — 10-line shim → `internal/app.Run(args, stdout, stderr)`
 - `internal/schema` — THE emit contract (Node/Edge/Batch + fail-closed Validate)
 - `internal/store` — central store `~/ctxoptimize/<repo-name>/` (key = basename, or config `name`), ndjson graph, content-hash manifest; Merge stamps producer only when absent (merge preserves provenance)
-- `internal/project` — repo-level `.ctxoptimize/` dir (committable; the ONLY thing we put in a user's repo): `config.json` (name + remote [string or {type,url,credentials}]) + `adapters/` (dropped scripts discovered by extension: .js/.mjs→node, .py→python3, .sh→sh; `init` scaffolds with inert example.js.sample). `${VAR}` resolves from env at sync time; resolved values never written/printed
+- `internal/project` — repo-level `.ctxoptimize/` dir (committable; the ONLY thing we put in a user's repo): `config.json` (name + remote {push,pull} commands) + `adapters/` (dropped scripts discovered by extension: .js/.mjs→node, .py→python3, .sh→sh) + transport samples; `init` scaffolds all of it inert (example.js.sample, push/pull.js.sample, remote.example.md). Secrets stay env-var NAMES; the shell expands them at run time
 - remote = YOUR script (v0.4, ADR 2026-07-16-scripted-remote-transports): the binary ships NO transport — `remote push|pull` run the commands declared in `.ctxoptimize/config.json` (`{"remote": {"push": "<cmd>", "pull": "<cmd>"}}`) with CTX_STORE_DIR/CTX_STORE_KEY/CTX_SCOPE_PREFIX/CTX_DIRECTION in env; init scaffolds an inert git-lane sample pair; legacy v0.3 URL configs load inert
 - `internal/extract/markdown` — tier-1 doc producer (dup heading slugs get -2/-3 suffixes)
 - `internal/extract/code` — tier-1 code producer: tree-sitter grammars compiled to WASI (scripts/wasm/build.sh, zig cc; treesitter.wasm COMMITTED ~19MB, go:embed), wazero host (pure Go, one instance per worker goroutine). Embedded langs: go/py/js/ts/tsx/java/c/cpp/c#/rust/zig/sql (32MB wasm). Other languages = grammar PACKS: <name>.wasm (scripts/wasm/build-grammar.sh) + <name>.json (node-type mapping) in ~/ctxoptimize/grammars/ or repo .ctxoptimize/grammars/ — discovered at add-time, pack exts override embedded, malformed packs fail loudly. kotlin/swift/dart ship as packs in grammars/. `grammar build <dir|github-url>` (internal/grammar) builds packs in pure Go — zig from PATH or auto-downloaded once (sha256-verified vs ziglang.org index) into ~/ctxoptimize/toolchain/, runtime tarball cached, mapping draft auto-suggested from node-types.json (marked _review). No shell scripts in the user path; scripts/wasm/build.sh is dev-only for the embedded bundle. Emits file/decl nodes (qualified labels, L#-L#), contains + imports (EXTRACTED), calls resolved module-wide by unique name (INFERRED; ambiguous dropped). ~0.5s for 4k files.
@@ -57,7 +57,7 @@ the validated `add --json` door.
   Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source; open a file only
   when the answer needs a body the store didn't show. Exhaustive text sweeps (every literal occurrence of a
   string) are still grep's job.</use>
-  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/ctx-optimize/`? If `.ctxoptimize/config.json` has a
-  `remote`, run `ctx-optimize remote pull`; otherwise `ctx-optimize init && ctx-optimize add .` rebuilds in seconds.</no-local-store>
+  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/ctx-optimize/`? Run `ctx-optimize up` —
+  it pulls the team's prebuilt store when the config declares one, otherwise rebuilds in seconds.</no-local-store>
 </ctx-optimize>
 <!-- ctx-optimize:end -->

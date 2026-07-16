@@ -11,7 +11,7 @@ Before ANY init/scan/add, check whether the repo already carries a committed
 BUILT and PUBLISHED the store — your job is to FETCH it, not re-derive it:
 
 ```
-ctx-optimize remote pull      # fills the local store from the team's prebuilt graph
+ctx-optimize up               # pulls the team's prebuilt graph (or gathers if no remote)
 ctx-optimize status --json    # confirm nodes > 0
 ```
 

@@ -62,6 +62,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdScan(rest, stdout)
 	case "add":
 		err = cmdAdd(rest, stdout, os.Stdin)
+	case "up":
+		err = cmdUp(rest, stdout)
 	case "sync": // fast lane: `add .` minus adapter scripts — always the repo you're in
 		if f := parseFlags(rest); len(f.args) > 0 {
 			err = fmt.Errorf("sync takes no path — it always syncs the repo you're in (use `add <path>` for another repo)")
@@ -227,6 +229,84 @@ func served(s *store.Store, verb, arg string, hits int, cw *countingWriter, t0 t
 	})
 }
 
+// cmdUp is the omakase onboarding verb (ADR 2026-07-16-up-verb): make a
+// usable store exist and be current, by whatever means, idempotently —
+// docker-compose `up` semantics. The decision the newcomer would otherwise
+// have to make (did the team publish a store, or do I build one?) is
+// encoded in the committed config, so the tool makes it:
+//
+//	no store + remote.pull declared → run the pull (fall back to gather)
+//	no store, no pull               → gather from source (full add)
+//	store stale vs git HEAD         → fast re-gather (sync lane)
+//	store fresh                     → no-op
+//	freshness unknown (no git)      → report present, touch nothing
+//
+// `up` never scaffolds — authoring a config stays with `init`.
+func cmdUp(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	sc, err := resolveScope(f)
+	if err != nil {
+		return err
+	}
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	// Flag pass-through for the gather lanes.
+	pass := []string{}
+	if p := f.strs["path"]; p != "" {
+		pass = append(pass, "--path", p)
+	}
+	if st := f.strs["store"]; st != "" {
+		pass = append(pass, "--store", st)
+	}
+	if f.bools["force"] {
+		pass = append(pass, "--force")
+	}
+	if j := f.strs["jobs"]; j != "" {
+		pass = append(pass, "--jobs", j)
+	}
+	s, err := store.Open(storeRoot, sc.storeKey)
+	if err != nil {
+		return err
+	}
+	nodes, err := s.Nodes()
+	if err != nil {
+		return err
+	}
+	if len(nodes) == 0 {
+		pc, err := project.Load(sc.rootDir)
+		if err != nil {
+			return err
+		}
+		if pull := pc.RemoteCommand("pull"); pull != "" {
+			fmt.Fprintln(stdout, "no local store — pulling the team's prebuilt graph:")
+			if err := runSyncCommand("pull", pull, sc, storeRoot, stdout); err != nil {
+				fmt.Fprintf(stdout, "pull failed (%v) — gathering from source instead\n", err)
+			} else if pulled, err := s.Nodes(); err == nil && len(pulled) > 0 {
+				fmt.Fprintln(stdout, "up: store ready (pulled)")
+				return nil
+			} else {
+				fmt.Fprintln(stdout, "pull landed no store content — gathering from source instead")
+			}
+		} else {
+			fmt.Fprintln(stdout, "no local store and no remote.pull declared — gathering from source:")
+		}
+		return cmdAdd(append(pass, "."), stdout, strings.NewReader(""))
+	}
+	reports, overall := freshnessReports(s)
+	switch overall {
+	case freshness.Fresh:
+		fmt.Fprintln(stdout, "up: store ready — up to date with git HEAD")
+		return nil
+	case freshness.Unknown:
+		fmt.Fprintf(stdout, "up: store present (%d nodes; freshness unknown — no git provenance). `ctx-optimize sync` to force a refresh\n", len(nodes))
+		return nil
+	}
+	fmt.Fprintf(stdout, "store is stale (%s) — fast re-gather, adapter scripts skipped:\n", freshnessLine(reports, overall))
+	return cmdAdd(append(pass, ".", "--no-adapters"), stdout, strings.NewReader(""))
+}
+
 func cmdInit(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	path, err := resolvePath(f)
@@ -242,12 +322,10 @@ func cmdInit(args []string, stdout io.Writer) error {
 		}
 	}
 	// Clone case: the repo already carries a COMMITTED config.json with a
-	// remote.pull command, and nothing is on disk yet. This isn't a fresh
-	// setup — a teammate already built and published the store, so init
-	// FETCHES it (runs the declared pull command) instead of rebuilding from
-	// source. If the pull can't complete (tooling/creds not set up yet) fall
-	// back to the manual hint rather than hard-failing. `--force` skips this
-	// for a local rebuild.
+	// remote.pull command, and nothing is on disk yet. Authoring already
+	// happened — init has no job here; `up` is the get-me-a-store verb
+	// (pull, with a gather fallback). Redirect instead of silently
+	// rebuilding. `--force` skips this for a local rebuild.
 	if !f.bools["scan"] && !f.bools["force"] {
 		if _, statErr := os.Stat(filepath.Join(path, filepath.FromSlash(project.FileName))); statErr == nil {
 			cfg, err := project.Load(path)
@@ -257,18 +335,7 @@ func cmdInit(args []string, stdout io.Writer) error {
 			if cfg.RemoteCommand("pull") != "" {
 				if s, err := openStore(f); err == nil {
 					if nodes, err := s.Nodes(); err == nil && len(nodes) == 0 {
-						fmt.Fprintln(stdout, "already configured (remote.pull declared) with no local store — fetching the prebuilt graph:")
-						sc, scErr := resolveScope(f)
-						storeRoot, srErr := store.Root(f.strs["store"])
-						if scErr == nil && srErr == nil {
-							if pErr := runSyncCommand("pull", cfg.RemoteCommand("pull"), sc, storeRoot, stdout); pErr != nil {
-								fmt.Fprintf(stdout, "couldn't pull automatically (%v)\nfix the pull command's prerequisites, then run: ctx-optimize remote pull\n", pErr)
-							} else {
-								fmt.Fprintln(stdout, "done — the store is ready; query it directly (no rebuild needed).")
-							}
-							return nil
-						}
-						fmt.Fprintln(stdout, "run: ctx-optimize remote pull")
+						fmt.Fprintln(stdout, "already configured (remote.pull declared) with no local store — nothing to init.\nrun: ctx-optimize up   (pulls the team's prebuilt graph; falls back to a local gather)")
 						return nil
 					}
 				}
@@ -2331,6 +2398,11 @@ commands:
                               hooks CLAUDE|AGENTS|ALL|NONE — platform hook
                               files install writes (devin needs none: it reads
                               the Claude hook and AGENTS.md natively)
+  up                          THE fresh-clone command — make the store exist
+                              and be current, whatever it takes: pull if the
+                              config declares one (falls back to a local
+                              gather), gather if there's no store, fast
+                              re-gather if stale, no-op if fresh. Idempotent
   add [<path>] [--json -|F]   gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
                               (--force to allow >50%% shrink); --no-adapters skips

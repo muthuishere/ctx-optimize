@@ -47,7 +47,7 @@ the validated `add --json` door.
   Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source; open a file only
   when the answer needs a body the store didn't show. Exhaustive text sweeps (every literal occurrence of a
   string) are still grep's job.</use>
-  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/ctx-optimize/`? If `.ctxoptimize/config.json` has a
-  `remote`, run `ctx-optimize remote pull`; otherwise `ctx-optimize init && ctx-optimize add .` rebuilds in seconds.</no-local-store>
+  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/ctx-optimize/`? Run `ctx-optimize up` —
+  it pulls the team's prebuilt store when the config declares one, otherwise rebuilds in seconds.</no-local-store>
 </ctx-optimize>
 <!-- ctx-optimize:end -->

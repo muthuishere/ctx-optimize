@@ -284,8 +284,8 @@ func pointerBlock(name string, modules int) string {
 			"  at the root the navigator federates across the best-matching modules (`--modules all|a,b` to widen).\n" +
 			"  Module map + hubs: `~/ctxoptimize/" + name + "/navigator.md`; unified wiki at `~/ctxoptimize/" + name + "/wiki/index.md`.\n" +
 			"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source.</use>\n" +
-			"  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/" + name + "/`? If `.ctxoptimize/config.json` has a\n" +
-			"  `remote`, run `ctx-optimize remote pull`; otherwise `ctx-optimize init && ctx-optimize add .` rebuilds every module store in seconds.</no-local-store>\n" +
+			"  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/" + name + "/`? Run `ctx-optimize up` —\n" +
+			"  it pulls the team's prebuilt store when the config declares one, otherwise rebuilds every module store in seconds.</no-local-store>\n" +
 			"</ctx-optimize>\n" +
 			pointerEnd + "\n"
 	}
@@ -301,8 +301,8 @@ func pointerBlock(name string, modules int) string {
 		"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source; open a file only\n" +
 		"  when the answer needs a body the store didn't show. Exhaustive text sweeps (every literal occurrence of a\n" +
 		"  string) are still grep's job.</use>\n" +
-		"  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/" + name + "/`? If `.ctxoptimize/config.json` has a\n" +
-		"  `remote`, run `ctx-optimize remote pull`; otherwise `ctx-optimize init && ctx-optimize add .` rebuilds in seconds.</no-local-store>\n" +
+		"  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/" + name + "/`? Run `ctx-optimize up` —\n" +
+		"  it pulls the team's prebuilt store when the config declares one, otherwise rebuilds in seconds.</no-local-store>\n" +
 		"</ctx-optimize>\n" +
 		pointerEnd + "\n"
 }
