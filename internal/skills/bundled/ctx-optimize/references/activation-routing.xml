@@ -10,7 +10,7 @@
     <rule>Questions never rebuild. If `status --json` shows nodes > 0 and the ask is a question — route to a read verb (query/card/affected/path/explain/hubs). Do NOT run `add`, do NOT grep, do NOT open files speculatively.</rule>
     <rule>Cite or abstain. Every read verb returns COMPLETE hits (id, label, kind, source, location, neighbors). Answer from what it returned, cite `source location`, never invent a node or edge. Say EXTRACTED (parsed fact) vs INFERRED (name-matched) when it matters.</rule>
     <rule>Grep is allowed only as: (1) exhaustive literal string sweeps — every occurrence of an exact string; (2) a store-miss fallback AFTER you said the store returned nothing AND `add .` wouldn't fix it; (3) a verbatim read of a range the store already located. Say which lane you are in.</rule>
-    <rule>The binary is deterministic — no API key, no model, no database, no network except your configured remote. Never prompt for any of them.</rule>
+    <rule>The binary is deterministic — no API key, no model, no database, and no transport of its own: remote push/pull run the COMMANDS committed in config.json. Never prompt for any of them.</rule>
     <rule>Output is JSON with `--json` on every read verb; prefer it when you will parse, drop it when you will quote to the user.</rule>
     <rule>Global flags on any verb: `--path DIR` (which module the store is keyed by, default cwd) · `--store DIR` (store root, default $CTX_OPTIMIZE_STORE or ~/ctxoptimize).</rule>
     <rule>Command missing (`ctx-optimize` not found)? The binary is separate from this global skill. Tell the user `npm install -g @muthuishere/ctx-optimize` (or download the release). If they decline, stop looping — fall back to Grep/Read; the store is an optimization, not a requirement.</rule>
@@ -178,16 +178,16 @@
 
     <!-- ============ SHARE: sync the store across a team ============ -->
 
-    <route id="remote-init" group="share">
-      <when>configure a remote, set up sharing, share over github / a git repo, point the store at s3/r2/minio/a folder</when>
-      <goal>Set up the hosting lane END-TO-END, then write the remote into config.json (committable) so the team pulls one graph. Lane A: a private gh repo as store host (gh repo create/clone → remote init file://…). Lane B: S3-compatible bucket (remote init s3://…, ${VAR} credentials for non-AWS endpoints). `init` scaffolds both recipes into .ctxoptimize/remote.example.md — follow it if present.</goal>
-      <cmd>ctx-optimize remote init &lt;url&gt;  [--local]</cmd>
-      <ref>references/push-pull.md  (complete gh + s3 setup recipes)</ref>
+    <route id="remote-author" group="share">
+      <when>set up sharing, share over github / a git repo / s3 / r2 / rsync, configure a remote</when>
+      <goal>AUTHOR the transport — the binary ships none: write the script (or arm init's scaffolded push.js.sample/pull.js.sample git lane), declare {"remote": {"push": "&lt;cmd&gt;", "pull": "&lt;cmd&gt;"}} in .ctxoptimize/config.json, commit both. Scripts get CTX_STORE_DIR / CTX_STORE_KEY / CTX_SCOPE_PREFIX / CTX_DIRECTION in env. v0.3's `remote init &lt;url&gt;` is GONE — never suggest it.</goal>
+      <cmd>arm samples: mv .ctxoptimize/push.js.sample .ctxoptimize/push.js  (pull likewise) → set STORE_REPO_URL → add the config block → commit</cmd>
+      <ref>references/push-pull.md  (git / s3 / custom lanes, full scripts)</ref>
     </route>
 
     <route id="remote-sync" group="share">
       <when>share / publish / push the store, pull the store, export to team, import/load a teammate's store</when>
-      <goal>Incremental sync with the configured remote (no url — config.json is the source of truth). Scope follows cwd.</goal>
+      <goal>Run the DECLARED transport command from config.json (the remote is the team's committed script). Scope follows cwd; module dirs expose CTX_SCOPE_PREFIX to the script.</goal>
       <cmd>ctx-optimize remote push   |   ctx-optimize remote pull</cmd>
       <ref>references/push-pull.md</ref>
     </route>

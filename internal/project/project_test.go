@@ -27,40 +27,67 @@ func TestLoadAbsentIsEmpty(t *testing.T) {
 	}
 }
 
-func TestRemoteStringForm(t *testing.T) {
+func TestRemoteCommands(t *testing.T) {
 	dir := t.TempDir()
-	writeCfg(t, dir, `{"remote": "s3://bucket/prefix"}`)
+	writeCfg(t, dir, `{"remote": {"push": "node .ctxoptimize/push.js", "pull": "sh .ctxoptimize/pull.sh"}}`)
 	c, err := Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Remote == nil || c.Remote.URL != "s3://bucket/prefix" {
-		t.Fatalf("string remote not parsed: %+v", c.Remote)
+	if c.RemoteCommand("push") != "node .ctxoptimize/push.js" || c.RemoteCommand("pull") != "sh .ctxoptimize/pull.sh" {
+		t.Fatalf("commands not parsed: %+v", c.Remote)
+	}
+	if c.Remote.Empty() {
+		t.Fatal("declared remote must not be Empty")
 	}
 }
 
-func TestRemoteObjectForm(t *testing.T) {
+// Retired v0.3 forms (URL string / {type,url,credentials} object) still LOAD
+// — an old committed config never breaks — but carry no commands.
+func TestLegacyRemoteFormsLoadInert(t *testing.T) {
+	for _, legacy := range []string{
+		`{"remote": "s3://bucket/prefix"}`,
+		`{"remote": {"type": "s3", "url": "s3://bucket/x", "credentials": {"access_key_id": "${KID}"}}}`,
+	} {
+		dir := t.TempDir()
+		writeCfg(t, dir, legacy)
+		c, err := Load(dir)
+		if err != nil {
+			t.Fatalf("legacy form must load: %v (%s)", err, legacy)
+		}
+		if c.RemoteCommand("push") != "" || c.RemoteCommand("pull") != "" {
+			t.Fatalf("legacy form must be inert: %+v", c.Remote)
+		}
+	}
+}
+
+// An UNRELATED re-save of a config holding a legacy remote must drop the key
+// cleanly — never emit a misleading "remote": {}.
+func TestSaveDropsEmptyLegacyRemote(t *testing.T) {
 	dir := t.TempDir()
-	writeCfg(t, dir, `{
-	  "remote": {"type": "s3", "url": "s3://bucket/${REPO}",
-	             "credentials": {"access_key_id": "${KID}", "region": "auto"}}
-	}`)
+	writeCfg(t, dir, `{"name": "m", "remote": "s3://bucket/prefix"}`)
 	c, err := Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := c.Remote
-	if r == nil || r.Type != "s3" || r.Credentials["access_key_id"] != "${KID}" {
-		t.Fatalf("object remote not parsed: %+v", r)
+	c.Instructions = "CLAUDE" // the unrelated write
+	if err := Save(dir, c); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(FileName)))
+	if strings.Contains(string(data), "remote") {
+		t.Fatalf("legacy remote must be dropped on re-save, got: %s", data)
+	}
+	if !strings.Contains(string(data), `"instructions": "CLAUDE"`) {
+		t.Fatalf("unrelated write lost: %s", data)
 	}
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	in := &Config{
-		Name: "my-module",
-		Remote: &Remote{Type: "s3", URL: "s3://bucket/prefix",
-			Credentials: map[string]string{"access_key_id": "${KID}"}},
+		Name:     "my-module",
+		Remote:   &Remote{Push: "node .ctxoptimize/push.js", Pull: "node .ctxoptimize/pull.js"},
 		Adapters: []Adapter{{Name: "kafka", Run: "node hooks/kafka.js"}},
 	}
 	if err := Save(dir, in); err != nil {
@@ -70,53 +97,14 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Name != in.Name || out.Remote.URL != in.Remote.URL ||
-		out.Remote.Credentials["access_key_id"] != "${KID}" ||
+	if out.Name != in.Name || out.RemoteCommand("push") != in.Remote.Push ||
+		out.RemoteCommand("pull") != in.Remote.Pull ||
 		len(out.Adapters) != 1 || out.Adapters[0].Run != in.Adapters[0].Run {
 		t.Fatalf("round trip mismatch: %+v", out)
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(FileName)))
 	if data[len(data)-1] != '\n' {
 		t.Fatal("file not newline-terminated")
-	}
-}
-
-// A URL-only remote marshals back to the simple string form.
-func TestSaveKeepsSimpleFormSimple(t *testing.T) {
-	dir := t.TempDir()
-	if err := Save(dir, &Config{Remote: &Remote{URL: "file:///x"}}); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(FileName)))
-	if !strings.Contains(string(data), `"remote": "file:///x"`) {
-		t.Fatalf("expected string form: %s", data)
-	}
-}
-
-func TestResolve(t *testing.T) {
-	t.Setenv("CTX_T_URL", "bucket-a")
-	t.Setenv("CTX_T_KEY", "resolved-key")
-	r := Remote{URL: "s3://${CTX_T_URL}/p",
-		Credentials: map[string]string{"access_key_id": "${CTX_T_KEY}", "region": "auto"}}
-	got, err := r.Resolve()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.URL != "s3://bucket-a/p" || got.Credentials["access_key_id"] != "resolved-key" ||
-		got.Credentials["region"] != "auto" {
-		t.Fatalf("resolve wrong: %+v", got)
-	}
-	// Original untouched — placeholders stay in the config.
-	if r.URL != "s3://${CTX_T_URL}/p" {
-		t.Fatal("Resolve mutated the source")
-	}
-}
-
-func TestResolveUnsetVarFailsNamingIt(t *testing.T) {
-	r := Remote{URL: "s3://b", Credentials: map[string]string{"secret_access_key": "${CTX_T_DEFINITELY_UNSET}"}}
-	_, err := r.Resolve()
-	if err == nil || !strings.Contains(err.Error(), "CTX_T_DEFINITELY_UNSET") {
-		t.Fatalf("expected error naming the unset var, got %v", err)
 	}
 }
 
@@ -170,17 +158,25 @@ func TestScaffold(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("template should be inert: %+v", got)
 	}
-	// remote.example.md: ${NAME} is baked in, every other ${VAR} survives
-	// verbatim (they resolve from env at sync time, not scaffold time).
+	// remote.example.md: ${NAME} is baked in; the env contract is documented.
 	rt, err := os.ReadFile(filepath.Join(repo, Dir, "remote.example.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(rt), "ctx-stores/my-repo") {
+	if !strings.Contains(string(rt), "here: my-repo") {
 		t.Fatal("remote.example.md missing ${NAME} substitution")
 	}
-	if !strings.Contains(string(rt), "${TEAM_KEY_ID}") || !strings.Contains(string(rt), "${HOME}") {
-		t.Fatal("remote.example.md must keep non-NAME placeholders verbatim")
+	if !strings.Contains(string(rt), "CTX_DIRECTION") || !strings.Contains(string(rt), "CTX_STORE_DIR") {
+		t.Fatal("remote.example.md must document the env contract")
+	}
+	// Transport samples land inert: present, and no remote declared yet.
+	for _, fn := range []string{"push.js.sample", "pull.js.sample"} {
+		if _, err := os.Stat(filepath.Join(repo, Dir, fn)); err != nil {
+			t.Fatalf("%s not scaffolded: %v", fn, err)
+		}
+	}
+	if c.RemoteCommand("push") != "" || c.RemoteCommand("pull") != "" {
+		t.Fatal("scaffold must not declare remote commands")
 	}
 	// Idempotent: re-scaffold never clobbers an edited config.
 	c.Name = "edited"

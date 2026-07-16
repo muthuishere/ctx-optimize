@@ -75,7 +75,7 @@ the wrong verb; the intent was edit → `change-plan`.
 verb as a `<route>` with its trigger `<when>`, `<goal>`, and exact `<cmd>` —
 answer (query/card/affected/path/explain/hubs/wiki/status/fresh), build
 (init/scan/add/multi-path modules), customize (routes/manifests/languages/
-adapters), share (remote init/push/pull), export (merge/export), learn
+adapters), share (remote push/pull — YOUR committed script is the transport), export (merge/export), learn
 (save-result/reflect), and manage (serve/config/log/install/update/uninstall/version).
 Consult it whenever you're unsure which verb or flag fits — nothing is hidden
 there. The table below is the hot path; the XML is the whole map.
@@ -113,13 +113,13 @@ counted honestly.
 | Asking "how are A and B connected / trace A to B" | `ctx-optimize path "A" "B" --json` |
 | Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |
 | Asking to see it visually / manage the store, packs, or config in a UI / onboard repos interactively | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link; follow `./references/dashboard.md` |
-| Repo ALREADY has a committed `.ctxoptimize/config.json` with a `remote` but no local store (a clone / teammate already set it up) | `ctx-optimize remote pull` then `status --json` — do NOT init/add (that rebuilds from source). `init` self-detects this and just prints the pull line. |
+| Repo ALREADY has a committed `.ctxoptimize/config.json` with a `remote` (push/pull commands) but no local store (a clone / teammate already set it up) | `ctx-optimize remote pull` then `status --json` — do NOT init/add (that rebuilds from source). `init` self-detects this and runs the declared pull itself. |
 | Setting up / onboarding a repo or monorepo (NO committed config yet, "index this repo") | follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .`. `init --instructions CLAUDE\|AGENTS\|ALL\|NONE` picks which agent files get the pointer (accepts `claude.md`/`agents.md`; persists to config). Re-running `init` is safe: identical pointer content is never rewritten |
 | Multi-project repo (.NET `.sln`, Gradle/Maven/Nx monorepo) or a module whose source and tests live in SEPARATE folders | Derive `modules[]` from the BUILD SYSTEM, not folders — detect it and follow the per-system parser: `./references/modules/index.md` routes to `dotnet-sln.md` / `gradle.md` / `maven.md` / `js-workspaces.md` / `naming-fallback.md`; config schema in `./references/config-json.md`. Group src+tests into one multi-path module `{"name","paths":[...]}` so test→source calls resolve |
 | Told code changed / store looks stale | `ctx-optimize sync` — fast re-gather of the repo you're in (skips adapter scripts; safe, their nodes stay put). Full gather incl. adapters: `add .` |
 | Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script, run on demand via `adapters run [name]` |
 | Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .` |
-| User says share / publish / push / pull / export to team / import / load a store — or wants sharing SET UP (over a github repo or an s3/r2 bucket) | follow `./references/push-pull.md` — complete gh + s3 setup recipes (also scaffolded per-repo as `.ctxoptimize/remote.example.md`), then scope-aware `remote push`/`pull` |
+| User says share / publish / push / pull / export to team / import / load a store — or wants sharing SET UP (github repo, s3/r2 bucket, anything) | follow `./references/push-pull.md` — the remote is a script YOU AUTHOR: arm init's `push.js.sample`/`pull.js.sample` (git lane) or write one, declare `{"remote": {"push": "<cmd>", "pull": "<cmd>"}}` in config.json, commit; then `remote push`/`pull` run it |
 | Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `sync` (fast lane) / `add .` (full) / `adapters run` (slow lane); `fresh` gate |
 | Combining several repos/modules into one graph | `ctx-optimize merge <mod>... --into <name>` (opt-in, never automatic) |
 | Wanting a readable map of the module | open the store's `wiki/index.md` (regenerated on every `add`; `ctx-optimize wiki` to force) |

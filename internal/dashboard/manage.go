@@ -253,9 +253,9 @@ func (s *server) handleSetup(w http.ResponseWriter, r *http.Request) {
 			"file":   filepath.Join(repoPath, filepath.FromSlash(project.FileName)),
 			"config": pcfg,
 		}
-		if pcfg.Remote != nil && pcfg.Remote.URL != "" {
-			// Raw form only — ${VAR} placeholders, never resolved values.
-			resp["remote"] = map[string]string{"url": pcfg.Remote.URL, "from": project.FileName}
+		if !pcfg.Remote.Empty() {
+			// Command strings as committed — env-var NAMES only, never values.
+			resp["remote"] = map[string]string{"push": pcfg.Remote.Push, "pull": pcfg.Remote.Pull, "from": project.FileName}
 		}
 	}
 

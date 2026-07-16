@@ -208,16 +208,17 @@ export default function Settings() {
         <h3>Remote</h3>
         {setup.remote ? (
           <div className="row">
-            <span className="chip"><b>{setup.remote.url}</b></span>
+            {setup.remote.push && <span className="chip">push: <b className="mono">{setup.remote.push}</b></span>}
+            {setup.remote.pull && <span className="chip">pull: <b className="mono">{setup.remote.pull}</b></span>}
             <span className="k">from {setup.remote.from}</span>
             <span className="grow" />
-            <button disabled={!!busy} onClick={() => sync('push')}>{busy === 'push' ? 'pushing…' : 'Push'}</button>
-            <button disabled={!!busy} onClick={() => sync('pull')}>{busy === 'pull' ? 'pulling…' : 'Pull'}</button>
+            <button disabled={!!busy || !setup.remote.push} onClick={() => sync('push')}>{busy === 'push' ? 'pushing…' : 'Push'}</button>
+            <button disabled={!!busy || !setup.remote.pull} onClick={() => sync('pull')}>{busy === 'pull' ? 'pulling…' : 'Pull'}</button>
           </div>
         ) : (
           <div className="k">
             {repoPath
-              ? 'No remote configured — run `ctx-optimize remote init <url>` in the repo.'
+              ? 'No remote — declare {"remote": {"push": "<cmd>", "pull": "<cmd>"}} in .ctxoptimize/config.json (samples: push.js.sample / pull.js.sample, written by init).'
               : 'Pick a project scope above to see its remote.'}
           </div>
         )}

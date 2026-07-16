@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
@@ -85,30 +86,39 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("ask output: %s", out)
 	}
 
-	// push/pull take no URL — the config file is the single source of truth.
+	// push/pull take no arguments — the transport command lives in config.json.
 	_, errURL := run(1, "remote", "push", "file:///nope", "--path", repo)
-	if !strings.Contains(errURL, "takes no URL") {
-		t.Fatalf("expected URL rejection, got: %s", errURL)
+	if !strings.Contains(errURL, "takes no arguments") {
+		t.Fatalf("expected argument rejection, got: %s", errURL)
 	}
 
-	// No remote at all → clear error, exit 1.
+	// Nothing declared → clear error naming the config shape, exit 1.
 	_, errNoRemote := run(1, "remote", "pull", "--path", repo)
-	if !strings.Contains(errNoRemote, "no remote") {
-		t.Fatalf("expected no-remote error, got: %s", errNoRemote)
+	if !strings.Contains(errNoRemote, "no pull command") {
+		t.Fatalf("expected missing-declaration error, got: %s", errNoRemote)
 	}
 
-	// Remote: init writes the committable repo file + push + fresh-machine pull.
-	remoteDir := t.TempDir()
-	run(0, "remote", "init", "file://"+remoteDir, "--path", repo)
-	if _, err := os.Stat(filepath.Join(repo, ".ctxoptimize", "config.json")); err != nil {
-		t.Fatalf("remote init did not write repo config: %v", err)
+	// Remote = a committed script (ADR scripted-remote-transports): declare a
+	// cp-based transport, push, then pull on a fresh "machine".
+	hostDir := t.TempDir()
+	sync := "#!/bin/sh\nset -e\ncase \"$CTX_DIRECTION\" in\npush) rm -rf " + hostDir + "/\"$CTX_STORE_KEY\" && cp -R \"$CTX_STORE_DIR\" " + hostDir + "/\"$CTX_STORE_KEY\" ;;\npull) rm -rf \"$CTX_STORE_DIR\" && cp -R " + hostDir + "/\"$CTX_STORE_KEY\" \"$CTX_STORE_DIR\" ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(repo, ".ctxoptimize", "sync.sh"), []byte(sync), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pc, err := project.Load(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Remote = &project.Remote{Push: "sh .ctxoptimize/sync.sh", Pull: "sh .ctxoptimize/sync.sh"}
+	if err := project.Save(repo, pc); err != nil {
+		t.Fatal(err)
 	}
 	out, _ = run(0, "remote", "push", "--path", repo)
-	if !strings.Contains(out, "transferred") {
+	if !strings.Contains(out, "push done") {
 		t.Fatalf("push output: %s", out)
 	}
 	// Simulate a teammate: fresh store root, same repo — the cloned
-	// ctx-optimize.json carries the remote, so bare pull works with NO init.
+	// .ctxoptimize/ carries the config AND the script, so bare pull works.
 	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
 	run(0, "remote", "pull", "--path", repo)
 	out, _ = run(0, "status", "--path", repo, "--json")
@@ -120,9 +130,9 @@ func TestEndToEnd(t *testing.T) {
 }
 
 // The committable .ctxoptimize/ dir: adapter scripts dropped in adapters/
-// are discovered and run on `add`, the object remote (type/url/credentials)
-// with ${VAR} placeholders drives bare push, and "name" picks the store
-// folder — everything travels with the repo, no secret ever committed.
+// are discovered and run on `add`, declared remote COMMANDS (env-var names
+// expanded by the shell at run time) drive bare push, and "name" picks the
+// store folder — everything travels with the repo, no secret ever committed.
 func TestRepoConfigAdaptersAndRemote(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("adapter command uses sh")
@@ -138,8 +148,11 @@ func TestRepoConfigAdaptersAndRemote(t *testing.T) {
 	batch := `{"producer":"kafka-topics","nodes":[{"id":"kafka://orders","label":"orders","kind":"topic","file_type":"messaging","source":"kafka://orders"}],"edges":[]}`
 	// Discovery: a .sh dropped into adapters/ IS the registration.
 	os.WriteFile(filepath.Join(adaptersDir, "kafka.sh"), []byte("echo '"+batch+"'\n"), 0o644)
+	// The remote is a declared COMMAND; $CTX_TEST_REMOTE_DIR expands in the
+	// shell at run time — variable NAMES committed, values never.
 	cfg := `{"name":"my-module",
-	         "remote":{"type":"file","url":"file://${CTX_TEST_REMOTE_DIR}"}}`
+	         "remote":{"push":"cp -R \"$CTX_STORE_DIR\" \"$CTX_TEST_REMOTE_DIR/out\"",
+	                   "pull":"cp -R \"$CTX_TEST_REMOTE_DIR/out\" \"$CTX_STORE_DIR\""}}`
 	os.WriteFile(filepath.Join(repo, ".ctxoptimize", "config.json"), []byte(cfg), 0o644)
 
 	run := func(wantCode int, args ...string) (string, string) {
@@ -166,37 +179,25 @@ func TestRepoConfigAdaptersAndRemote(t *testing.T) {
 		t.Fatalf("adapter node not queryable: %s", out)
 	}
 
-	// Bare push resolves ${CTX_TEST_REMOTE_DIR} at sync time; status shows
-	// the RAW url (placeholder), never the resolved value.
+	// Bare push runs the declared command; $CTX_TEST_REMOTE_DIR expands in
+	// the shell. status reports the declaration, never expanded values.
 	out, _ = run(0, "remote", "push", "--path", repo)
-	if !strings.Contains(out, "transferred") {
+	if !strings.Contains(out, "push done") {
 		t.Fatalf("push via repo config: %s", out)
 	}
 	out, _ = run(0, "status", "--path", repo, "--json")
 	var st struct {
-		Remote     string `json:"remote"`
-		RemoteFrom string `json:"remote_from"`
+		Remote string `json:"remote"`
 	}
 	json.Unmarshal([]byte(out), &st)
-	if st.RemoteFrom != ".ctxoptimize/config.json" {
-		t.Fatalf("remote_from = %q, want .ctxoptimize/config.json", st.RemoteFrom)
+	if st.Remote != "push + pull declared" {
+		t.Fatalf("status remote line = %q", st.Remote)
 	}
-	if !strings.Contains(st.Remote, "${CTX_TEST_REMOTE_DIR}") {
-		t.Fatalf("status leaked the resolved remote: %s", st.Remote)
-	}
-	if _, err := os.Stat(filepath.Join(remoteDir, "manifest.json")); err != nil {
-		t.Fatalf("push did not reach the resolved remote: %v", err)
-	}
-
-	// An unset ${VAR} fails loudly, naming the variable.
-	t.Setenv("CTX_TEST_REMOTE_DIR", "")
-	_, errUnset := run(1, "remote", "push", "--path", repo)
-	if !strings.Contains(errUnset, "CTX_TEST_REMOTE_DIR") {
-		t.Fatalf("unset var not named: %s", errUnset)
+	if _, err := os.Stat(filepath.Join(remoteDir, "out", "manifest.json")); err != nil {
+		t.Fatalf("push did not reach the host dir: %v", err)
 	}
 
 	// A broken adapter script fails the whole add, loudly.
-	t.Setenv("CTX_TEST_REMOTE_DIR", remoteDir) // restore for the store open
 	os.WriteFile(filepath.Join(adaptersDir, "boom.sh"), []byte("exit 3\n"), 0o644)
 	_, errOut := run(1, "add", "--path", repo)
 	if !strings.Contains(errOut, "adapter boom") {

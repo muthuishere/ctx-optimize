@@ -10,6 +10,48 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-16
+
+**Breaking.** The remote is now YOUR script (ADR
+`openspec/changes/2026-07-16-scripted-remote-transports/`): the binary
+ships no transport of its own — `remote push` / `remote pull` run the
+commands you declare in the committed config. The built-in `file://` +
+`s3://` transports and `remote init` are gone.
+
+### Changed
+
+- **`remote push` / `remote pull` execute declared commands.**
+  `.ctxoptimize/config.json` carries the transport:
+  `{"remote": {"push": "node .ctxoptimize/push.js", "pull": "…"}}` — any
+  shell line (js, py, sh, inline). The binary resolves scope, runs the
+  command (cwd = repo root), and hands it `CTX_STORE_DIR`,
+  `CTX_STORE_KEY`, `CTX_SCOPE_PREFIX` (module scope), `CTX_DIRECTION`.
+  Non-zero exit fails the verb. Same trust model as adapters. `init`'s
+  auto-pull-on-clone now runs the declared pull command.
+- **`init` scaffolds an inert git-lane transport** —
+  `.ctxoptimize/push.js.sample` + `pull.js.sample` (zero-dep node: a git
+  repo hosts every store) and a rewritten `remote.example.md` (git / s3 /
+  custom lanes). Arming = rename two files + add the config block.
+- **The skill authors transports**: on "set up sharing" the agent arms the
+  samples or writes the script, declares the commands, and commits — no
+  chat-recipe retyping.
+
+### Removed
+
+- `internal/remote` (file:// + s3:// SigV4, tree sync, manifest-diff
+  transfer), `remote init` (incl. `--local` and the store-local
+  config.json it wrote), and the `${VAR}` credential resolver — secrets
+  stay env-var NAMES that the shell expands at run time.
+
+### Migration (v0.3 → v0.4)
+
+| You had | Do this |
+|---|---|
+| `remote init file://…` (git-hosted folder) | arm the scaffolded `push.js.sample`/`pull.js.sample`, set `STORE_REPO_URL`, declare the config block |
+| `remote init s3://…` | save the s3 lane script from `remote.example.md` (aws CLI), declare it for push + pull |
+| `remote init --local` | move the commands into the committed config (per-machine remotes are gone) |
+| legacy config (`"remote": "s3://…"` or `{type,url,credentials}`) | loads fine but is inert; push/pull print this migration pointer |
+
 ## [0.3.11] — 2026-07-16
 
 ### Changed

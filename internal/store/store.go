@@ -11,8 +11,7 @@
 //	  graph/edges.ndjson   one schema.Edge per line, sorted
 //	  wiki/  cards/        (later stories)
 //	  hooks/               dynamic adapters — travel with the store
-//	  manifest.json        content hashes of every artifact (drives sync)
-//	  config.json          store-local config (remote URL, ...)
+//	  manifest.json        content hashes of every artifact
 package store
 
 import (
@@ -458,37 +457,6 @@ func (s *Store) Manifest() (*Manifest, error) {
 		m.Files = map[string]Entry{}
 	}
 	return &m, nil
-}
-
-// ---- store-local config ----
-
-type Config struct {
-	Remote string `json:"remote,omitempty"` // e.g. s3://bucket/prefix or file:///path
-}
-
-func (s *Store) configPath() string { return filepath.Join(s.Dir, "config.json") }
-
-func (s *Store) Config() (*Config, error) {
-	data, err := os.ReadFile(s.configPath())
-	if os.IsNotExist(err) {
-		return &Config{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
-		return nil, fmt.Errorf("parse store config: %w", err)
-	}
-	return &c, nil
-}
-
-func (s *Store) SaveConfig(c *Config) error {
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.configPath(), append(data, '\n'), 0o644)
 }
 
 // ---- source provenance (freshness) ----

@@ -34,7 +34,6 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/grammar"
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/query"
-	"github.com/muthuishere/ctx-optimize/internal/remote"
 	"github.com/muthuishere/ctx-optimize/internal/scan"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/selfupdate"
@@ -201,44 +200,6 @@ func openStore(f *flags) (*store.Store, error) {
 	return store.Open(root, key)
 }
 
-// resolveRemote picks the sync target: repo ctx-optimize.json > store config
-// (per-machine fallback, set via remote init --local). The returned remote is
-// UNresolved — ${VAR} placeholders intact, safe to print.
-func resolveRemote(repoPath string, s *store.Store) (*project.Remote, string, error) {
-	pc, err := project.Load(repoPath)
-	if err != nil {
-		return nil, "", err
-	}
-	if pc.Remote != nil && (pc.Remote.URL != "" || pc.Remote.Type != "") {
-		return pc.Remote, project.FileName, nil
-	}
-	sc, err := s.Config()
-	if err != nil {
-		return nil, "", err
-	}
-	if sc.Remote != "" {
-		return &project.Remote{URL: sc.Remote}, "store config", nil
-	}
-	return nil, "", nil
-}
-
-// openBackend resolves ${VAR}s and opens the sync backend. Resolved values
-// stay inside the remote package — nothing here prints them.
-func openBackend(r *project.Remote) (remote.Backend, error) {
-	rr, err := r.Resolve()
-	if err != nil {
-		return nil, err
-	}
-	c := rr.Credentials
-	return remote.OpenWith(rr.URL, remote.Options{
-		AccessKeyID:     c["access_key_id"],
-		SecretAccessKey: c["secret_access_key"],
-		SessionToken:    c["session_token"],
-		Region:          c["region"],
-		Endpoint:        c["endpoint"],
-	})
-}
-
 // ---- commands ----
 
 // countingWriter measures bytes served so usage analytics reflect actual
@@ -281,26 +242,27 @@ func cmdInit(args []string, stdout io.Writer) error {
 		}
 	}
 	// Clone case: the repo already carries a COMMITTED config.json with a
-	// remote (push/pull configured), and nothing is on disk yet. This isn't a
-	// fresh setup — a teammate already built and published the store, so init
-	// FETCHES it (remote pull) instead of rebuilding from source. If the pull
-	// can't complete (creds/network not set up yet) fall back to the manual
-	// hint rather than hard-failing. `--force` skips this for a local rebuild.
+	// remote.pull command, and nothing is on disk yet. This isn't a fresh
+	// setup — a teammate already built and published the store, so init
+	// FETCHES it (runs the declared pull command) instead of rebuilding from
+	// source. If the pull can't complete (tooling/creds not set up yet) fall
+	// back to the manual hint rather than hard-failing. `--force` skips this
+	// for a local rebuild.
 	if !f.bools["scan"] && !f.bools["force"] {
 		if _, statErr := os.Stat(filepath.Join(path, filepath.FromSlash(project.FileName))); statErr == nil {
 			cfg, err := project.Load(path)
 			if err != nil {
 				return err
 			}
-			if cfg.Remote != nil && (cfg.Remote.URL != "" || cfg.Remote.Type != "") {
+			if cfg.RemoteCommand("pull") != "" {
 				if s, err := openStore(f); err == nil {
 					if nodes, err := s.Nodes(); err == nil && len(nodes) == 0 {
-						fmt.Fprintf(stdout, "already configured (remote %s) with no local store — fetching the prebuilt graph:\n", cfg.Remote.URL)
+						fmt.Fprintln(stdout, "already configured (remote.pull declared) with no local store — fetching the prebuilt graph:")
 						sc, scErr := resolveScope(f)
 						storeRoot, srErr := store.Root(f.strs["store"])
 						if scErr == nil && srErr == nil {
-							if pErr := runSync("pull", sc, storeRoot, false, stdout); pErr != nil {
-								fmt.Fprintf(stdout, "couldn't pull automatically (%v)\nset the remote's credentials, then run: ctx-optimize remote pull\n", pErr)
+							if pErr := runSyncCommand("pull", cfg.RemoteCommand("pull"), sc, storeRoot, stdout); pErr != nil {
+								fmt.Fprintf(stdout, "couldn't pull automatically (%v)\nfix the pull command's prerequisites, then run: ctx-optimize remote pull\n", pErr)
 							} else {
 								fmt.Fprintln(stdout, "done — the store is ready; query it directly (no rebuild needed).")
 							}
@@ -865,18 +827,23 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	r, remoteFrom, err := resolveRemote(repoPath, s)
+	pc, err := project.Load(repoPath)
 	if err != nil {
 		return err
 	}
-	remoteURL := ""
-	if r != nil {
-		remoteURL = r.URL // raw form: ${VAR} placeholders, never values
+	remoteLine := ""
+	switch {
+	case pc.RemoteCommand("push") != "" && pc.RemoteCommand("pull") != "":
+		remoteLine = "push + pull declared"
+	case pc.RemoteCommand("push") != "":
+		remoteLine = "push declared (no pull)"
+	case pc.RemoteCommand("pull") != "":
+		remoteLine = "pull declared (no push)"
 	}
 	reports, overall := freshnessReports(s)
 	st := map[string]any{
 		"store": s.Dir, "nodes": len(nodes), "edges": len(edges),
-		"remote": remoteURL, "remote_from": remoteFrom,
+		"remote":    remoteLine,
 		"freshness": reports, "fresh": string(overall),
 	}
 	sum, sumErr := metrics.Summarize(s.Dir)
@@ -886,10 +853,7 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	if f.bools["json"] {
 		return emit(stdout, st)
 	}
-	fmt.Fprintf(stdout, "store:  %s\nnodes:  %d\nedges:  %d\nremote: %s", s.Dir, len(nodes), len(edges), orNone(remoteURL))
-	if remoteFrom != "" {
-		fmt.Fprintf(stdout, "  (from %s)", remoteFrom)
-	}
+	fmt.Fprintf(stdout, "store:  %s\nnodes:  %d\nedges:  %d\nremote: %s", s.Dir, len(nodes), len(edges), orNone(remoteLine))
 	fmt.Fprintf(stdout, "\nfresh:  %s\n", freshnessLine(reports, overall))
 	// The money line: what answering from the store (instead of a
 	// grep-and-read chain) has saved so far, per the usage estimator.
@@ -1831,64 +1795,29 @@ func cmdLog(args []string, stdout io.Writer) error {
 	return nil
 }
 
+// cmdRemote is the whole sharing surface: `remote push` / `remote pull` run
+// the transport COMMAND declared in the committed config.json —
+//
+//	{"remote": {"push": "node .ctxoptimize/push.js", "pull": "node .ctxoptimize/pull.js"}}
+//
+// The binary ships no transport of its own (ADR
+// 2026-07-16-scripted-remote-transports — sync bytes move through YOUR
+// script): the command owns the copy; the binary resolves scope, hands the
+// store context over in env, and fails loudly on a non-zero exit. `remote
+// init` is retired — config.json is the single source.
 func cmdRemote(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ctx-optimize remote <init URL|push|pull>")
+		return fmt.Errorf("usage: ctx-optimize remote <push|pull>")
 	}
 	sub, rest := args[0], args[1:]
 	f := parseFlags(rest)
-	s, err := openStore(f)
-	if err != nil {
-		return err
-	}
-	repoPath, err := resolvePath(f)
-	if err != nil {
-		return err
-	}
 	switch sub {
-	case "init":
-		if len(f.args) == 0 {
-			return fmt.Errorf("usage: ctx-optimize remote init <s3://bucket/prefix | file:///dir>")
-		}
-		url := f.args[0]
-		// Validate the resolved form (the raw one may hold ${VAR}s), persist
-		// the raw one — placeholders belong in the file, values never do.
-		if _, err := openBackend(&project.Remote{URL: url}); err != nil {
-			return err
-		}
-		// The remote belongs to the repo, not the machine: write the
-		// committable ctx-optimize.json so teammates clone → pull, done.
-		// --local keeps it out of the repo (store config only).
-		if f.bools["local"] {
-			cfg, err := s.Config()
-			if err != nil {
-				return err
-			}
-			cfg.Remote = url
-			if err := s.SaveConfig(cfg); err != nil {
-				return err
-			}
-			fmt.Fprintf(stdout, "remote set (this machine only): %s\n", url)
-			return nil
-		}
-		pc, err := project.Load(repoPath)
-		if err != nil {
-			return err
-		}
-		pc.Remote = &project.Remote{URL: url}
-		if err := project.Save(repoPath, pc); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "remote set: %s → %s (commit it — teammates just pull)\n", url, project.FileName)
-		return nil
+	case "init", "create":
+		return fmt.Errorf("`remote %s` is gone (v0.4) — the remote IS your script now: declare {\"remote\": {\"push\": \"<cmd>\", \"pull\": \"<cmd>\"}} in %s; recipes + ready samples: .ctxoptimize/remote.example.md, push.js.sample, pull.js.sample (written by init)", sub, project.FileName)
 	case "push", "pull":
 		if len(f.args) > 0 {
-			return fmt.Errorf("remote %s takes no URL — the remote lives in %s (ctx-optimize remote init <url>)", sub, project.FileName)
+			return fmt.Errorf("remote %s takes no arguments — the transport command lives in %s under \"remote\"", sub, project.FileName)
 		}
-		// Scope-aware like every other verb: the remote keyspace root maps
-		// to the ROOT store dir. A multi-module root syncs the whole store
-		// tree; inside a module only that module's prefix moves; a
-		// single-module repo is the tree's trivial case (unchanged).
 		sc, err := resolveScope(f)
 		if err != nil {
 			return err
@@ -1897,69 +1826,62 @@ func cmdRemote(args []string, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return runSync(sub, sc, storeRoot, f.bools["json"], stdout)
+		pc, err := project.Load(sc.rootDir)
+		if err != nil {
+			return err
+		}
+		run := pc.RemoteCommand(sub)
+		if run == "" {
+			if pc.Remote != nil && pc.Remote.Empty() {
+				return fmt.Errorf("legacy remote config (v0.3 URL form) — transports are scripts now: declare {\"remote\": {\"%s\": \"<shell command>\"}} in %s (see .ctxoptimize/remote.example.md)", sub, project.FileName)
+			}
+			return fmt.Errorf("no %s command — declare it in %s: {\"remote\": {\"%s\": \"<shell command>\"}} (recipes + samples: .ctxoptimize/remote.example.md, written by init)", sub, project.FileName, sub)
+		}
+		return runSyncCommand(sub, run, sc, storeRoot, stdout)
 	default:
-		return fmt.Errorf("unknown remote subcommand %q", sub)
+		return fmt.Errorf("unknown remote subcommand %q (push|pull)", sub)
 	}
 }
 
-// runSync executes one push/pull for a resolved scope — the shared engine
-// behind `remote push|pull` AND init's auto-pull on a configured clone. Errors
-// (no remote, missing creds, network) propagate so the caller decides whether
-// to fail or fall back.
-func runSync(sub string, sc *scope, storeRoot string, asJSON bool, stdout io.Writer) error {
-	rootStore, err := store.Open(storeRoot, sc.rootKey)
-	if err != nil {
-		return err
-	}
-	r, _, err := resolveRemote(sc.rootDir, rootStore)
-	if err != nil {
-		return err
-	}
-	if r == nil {
-		return fmt.Errorf("no remote — run `ctx-optimize remote init <url>` (writes %s)", project.FileName)
-	}
-	b, err := openBackend(r)
-	if err != nil {
-		return err
-	}
-	var res *remote.Result
-	switch {
-	case sc.kind == scopeSingle:
-		// Today's path, byte-identical: one store at the backend root.
-		single, err := store.Open(storeRoot, sc.storeKey)
-		if err != nil {
-			return err
-		}
-		if sub == "push" {
-			res, err = remote.Push(single, b)
-		} else {
-			res, err = remote.Pull(single, b)
-		}
-		if err != nil {
-			return err
-		}
-	case sub == "push":
-		rels, err := scopeStoreRels(sc, storeRoot)
-		if err != nil {
-			return err
-		}
-		if res, err = remote.PushTree(storeRoot, sc.rootKey, rels, b); err != nil {
-			return err
-		}
-	default: // pull
-		prefix := ""
-		if sc.kind == scopeModule {
-			prefix = sc.modulePath
-		}
-		if res, err = remote.PullTree(storeRoot, sc.rootKey, prefix, b); err != nil {
+// runSyncCommand executes the declared transport command (cwd = the repo
+// root, shell line — same trust model as adapters and npm scripts). The
+// command OWNS the transport; the store context arrives in env:
+//
+//	CTX_STORE_DIR     local store tree (push: source / pull: destination, pre-created)
+//	CTX_STORE_KEY     the store's key under the store root
+//	CTX_SCOPE_PREFIX  module store-key segment when invoked inside a module, else ""
+//	CTX_DIRECTION     "push" or "pull" — one script can serve both
+//
+// Exit != 0 fails the verb; the command's output streams through.
+func runSyncCommand(sub, run string, sc *scope, storeRoot string, stdout io.Writer) error {
+	dir := filepath.Join(storeRoot, filepath.FromSlash(sc.rootKey))
+	if sub == "pull" { // give the command a place to land the tree
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 	}
-	if asJSON {
-		return emit(stdout, res)
+	prefix := ""
+	if sc.kind == scopeModule {
+		prefix = sc.syncPrefix() // store-key segment under the root
 	}
-	fmt.Fprintf(stdout, "%s: %d transferred, %d unchanged\n", sub, len(res.Transferred), res.Skipped)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", run)
+	} else {
+		cmd = exec.Command("sh", "-c", run)
+	}
+	cmd.Dir = sc.rootDir
+	cmd.Env = append(os.Environ(),
+		"CTX_STORE_DIR="+dir,
+		"CTX_STORE_KEY="+sc.rootKey,
+		"CTX_SCOPE_PREFIX="+prefix,
+		"CTX_DIRECTION="+sub,
+	)
+	cmd.Stdout, cmd.Stderr = stdout, stdout
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s (%s): %w", sub, run, err)
+	}
+	fmt.Fprintf(stdout, "%s done (%s)\n", sub, run)
 	return nil
 }
 
@@ -2477,12 +2399,12 @@ commands:
   manifests list              core manifest recognizers (npm, maven, csproj/sln,
                               go.mod, gradle, k8s) + discovered packs
   manifests remove <name>     delete a manifest pack (repo first, then global)
-  remote init <url> [--local] write remote to .ctxoptimize/config.json
-                              (committable; --local = this machine's store only)
-  remote push|pull            incremental sync with the configured remote (no url —
-                              the config file is the single source of truth);
-                              scope follows cwd: multi-module root syncs the
-                              whole store tree, a module dir only its prefix
+  remote push|pull            run the transport COMMAND declared in
+                              .ctxoptimize/config.json — the remote IS your
+                              script; the binary ships no transport. Env handed
+                              to it: CTX_STORE_DIR, CTX_STORE_KEY,
+                              CTX_SCOPE_PREFIX (module scope), CTX_DIRECTION.
+                              cwd = repo root; non-zero exit fails the verb
   install                     skills + hooks for every agent CLI detected; report per platform
     --claude|--codex|--copilot|--devin   select platforms · --skills / --hooks narrow scope
   update                      update EVERYTHING: the binary itself (npm installs
@@ -2501,14 +2423,15 @@ The store lives at ~/ctxoptimize/<repo-name>/ ("name" in config.json overrides).
 
 .ctxoptimize/ (in the repo, commit it):
   config.json    {"name": "my-module",
-                  "remote": {"type": "s3", "url": "s3://bucket/prefix",
-                             "credentials": {"access_key_id": "${TEAM_KEY_ID}",
-                                             "secret_access_key": "${TEAM_SECRET}",
-                                             "region": "auto", "endpoint": "${R2_ENDPOINT}"}}}
+                  "remote": {"push": "node .ctxoptimize/push.js",
+                             "pull": "node .ctxoptimize/pull.js"}}
+                 push/pull are ANY shell line (js, py, sh, or inline)
+  push.js/…      your transport scripts (init writes inert *.sample pair +
+                 remote.example.md with git/s3/custom recipes)
   adapters/      drop scripts here — every .js/.py/.sh runs on add and must
                  print batch JSON to stdout (template: example.js.sample)
-remote may also be a plain string URL; ${VAR} resolves from the environment
-at sync time (values are never written or printed).
+Secrets stay env-var NAMES in commands and scripts; the shell expands them
+at run time (values are never written or printed).
 
 The binary is deterministic: no LLM, no DB, and network ONLY when you ask —
 your remote (push/pull), update (releases), grammar build (zig, once).

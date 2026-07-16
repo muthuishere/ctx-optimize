@@ -7,7 +7,7 @@ thing written into the user's repo — commit it so the whole team inherits it.
 ## FIRST: is this repo already set up? (pull, don't rebuild)
 
 Before ANY init/scan/add, check whether the repo already carries a committed
-`.ctxoptimize/config.json` with a `remote`. If it does, a teammate already
+`.ctxoptimize/config.json` with a `remote` (push/pull commands). If it does, a teammate already
 BUILT and PUBLISHED the store — your job is to FETCH it, not re-derive it:
 
 ```
@@ -15,7 +15,7 @@ ctx-optimize remote pull      # fills the local store from the team's prebuilt g
 ctx-optimize status --json    # confirm nodes > 0
 ```
 
-`ctx-optimize init` now detects this itself: on a clone with a remote-configured
+`ctx-optimize init` now detects this itself: on a clone with a pull-declaring
 config and an empty local store, it prints the `remote pull` line and does
 NOTHING else — do not "fix" that by running `add`. A clone should PULL, never
 init+add (that would rebuild the graph from source and diverge from the team's).

@@ -63,7 +63,7 @@ func TestMultiModuleLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Remote = &project.Remote{URL: "file:///tmp/team-remote"}
+	cfg.Remote = &project.Remote{Push: "node .ctxoptimize/push.js", Pull: "node .ctxoptimize/pull.js"}
 	kept := cfg.Modules[:0]
 	for _, m := range cfg.Modules {
 		if m.Path != "services/worker" {
@@ -80,7 +80,7 @@ func TestMultiModuleLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg2.Remote == nil || cfg2.Remote.URL != "file:///tmp/team-remote" {
+	if cfg2.RemoteCommand("push") != "node .ctxoptimize/push.js" {
 		t.Fatalf("plain re-init clobbered remote: %+v", cfg2.Remote)
 	}
 	if len(cfg2.Modules) != 2 {
@@ -117,7 +117,7 @@ func TestMultiModuleLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg3.Modules) != 3 || cfg3.Remote == nil || cfg3.Remote.URL != "file:///tmp/team-remote" {
+	if len(cfg3.Modules) != 3 || cfg3.RemoteCommand("push") != "node .ctxoptimize/push.js" {
 		t.Fatalf("re-scan must restore modules and keep remote: %+v", cfg3)
 	}
 

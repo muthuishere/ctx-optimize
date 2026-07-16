@@ -1,16 +1,17 @@
 // Package project reads/writes the .ctxoptimize/ directory — the ONE thing
 // that lives in the repo itself. It is committable on purpose: config.json
-// carries the remote (URL + credential NAMES) and adapters/ carries the
-// adapter scripts, so a teammate clones, runs `ctx-optimize remote pull`, and
-// the world is there. Nothing else ever touches the repo.
+// carries the remote (the push/pull transport COMMANDS) and adapters/
+// carries the adapter scripts, so a teammate clones, runs `ctx-optimize
+// remote pull`, and the world is there. Nothing else ever touches the repo.
 //
 //	.ctxoptimize/
-//	  config.json      name, remote (string or {type,url,credentials})
+//	  config.json      name, remote ({"push": "<cmd>", "pull": "<cmd>"})
+//	  push.js/pull.js  the transport scripts those commands run (yours)
 //	  adapters/        drop scripts here — `add` runs every *.js/*.py/*.sh
 //
-// Secrets never appear in the files: credentials are ${VAR} placeholders that
-// resolve from the environment at call time. The resolved values exist only
-// in memory for the duration of the sync — never written, never printed.
+// Secrets never appear in the files: commands and scripts reference env-var
+// NAMES only; the shell expands them at run time. Values are never written,
+// never printed.
 package project
 
 import (
@@ -19,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -81,25 +81,26 @@ func DiscoverAdapters(repo string) ([]Adapter, error) {
 	return out, nil
 }
 
-// Remote is the sync target. In JSON it is either a plain string
-// ("s3://bucket/prefix") or an object with explicit credentials:
-//
-//	{"type": "s3", "url": "s3://bucket/${REPO}",
-//	 "credentials": {"access_key_id": "${TEAM_KEY_ID}",
-//	                 "secret_access_key": "${TEAM_SECRET}",
-//	                 "region": "auto", "endpoint": "${R2_ENDPOINT}"}}
-//
-// Credential keys: access_key_id, secret_access_key, session_token, region,
-// endpoint. Anything omitted falls back to the standard AWS_* env vars.
+// Remote declares the transport COMMANDS behind `remote push` / `remote
+// pull` — the same shape as an adapter's run string: any shell line ("node
+// .ctxoptimize/push.js", "python3 sync.py", "sh push.sh", or inline
+// rsync+git). The binary ships NO transport of its own (ADR
+// 2026-07-16-scripted-remote-transports): the command owns the copy and
+// receives the store context in env (CTX_STORE_DIR, CTX_STORE_KEY,
+// CTX_SCOPE_PREFIX, CTX_DIRECTION). Committed config — same trust model as
+// adapters and npm scripts.
 type Remote struct {
-	Type        string            `json:"type,omitempty"`
-	URL         string            `json:"url,omitempty"`
-	Credentials map[string]string `json:"credentials,omitempty"`
+	Push string `json:"push,omitempty"`
+	Pull string `json:"pull,omitempty"`
 }
 
+// UnmarshalJSON tolerates the retired v0.3 forms — a plain URL string or a
+// {type,url,credentials} object. They carry no commands, so they load as an
+// empty Remote (push/pull report "legacy remote config") instead of
+// breaking every Load of an old committed config.
 func (r *Remote) UnmarshalJSON(data []byte) error {
 	if len(data) > 0 && data[0] == '"' {
-		return json.Unmarshal(data, &r.URL)
+		return nil // legacy URL string — inert
 	}
 	type alias Remote // shed methods to avoid recursion
 	var a alias
@@ -110,48 +111,21 @@ func (r *Remote) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (r Remote) MarshalJSON() ([]byte, error) {
-	if r.Type == "" && len(r.Credentials) == 0 {
-		return json.Marshal(r.URL) // keep the simple form simple
-	}
-	type alias Remote
-	return json.Marshal(alias(r))
+// Empty reports a Remote with no commands (unset, or a parsed legacy form).
+func (r *Remote) Empty() bool {
+	return r == nil || (r.Push == "" && r.Pull == "")
 }
 
-var placeholderRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-
-// Resolve returns a copy with every ${VAR} expanded from the environment.
-// Unset/empty variables are an error naming the VARIABLES (never values) so a
-// missing credential fails loudly instead of signing garbage. The resolved
-// copy is for immediate use only — never save or print it.
-func (r Remote) Resolve() (Remote, error) {
-	missing := map[string]bool{}
-	exp := func(s string) string {
-		return placeholderRe.ReplaceAllStringFunc(s, func(m string) string {
-			name := m[2 : len(m)-1]
-			v := os.Getenv(name)
-			if v == "" {
-				missing[name] = true
-			}
-			return v
-		})
+// RemoteCommand returns the declared command for "push" or "pull" ("" when
+// not declared).
+func (c *Config) RemoteCommand(direction string) string {
+	if c == nil || c.Remote == nil {
+		return ""
 	}
-	out := Remote{Type: r.Type, URL: exp(r.URL)}
-	if len(r.Credentials) > 0 {
-		out.Credentials = make(map[string]string, len(r.Credentials))
-		for k, v := range r.Credentials {
-			out.Credentials[k] = exp(v)
-		}
+	if direction == "push" {
+		return c.Remote.Push
 	}
-	if len(missing) > 0 {
-		names := make([]string, 0, len(missing))
-		for n := range missing {
-			names = append(names, n)
-		}
-		sort.Strings(names)
-		return Remote{}, fmt.Errorf("remote config references unset environment variables: %s", strings.Join(names, ", "))
-	}
-	return out, nil
+	return c.Remote.Pull
 }
 
 type Config struct {
@@ -207,6 +181,12 @@ func Save(repo string, c *Config) error {
 	if err := os.MkdirAll(filepath.Join(repo, Dir), 0o755); err != nil {
 		return err
 	}
+	// A parsed legacy remote (v0.3 URL string / {type,url,...} object) is an
+	// empty Remote — drop the key instead of emitting a misleading
+	// "remote": {} when an UNRELATED write re-saves the config.
+	if c.Remote.Empty() {
+		c.Remote = nil
+	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
@@ -224,17 +204,27 @@ func Save(repo string, c *Config) error {
 var adapterTemplate string
 
 // remoteTemplate → remote.example.md — JSON config can't carry comments, so
-// the "commented-out" push/pull setup lives in this inert sibling file (same
-// pattern as example.js.sample). ${NAME} is replaced at scaffold time; every
-// other ${VAR} survives verbatim. Only env-var NAMES ever appear here, never
-// values.
+// the transport-authoring guide lives in this inert sibling file (same
+// pattern as example.js.sample). ${NAME} is replaced at scaffold time. Only
+// env-var NAMES ever appear here, never values.
 //
 //go:embed templates/remote.example.md
 var remoteTemplate string
 
+// The git-lane transport pair, scaffolded INERT (.sample): rename to
+// push.js/pull.js + declare them in config.json's "remote" to arm sharing —
+// no agent required (ADR 2026-07-16-scripted-remote-transports).
+//
+//go:embed templates/push.js.sample
+var pushSample string
+
+//go:embed templates/pull.js.sample
+var pullSample string
+
 // Scaffold creates the .ctxoptimize/ layout in the repo: config.json (with
-// the module name) and adapters/ seeded with an inert template, plus
-// remote.example.md (push/pull recipes). Existing files are never overwritten.
+// the module name), adapters/ seeded with an inert template, the inert
+// git-lane transport samples, and remote.example.md (transport authoring
+// guide). Existing files are never overwritten.
 func Scaffold(repo, name string) error {
 	if err := os.MkdirAll(filepath.Join(repo, filepath.FromSlash(AdaptersDir)), 0o755); err != nil {
 		return err
@@ -244,16 +234,19 @@ func Scaffold(repo, name string) error {
 			return err
 		}
 	}
-	tmpl := filepath.Join(repo, filepath.FromSlash(AdaptersDir), "example.js.sample")
-	if _, err := os.Stat(tmpl); os.IsNotExist(err) {
-		if err := os.WriteFile(tmpl, []byte(adapterTemplate), 0o644); err != nil {
-			return err
-		}
+	seed := []struct{ rel, body string }{
+		{AdaptersDir + "/example.js.sample", adapterTemplate},
+		{Dir + "/push.js.sample", pushSample},
+		{Dir + "/pull.js.sample", pullSample},
+		{Dir + "/remote.example.md", strings.ReplaceAll(remoteTemplate, "${NAME}", name)},
 	}
-	rt := filepath.Join(repo, Dir, "remote.example.md")
-	if _, err := os.Stat(rt); os.IsNotExist(err) {
-		body := strings.ReplaceAll(remoteTemplate, "${NAME}", name)
-		return os.WriteFile(rt, []byte(body), 0o644)
+	for _, s := range seed {
+		p := filepath.Join(repo, filepath.FromSlash(s.rel))
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			if err := os.WriteFile(p, []byte(s.body), 0o644); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

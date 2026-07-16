@@ -25,7 +25,6 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/navigator"
 	"github.com/muthuishere/ctx-optimize/internal/project"
-	"github.com/muthuishere/ctx-optimize/internal/remote"
 	"github.com/muthuishere/ctx-optimize/internal/scan"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/store"
@@ -898,32 +897,6 @@ func loadFederated(sc *scope, storeRoot string, only []scan.Module) ([]schema.No
 		nodes, edges = append(nodes, mn...), append(edges, me...)
 	}
 	return nodes, edges, nil
-}
-
-// scopeStoreRels enumerates the store rel paths a sync scope covers,
-// relative to the ROOT store dir: the whole tree at a multi-module root,
-// just the module's subtree (nested stores included) inside a module.
-func scopeStoreRels(sc *scope, storeRoot string) ([]string, error) {
-	if sc.kind == scopeModule {
-		modDir := filepath.Join(storeRoot, filepath.FromSlash(sc.storeKey))
-		rels, err := remote.LocalStoreRels(modDir)
-		if err != nil {
-			return nil, err
-		}
-		// Remote layout mirrors the on-disk store dir under the root: the
-		// module's rel path (single) or its name (multi).
-		prefix := sc.syncPrefix()
-		out := make([]string, 0, len(rels))
-		for _, r := range rels {
-			if r == "" {
-				out = append(out, prefix)
-			} else {
-				out = append(out, prefix+"/"+r)
-			}
-		}
-		return out, nil
-	}
-	return remote.LocalStoreRels(filepath.Join(storeRoot, filepath.FromSlash(sc.rootKey)))
 }
 
 // expandRootModules loads the root config's module list for a scope that

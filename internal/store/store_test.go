@@ -124,33 +124,13 @@ func TestRootPrecedence(t *testing.T) {
 	}
 }
 
-func TestConfigRoundtrip(t *testing.T) {
+func TestLayoutHasHooksDir(t *testing.T) {
 	s := testStore(t)
-	if err := s.SaveConfig(&Config{Remote: "file:///tmp/r"}); err != nil {
-		t.Fatal(err)
-	}
-	c, err := s.Config()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Remote != "file:///tmp/r" {
-		t.Fatalf("got %q", c.Remote)
-	}
-	// config.json must be excluded from the manifest (machine-local).
-	m, err := s.UpdateManifest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := m.Files["config.json"]; ok {
-		t.Fatal("config.json must not be in the manifest")
-	}
 	if _, err := os.Stat(filepath.Join(s.Dir, "hooks")); err != nil {
 		t.Fatal("hooks/ dir must exist in layout")
 	}
 }
 
-// Replace: producer-scoped truth — stale nodes pruned, other producers kept,
-// catastrophic shrink refused without force.
 func TestReplacePrunesAndGuards(t *testing.T) {
 	s, err := Open(t.TempDir(), "m")
 	if err != nil {

@@ -32,5 +32,6 @@ lanes, split by speed:
 
 Sharing, publishing, exporting to teammates, importing/loading a teammate's
 store — that whole lane lives in `./push-pull.md`. Short version:
-`remote push` / `remote pull`, scope-aware (root = whole tree, module dir =
+`remote push` / `remote pull` run the transport commands declared in
+config.json (the remote is the team's committed script), scope-aware (root = whole tree, module dir =
 just that prefix), config-driven, incremental.

@@ -135,7 +135,7 @@ export interface Setup {
   project?: { path: string; file: string; config: Record<string, unknown> }
   effective: ConfigKV[]
   axes: Axis[]
-  remote?: { url: string; from: string }
+  remote?: { push?: string; pull?: string; from: string }
 }
 
 export interface ScanModule {

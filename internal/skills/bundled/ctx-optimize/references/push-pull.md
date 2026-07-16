@@ -1,100 +1,94 @@
-# Push / pull — share the store with the team
+# Push / pull — share the store; the remote is a script YOU author
 
 Trigger words from the user: "share the store/graph", "publish it", "push",
 "pull", "export to the team", "import/load the teammate's store", "get the
-store on my machine", "set up sharing over github / a bucket". All of them
-land here.
+store on my machine", "set up sharing over github / a bucket / rsync". All
+of them land here.
 
-There are exactly two hosting lanes — a git repo (only needs git/gh) and an
-S3-compatible bucket. YOU set either one up end-to-end; the recipes below
-are complete. `init` also scaffolds them into the repo as
-`.ctxoptimize/remote.example.md` with the store name pre-filled — check for
-that file first and follow it if present.
-
-## One-time setup
-
-`ctx-optimize remote init <url>` writes the remote into the repo's committed
-`.ctxoptimize/config.json`. Commit it: teammates clone and a bare
-`remote pull` just works. `--local` keeps the remote per-machine (store
-config) instead.
-
-Credentials: `${VAR}` placeholders in config resolve from env at sync time —
-commit variable NAMES, never values, and never print them.
-
-### Lane A — a GitHub repo as the store host (no bucket, no cloud account)
-
-The store syncs to a local folder (`file://`), and that folder is a git
-clone the team pushes/pulls like any repo. Set it up for the user:
-
-```
-gh repo create <org>/ctx-stores --private          # once per team
-gh repo clone <org>/ctx-stores ~/ctx-stores        # once per machine
-ctx-optimize remote init "file://$HOME/ctx-stores/<store-name>"   # in the repo; commit config.json
-```
-
-Publish after a gather (run both — the second is what teammates see):
-
-```
-ctx-optimize remote push
-git -C ~/ctx-stores add -A && git -C ~/ctx-stores commit -m "store: <store-name>" && git -C ~/ctx-stores push
-```
-
-Teammate on a fresh machine:
-
-```
-gh repo clone <org>/ctx-stores ~/ctx-stores
-git -C ~/ctx-stores pull                           # refresh on later days
-ctx-optimize remote pull                           # inside the code repo
-```
-
-Store artifacts are sorted, newline-terminated ndjson — git diffs and merges
-them cleanly.
-
-### Lane B — S3-compatible bucket (AWS, R2, MinIO, Hetzner)
-
-```
-ctx-optimize remote init "s3://<bucket>/ctx/<store-name>"
-```
-
-Plain AWS with `AWS_*` env vars needs nothing more. Non-AWS endpoints or
-team-specific keys: write the object form into `.ctxoptimize/config.json` —
+The binary ships NO transport. `ctx-optimize remote push` / `remote pull`
+run the commands declared in the repo's committed `.ctxoptimize/config.json`:
 
 ```json
 "remote": {
-  "type": "s3",
-  "url": "s3://<bucket>/ctx/<store-name>",
-  "credentials": {
-    "access_key_id": "${TEAM_KEY_ID}",
-    "secret_access_key": "${TEAM_SECRET}",
-    "region": "auto",
-    "endpoint": "${R2_ENDPOINT}"
-  }
+  "push": "node .ctxoptimize/push.js",
+  "pull": "node .ctxoptimize/pull.js"
 }
 ```
 
-Omitted credential keys fall back to the standard `AWS_*` env vars. The
-binary speaks SigV4 itself — no aws-cli, no SDK to install.
+Any shell line works — `node …`, `python3 …`, `sh …`, or inline. YOUR JOB on
+"set up sharing" is to AUTHOR the transport (write the script, add the two
+config lines, commit both) — not to recite steps into chat. `init` scaffolds
+`push.js.sample` + `pull.js.sample` (a complete git lane — arming them is
+often all a team needs) and `remote.example.md`; prefer arming those samples
+over writing from scratch.
 
-## Push (publish your gathered world)
+## The contract your script gets
 
-`ctx-optimize remote push` — scope-aware:
-- multi-module ROOT → the whole store tree: every module store + the
-  navigator (a `stores.json` index is written last, so readers never see a
-  half-published tree)
-- inside a MODULE dir → only that module's prefix
-- single-module repo → the classic whole-store push
+The binary resolves scope, then runs the command (cwd = repo root) with:
 
-## Pull (load someone else's)
+```
+CTX_STORE_DIR     local store tree (push: source · pull: destination, pre-created)
+CTX_STORE_KEY     the store's key under ~/ctxoptimize/
+CTX_SCOPE_PREFIX  module store-key segment when run inside a module, else empty
+CTX_DIRECTION     "push" or "pull" — one script can serve both commands
+```
 
-`ctx-optimize remote pull` — same scoping. The killer path: a teammate on a
-fresh clone cds into the ONE module they work on and pulls just that prefix
-— KBs, sub-second — then queries immediately. Pulling at the root fans in
-everything.
+Exit non-zero fails the verb; stdout/stderr stream to the user. Secrets:
+env-var NAMES only in scripts and config — the shell expands them at run
+time; never hardcode or print values.
+
+## Lane A — git repo as the store host (recommended; only needs git)
+
+Arm the scaffolded samples:
+
+```
+gh repo create <org>/ctx-stores --private        # once per team
+mv .ctxoptimize/push.js.sample .ctxoptimize/push.js
+mv .ctxoptimize/pull.js.sample .ctxoptimize/pull.js
+# set STORE_REPO_URL in both files, add the "remote" block to config.json, commit
+```
+
+The scripts clone/pull `~/ctx-stores`, copy the store tree in/out, and
+commit+push. Store artifacts are sorted ndjson — git diffs and merges them
+cleanly. Teammate on a fresh machine: clone the code repo,
+`ctx-optimize remote pull` (or just `init` — it auto-runs the declared pull
+when the local store is empty).
+
+## Lane B — S3-compatible bucket (AWS, R2, MinIO — needs the aws CLI)
+
+One script, both directions, save as `.ctxoptimize/s3sync.js` and declare it
+for push AND pull:
+
+```js
+#!/usr/bin/env node
+const { execFileSync } = require("node:child_process");
+const S3_URL = "s3://your-bucket/ctx";  // store key is appended
+const dir = process.env.CTX_STORE_DIR, key = process.env.CTX_STORE_KEY;
+const remote = S3_URL + "/" + key;
+const [from, to] = process.env.CTX_DIRECTION === "push" ? [dir, remote] : [remote, dir];
+execFileSync("aws", ["s3", "sync", from, to, "--delete"], { stdio: "inherit" });
+```
+
+Credentials via the standard `AWS_*` env vars / profiles; non-AWS endpoints
+(R2, MinIO): `AWS_ENDPOINT_URL` in the environment.
+
+## Lane C — anything else (GCS, artifactory, rsync-over-ssh)
+
+Author the script that copies `CTX_STORE_DIR` to/from the host, declare it,
+commit it. The binary never cares what the transport is.
+
+## Scope
+
+`remote push`/`remote pull` resolve scope like every verb: at a multi-module
+root the script gets the whole store tree; inside a module dir it ALSO gets
+`CTX_SCOPE_PREFIX` so a scope-aware script can move just that prefix (the
+scaffolded samples move the whole tree — fine for KB–MB stores).
 
 ## Rules
 
-- Transfer is incremental (content-hash manifest); repeat pushes move only
-  what changed.
+- v0.3's `remote init <url>` and the built-in file://+s3:// transports are
+  GONE (v0.4). A legacy URL-form config loads but push/pull explain the
+  migration. Never re-create `remote init` — declare commands instead.
 - Queries NEVER touch the remote — pull first, answer from disk.
 - Merged stores are derived, never synced; re-derive with `merge` after pull.
 - `export --format json|dot|graphml|csv|obsidian` is a different thing —

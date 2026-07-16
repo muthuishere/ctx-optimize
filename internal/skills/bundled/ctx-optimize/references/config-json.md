@@ -17,7 +17,7 @@ dir with `config.json` + `adapters/` (+ an inert `example.js.sample`).
 ```json
 {
   "name": "acme",
-  "remote": "s3://bucket/prefix",
+  "remote": {"push": "node .ctxoptimize/push.js", "pull": "node .ctxoptimize/pull.js"},
   "modules": [
     {"name": "Billing", "paths": ["src/Billing", "tests/Billing.Tests"]},
     {"name": "gateway", "path": "services/gateway"}
@@ -31,7 +31,7 @@ dir with `config.json` + `adapters/` (+ an inert `example.js.sample`).
 | Field | Meaning |
 |---|---|
 | `name` | Store key under `~/ctxoptimize/<name>/`. Defaults to the repo dir basename. Set it when the folder name is generic (`app`, `backend`). |
-| `remote` | Sync target — a plain `s3://…`/`file://…` string, OR an object `{"type","url","credentials"}` (see `push-pull.md`). `${VAR}` in credentials resolves from env at sync time; values are never written or printed. |
+| `remote` | The push/pull transport COMMANDS (`{"push": "<shell line>", "pull": "<shell line>"}`) — the binary ships no transport; your committed script is the remote (see `push-pull.md`). Legacy v0.3 URL forms load inert. Secrets stay env-var NAMES; the shell expands them at run time. |
 | `modules[]` | The multi-project layout. Each entry is EITHER single-path `{"name","path"}` (one deployable/build root) OR **multi-path** `{"name","paths":[...]}` (scattered folders — src + tests — that are ONE logical module). Absent → the repo is one single-module store. |
 | `instructions` | Which agent files `init` writes the pointer block into: `CLAUDE` \| `AGENTS` \| `ALL` \| `NONE`. |
 | `skills` / `hooks` | Which dirs/platforms `install` targets: `CLAUDE` \| `AGENTS` \| `ALL` (`hooks` also `NONE`). |
