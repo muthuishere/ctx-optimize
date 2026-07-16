@@ -211,9 +211,13 @@ correct RUNBOOK is self-evidently "value without an LLM".
 
 ## Sequencing & measurement
 
-Order: Move 3 (smallest, already de-risked) → Move 1 → Move 5 (RUNBOOK +
-TESTING first, so value is visible early) → Move 2 → Move 4. Each move ships
-alone behind `task ci`, spec-first per house rules.
+SUPERSEDED on sequencing by `2026-07-16-composed-answers/proposal.md` (the
+reviewed external proposal): the merged, dependency-honest order interleaves
+these lanes with answer-side composition — confidence block → trace/
+change-plan → Move 3 (tested_by) → review-diff → Moves 1–2 → Move 4 → Move 5.
+The moves themselves and both binding rules are unchanged; the "grow the
+addable-by-name grammar list" cheap-win is dropped (no demonstrated demand).
+Each move still ships alone behind `task ci`, spec-first per house rules.
 
 Measure like the proof matrix: for each question class, one A/B on this repo +
 one real polyglot repo — store-answer tokens + correctness vs grep-and-read
