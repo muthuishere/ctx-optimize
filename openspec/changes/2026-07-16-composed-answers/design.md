@@ -77,3 +77,24 @@ Newtonsoft 13.0.3 as `{"paths": ["Src/Newtonsoft.Json",
    walking does, not assume one store per repo.
 4. Corpus specs must stay in lockstep with workflow clone refs (both carry
    the pin; a mismatch skips loudly).
+
+## Design decision — the main idea, sharpened (maintainer, 2026-07-16)
+
+"The main idea is: find X — DIFFERENT information — across a multi-module
+repo, in one search." Verified against the multimod fixture: root-federated
+query already retrieves across modules and facets (found ChargeCard + its
+test across the src/tests split; found `build` tasks in two modules). What
+fails the idea is PRESENTATION, not retrieval:
+
+1. Hits carry no module attribution — the first fact a monorepo answer needs.
+2. One flat ranked list — facets (code / tests / tasks / deps / routes /
+   config) interleave and compete; a strong code match starves the single
+   route/dep/task fact out of the budget.
+
+Next implementation slice (before `trace`): **faceted federated query** —
+root-scope output grouped by module, hits tagged and sectioned by facet,
+with per-facet slot guarantees (the dashboard's producer-sample fairness,
+applied to query). Output-shaping only, no new indexing. Expected scoreboard
+effect: N17/N18/N19 (test-noise ranking gaps) flip when tests become their
+own section — score rises, floors ratchet, goldens regenerate as a reviewed
+diff (query top-k is a pinned contract).
