@@ -1,8 +1,10 @@
 // Package app is the CLI: a deliberately dumb front over the internal
 // packages. Hand-rolled dispatch and flags (house style — no cobra), --json
 // on every read command, errors to stderr as "ctx-optimize: msg". The binary
-// never calls a model, a database, or the network except `remote push/pull`
-// against the URL the user configured.
+// never calls a model, a database, or the network — except the three moments
+// the user explicitly invokes: `remote push/pull` against the configured
+// URL, `grammar build`'s one-time zig download, and `update`'s release
+// check/download. Nothing network-shaped ever runs unasked.
 package app
 
 import (
@@ -35,6 +37,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/remote"
 	"github.com/muthuishere/ctx-optimize/internal/scan"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
+	"github.com/muthuishere/ctx-optimize/internal/selfupdate"
 	"github.com/muthuishere/ctx-optimize/internal/skills"
 	"github.com/muthuishere/ctx-optimize/internal/store"
 	metrics "github.com/muthuishere/ctx-optimize/internal/usage"
@@ -2233,18 +2236,93 @@ func cmdInstall(args []string, stdout io.Writer) error {
 	return nil
 }
 
-// cmdUpdate refreshes every surface a previous install wrote — skills,
-// hooks, global rule — from THIS binary, through the same idempotent lanes
-// as `install` (skills are an exact replace: stale files from older versions
-// are removed, not left behind). The binary itself is the package manager's
-// job — the deterministic contract forbids the CLI phoning a registry — so
-// we print the one-liner instead of self-updating.
+// cmdUpdate: binary first, then surfaces. The binary lane is the one
+// sanctioned network moment besides `grammar build`'s zig download — it runs
+// ONLY because the user invoked `update`, never in the background. Channel
+// picks the mechanism: npm installs delegate to `npm install -g` (keeps the
+// wrapper's optionalDependencies in sync), goreleaser standalone binaries
+// self-swap from GitHub Releases (sha256-verified), dev builds and anything
+// unrecognized are left alone. Surfaces (skills + hooks + global rule) then
+// refresh from whichever binary is current — via a subprocess when the
+// binary just changed, so the NEW bundle lands, else in-process.
+// `--check` reports without touching anything.
 func cmdUpdate(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	apiBase := envOr("CTX_OPTIMIZE_UPDATE_API", "https://api.github.com")
+	dlBase := envOr("CTX_OPTIMIZE_UPDATE_DL", "https://github.com")
+
+	exe, err := os.Executable()
+	if err == nil {
+		if r, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = r
+		}
+	}
+
+	updated := false
+	switch {
+	case version.Version == "0.0.0-dev":
+		fmt.Fprintln(stdout, "binary: dev build — self-update skipped (rebuild from source)")
+	default:
+		latest, err := selfupdate.Latest(apiBase)
+		switch {
+		case err != nil:
+			fmt.Fprintf(stdout, "binary: update check failed (%v) — continuing with the surfaces\n", err)
+		case !selfupdate.Newer(version.Version, latest):
+			fmt.Fprintf(stdout, "binary: up to date (ctx-optimize %s)\n", version.Version)
+		case f.bools["check"]:
+			fmt.Fprintf(stdout, "binary: %s available (current %s) — run `ctx-optimize update` to apply\n", latest, version.Version)
+		case selfupdate.Channel(exe) == "npm":
+			fmt.Fprintf(stdout, "binary: %s available — npm-managed install, running `npm install -g @muthuishere/ctx-optimize@latest`\n", latest)
+			cmd := exec.Command("npm", "install", "-g", "@muthuishere/ctx-optimize@latest")
+			cmd.Stdout, cmd.Stderr = stdout, stdout
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("npm install -g: %w", err)
+			}
+			updated = true
+		default:
+			fmt.Fprintf(stdout, "binary: %s available (current %s)\n", latest, version.Version)
+			if err := selfupdate.Apply(dlBase, latest, exe, stdout); err != nil {
+				return err
+			}
+			updated = true
+		}
+	}
+	if f.bools["check"] {
+		return nil
+	}
+
+	// Surfaces from the binary that is NOW current.
+	if updated {
+		bin := exe
+		if p, err := exec.LookPath("ctx-optimize"); err == nil {
+			bin = p // npm may have moved the platform package; the launcher knows
+		}
+		sub := []string{"install"}
+		for _, p := range []string{"claude", "codex", "copilot", "devin", "skills", "hooks"} {
+			if f.bools[p] {
+				sub = append(sub, "--"+p)
+			}
+		}
+		cmd := exec.Command(bin, sub...)
+		cmd.Stdout, cmd.Stderr = stdout, stdout
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("refresh surfaces from updated binary: %w", err)
+		}
+		fmt.Fprintln(stdout, "\nupdated — skills + hooks now match the new binary")
+		return nil
+	}
 	if err := cmdInstall(args, stdout); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "\nskills + hooks now match this binary (ctx-optimize %s). To update the binary itself:\n  npm install -g @muthuishere/ctx-optimize   # then `ctx-optimize update` again\n", version.Version)
+	fmt.Fprintf(stdout, "\nskills + hooks now match this binary (ctx-optimize %s)\n", version.Version)
 	return nil
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
 // cmdUninstall removes everything `install` wrote: the skill dirs, the
@@ -2407,9 +2485,11 @@ commands:
                               whole store tree, a module dir only its prefix
   install                     skills + hooks for every agent CLI detected; report per platform
     --claude|--codex|--copilot|--devin   select platforms · --skills / --hooks narrow scope
-  update                      after a binary upgrade: refresh skills + hooks +
-                              global rule from this binary (exact replace —
-                              files older versions shipped are removed)
+  update                      update EVERYTHING: the binary itself (npm installs
+                              via npm, standalone via GitHub Releases, sha256-
+                              verified; dev builds left alone), then skills +
+                              hooks + global rule from the new binary (exact
+                              replace). --check reports without touching anything
   uninstall                   remove skills, hooks, and the global rule
                               (stores + committed repo pointers untouched)
   version                     print version
@@ -2430,6 +2510,7 @@ The store lives at ~/ctxoptimize/<repo-name>/ ("name" in config.json overrides).
 remote may also be a plain string URL; ${VAR} resolves from the environment
 at sync time (values are never written or printed).
 
-The binary is deterministic: no LLM, no DB, no network except your remote.
+The binary is deterministic: no LLM, no DB, and network ONLY when you ask —
+your remote (push/pull), update (releases), grammar build (zig, once).
 `)
 }

@@ -251,10 +251,10 @@
     </route>
 
     <route id="update" group="manage">
-      <when>just upgraded the binary, refresh the skill, skill looks stale, update ctx-optimize</when>
-      <goal>Refresh skills + hooks + global rule from the running binary (exact replace — files older versions shipped are removed). The binary itself updates via npm; `update` prints the one-liner.</goal>
-      <cmd>npm install -g @muthuishere/ctx-optimize   # the binary</cmd>
-      <cmd>ctx-optimize update                        # then the surfaces</cmd>
+      <when>update ctx-optimize, is there a newer version, refresh the skill, skill looks stale</when>
+      <goal>ONE command updates everything: the binary itself (npm installs via `npm install -g`, standalone via GitHub Releases, sha256-verified; dev builds left alone), then skills + hooks + global rule from the new binary (exact replace — files older versions shipped are removed). User-invoked only — the binary never checks in the background.</goal>
+      <cmd>ctx-optimize update            # binary + surfaces</cmd>
+      <cmd>ctx-optimize update --check    # report only, touch nothing</cmd>
     </route>
 
     <route id="uninstall" group="manage">

@@ -10,6 +10,23 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Added
+
+- **`update` now updates the binary too.** One command, whole tool: the
+  binary lane runs first — npm-managed installs delegate to
+  `npm install -g @muthuishere/ctx-optimize@latest` (wrapper +
+  optionalDependencies stay in sync); goreleaser standalone binaries
+  download the platform asset from GitHub Releases, verify sha256 against
+  the release's `checksums.txt`, and swap atomically (any failure leaves
+  the current binary untouched); dev builds and unrecognized installs are
+  left alone with a note. Then skills + hooks + global rule refresh from
+  the binary that is NOW current (via subprocess when it just changed, so
+  the new bundle lands). `update --check` reports without touching
+  anything. This is user-invoked network ONLY — same doctrine as `grammar
+  build`'s zig download; the binary never checks for updates in the
+  background. `CTX_OPTIMIZE_UPDATE_API` / `CTX_OPTIMIZE_UPDATE_DL`
+  override the endpoints for tests and mirrors.
+
 ## [0.3.9] — 2026-07-16
 
 ### Added

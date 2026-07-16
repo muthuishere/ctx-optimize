@@ -2,12 +2,16 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/muthuishere/ctx-optimize/internal/project"
+	"github.com/muthuishere/ctx-optimize/internal/version"
 )
 
 // TestMultiModuleLifecycle replays a whole team's worth of store history
@@ -345,8 +349,10 @@ func TestInstallUpdateUninstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, _ = runCLI(t, 0, "update", "--claude")
-	if !strings.Contains(out, "npm install -g @muthuishere/ctx-optimize") {
-		t.Fatalf("update must print the binary-update one-liner:\n%s", out)
+	// Test binaries are dev builds: the binary lane must skip WITHOUT any
+	// network, then still refresh the surfaces.
+	if !strings.Contains(out, "dev build — self-update skipped") || !strings.Contains(out, "skills + hooks now match this binary") {
+		t.Fatalf("dev-build update must skip the binary and refresh surfaces:\n%s", out)
 	}
 	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
 		t.Fatal("update left an orphan file from an older version")
@@ -373,4 +379,36 @@ func TestInstallUpdateUninstall(t *testing.T) {
 	}
 	// Legacy spelling still accepted.
 	runCLI(t, 0, "uninstall", "--skills")
+}
+
+// TestUpdateCheck: with a release-tagged version, `update --check` reports
+// what's available (against a hermetic API server) and touches nothing —
+// no install, no swap, no surfaces.
+func TestUpdateCheck(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"tag_name":"v9.9.9"}`)
+	}))
+	defer srv.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	t.Setenv("CTX_OPTIMIZE_UPDATE_API", srv.URL)
+	orig := version.Version
+	version.Version = "0.1.0"
+	defer func() { version.Version = orig }()
+
+	out, _ := runCLI(t, 0, "update", "--check")
+	if !strings.Contains(out, "v9.9.9 available (current 0.1.0)") {
+		t.Fatalf("check must report the available version:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "skills")); !os.IsNotExist(err) {
+		t.Fatal("--check must not install surfaces")
+	}
+
+	// Up to date → says so, then still refreshes surfaces (no --check).
+	version.Version = "9.9.9"
+	out, _ = runCLI(t, 0, "update", "--claude")
+	if !strings.Contains(out, "binary: up to date") || !strings.Contains(out, "skills + hooks now match this binary") {
+		t.Fatalf("up-to-date update must refresh surfaces:\n%s", out)
+	}
 }

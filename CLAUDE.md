@@ -20,6 +20,7 @@ the validated `add --json` door.
 - `internal/dashboard` — `serve|dashboard` verb: embedded React app (dashboard-ui/ Vite+React+TS, BUILT dist committed at internal/dashboard/ui/ via go:embed — treesitter.wasm precedent, `task ci`/`go install` never need node; ZERO external requests — no CDN ever, CSP-tested). Reads: /api/modules|graph(budgeted, ?center= expand)|query|usage|stores|setup|audit — read path must never create store dirs. Mutations (onboard scan/confirm, repo re-gather, config set, store delete, remote push/pull): loopback-only by RemoteAddr even if --host widened + per-process X-Ctx-Token (GET /api/token, loopback-only) + routed through the SAME cmd funcs the CLI dispatches (Ops closures from internal/app) + every one audited. Dev loop: `task dashboard-dev|dashboard-build`. Binds 127.0.0.1:4747
 - `internal/audit` — append-only `<store-root>/audit.ndjson` (ts, actor dashboard|cli, action, target, before/after sha256; sorted fields, git-diffable); dashboard mutations AND `config` set write it; `log` verb prints it (--json)
 - `internal/skills` — embedded SKILL.md, `install --skills` fans to claude+codex
+- `internal/selfupdate` — `update`'s binary lane: npm channel delegates to `npm install -g`, goreleaser standalone downloads from GitHub Releases (sha256 vs checksums.txt, atomic swap), dev builds left alone. User-invoked network ONLY (same doctrine as grammar's zig download) — never a background check
 - `npm/` — optionalDependencies wrapper (5 platform pkgs, thin launcher, no postinstall)
 
 ## Rules
