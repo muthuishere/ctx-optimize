@@ -10,6 +10,8 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.3.10] — 2026-07-16
+
 ### Added
 
 - **`update` now updates the binary too.** One command, whole tool: the
