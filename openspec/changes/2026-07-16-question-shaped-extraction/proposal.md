@@ -65,6 +65,51 @@ tail, adapters for anything live. No LLM, no DB drivers, no network in the
 binary — ever. The LLM's only job is narrating facts the store already holds
 ("cherry on cake").
 
+### Binding rule 1 — every lane ships its pack door IN THE SAME CHANGE (maintainer, 2026-07-16)
+
+Extensibility is not a follow-up. A new lane that lands core-only is
+REJECTED at review: the change that adds a lane must also add the drop-in
+door for additional parsers, exactly as routes/manifests/languages have
+today. Concretely:
+
+- The pack schema (`internal/extract/manifests/packs.go`) widens its
+  `validEmits` from `{dependency, task}` to include every kind a new lane
+  introduces — `service`, `config`, `workflow`, `job`, `migration`, `test` —
+  and pack rules gain edge emission (`depends_on`, `runs`, `references`,
+  `tested_by`) with the same fail-closed validation as nodes.
+- Each move's core recognizers are themselves expressed through the SAME rule
+  shape the packs use (the routes-lane precedent: core recognizers are
+  built-in packs). GitHub Actions is the first CI pack, compose the first
+  service pack — GitLab CI, Jenkins, Procfile, tilt, skaffold, ORM schemas
+  are then user-addable JSON, no binary release needed.
+- `ctx-optimize <lane> add <name|github-url>` / `list` / `remove` work on
+  day one for every new lane — the CLI surface is part of the lane, not
+  polish.
+
+### Binding rule 2 — scalability & performance are first-class, NOT optional (maintainer, 2026-07-16)
+
+The product promise is "gather in about a second, refresh on every commit".
+Every move below is admitted only with a measured performance budget, and a
+change that regresses the gather gate does not merge:
+
+- **Gather budget**: the 4k-file reference repo stays ≲1s end-to-end after
+  ALL five moves. Each new recognizer is O(bytes) single-pass (yamlwalk /
+  line-anchored scans — no YAML/AST library, no backtracking); recognizers
+  run inside the existing per-module parallel fan-out, never as extra passes
+  over the tree.
+- **Post-passes are graph-linear**: `tested_by` is O(E) over already-loaded
+  edges; wiki pages render O(nodes+edges) like the existing pages. Nothing
+  quadratic, nothing that loads the graph twice.
+- **Scale ceilings are explicit**: recognizers skip files over the existing
+  size caps; pack rule counts are bounded (fail loudly, never slow-crawl);
+  the dashboard's budgeted-payload rule extends to every new node kind
+  (a 50k-task monorepo must not blow up /api/graph — same top-N + sample
+  fairness as producers get today).
+- **Every move's tasks.md carries a perf line**: the measured before/after
+  gather time on this repo AND one large corpus (chromium subset already in
+  the store), recorded in `proof/` next to the correctness A/B. A move
+  without its perf measurement is not done.
+
 ### Move 1 — dev-env lane: "how do I run this locally" (manifests producer)
 
 New core recognizers, all in the existing manifests lane:
