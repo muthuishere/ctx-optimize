@@ -10,6 +10,22 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.3.11] — 2026-07-16
+
+### Changed
+
+- **Skill: push/pull teaches both hosting lanes end-to-end.**
+  `references/push-pull.md` now carries complete, executable setup recipes
+  instead of an abstract `remote init <url>`: **Lane A** — a private GitHub
+  repo as the store host (`gh repo create/clone` → `remote init file://…` →
+  push + git publish → teammate clone + pull; store artifacts are sorted
+  ndjson, so git diffs them cleanly); **Lane B** — an S3-compatible bucket
+  (AWS/R2/MinIO/Hetzner) including the `${VAR}` credentials object for
+  non-AWS endpoints. Both mirror the `.ctxoptimize/remote.example.md` that
+  `init` scaffolds, and the skill tells agents to follow that file when
+  present. The `remote-init` route and SKILL.md share row trigger on "set
+  up sharing over github / a bucket".
+
 ## [0.3.10] — 2026-07-16
 
 ### Added
