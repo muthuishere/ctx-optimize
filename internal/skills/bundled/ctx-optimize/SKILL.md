@@ -53,6 +53,22 @@ together), and detected **subsystems** — plus anything else via adapters.
 **ctx-optimize needs no API key, no model, no database — never prompt for
 one.** The binary is deterministic; you supply all semantics.
 
+## Pick by intent — the 5-second router (read THIS first)
+
+Do NOT default to `query` for everything. The verb follows the intent:
+
+| Your intent | The ONE verb |
+|---|---|
+| **Find** something — you have words, want locations | `ctx-optimize query "<2-4 terms>" --json` |
+| **Inspect** a known symbol — signature/doc/callers, no file read | `ctx-optimize card <symbol> --json` |
+| **About to EDIT** a symbol — what to touch, what breaks, WHICH TESTS TO RUN | `ctx-optimize change-plan <symbol> --json` — one call replaces query+card+affected+test-grep (~90% fewer tokens, measured) |
+| **Blast radius** only — is it safe to change | `ctx-optimize affected <symbol> --depth 2 --json` |
+| **Connection** — how are A and B related | `ctx-optimize path "A" "B" --json` |
+| **Orient** — where do I start in this repo | `ctx-optimize hubs --top 10 --json` |
+
+If you ran `query` and then immediately wanted callers or tests — you picked
+the wrong verb; the intent was edit → `change-plan`.
+
 ## The complete command surface
 
 `./references/activation-routing.xml` is the full router: **every** ctx-optimize
@@ -67,10 +83,11 @@ there. The table below is the hot path; the XML is the whole map.
 ## THE GATE — every search goes through the store first (non-negotiable)
 
 In a repo with `.ctxoptimize/`, ctx-optimize IS the search tool. Before ANY
-Grep, rg, Glob, find, or exploratory Read — run `ctx-optimize query` (or
-`card`/`affected`/`path` per the routing table). No exceptions for "just a
-quick grep": the quick grep is exactly the cost this store exists to kill,
-and skipping the store means the answer arrives without citations.
+Grep, rg, Glob, find, or exploratory Read — run the verb the intent map above
+picks (find→query · inspect→card · edit→change-plan · impact→affected). No
+exceptions for "just a quick grep": the quick grep is exactly the cost this
+store exists to kill, and skipping the store means the answer arrives without
+citations.
 
 Grep/Read are permitted ONLY as:
 1. **Exhaustive literal sweeps** — every occurrence of an exact string
