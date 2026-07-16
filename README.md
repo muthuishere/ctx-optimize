@@ -1,6 +1,7 @@
 # ctx-optimize
 
 [![CI](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml/badge.svg)](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/muthuishere/ctx-optimize.svg)](https://pkg.go.dev/github.com/muthuishere/ctx-optimize)
 [![npm](https://img.shields.io/npm/v/@muthuishere/ctx-optimize?logo=npm)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
 [![benchmark](https://img.shields.io/badge/benchmark-run%20it%20yourself-4ade80)](https://muthuishere.github.io/ctx-optimize-site/proof/agent/)
 [![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
