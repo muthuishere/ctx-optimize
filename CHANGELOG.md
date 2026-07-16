@@ -39,6 +39,25 @@ embeddings, no MCP, no network except your configured remote.**
   (fixtures). Query latency reference on this repo's live metrics: query avg
   7.0ms (n=92), card 0.6ms (n=91).
 
+- **Judged Q&A scoreboard** — 20 agent-shaped questions per corpus, each
+  routed through the same verb the skill teaches (query/card/affected/path)
+  and marked deterministically (1 / 0.5 / 0). Gap-marked questions are
+  deliberate zero-scorers documenting known weaknesses — the target list for
+  the next feature. The floor is enforced: the score may only move UP, in a
+  reviewed diff.
+
+  **Marks (measured 2026-07-16, floors set at these values):**
+
+  | Corpus | Score | Enforced floor | Known gaps (the next-feature target list) |
+  |---|---|---|---|
+  | linux-block | **16.5 / 20** | 16.5 | L17 gatekeeper ranks below top-5 lexically (0.5 — `trace` should fix); L18 `blk_rq_merge_ok` loses to wrappers (ranking); L19 Makefile *targets* not task nodes (dev-env lane); L20 tests-for has no in-tree tests to find |
+  | Newtonsoft.Json | **16.5 / 20** | 16.5 | N17/N19 test files outrank source methods (ranking test-noise defect); N18 `PopulateObject` demoted (0.5); N20 no dotnet task facts (dev-env lane) |
+
+  Notable passes: N14 "which tests exercise SerializeObject" — the derived
+  tests-for view working end-to-end via `affected`; N15 NuGet deps of the
+  test project; L16 the iocost build-config key (Makefile config lane already
+  answers it).
+
 ## [0.3.7] — 2026-07-16
 
 ### Fixed

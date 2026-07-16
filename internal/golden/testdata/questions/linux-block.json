@@ -1,0 +1,246 @@
+{
+  "corpus": "linux-block",
+  "min_score": 16.5,
+  "questions": [
+    {
+      "id": "L01",
+      "text": "Where are requests hashed for elevator merge lookups?",
+      "verb": "query",
+      "args": [
+        "elevator hash add request"
+      ],
+      "expect_any": [
+        "elv_rqhash_add"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L02",
+      "text": "Which function splits a bio into segments?",
+      "verb": "query",
+      "args": [
+        "split bio segments"
+      ],
+      "expect_any": [
+        "bio_split"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L03",
+      "text": "Where does a new disk get added with its partitions?",
+      "verb": "query",
+      "args": [
+        "add disk partition device"
+      ],
+      "expect_any": [
+        "device_add_disk"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L04",
+      "text": "Where is cgroup-based bio throttling implemented?",
+      "verb": "query",
+      "args": [
+        "throttle bio cgroup limit"
+      ],
+      "expect_any": [
+        "blk-throttle.c"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L05",
+      "text": "Where is OPAL self-encrypting drive unlock handled?",
+      "verb": "query",
+      "args": [
+        "opal self encrypting unlock"
+      ],
+      "expect_any": [
+        "sed-opal.c"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L06",
+      "text": "Where is the flush request pending queue managed?",
+      "verb": "query",
+      "args": [
+        "flush request pending queue"
+      ],
+      "expect_any": [
+        "blk-flush.c"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L07",
+      "text": "Where are zoned-device write pointers reset?",
+      "verb": "query",
+      "args": [
+        "zoned write pointer reset"
+      ],
+      "expect_any": [
+        "blk-zoned.c"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L08",
+      "text": "Where are request timeouts handled?",
+      "verb": "query",
+      "args": [
+        "timeout request handler"
+      ],
+      "expect_any": [
+        "blk-timeout.c"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L09",
+      "text": "Where are user pages mapped into a request?",
+      "verb": "query",
+      "args": [
+        "map user pages to request"
+      ],
+      "expect_any": [
+        "blk-map.c"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L10",
+      "text": "Where does blk-mq submit a bio onto a queue?",
+      "verb": "query",
+      "args": [
+        "mq submit bio queue"
+      ],
+      "expect_any": [
+        "blk_mq_submit_bio"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L11",
+      "text": "Show the card for the back-merge gatekeeper.",
+      "verb": "card",
+      "args": [
+        "ll_back_merge_fn"
+      ],
+      "contains": [
+        "ll_back_merge_fn",
+        "blk-merge.c"
+      ]
+    },
+    {
+      "id": "L12",
+      "text": "Show the card for the merge-allowed check.",
+      "verb": "card",
+      "args": [
+        "blk_rq_merge_ok"
+      ],
+      "contains": [
+        "blk_rq_merge_ok",
+        "blk-merge.c"
+      ]
+    },
+    {
+      "id": "L13",
+      "text": "Show the card for bio_split.",
+      "verb": "card",
+      "args": [
+        "bio_split"
+      ],
+      "contains": [
+        "bio_split",
+        "bio.c"
+      ]
+    },
+    {
+      "id": "L14",
+      "text": "What is impacted if blk_rq_merge_ok changes?",
+      "verb": "affected",
+      "args": [
+        "blk_rq_merge_ok"
+      ],
+      "min_impacts": 5
+    },
+    {
+      "id": "L15",
+      "text": "How does bio submission reach the hardware queue run?",
+      "verb": "path",
+      "args": [
+        "blk_mq_submit_bio",
+        "blk_mq_run_hw_queue"
+      ],
+      "contains": [
+        "blk_mq_run_hw_queue"
+      ]
+    },
+    {
+      "id": "L16",
+      "text": "Which config key gates the iocost controller in the build?",
+      "verb": "query",
+      "args": [
+        "config blk cgroup iocost"
+      ],
+      "expect_any": [
+        "Makefile#obj-config-blk-cgroup-iocost",
+        "blk-iocost"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L17",
+      "gap": "ranking/trace \u2014 the q5 gatekeeper does not rank top-5 lexically; call-edge composition (trace) should fix this",
+      "text": "Which function decides whether a bio can be back-merged into a request?",
+      "verb": "query",
+      "args": [
+        "back merge bio request"
+      ],
+      "expect_any": [
+        "ll_back_merge_fn"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L18",
+      "gap": "ranking \u2014 blk_rq_merge_ok loses to allow_merge wrappers",
+      "text": "Which function checks a request/bio pair is allowed to merge at all?",
+      "verb": "query",
+      "args": [
+        "request merge allowed check"
+      ],
+      "expect_any": [
+        "blk-merge.c::blk_rq_merge_ok"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L19",
+      "gap": "dev-env lane \u2014 Makefile TARGETS are not task nodes yet (config keys are)",
+      "text": "What build tasks does this module define?",
+      "verb": "query",
+      "args": [
+        "build task make target"
+      ],
+      "expect_any": [
+        "task:"
+      ],
+      "k": 5
+    },
+    {
+      "id": "L20",
+      "gap": "tests-for \u2014 no in-tree tests in block/; needs cross-repo test topology",
+      "text": "Which tests cover bio_split?",
+      "verb": "affected",
+      "args": [
+        "bio_split"
+      ],
+      "min_impacts": 1,
+      "impacts_match": "_test\\.|/tests?/|Tests"
+    }
+  ]
+}

@@ -32,6 +32,14 @@ the validated `add --json` door.
 - Spec-driven: decisions live in `openspec/` + `docs/VISION.md` (+ `docs/CRITIQUE.md`
   as the standing counter-weight). Every claim traces to a measured spike.
 - Conventional commits; never add Co-authored-by.
+- Golden net: `internal/golden/` pins extraction snapshots, landmark facts,
+  perf ceilings, AND a judged 20-question scoreboard per corpus (floors in
+  `testdata/questions/*.json`, marks in CHANGELOG). Any session touching
+  extract/query/analyze MUST run `task golden` (hermetic) and — for
+  extraction-surface changes — the corpus tier against pinned clones
+  (`git clone --depth 1 --branch v6.9 …linux`, `--branch 13.0.3
+  …Newtonsoft.Json`; `CTX_OPTIMIZE_GOLDEN_CORPORA=<dir> task golden`).
+  Score and speed may only move UP; raising a floor is a reviewed diff.
 
 <!-- ctx-optimize:begin -->
 <ctx-optimize>

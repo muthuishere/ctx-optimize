@@ -40,7 +40,5 @@ jobs:
           mkdir -p /tmp/corpora
           git clone --depth 1 --branch v6.9 https://github.com/torvalds/linux.git /tmp/corpora/linux
           git clone --depth 1 --branch 13.0.3 https://github.com/JamesNK/Newtonsoft.Json.git /tmp/corpora/Newtonsoft.Json
-      - name: corpus goldens
-        run: CTX_OPTIMIZE_GOLDEN_CORPORA=/tmp/corpora go test ./internal/golden/ -run TestCorpusGolden -v
-      - name: hermetic goldens (same suite, committed fixtures)
-        run: go test ./internal/golden/ -run TestGolden -v
+      - name: golden suite — snapshots, landmarks, perf gates, judged Q&A scoreboard
+        run: CTX_OPTIMIZE_GOLDEN_CORPORA=/tmp/corpora go test ./internal/golden/ -v

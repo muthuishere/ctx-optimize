@@ -1,0 +1,245 @@
+{
+  "corpus": "newtonsoft",
+  "min_score": 16.5,
+  "questions": [
+    {
+      "id": "N01",
+      "text": "How do I deserialize a JSON string to an object?",
+      "verb": "query",
+      "args": [
+        "deserialize json string object"
+      ],
+      "expect_any": [
+        "DeserializeObject"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N02",
+      "text": "Where is the streaming JSON text reader?",
+      "verb": "query",
+      "args": [
+        "read json token text reader"
+      ],
+      "expect_any": [
+        "JsonTextReader"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N03",
+      "text": "Where is JSON text output written?",
+      "verb": "query",
+      "args": [
+        "write json text output"
+      ],
+      "expect_any": [
+        "JsonTextWriter"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N04",
+      "text": "Where is the LINQ-to-JSON object type?",
+      "verb": "query",
+      "args": [
+        "linq json object parse"
+      ],
+      "expect_any": [
+        "JObject"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N05",
+      "text": "Where is the JSON array token type?",
+      "verb": "query",
+      "args": [
+        "json array token"
+      ],
+      "expect_any": [
+        "JArray"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N06",
+      "text": "How do I get camelCase property names?",
+      "verb": "query",
+      "args": [
+        "camel case property names resolver"
+      ],
+      "expect_any": [
+        "CamelCase"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N07",
+      "text": "Where is the ISO date time converter?",
+      "verb": "query",
+      "args": [
+        "iso date time converter"
+      ],
+      "expect_any": [
+        "IsoDateTimeConverter"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N08",
+      "text": "Where is the default contract resolver?",
+      "verb": "query",
+      "args": [
+        "contract resolver default"
+      ],
+      "expect_any": [
+        "DefaultContractResolver"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N09",
+      "text": "Where does JSON schema validation live?",
+      "verb": "query",
+      "args": [
+        "json schema validate"
+      ],
+      "expect_any": [
+        "JsonSchema"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N10",
+      "text": "Where is the BSON binary writer?",
+      "verb": "query",
+      "args": [
+        "bson binary writer"
+      ],
+      "expect_any": [
+        "BsonBinaryWriter"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N11",
+      "text": "Show the card for the JsonConvert facade.",
+      "verb": "card",
+      "args": [
+        "Newtonsoft.JsonConvert"
+      ],
+      "contains": [
+        "JsonConvert",
+        "JsonConvert.cs"
+      ]
+    },
+    {
+      "id": "N12",
+      "text": "Show the card for JsonSerializer.",
+      "verb": "card",
+      "args": [
+        "Newtonsoft.JsonSerializer"
+      ],
+      "contains": [
+        "JsonSerializer",
+        "JsonSerializer.cs"
+      ]
+    },
+    {
+      "id": "N13",
+      "text": "What is impacted if DeserializeObject changes?",
+      "verb": "affected",
+      "args": [
+        "JsonConvert.DeserializeObject"
+      ],
+      "min_impacts": 5
+    },
+    {
+      "id": "N14",
+      "text": "Which tests exercise SerializeObject? (derived tests-for)",
+      "verb": "affected",
+      "args": [
+        "JsonConvert.SerializeObject"
+      ],
+      "min_impacts": 1,
+      "impacts_match": "Tests"
+    },
+    {
+      "id": "N15",
+      "text": "What NuGet packages does the test project pull in?",
+      "verb": "query",
+      "args": [
+        "nunit package dependency"
+      ],
+      "expect_any": [
+        "dep:nuget/NUnit"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N16",
+      "text": "Where do JSON converters get chosen for a type?",
+      "verb": "query",
+      "args": [
+        "converter for object type match"
+      ],
+      "expect_any": [
+        "Converter"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N17",
+      "gap": "ranking \u2014 test files outrank the source method (test-noise defect, measured 2026-07-16)",
+      "text": "How do I serialize an object to a JSON string?",
+      "verb": "query",
+      "args": [
+        "serialize object json string"
+      ],
+      "expect_any": [
+        "JsonConvert.cs::Newtonsoft.JsonConvert.SerializeObject"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N18",
+      "gap": "ranking \u2014 PopulateObject drowns in similarly-worded tests",
+      "text": "How do I populate an existing object from JSON?",
+      "verb": "query",
+      "args": [
+        "populate existing object json"
+      ],
+      "expect_any": [
+        "PopulateObject"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N19",
+      "gap": "ranking \u2014 factory method loses to test noise",
+      "text": "How do I create a JsonSerializer with settings?",
+      "verb": "query",
+      "args": [
+        "json serializer create settings"
+      ],
+      "expect_any": [
+        "JsonSerializer.cs::Newtonsoft.JsonSerializer.Create"
+      ],
+      "k": 5
+    },
+    {
+      "id": "N20",
+      "gap": "dev-env lane \u2014 no task facts for dotnet build/test yet",
+      "text": "How do I run this project's tests?",
+      "verb": "query",
+      "args": [
+        "run tests build task"
+      ],
+      "expect_any": [
+        "task:"
+      ],
+      "k": 5
+    }
+  ]
+}
