@@ -1,0 +1,32 @@
+{
+  "corpus": "newtonsoft",
+  "files": 1162,
+  "bytes": 16457442,
+  "machine": "darwin/arm64/Muthukumarans-MacBook-Pro-2.local",
+  "go_version": "go1.26.3",
+  "commit": "7588bd8787f1",
+  "when": "2026-07-16T12:22:51Z",
+  "cold_gather": {
+    "p50_ms": 1211.228,
+    "p95_ms": 1261.093
+  },
+  "refresh_5_files": {
+    "p50_ms": 1341.43,
+    "p95_ms": 1360.259
+  },
+  "query": {
+    "p50_ms": 21.275,
+    "p95_ms": 23.917
+  },
+  "card": {
+    "p50_ms": 12.983,
+    "p95_ms": 14.27
+  },
+  "peak_rss_mb": 4791.328125,
+  "store_bytes": 10185092,
+  "query_out_tokens_per_call": 1466,
+  "card_out_tokens_per_call": 797,
+  "subprocess_query_ms_p50": 28.775,
+  "session_100_queries_ms": 2877.5,
+  "session_100_queries_tokens": 146625
+}

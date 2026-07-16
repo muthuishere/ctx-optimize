@@ -1,0 +1,32 @@
+{
+  "corpus": "ctx-optimize",
+  "files": 1085,
+  "bytes": 572561663,
+  "machine": "darwin/arm64/Muthukumarans-MacBook-Pro-2.local",
+  "go_version": "go1.26.3",
+  "commit": "7588bd8787f1",
+  "when": "2026-07-16T12:22:20Z",
+  "cold_gather": {
+    "p50_ms": 601.89,
+    "p95_ms": 612.344
+  },
+  "refresh_5_files": {
+    "p50_ms": 640.893,
+    "p95_ms": 650.627
+  },
+  "query": {
+    "p50_ms": 10.625,
+    "p95_ms": 12.671
+  },
+  "card": {
+    "p50_ms": 6.564,
+    "p95_ms": 7.896
+  },
+  "peak_rss_mb": 4723.875,
+  "store_bytes": 4994108,
+  "query_out_tokens_per_call": 1565,
+  "card_out_tokens_per_call": 446,
+  "subprocess_query_ms_p50": 18.965,
+  "session_100_queries_ms": 1896.5,
+  "session_100_queries_tokens": 156575
+}

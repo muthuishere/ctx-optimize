@@ -1,0 +1,32 @@
+{
+  "corpus": "linux-block",
+  "files": 105,
+  "bytes": 1948113,
+  "machine": "darwin/arm64/Muthukumarans-MacBook-Pro-2.local",
+  "go_version": "go1.26.3",
+  "commit": "7588bd8787f1",
+  "when": "2026-07-16T12:22:30Z",
+  "cold_gather": {
+    "p50_ms": 534.355,
+    "p95_ms": 549.497
+  },
+  "refresh_5_files": {
+    "p50_ms": 590.859,
+    "p95_ms": 594.658
+  },
+  "query": {
+    "p50_ms": 10.777,
+    "p95_ms": 12.599
+  },
+  "card": {
+    "p50_ms": 8.366,
+    "p95_ms": 9.417
+  },
+  "peak_rss_mb": 4781.5,
+  "store_bytes": 4589618,
+  "query_out_tokens_per_call": 1925,
+  "card_out_tokens_per_call": 463,
+  "subprocess_query_ms_p50": 20.301,
+  "session_100_queries_ms": 2030.1,
+  "session_100_queries_tokens": 192575
+}

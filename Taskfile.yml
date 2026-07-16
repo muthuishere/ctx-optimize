@@ -94,3 +94,9 @@ tasks:
     cmds:
       - go test ./internal/golden/ -v -run TestGolden
       - '{{if .CTX_OPTIMIZE_GOLDEN_CORPORA}}CTX_OPTIMIZE_GOLDEN_CORPORA={{.CTX_OPTIMIZE_GOLDEN_CORPORA}} go test ./internal/golden/ -v{{else}}echo "corpus tier skipped — set CTX_OPTIMIZE_GOLDEN_CORPORA=<dir with pinned clones>"{{end}}'
+
+  bench-extract:
+    desc: Performance + agent-cost bench (step 0 of the ADR plan) — cold gather, 5-file refresh, query/card latency, subprocess spawn cost, tokens-per-call, 100-call session cost. Gates vs proof/bench/baseline-*.json on the same machine. UPDATE_BASELINE=1 to re-baseline (reviewed like code).
+    deps: [build]
+    cmds:
+      - CTX_OPTIMIZE_BENCH=1 {{if .CTX_OPTIMIZE_GOLDEN_CORPORA}}CTX_OPTIMIZE_GOLDEN_CORPORA={{.CTX_OPTIMIZE_GOLDEN_CORPORA}} {{end}}go test ./internal/bench/ -run TestBenchExtract -v -timeout 20m

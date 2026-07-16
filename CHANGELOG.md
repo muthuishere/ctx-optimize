@@ -58,6 +58,21 @@ embeddings, no MCP, no network except your configured remote.**
   test project; L16 the iocost build-config key (Makefile config lane already
   answers it).
 
+- **Bench harness (`task bench-extract`, ADR step 0)** — cold gather p50/p95
+  (10 runs), 5-file incremental refresh, query/card latency, peak RSS, store
+  size, AND the agent-session cost model: subprocess spawn+answer per call
+  and the 100-call session bill. Same-machine regression gates vs committed
+  `proof/bench/baseline-*.json` (gather ≤+5%, query ≤+10% with a 5ms noise
+  floor, RSS ≤+10%, output tokens ≤+20%).
+
+  **Agent-cost baseline (2026-07-16): latency is NOT the cost — output
+  volume is.** Subprocess query ≈ 19–29ms/call (100-call session ≈ 2–3s
+  wall), but each query answer is ~1,500–1,900 tokens, so a 100-query
+  session feeds the agent **~150–190k tokens** of answer text. This is the
+  measured basis for choosing the next requirement: cut tokens-per-answer
+  (terse mode / tighter default budget) and calls-per-session (composed
+  verbs) — not shave milliseconds.
+
 ## [0.3.7] — 2026-07-16
 
 ### Fixed
