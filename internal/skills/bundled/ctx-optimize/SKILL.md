@@ -89,6 +89,7 @@ counted honestly.
 | Asking anything about the codebase, and a store exists | `ctx-optimize query "<question>" --json` — BEFORE any Grep/Read |
 | Asking "what is X / explain X" | `ctx-optimize explain "X" --json` |
 | About to open a file just to see a symbol's signature/doc/callers | `ctx-optimize card "X" --json` — the card IS the read |
+| About to CHANGE a symbol ("I'm going to modify X — what do I touch, which tests do I run?") | `ctx-optimize change-plan "X" --json` — ONE composed answer (sig + callers + blast radius + tests-for + co-change + confidence); replaces the query/card/affected chain |
 | Asking "what breaks if X changes / blast radius / impact" | `ctx-optimize affected "X" --depth 2 --json` |
 | Asking "how are A and B connected / trace A to B" | `ctx-optimize path "A" "B" --json` |
 | Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |

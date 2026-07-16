@@ -34,6 +34,13 @@
       <note>Wants the node's LABEL exactly. Unsure? `query` the short name, copy the label from the hit, then `card` it. Open a file only when a hit's `location` demands verbatim code — then read only that range.</note>
     </route>
 
+    <route id="change-plan" group="answer">
+      <when>about to change X, plan a change, what should I touch and which tests do I run, impact + tests in one shot</when>
+      <goal>ONE composed call replacing the query+card+affected+grep chain (~90% fewer answer tokens, measured): signature, callers, blast radius, WHICH TESTS TO RUN (derived tests-for), co-change history, and a confidence footer (extracted vs inferred vs co-change evidence).</goal>
+      <cmd>ctx-optimize change-plan "&lt;symbol&gt;" --json  [--depth N]</cmd>
+      <note>Prefer this over separate card + affected calls when the intent is "I'm about to modify X". Bounded output (overflow summarized, --json for all).</note>
+    </route>
+
     <route id="affected" group="answer">
       <when>what breaks if X changes, blast radius, impact, reverse dependencies, who depends on this, is it safe to change</when>
       <goal>Reverse impact — everything that transitively reaches X.</goal>

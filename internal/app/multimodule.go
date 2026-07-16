@@ -43,12 +43,12 @@ const (
 // scope is where a question was asked, resolved against the nearest config.
 type scope struct {
 	kind       scopeKind
-	dir        string // where the question was asked (abs)
-	rootDir    string // multi-module root dir (abs; == config dir for single)
-	rootKey    string // root store key
-	storeKey   string // module (or single) store key; == rootKey at root
-	moduleName string // navigator label when kind == scopeModule
-	modulePath string // federation namespace prefix: module rel-path (single) or "" (multi) when kind == scopeModule
+	dir        string       // where the question was asked (abs)
+	rootDir    string       // multi-module root dir (abs; == config dir for single)
+	rootKey    string       // root store key
+	storeKey   string       // module (or single) store key; == rootKey at root
+	moduleName string       // navigator label when kind == scopeModule
+	modulePath string       // federation namespace prefix: module rel-path (single) or "" (multi) when kind == scopeModule
 	mod        *scan.Module // the resolved module when kind == scopeModule (carries Dirs/KeySeg/NSPrefix)
 	cfg        *project.Config
 	modules    []scan.Module // expanded, concrete (root configs only)

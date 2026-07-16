@@ -78,6 +78,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdCard(rest, stdout)
 	case "affected":
 		err = cmdAffected(rest, stdout)
+	case "change-plan", "plan":
+		err = cmdChangePlan(rest, stdout)
 	case "hubs":
 		err = cmdHubs(rest, stdout)
 	case "wiki":
@@ -2216,6 +2218,11 @@ commands:
                               callees — cite without opening the file  [--json]
   affected "X"                reverse impact: what breaks if X changes
                               [--depth N] [--relation R] [--json]
+  change-plan "X"             ONE composed answer for "I'm about to change X":
+                              signature + callers + blast radius + WHICH TESTS
+                              TO RUN + co-change history + confidence footer
+                              (extracted vs inferred). Replaces a query/card/
+                              affected/grep chain  [--depth N] [--json]
   hubs                        most-connected nodes (god nodes)  [--top N] [--json]
   wiki                        regenerate the markdown wiki in the store's wiki/
                               dir (deterministic, from nodes+edges only; every

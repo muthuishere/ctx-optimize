@@ -12,6 +12,20 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Added
 
+- **`change-plan` — the first composed one-call verb (A2 + A1 + tests-for).**
+  `ctx-optimize change-plan "X"` answers "I'm about to change X" in ONE
+  bounded call: signature, callers, blast radius, **which tests to run**
+  (the derived tests-for view — affected filtered to test declarations, no
+  persisted edge), historical co-changes, and a confidence footer separating
+  extracted from inferred edges and co-change evidence. Output is capped per
+  section with overflow summarized (`--json` for everything).
+
+  **Measured on this repo: 229 tokens in 1 call vs 2,270 tokens across the
+  query+card+affected chain it replaces — ~90% fewer answer tokens.** Against
+  the bench's session finding (100 calls ≈ 150–190k tokens), routing
+  change-intent questions here is the first real cut. Skill routing updated
+  (SKILL.md hot-path row + activation-routing route); alias: `plan`.
+
 - **Dev-env lane, first slice: task-runner facts.** Taskfile.yml (+ env
   variants), Makefile, and justfile targets become `task` nodes — same shape
   as npm scripts (`<file>::task:<name>`, label `task:`/`make:`/`just:`,
