@@ -278,7 +278,8 @@ func pointerBlock(name string, modules int) string {
 			fmt.Sprintf("one graph per module + a navigator, %d modules declared in `.ctxoptimize/config.json`.</store>\n", modules) +
 			"  <use>For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I\n" +
 			"  change W — use it INSTEAD of grep-and-read chains, not in addition:\n" +
-			"  `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>`.\n" +
+			"  PICK BY INTENT — find: `ctx-optimize query \"<terms>\"` · inspect a symbol: `ctx-optimize card <symbol>` ·\n" +
+			"  about to EDIT: `ctx-optimize change-plan <symbol>` (callers+impact+tests, one call) · blast radius: `ctx-optimize affected <symbol>` · connection: `ctx-optimize path <a> <b>`.\n" +
 			"  Scope follows your cwd: inside a module dir answers come from that module (zero hits escalate repo-wide);\n" +
 			"  at the root the navigator federates across the best-matching modules (`--modules all|a,b` to widen).\n" +
 			"  Module map + hubs: `~/ctxoptimize/" + name + "/navigator.md`; unified wiki at `~/ctxoptimize/" + name + "/wiki/index.md`.\n" +
@@ -294,7 +295,8 @@ func pointerBlock(name string, modules int) string {
 		"  <store>Pre-built knowledge store at `~/ctxoptimize/" + name + "/` (config in `.ctxoptimize/` here).</store>\n" +
 		"  <use>For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
 		"  use it INSTEAD of grep-and-read chains, not in addition:\n" +
-		"  `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (signature+doc+callers+callees) ·\n" +
+		"  PICK BY INTENT — find: `ctx-optimize query \"<terms>\"` · inspect a symbol: `ctx-optimize card <symbol>` ·\n" +
+		"  about to EDIT: `ctx-optimize change-plan <symbol>` (callers+impact+tests, one call) · blast radius:\n" +
 		"  `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>` · wiki at `~/ctxoptimize/" + name + "/wiki/`.\n" +
 		"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source; open a file only\n" +
 		"  when the answer needs a body the store didn't show. Exhaustive text sweeps (every literal occurrence of a\n" +
@@ -425,8 +427,9 @@ func globalBlock() string {
 		"If `command -v ctx-optimize` succeeds, then in ANY repo you work in:\n\n" +
 		"- **Store present** — a `.ctxoptimize/` directory at the repo root or any parent of your cwd\n" +
 		"  means a pre-built knowledge graph of that codebase already exists. Use it BEFORE any\n" +
-		"  Grep/rg/Glob/find or exploratory Read: `ctx-optimize query \"<terms>\"` · `card <symbol>`\n" +
-		"  (signature+doc+callers+callees) · `affected <symbol>` (blast radius) · `path <a> <b>`.\n" +
+		"  Grep/rg/Glob/find or exploratory Read — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
+		"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests,\n" +
+		"  one call) · blast radius → `affected <symbol>` · connection → `path <a> <b>`.\n" +
 		"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source;\n" +
 		"  open a file only for a body the store didn't show. Exhaustive literal-string sweeps stay grep's job.\n" +
 		"- **No `.ctxoptimize/` yet** — before you start a grep-and-read chain on a real codebase, OFFER to\n" +

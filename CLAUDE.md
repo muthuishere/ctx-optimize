@@ -50,7 +50,8 @@ the validated `add --json` door.
   <store>Pre-built knowledge store at `~/ctxoptimize/ctx-optimize/` (config in `.ctxoptimize/` here).</store>
   <use>For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —
   use it INSTEAD of grep-and-read chains, not in addition:
-  `ctx-optimize query "<terms>"` · `ctx-optimize card <symbol>` (signature+doc+callers+callees) ·
+  PICK BY INTENT — find: `ctx-optimize query "<terms>"` · inspect a symbol: `ctx-optimize card <symbol>` ·
+  about to EDIT: `ctx-optimize change-plan <symbol>` (callers+impact+tests, one call) · blast radius:
   `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>` · wiki at `~/ctxoptimize/ctx-optimize/wiki/`.
   Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source; open a file only
   when the answer needs a body the store didn't show. Exhaustive text sweeps (every literal occurrence of a

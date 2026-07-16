@@ -1201,7 +1201,7 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 		if len(nodes) == 0 {
 			return nil
 		}
-		msg = fmt.Sprintf("You are inside module %q of a multi-module repo with a pre-built ctx-optimize knowledge store (%d nodes for this module). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>`. Answers are scoped to this module; zero hits auto-escalate repo-wide (`--root` forces it). Output is parsed fact with file:line — cite it directly.", sc.moduleName, len(nodes))
+		msg = fmt.Sprintf("You are inside module %q of a multi-module repo with a pre-built ctx-optimize knowledge store (%d nodes for this module). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. Answers are scoped to this module; zero hits auto-escalate repo-wide (`--root` forces it). Output is parsed fact with file:line — cite it directly.", sc.moduleName, len(nodes))
 	case sc.kind == scopeRoot && len(sc.modules) > 0:
 		total := len(nodes)
 		count := 0
@@ -1218,12 +1218,12 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 		if total == 0 {
 			return nil
 		}
-		msg = fmt.Sprintf("This is a multi-module repo with a pre-built ctx-optimize knowledge store: %d modules, %d nodes total, plus a navigator (module map + hubs at `~/ctxoptimize/%s/navigator.md`). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` (federates across the best-matching modules from the root; run inside a module dir to scope to it) · `ctx-optimize card <symbol>` · `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly.", count, total, sc.rootKey)
+		msg = fmt.Sprintf("This is a multi-module repo with a pre-built ctx-optimize knowledge store: %d modules, %d nodes total, plus a navigator (module map + hubs at `~/ctxoptimize/%s/navigator.md`). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. From the root, query federates across the best-matching modules; run inside a module dir to scope to it. Output is parsed fact with file:line — cite it directly.", count, total, sc.rootKey)
 	default:
 		if len(nodes) == 0 {
 			return nil
 		}
-		msg = fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). For code questions use it INSTEAD of grep-and-read: `ctx-optimize query \"<terms>\"` · `ctx-optimize card <symbol>` (sig+doc+body+callers) · `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks.", len(nodes))
+		msg = fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks.", len(nodes))
 	}
 	t0 := time.Now()
 	cw := &countingWriter{w: stdout}

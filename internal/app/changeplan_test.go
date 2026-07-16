@@ -13,9 +13,9 @@ import (
 func TestChangePlanComposesOneAnswer(t *testing.T) {
 	repo := t.TempDir()
 	files := map[string]string{
-		"go.mod":         "module acme\n",
-		"pay.go":         "package acme\n\nfunc Charge() {}\n\nfunc useCharge() { Charge() }\n",
-		"pay_test.go":    "package acme\n\nimport \"testing\"\n\nfunc TestCharge(t *testing.T) { Charge() }\n",
+		"go.mod":          "module acme\n",
+		"pay.go":          "package acme\n\nfunc Charge() {}\n\nfunc useCharge() { Charge() }\n",
+		"pay_test.go":     "package acme\n\nimport \"testing\"\n\nfunc TestCharge(t *testing.T) { Charge() }\n",
 		"billing_util.go": "package acme\n\nfunc helper() { Charge() }\n",
 	}
 	for p, content := range files {
