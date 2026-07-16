@@ -10,6 +10,44 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Added
+
+- **`verify` — deterministic citation checking** (ADR
+  `openspec/changes/2026-07-16-verify-verb/`; maintainer: "the model gets
+  too hallucinated, need some way to get defensive"). Before a human acts
+  on a claim: `ctx-optimize verify "<node-id | exact-label |
+  file:L10-L20>" ...` — node exists (EXACT only, verify never fuzzes),
+  file exists, line range in bounds, and drift vs the gather-time git HEAD
+  the store already records. Verdicts `ok | drifted | missing-node |
+  missing-file | out-of-range`; exit 0 only when ALL claims hold, so hooks
+  and CI can enforce grounding. Untracked/non-git files report drift
+  `unknown`, never a false clean.
+- **Ambiguity-aware resolution — safe by default** (graphify audit: its
+  `explain` silently answers about the nearest prefix match; that bug
+  class is now refused). Fuzzy ties on card/explain/affected/path/
+  change-plan return ranked "pick one" candidates instead of guessing;
+  `--fuzzy` opts into the top candidate and the answer STAYS labeled.
+  Every resolution reports `resolved_via: exact-id | exact-label |
+  last-segment | fuzzy` (JSON + text banner). Fuzzy hits also need ≥half
+  the asked tokens — a junk name can no longer resolve off one stray
+  common token (caught by the new probe suite).
+- **Grounding probe suite** (`internal/golden/grounding_test.go`) — the
+  anti-hallucination tier: six adversarial probes where the RIGHT answer
+  is a refusal, a labeled fuzzy match, or a failed verification. Runs in
+  every `go test` / `task golden`.
+- **Two-sided ladder in the skill** — replaces the absolutist gate: a
+  tool-choice table (symbols/structure → store; literals/config
+  values/comments → grep directly, say so), READ the cited range when
+  behavior matters (explicitly not a violation), two misses = switch
+  tools, verify before a human acts, abstain over padding. Hook context
+  carries the one-line version.
+
+  **Measured (2026-07-17, gates held):** ambiguity-refusal rate on both
+  judged 20-question scoreboards: 0 (floors 16.5/20 unchanged); bench
+  unchanged (subprocess query p50 19.2ms, 1597 tok/call — within the
+  ≤+10%/≤+20% gates; gather within ≤+5%); `verify` ≈ card-class latency
+  (store-load dominated, ~50ms cold for 3 claims on a 2.1k-node store).
+
 ## [0.4.0] — 2026-07-16
 
 **Breaking.** The remote is now YOUR script (ADR

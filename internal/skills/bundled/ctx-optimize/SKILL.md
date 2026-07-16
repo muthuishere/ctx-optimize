@@ -67,6 +67,7 @@ Do NOT default to `query` for everything. The verb follows the intent:
 | **Blast radius** only — is it safe to change | `ctx-optimize affected <symbol> --depth 2 --json` |
 | **Connection** — how are A and B related | `ctx-optimize path "A" "B" --json` |
 | **Orient** — where do I start in this repo | `ctx-optimize hubs --top 10 --json` |
+| **About to hand a citation to a human** — does this claim still hold? | `ctx-optimize verify "<label or file:L10-L20>" --json` — node exists (exact only), file exists, range in bounds, drifted-since-gather |
 
 If you ran `query` and then immediately wanted callers or tests — you picked
 the wrong verb; the intent was edit → `change-plan`.
@@ -82,26 +83,33 @@ adapters), share (remote push/pull — YOUR committed script is the transport), 
 Consult it whenever you're unsure which verb or flag fits — nothing is hidden
 there. The table below is the hot path; the XML is the whole map.
 
-## THE GATE — every search goes through the store first (non-negotiable)
+## THE GATE — pick the right tool FIRST, then descend the ladder
 
-In a repo with `.ctxoptimize/`, ctx-optimize IS the search tool. Before ANY
-Grep, rg, Glob, find, or exploratory Read — run the verb the intent map above
-picks (find→query · inspect→card · edit→change-plan · impact→affected). No
-exceptions for "just a quick grep": the quick grep is exactly the cost this
-store exists to kill, and skipping the store means the answer arrives without
-citations.
+**Tool choice, before the first call** (using the wrong tool in either
+direction is the failure — forcing `query` onto literals thrashes; blind
+grep on structure wastes the store):
 
-Grep/Read are permitted ONLY as:
-1. **Exhaustive literal sweeps** — every occurrence of an exact string
-   (renames, license headers). That is grep's job; say so and grep.
-2. **Store-miss fallback** — the store returned nothing relevant AND you
-   said so first (see answering discipline), AND `add .` wouldn't fix it.
-3. **Verbatim body reads** the store already located — open ONLY the cited
-   `source location` range, never browse around it.
+| Question shape | Tool |
+|---|---|
+| symbols, structure, callers, impact, architecture, "how does X work" | store verbs (query/card/change-plan/affected/path/hubs) |
+| exact literal strings, every occurrence, config VALUES, comments, member fields, build files, error-message text | **grep directly — the store does not index these; say so and grep** |
 
-If you notice you grepped first anyway: stop, run the store query, and
-record the episode with `save-result --outcome dead_end` so the miss is
-counted honestly.
+**The ladder — descend it, never stop on a rung:**
+1. Right-tool store verb first (find→query · inspect→card ·
+   edit→change-plan · impact→affected).
+2. Before a human acts on a citation: `ctx-optimize verify "<label or
+   file:L10-L20>"` — a failed verify means re-query or `sync`, NEVER
+   rephrase the claim.
+3. **When the answer depends on behavior — logic, edge cases, actual
+   values — READ the cited range.** Opening the file at a store-provided
+   `file:line` is the point of having the location, not a violation. What
+   stays forbidden is *blind* grep-and-browse.
+4. **Two store misses = switch tools, not words.** A third rephrase is
+   thrash: go to `hubs`, `explain` a neighbor, or declare the grep lane
+   and grep. Log the miss (`save-result --outcome dead_end`).
+5. Still nothing → abstain, stating what's missing and which gather lane
+   would fix it. The ONE forbidden move is stopping silently or padding
+   the answer from priors.
 
 ## Routing — pick the verb from the intent (route first, then act)
 
@@ -159,7 +167,10 @@ read only that range.
    neighbors. Cite `source location` in your answer.
 2. Answer from what the store returned. Never invent a node or an edge. Edge
    `confidence` matters: EXTRACTED is parsed fact, INFERRED is name-matched —
-   say which when it matters.
+   say which when it matters. Resolution is honest too: `resolved_via:
+   fuzzy` means the store matched a NEAR name — repeat the resolved id to
+   the user; an ambiguity refusal (ranked candidates) means pick one, never
+   pass `--fuzzy` silently on a user's behalf.
 3. No hits? Say so, then try: different terms (the matcher does prefix +
    trigram, typos are OK), `hubs` for orientation, `explain` on a nearby
    node — or `add` if the store is stale. Never pad an answer from priors.

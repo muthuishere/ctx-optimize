@@ -13,16 +13,54 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
-// Resolve finds the node meant by a human name: exact id, exact label
-// (case-insensitive), qualifier-stripped label (`ns::Class::Method` /
-// `pkg.Class.method` → `Method`), then best token overlap. Deterministic
-// ties by id. A total miss suggests the nearest labels — the measured card
-// dead-end pattern (chromium forensics) is an agent guessing qualified id
-// formats and giving up after bare "no node" errors.
+// Candidate is one near-match offered when fuzzy resolution has no clear
+// winner.
+type Candidate struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Kind  string `json:"kind"`
+	Score int    `json:"score"`
+}
+
+// AmbiguousError: fuzzy resolution found several nodes scoring alike —
+// answering about one of them would be graphify's silent-nearest-match
+// bug (ADR 2026-07-16-verify-verb). The safe default is to refuse with
+// ranked candidates; --fuzzy opts into taking the deterministic top one.
+type AmbiguousError struct {
+	Name       string
+	Candidates []Candidate
+}
+
+func (e *AmbiguousError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%q has no exact match and several near names score alike — refusing to guess; pick one:", e.Name)
+	for _, c := range e.Candidates {
+		fmt.Fprintf(&b, "\n  %s  [%s]  %s", c.Label, c.Kind, c.ID)
+	}
+	b.WriteString("\n(use the exact label or id, or --fuzzy to take the top candidate)")
+	return b.String()
+}
+
+// Resolve finds the node meant by a human name — permissive form kept for
+// callers that don't surface resolution provenance.
 func Resolve(nodes []schema.Node, name string) (*schema.Node, error) {
+	n, _, err := ResolveVia(nodes, name)
+	return n, err
+}
+
+// ResolveVia finds the node meant by a human name and reports HOW it
+// resolved: "exact-id", "exact-label", "last-segment" (qualifier-stripped
+// exact label: `ns::Class::Method` / `pkg.Class.method` → `Method`), or
+// "fuzzy" (best token overlap). Verbs print via so a fuzzy answer can
+// never masquerade as an exact one. A fuzzy TIE returns *AmbiguousError
+// with ranked candidates instead of silently picking; a total miss
+// suggests the nearest labels — the measured card dead-end pattern
+// (chromium forensics) is an agent guessing qualified id formats and
+// giving up after bare "no node" errors.
+func ResolveVia(nodes []schema.Node, name string) (*schema.Node, string, error) {
 	for i := range nodes {
 		if nodes[i].ID == name {
-			return &nodes[i], nil
+			return &nodes[i], "exact-id", nil
 		}
 	}
 	byLabel := func(want string) *schema.Node {
@@ -37,38 +75,60 @@ func Resolve(nodes []schema.Node, name string) (*schema.Node, error) {
 		return hit
 	}
 	if hit := byLabel(name); hit != nil {
-		return hit, nil
+		return hit, "exact-label", nil
 	}
 	if base := lastSegment(name); base != "" && !strings.EqualFold(base, name) {
 		if hit := byLabel(base); hit != nil {
-			return hit, nil
+			return hit, "last-segment", nil
 		}
 	}
 	// Fuzzy: token overlap against label+id.
 	want := query.Tokenize(name)
 	if len(want) == 0 {
-		return nil, fmt.Errorf("no node named %q", name)
+		return nil, "", fmt.Errorf("no node named %q", name)
 	}
+	scores := make([]int, len(nodes))
 	best, bestScore := -1, 0
 	for i := range nodes {
 		have := map[string]bool{}
 		for _, t := range query.Tokenize(nodes[i].Label + " " + nodes[i].ID) {
 			have[t] = true
 		}
-		s := 0
 		for _, t := range want {
 			if have[t] {
-				s++
+				scores[i]++
 			}
 		}
-		if s > bestScore || (s == bestScore && s > 0 && best >= 0 && nodes[i].ID < nodes[best].ID) {
-			best, bestScore = i, s
+		if scores[i] > bestScore || (scores[i] == bestScore && scores[i] > 0 && best >= 0 && nodes[i].ID < nodes[best].ID) {
+			best, bestScore = i, scores[i]
 		}
 	}
-	if best < 0 || bestScore == 0 {
-		return nil, fmt.Errorf("no node matching %q%s (`ctx-optimize query %q` searches the store)", name, didYouMean(nodes, name), name)
+	// Coverage floor: a fuzzy hit must match at least HALF the asked tokens —
+	// one stray common token ("name", "get") resolving a junk ask to a real
+	// node is the wrong-symbol hallucination in miniature (found by the
+	// grounding probe suite, P1b).
+	if best < 0 || bestScore == 0 || bestScore*2 < len(want) {
+		return nil, "", fmt.Errorf("no node matching %q%s (`ctx-optimize query %q` searches the store)", name, didYouMean(nodes, name), name)
 	}
-	return &nodes[best], nil
+	// A tie at the top is ambiguity — refuse with candidates rather than
+	// answer about a coin-flip winner (distinct labels only: same-label
+	// twins resolve deterministically by id and are not a wrong-symbol risk).
+	var tied []Candidate
+	seen := map[string]bool{}
+	for i := range nodes {
+		if scores[i] == bestScore && !seen[nodes[i].Label] {
+			seen[nodes[i].Label] = true
+			tied = append(tied, Candidate{ID: nodes[i].ID, Label: nodes[i].Label, Kind: nodes[i].Kind, Score: scores[i]})
+		}
+	}
+	if len(tied) > 1 {
+		sort.Slice(tied, func(i, j int) bool { return tied[i].ID < tied[j].ID })
+		if len(tied) > 5 {
+			tied = tied[:5]
+		}
+		return nil, "", &AmbiguousError{Name: name, Candidates: tied}
+	}
+	return &nodes[best], "fuzzy", nil
 }
 
 // lastSegment strips the qualifier prefixes agents invent: path, `::` chain,
@@ -307,17 +367,18 @@ func Affected(nodes []schema.Node, edges []schema.Edge, name string, depth int, 
 
 // Explanation is the complete deterministic story of one node.
 type Explanation struct {
-	Node     schema.Node         `json:"node"`
-	Outgoing map[string][]string `json:"outgoing"` // relation → target ids
-	Incoming map[string][]string `json:"incoming"` // relation → source ids
+	Node        schema.Node         `json:"node"`
+	ResolvedVia string              `json:"resolved_via"` // exact-id | exact-label | last-segment | fuzzy
+	Outgoing    map[string][]string `json:"outgoing"`     // relation → target ids
+	Incoming    map[string][]string `json:"incoming"`     // relation → source ids
 }
 
 func Explain(nodes []schema.Node, edges []schema.Edge, name string) (*Explanation, error) {
-	n, err := Resolve(nodes, name)
+	n, via, err := ResolveVia(nodes, name)
 	if err != nil {
 		return nil, err
 	}
-	ex := &Explanation{Node: *n, Outgoing: map[string][]string{}, Incoming: map[string][]string{}}
+	ex := &Explanation{Node: *n, ResolvedVia: via, Outgoing: map[string][]string{}, Incoming: map[string][]string{}}
 	for _, e := range edges {
 		if e.Source == n.ID {
 			ex.Outgoing[e.Relation] = append(ex.Outgoing[e.Relation], e.Target)
@@ -379,7 +440,8 @@ func RenderExplanation(ex *Explanation) string {
 // spike campaign measured pointer-chase reads (find node → open file for the
 // signature) as the #1 context waste; this is the fix.
 type CardData struct {
-	Node      schema.Node         `json:"node"`
+	Node        schema.Node       `json:"node"`
+	ResolvedVia string            `json:"resolved_via"` // exact-id | exact-label | last-segment | fuzzy
 	Signature string              `json:"signature,omitempty"`
 	Doc       string              `json:"doc,omitempty"`
 	Body      string              `json:"body,omitempty"`      // first lines of the actual source span, filled by the caller when the file is reachable
@@ -392,11 +454,11 @@ type CardData struct {
 }
 
 func Card(nodes []schema.Node, edges []schema.Edge, name string) (*CardData, error) {
-	n, err := Resolve(nodes, name)
+	n, via, err := ResolveVia(nodes, name)
 	if err != nil {
 		return nil, err
 	}
-	c := &CardData{Node: *n, Signature: n.Metadata["signature"], Doc: n.Metadata["doc"]}
+	c := &CardData{Node: *n, ResolvedVia: via, Signature: n.Metadata["signature"], Doc: n.Metadata["doc"]}
 	other := map[string][]string{}
 	for _, e := range edges {
 		switch {

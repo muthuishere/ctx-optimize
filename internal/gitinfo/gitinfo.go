@@ -38,6 +38,28 @@ func Remote(dir string) (origin, branch string, ok bool) {
 	return origin, branch, true
 }
 
+// FileChangedSince reports whether relPath differs between the given commit
+// and the CURRENT working tree — committed, staged, and unstaged changes all
+// count. ok=false when git or the sha is unavailable, so callers report
+// drift "unknown" instead of a false verdict (verify's drift check, ADR
+// 2026-07-16-verify-verb).
+func FileChangedSince(dir, sinceSHA, relPath string) (changed, ok bool) {
+	if sinceSHA == "" {
+		return false, false
+	}
+	if strings.TrimSpace(run(dir, "rev-parse", "--verify", sinceSHA+"^{commit}")) == "" {
+		return false, false
+	}
+	// Untracked files never appear in diff — "unchanged" would be a false
+	// verdict for a file git isn't watching; report unknown instead.
+	if strings.TrimSpace(run(dir, "ls-files", "--", relPath)) == "" {
+		return false, false
+	}
+	// A failed diff (e.g. bad path) and "no change" both come back empty;
+	// the sha was just verified, so empty here means unchanged.
+	return strings.TrimSpace(run(dir, "diff", "--name-only", sinceSHA, "--", relPath)) != "", true
+}
+
 func run(dir string, args ...string) string {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	out, err := cmd.Output() // stderr discarded: a non-repo/failure is just "unknown"

@@ -9,7 +9,8 @@
     <rule>THE GATE: in any repo with a `.ctxoptimize/` dir (root or a parent of cwd), ctx-optimize IS the search tool. Before ANY Grep/rg/Glob/find or exploratory Read, run the matching read route below.</rule>
     <rule>Questions never rebuild. If `status --json` shows nodes > 0 and the ask is a question — route to a read verb (query/card/affected/path/explain/hubs). Do NOT run `add`, do NOT grep, do NOT open files speculatively.</rule>
     <rule>Cite or abstain. Every read verb returns COMPLETE hits (id, label, kind, source, location, neighbors). Answer from what it returned, cite `source location`, never invent a node or edge. Say EXTRACTED (parsed fact) vs INFERRED (name-matched) when it matters.</rule>
-    <rule>Grep is allowed only as: (1) exhaustive literal string sweeps — every occurrence of an exact string; (2) a store-miss fallback AFTER you said the store returned nothing AND `add .` wouldn't fix it; (3) a verbatim read of a range the store already located. Say which lane you are in.</rule>
+    <rule>TOOL CHOICE first: symbols/structure/callers → store verbs; exact literals, config VALUES, comments, member fields, build files → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. Reading the cited range when behavior matters is the POINT of the location, not a violation; blind grep-and-browse is what stays forbidden. Never stop silently or pad from priors.</rule>
+    <rule>Fuzzy resolution announces itself (resolved_via) and refuses ties with ranked candidates — pick one; don't pass --fuzzy on a user's behalf. Before a human acts on a citation, `verify` it.</rule>
     <rule>The binary is deterministic — no API key, no model, no database, and no transport of its own: remote push/pull run the COMMANDS committed in config.json. Never prompt for any of them.</rule>
     <rule>Output is JSON with `--json` on every read verb; prefer it when you will parse, drop it when you will quote to the user.</rule>
     <rule>Global flags on any verb: `--path DIR` (which module the store is keyed by, default cwd) · `--store DIR` (store root, default $CTX_OPTIMIZE_STORE or ~/ctxoptimize).</rule>
@@ -69,6 +70,12 @@
       <when>readable map of the module, architecture overview doc, human-readable summary of the graph</when>
       <goal>Open the store's generated wiki (regenerated on every `add`).</goal>
       <cmd>open ~/ctxoptimize/&lt;name&gt;/wiki/index.md   # force regen: ctx-optimize wiki</cmd>
+    </route>
+
+    <route id="verify" group="answer">
+      <when>about to hand a citation to a human, does this claim still hold, is this file:line still right, check my citations, defensive grounding</when>
+      <goal>Deterministic citation check: node exists (EXACT id/label — never fuzzy), file exists, line range in bounds, drift vs gather-time git HEAD. Verdicts ok|drifted|missing-node|missing-file|out-of-range; exit 0 only when ALL claims hold. A failed verify = re-query or `sync`, never rephrase the claim.</goal>
+      <cmd>ctx-optimize verify "&lt;node-id | exact-label | file:L10-L20&gt;" ...  [--json]</cmd>
     </route>
 
     <route id="status" group="answer">

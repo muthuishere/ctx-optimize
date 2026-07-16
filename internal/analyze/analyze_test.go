@@ -1,6 +1,7 @@
 package analyze
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -184,5 +185,41 @@ func TestLastSegment(t *testing.T) {
 		if got := lastSegment(in); got != want {
 			t.Fatalf("lastSegment(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Ambiguity guard (ADR 2026-07-16-verify-verb): a fuzzy TIE refuses with
+// ranked candidates — graphify's silent matches[0] is the anti-pattern —
+// while a clear fuzzy winner still resolves, labeled as fuzzy.
+func TestResolveViaAmbiguityAndHonesty(t *testing.T) {
+	mk := func(id, label string) schema.Node {
+		return schema.Node{ID: id, Label: label, Kind: "function", FileType: "code", Source: "a.go"}
+	}
+	// Two near names score alike for "PayInvoice" → refuse with both.
+	nodes := []schema.Node{mk("a.go::PayInvoiceRetry", "PayInvoiceRetry"), mk("a.go::PayInvoiceOnce", "PayInvoiceOnce")}
+	_, _, err := ResolveVia(nodes, "PayInvoice")
+	var amb *AmbiguousError
+	if !errors.As(err, &amb) {
+		t.Fatalf("tie must refuse with AmbiguousError, got %v", err)
+	}
+	if len(amb.Candidates) != 2 || amb.Candidates[0].ID != "a.go::PayInvoiceOnce" {
+		t.Fatalf("candidates wrong: %+v", amb.Candidates)
+	}
+
+	// Only one near name → resolves, honestly labeled fuzzy.
+	n, via, err := ResolveVia(nodes[:1], "PayInvoice")
+	if err != nil || n.Label != "PayInvoiceRetry" || via != "fuzzy" {
+		t.Fatalf("clear winner must resolve as fuzzy: %v %q %v", n, via, err)
+	}
+
+	// Exact tiers report themselves.
+	if _, via, _ := ResolveVia(nodes, "a.go::PayInvoiceOnce"); via != "exact-id" {
+		t.Fatalf("via = %q, want exact-id", via)
+	}
+	if _, via, _ := ResolveVia(nodes, "payinvoiceretry"); via != "exact-label" {
+		t.Fatalf("via = %q, want exact-label", via)
+	}
+	if _, via, _ := ResolveVia(nodes, "pkg.Class.PayInvoiceOnce"); via != "last-segment" {
+		t.Fatalf("via = %q, want last-segment", via)
 	}
 }

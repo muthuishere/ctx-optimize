@@ -88,6 +88,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdExplain(rest, stdout)
 	case "card":
 		err = cmdCard(rest, stdout)
+	case "verify":
+		err = cmdVerify(rest, stdout)
 	case "affected":
 		err = cmdAffected(rest, stdout)
 	case "change-plan", "plan":
@@ -1239,11 +1241,19 @@ func cmdExplain(args []string, stdout io.Writer) error {
 	st, _ := openStore(f)
 	defer func() { served(st, "explain", f.args[0], 1, cw, t0) }()
 	ex, err := analyze.Explain(nodes, edges, f.args[0])
+	if id, ok := fuzzyPick(err, f); ok {
+		if ex, err = analyze.Explain(nodes, edges, id); err == nil {
+			ex.ResolvedVia = "fuzzy" // --fuzzy took a candidate: stay labeled
+		}
+	}
 	if err != nil {
 		return err
 	}
 	if f.bools["json"] {
 		return emit(stdout, ex)
+	}
+	if ex.ResolvedVia == "fuzzy" || ex.ResolvedVia == "last-segment" {
+		fmt.Fprintf(stdout, "[resolved via %s → %s]\n", ex.ResolvedVia, ex.Node.ID)
 	}
 	fmt.Fprint(stdout, analyze.RenderExplanation(ex))
 	return nil
@@ -1261,6 +1271,11 @@ func cmdCard(args []string, stdout io.Writer) error {
 	t0 := time.Now()
 	cw := &countingWriter{w: stdout}
 	c, cerr := analyze.Card(nodes, edges, f.args[0])
+	if id, ok := fuzzyPick(cerr, f); ok {
+		if c, cerr = analyze.Card(nodes, edges, id); cerr == nil {
+			c.ResolvedVia = "fuzzy" // --fuzzy took a candidate: stay labeled
+		}
+	}
 	bodyRoot := f.strs["path"]
 	if bodyRoot == "" && sc != nil {
 		switch sc.kind {
@@ -1296,6 +1311,9 @@ func cmdCard(args []string, stdout io.Writer) error {
 	defer func() { served(st, "card", f.args[0], 1, cw, t0) }()
 	if f.bools["json"] {
 		return emit(cw, c)
+	}
+	if c.ResolvedVia == "fuzzy" || c.ResolvedVia == "last-segment" {
+		fmt.Fprintf(cw, "[resolved via %s → %s]\n", c.ResolvedVia, c.Node.ID)
 	}
 	fmt.Fprint(cw, analyze.RenderCard(c))
 	return nil
@@ -1378,7 +1396,7 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 		if len(nodes) == 0 {
 			return nil
 		}
-		msg = fmt.Sprintf("You are inside module %q of a multi-module repo with a pre-built ctx-optimize knowledge store (%d nodes for this module). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. Answers are scoped to this module; zero hits auto-escalate repo-wide (`--root` forces it). Output is parsed fact with file:line — cite it directly.", sc.moduleName, len(nodes))
+		msg = fmt.Sprintf("You are inside module %q of a multi-module repo with a pre-built ctx-optimize knowledge store (%d nodes for this module). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. Answers are scoped to this module; zero hits auto-escalate repo-wide (`--root` forces it). Output is parsed fact with file:line — cite it directly. TOOL CHOICE: symbols/structure/callers → store verbs; exact literal strings, config VALUES, comments, member fields → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. When the answer depends on BEHAVIOR, read the cited range — that is the point of the location. Before a human acts on a citation: `ctx-optimize verify \"<label or file:L10-L20>\"`.", sc.moduleName, len(nodes))
 	case sc.kind == scopeRoot && len(sc.modules) > 0:
 		total := len(nodes)
 		count := 0
@@ -1395,12 +1413,12 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 		if total == 0 {
 			return nil
 		}
-		msg = fmt.Sprintf("This is a multi-module repo with a pre-built ctx-optimize knowledge store: %d modules, %d nodes total, plus a navigator (module map + hubs at `~/ctxoptimize/%s/navigator.md`). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. From the root, query federates across the best-matching modules; run inside a module dir to scope to it. Output is parsed fact with file:line — cite it directly.", count, total, sc.rootKey)
+		msg = fmt.Sprintf("This is a multi-module repo with a pre-built ctx-optimize knowledge store: %d modules, %d nodes total, plus a navigator (module map + hubs at `~/ctxoptimize/%s/navigator.md`). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. From the root, query federates across the best-matching modules; run inside a module dir to scope to it. Output is parsed fact with file:line — cite it directly. TOOL CHOICE: symbols/structure/callers → store verbs; exact literal strings, config VALUES, comments, member fields → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. When the answer depends on BEHAVIOR, read the cited range — that is the point of the location. Before a human acts on a citation: `ctx-optimize verify \"<label or file:L10-L20>\"`.", count, total, sc.rootKey)
 	default:
 		if len(nodes) == 0 {
 			return nil
 		}
-		msg = fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks.", len(nodes))
+		msg = fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks. TOOL CHOICE: symbols/structure/callers → store verbs; exact literal strings, config VALUES, comments, member fields → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. When the answer depends on BEHAVIOR, read the cited range — that is the point of the location. Before a human acts on a citation: `ctx-optimize verify \"<label or file:L10-L20>\"`.", len(nodes))
 	}
 	t0 := time.Now()
 	cw := &countingWriter{w: stdout}
@@ -1450,6 +1468,9 @@ func cmdAffected(args []string, stdout io.Writer) error {
 		relations = append(relations, r)
 	}
 	target, impacts, aerr := analyze.Affected(nodes, edges, f.args[0], depth, relations)
+	if id, ok := fuzzyPick(aerr, f); ok {
+		target, impacts, aerr = analyze.Affected(nodes, edges, id, depth, relations)
+	}
 	scopeNote := ""
 	// Module-scope miss: the symbol likely lives in a sibling module —
 	// answer repo-wide and say where it was (mirrors cmdCard).
@@ -2465,7 +2486,17 @@ commands:
                               TO RUN + co-change history + confidence footer
                               (extracted vs inferred). Replaces a query/card/
                               affected/grep chain  [--depth N] [--json]
+  verify "<claim>" ...        citation check before acting on one: node exists
+                              (exact id/label — never fuzzy), file exists, line
+                              range in bounds, drift vs gather-time git HEAD.
+                              Claims: node-id | exact-label | file:L10-L20.
+                              Exit 0 only when ALL claims hold  [--json]
   hubs                        most-connected nodes (god nodes)  [--top N] [--json]
+
+  Name resolution on card/explain/affected/path/change-plan is honest by
+  default: fuzzy matches announce themselves ([resolved via fuzzy → id]);
+  a fuzzy TIE refuses with ranked candidates instead of guessing (--fuzzy
+  takes the top candidate anyway).
   wiki                        regenerate the markdown wiki in the store's wiki/
                               dir (deterministic, from nodes+edges only; every
                               add already regenerates it)
