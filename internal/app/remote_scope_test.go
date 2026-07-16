@@ -261,3 +261,48 @@ func TestUpFallsBackToGather(t *testing.T) {
 		t.Fatalf("up without a remote must gather:\n%s", out)
 	}
 }
+
+// up's bootstrap lane (ADR amendment: "up should be the fundamental"): on a
+// repo with NO config anywhere, one command authors the config and gathers —
+// single repos plainly, monorepos via scan --yes (curatable afterwards).
+func TestUpBootstrapsBareRepo(t *testing.T) {
+	repo := t.TempDir()
+	writeFiles(t, repo, map[string]string{"main.go": "package main\n\nfunc Boot() {}\n"})
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	out, _ := runCLI(t, 0, "up", "--path", repo)
+	if !strings.Contains(out, "bootstrapping") || !strings.Contains(out, "store ready") {
+		t.Fatalf("bare-repo up must bootstrap end to end:\n%s", out)
+	}
+	cfg, err := project.Load(repo)
+	if err != nil || cfg.Name == "" {
+		t.Fatalf("up did not author a config: %+v (%v)", cfg, err)
+	}
+	out, _ = runCLI(t, 0, "query", "Boot", "--path", repo)
+	if !strings.Contains(out, "Boot") {
+		t.Fatalf("bootstrapped store not answering:\n%s", out)
+	}
+	// Idempotent: second up is a no-op (or unknown-freshness report), never
+	// a re-bootstrap.
+	out, _ = runCLI(t, 0, "up", "--path", repo)
+	if strings.Contains(out, "bootstrapping") {
+		t.Fatalf("second up must not re-bootstrap:\n%s", out)
+	}
+}
+
+func TestUpBootstrapsBareMonorepo(t *testing.T) {
+	repo := fakeMonorepo(t)
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	out, _ := runCLI(t, 0, "up", "--path", repo)
+	if !strings.Contains(out, "MULTI-MODULE") || !strings.Contains(out, "store ready") {
+		t.Fatalf("bare-monorepo up must take the scan lane:\n%s", out)
+	}
+	cfg, err := project.Load(repo)
+	if err != nil || len(cfg.Modules) == 0 {
+		t.Fatalf("up did not author the module list: %+v (%v)", cfg, err)
+	}
+	// Federated query works right after.
+	out, _ = runCLI(t, 0, "query", "RunPayrollJob", "--path", repo)
+	if !strings.Contains(out, "RunPayrollJob") {
+		t.Fatalf("bootstrapped monorepo store not answering:\n%s", out)
+	}
+}

@@ -98,18 +98,28 @@ updates in the background. `ctx-optimize uninstall` removes everything
 
 ## Usage
 
+One verb is the whole getting-started story — bare repo, fresh clone,
+teammate machine, CI, stale store, doesn't matter:
+
 ```sh
-# first time in a repo (author-side): scaffold .ctxoptimize/ — config,
-# adapter + transport samples, remote.example.md — and prepare the store
+ctx-optimize up
+```
+
+`up` looks at the state and does the right thing: no config → bootstraps it
+(monorepos via scan; curate `.ctxoptimize/config.json` after) and gathers;
+committed config with a `remote.pull` and no local store → pulls the team's
+prebuilt graph (falls back to gathering, loudly); no remote → gathers;
+stale vs git HEAD → fast re-gather; fresh → no-op. Idempotent — run it
+whenever.
+
+```sh
+# author-side, when you want control instead of `up`'s defaults:
+# scaffold .ctxoptimize/ (config, adapter + transport samples,
+# remote.example.md), review monorepo module lists, pick pointer targets
 ctx-optimize init
 
-# gather a repo into the central store (~/ctxoptimize/<repo-name>/)
+# gather / refresh explicitly (up calls these lanes for you)
 ctx-optimize add .
-
-# every other time — fresh clone, teammate, CI — one idempotent verb decides:
-ctx-optimize up             # no store + remote.pull declared → pull (pull fails →
-                            # gathers locally and says so); no remote → gather;
-                            # stale vs git HEAD → fast re-gather; fresh → no-op
 
 # ask the store — complete, citable hits under a token budget
 ctx-optimize query "where is the refund flow" --json

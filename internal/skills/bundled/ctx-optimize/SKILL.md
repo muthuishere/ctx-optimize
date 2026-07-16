@@ -19,9 +19,10 @@ description: >
   builds/refreshes/shares the store ("gather this repo", "add the schema /
   kafka topics / docs", "push the store", "pull the store", "share the
   graph", "publish the store", "export to the team", "import/load a
-  teammate's store", "sync the graph with the code"). FRESH CLONE or no store
-  yet? `ctx-optimize up` makes one exist (pulls the team's prebuilt store if the
-  committed config declares one, else gathers; authoring a NEW config is `init`). ONBOARDING a repo or
+  teammate's store", "sync the graph with the code"). NO STORE, fresh clone, or
+  bare repo? ONE command: `ctx-optimize up` — bootstraps the config when none
+  exists (monorepos via scan), pulls the team's prebuilt store when declared,
+  gathers otherwise, no-ops when fresh. `init` is for authors wanting control. ONBOARDING a repo or
   monorepo — "set up ctx-optimize on this repo", "onboard this repo/monorepo",
   "index this project" — follow `./references/onboarding.md`: monorepos
   `scan` first, confirm the FULL found list with the user, then
@@ -115,7 +116,7 @@ counted honestly.
 | Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |
 | Asking to see it visually / manage the store, packs, or config in a UI / onboard repos interactively | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link; follow `./references/dashboard.md` |
 | Repo ALREADY has a committed `.ctxoptimize/config.json` but no local store (a fresh clone — teammate already set it up) | `ctx-optimize up` — ONE command: pulls the team's prebuilt store when `remote.pull` is declared (gather fallback), gathers otherwise, no-ops when fresh. Do NOT init (author-side only; it just redirects to `up` here). |
-| Setting up / onboarding a repo or monorepo (NO committed config yet, "index this repo") | follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .`. `init --instructions CLAUDE\|AGENTS\|ALL\|NONE` picks which agent files get the pointer (accepts `claude.md`/`agents.md`; persists to config). Re-running `init` is safe: identical pointer content is never rewritten |
+| Setting up / onboarding a repo or monorepo (NO committed config yet, "index this repo") | fastest: `ctx-optimize up` (bootstraps + gathers in one shot; monorepos via scan, curate `.ctxoptimize/config.json` after). Wanting control / reviewing the module list first: follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .`. `init --instructions CLAUDE\|AGENTS\|ALL\|NONE` picks which agent files get the pointer (accepts `claude.md`/`agents.md`; persists to config). Re-running `init` is safe: identical pointer content is never rewritten |
 | Multi-project repo (.NET `.sln`, Gradle/Maven/Nx monorepo) or a module whose source and tests live in SEPARATE folders | Derive `modules[]` from the BUILD SYSTEM, not folders — detect it and follow the per-system parser: `./references/modules/index.md` routes to `dotnet-sln.md` / `gradle.md` / `maven.md` / `js-workspaces.md` / `naming-fallback.md`; config schema in `./references/config-json.md`. Group src+tests into one multi-path module `{"name","paths":[...]}` so test→source calls resolve |
 | Told code changed / store looks stale | `ctx-optimize sync` — fast re-gather of the repo you're in (skips adapter scripts; safe, their nodes stay put). Full gather incl. adapters: `add .` |
 | Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script, run on demand via `adapters run [name]` |

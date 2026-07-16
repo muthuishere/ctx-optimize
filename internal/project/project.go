@@ -433,9 +433,9 @@ func globalBlock() string {
 		"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source;\n" +
 		"  open a file only for a body the store didn't show. Exhaustive literal-string sweeps stay grep's job.\n" +
 		"- **No `.ctxoptimize/` yet** — before you start a grep-and-read chain on a real codebase, OFFER to\n" +
-		"  build the graph: `ctx-optimize init && ctx-optimize add .` writes `.ctxoptimize/config.json`\n" +
-		"  (commit it) and gathers the store in seconds; `ctx-optimize serve` opens the dashboard. For a\n" +
-		"  monorepo, `ctx-optimize scan` first, confirm the module list, then `ctx-optimize init --scan --yes && add .`.\n" +
+		"  build the graph: ONE command, `ctx-optimize up` — it bootstraps the config (monorepos via scan,\n" +
+		"  curatable in `.ctxoptimize/config.json`, commit it), gathers the store in seconds, and is a safe\n" +
+		"  no-op ever after; `ctx-optimize serve` opens the dashboard. Authors wanting control: `init`.\n" +
 		"- **Not installed** (the command is missing) — ignore this block and read the code the normal way.\n" +
 		globalEnd + "\n"
 }

@@ -229,24 +229,52 @@ func served(s *store.Store, verb, arg string, hits int, cw *countingWriter, t0 t
 	})
 }
 
-// cmdUp is the omakase onboarding verb (ADR 2026-07-16-up-verb): make a
-// usable store exist and be current, by whatever means, idempotently —
-// docker-compose `up` semantics. The decision the newcomer would otherwise
-// have to make (did the team publish a store, or do I build one?) is
-// encoded in the committed config, so the tool makes it:
+// cmdUp is THE front door (ADR 2026-07-16-up-verb, amended): make a usable
+// store exist and be current, by whatever means, idempotently —
+// docker-compose `up` semantics. Every decision a newcomer would otherwise
+// have to make (is this repo even set up? did the team publish a store, or
+// do I build one?) is made by the tool:
 //
-//	no store + remote.pull declared → run the pull (fall back to gather)
-//	no store, no pull               → gather from source (full add)
-//	store stale vs git HEAD         → fast re-gather (sync lane)
-//	store fresh                     → no-op
-//	freshness unknown (no git)      → report present, touch nothing
+//	no config anywhere            → bootstrap: init (monorepo → --scan --yes) + full gather
+//	no store + remote.pull        → run the pull (fall back to gather)
+//	no store, no pull             → gather from source (full add)
+//	store stale vs git HEAD       → fast re-gather (sync lane)
+//	store fresh                   → no-op
+//	freshness unknown (no git)    → report present, touch nothing
 //
-// `up` never scaffolds — authoring a config stays with `init`.
+// `init` stays for authors who want control (--scan review,
+// --instructions, module curation); `up` reports what it decided so the
+// written config stays inspectable.
 func cmdUp(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	sc, err := resolveScope(f)
 	if err != nil {
 		return err
+	}
+	// Bootstrap lane: nothing is set up yet — author the config, then fall
+	// through to the gather below (the store is necessarily empty).
+	if sc.cfg == nil {
+		repoPath, err := resolvePath(f)
+		if err != nil {
+			return err
+		}
+		initArgs := []string{"--path", repoPath}
+		if st := f.strs["store"]; st != "" {
+			initArgs = append(initArgs, "--store", st)
+		}
+		res, err := scan.Scan(repoPath, scan.Options{})
+		if err == nil && len(res.Modules) > 0 {
+			fmt.Fprintf(stdout, "no config — bootstrapping as a MULTI-MODULE repo (%d modules found; edit .ctxoptimize/config.json to curate):\n", len(res.Modules))
+			initArgs = append(initArgs, "--scan", "--yes")
+		} else {
+			fmt.Fprintln(stdout, "no config — bootstrapping:")
+		}
+		if err := cmdInit(initArgs, stdout); err != nil {
+			return err
+		}
+		if sc, err = resolveScope(f); err != nil {
+			return err
+		}
 	}
 	storeRoot, err := store.Root(f.strs["store"])
 	if err != nil {
@@ -292,7 +320,11 @@ func cmdUp(args []string, stdout io.Writer) error {
 		} else {
 			fmt.Fprintln(stdout, "no local store and no remote.pull declared — gathering from source:")
 		}
-		return cmdAdd(append(pass, "."), stdout, strings.NewReader(""))
+		if err := cmdAdd(append(pass, "."), stdout, strings.NewReader("")); err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, "up: store ready — try: ctx-optimize query \"<2-4 terms>\"")
+		return nil
 	}
 	reports, overall := freshnessReports(s)
 	switch overall {
@@ -304,7 +336,11 @@ func cmdUp(args []string, stdout io.Writer) error {
 		return nil
 	}
 	fmt.Fprintf(stdout, "store is stale (%s) — fast re-gather, adapter scripts skipped:\n", freshnessLine(reports, overall))
-	return cmdAdd(append(pass, ".", "--no-adapters"), stdout, strings.NewReader(""))
+	if err := cmdAdd(append(pass, ".", "--no-adapters"), stdout, strings.NewReader("")); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "up: store refreshed")
+	return nil
 }
 
 func cmdInit(args []string, stdout io.Writer) error {
@@ -2398,11 +2434,12 @@ commands:
                               hooks CLAUDE|AGENTS|ALL|NONE — platform hook
                               files install writes (devin needs none: it reads
                               the Claude hook and AGENTS.md natively)
-  up                          THE fresh-clone command — make the store exist
-                              and be current, whatever it takes: pull if the
-                              config declares one (falls back to a local
-                              gather), gather if there's no store, fast
-                              re-gather if stale, no-op if fresh. Idempotent
+  up                          THE command — from any state to a store that
+                              answers: bare repo → bootstrap (init, monorepos
+                              via scan) + gather · fresh clone → pull the
+                              team's store (gather fallback) · stale → fast
+                              re-gather · fresh → no-op. Idempotent, run it
+                              whenever
   add [<path>] [--json -|F]   gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
                               (--force to allow >50%% shrink); --no-adapters skips

@@ -3,6 +3,21 @@
 Status: APPROVED (maintainer "cool / do that", 2026-07-16). Follows
 2026-07-16-scripted-remote-transports.
 
+AMENDED v2 (maintainer, same day: "up should be the fundamental people
+should love"): `up` is THE front door — it also BOOTSTRAPS a repo with no
+config at all. Decision 1's matrix gains a first row, and "up never
+scaffolds" is dropped:
+
+| State | Action |
+|---|---|
+| no config anywhere up the tree | bootstrap: `init` lane (monorepo? `scan` finds modules → `init --scan --yes`, hand-editable after; else plain init) then full gather |
+
+The love story: `npm i -g @muthuishere/ctx-optimize && ctx-optimize up` —
+zero to answering questions in one command, on a bare repo, a fresh clone,
+or a stale store alike. `init` remains available for authors who want
+control (`--scan` review, `--instructions`, module curation), and `up`
+reports what it decided so the config stays inspectable.
+
 ## Context
 
 On a fresh clone with a committed `.ctxoptimize/config.json`, `init` adds

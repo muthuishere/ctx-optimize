@@ -286,7 +286,7 @@ func TestGlobalPointerLifecycle(t *testing.T) {
 	if !strings.Contains(s, globalBegin) || !strings.Contains(s, "knowledge graph before grep") {
 		t.Fatal("global block missing")
 	}
-	if !strings.Contains(s, "ctx-optimize init && ctx-optimize add .") {
+	if !strings.Contains(s, "ctx-optimize up") {
 		t.Fatal("create-config guidance missing from global block")
 	}
 

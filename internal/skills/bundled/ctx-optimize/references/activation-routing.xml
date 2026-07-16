@@ -86,10 +86,10 @@
     <!-- ============ BUILD &amp; REFRESH: gather the graph ============ -->
 
     <route id="up" group="build">
-      <when>fresh clone, get me a store, make the store exist, is my store ready, teammate already set up ctx-optimize, committed config but no local store, one command to be ready</when>
-      <goal>THE omakase verb — make the store exist and be current, whatever it takes: empty store + declared remote.pull → run it (gather fallback); empty + no remote → gather; stale vs git HEAD → fast re-gather; fresh → no-op. Idempotent, safe anytime; CI gate: `up &amp;&amp; fresh`.</goal>
+      <when>bare repo, fresh clone, get me a store, make the store exist, set this repo up fast, is my store ready, committed config but no local store, one command to be ready</when>
+      <goal>THE omakase verb — from ANY state to a store that answers: no config → bootstrap (init; monorepos via scan --yes, curatable after) + gather; empty store + declared remote.pull → run it (gather fallback); empty + no remote → gather; stale vs git HEAD → fast re-gather; fresh → no-op. Idempotent, safe anytime; CI gate: `up &amp;&amp; fresh`.</goal>
       <cmd>ctx-optimize up</cmd>
-      <note>`up` never scaffolds — creating a NEW config is `init` (author-side). On a pull-declaring clone `init` just redirects to `up`.</note>
+      <note>`init` stays for authors who want control (--scan review, --instructions, module curation). On a pull-declaring clone `init` just redirects to `up`.</note>
     </route>
 
     <route id="onboard-new" group="build">

@@ -20,16 +20,18 @@ commands you declare in the committed config. The built-in `file://` +
 
 ### Added
 
-- **`up` — THE fresh-clone command** (ADR
-  `openspec/changes/2026-07-16-up-verb/`). One idempotent verb makes the
-  store exist and be current, whatever it takes: empty store + declared
-  `remote.pull` → run it (falls back to a local gather, loudly); empty
-  store, no remote → gather; store stale vs git HEAD → fast re-gather
-  (adapter scripts skipped); fresh → no-op. `up` never scaffolds —
-  authoring a config stays with `init`, which on a pull-declaring clone
-  now just redirects to `up` instead of pulling itself. Every onboarding
-  surface (pointer blocks, skill routes, docs) now says: fresh clone?
-  `ctx-optimize up`. CI gate: `ctx-optimize up && ctx-optimize fresh`.
+- **`up` — THE command** (ADR `openspec/changes/2026-07-16-up-verb/`,
+  amended: "the fundamental people should love"). One idempotent verb goes
+  from ANY state to a store that answers: **no config → bootstraps it**
+  (monorepos via scan `--yes`, curatable after) and gathers; empty store +
+  declared `remote.pull` → run it (falls back to a local gather, loudly);
+  empty store, no remote → gather; store stale vs git HEAD → fast
+  re-gather (adapter scripts skipped); fresh → no-op. The whole
+  getting-started story is `npm i -g @muthuishere/ctx-optimize &&
+  ctx-optimize up`. `init` stays for authors wanting control and on a
+  pull-declaring clone redirects to `up` instead of pulling itself. Every
+  onboarding surface (pointer blocks, global rule, skill routes, docs)
+  teaches `up`. CI gate: `ctx-optimize up && ctx-optimize fresh`.
 
 ### Changed
 
