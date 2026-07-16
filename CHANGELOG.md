@@ -10,6 +10,8 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-07-17
+
 ### Added
 
 - **`verify` — deterministic citation checking** (ADR
@@ -47,6 +49,12 @@ embeddings, no MCP, no network except your configured remote.**
   unchanged (subprocess query p50 19.2ms, 1597 tok/call — within the
   ≤+10%/≤+20% gates; gather within ≤+5%); `verify` ≈ card-class latency
   (store-load dominated, ~50ms cold for 3 claims on a 2.1k-node store).
+
+## [0.4.1] — 2026-07-16
+
+### Changed
+
+- README: pkg.go.dev badge (#3). Docs-only release.
 
 ## [0.4.0] — 2026-07-16
 
