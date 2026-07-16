@@ -43,15 +43,28 @@ func Targets(includeAgents bool) ([]string, error) {
 	}, nil
 }
 
-// InstallDir writes the embedded skill into one target dir.
+// InstallDir writes the embedded skill into one target dir — an EXACT
+// replace, staged in a temp sibling and swapped in. A plain file-by-file
+// overwrite would leave files a previous version shipped but this one
+// dropped as stale orphans an agent could still read; the swap guarantees
+// the installed skill is byte-for-byte this binary's bundle.
 func InstallDir(dst string) error {
+	parent := filepath.Dir(dst)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(parent, "."+skillName+"-stage-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage) // no-op after the successful rename
 	src := "bundled/" + skillName
-	return fs.WalkDir(bundled, src, func(path string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(bundled, src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		rel, _ := filepath.Rel(src, path)
-		out := filepath.Join(dst, rel)
+		out := filepath.Join(stage, rel)
 		if d.IsDir() {
 			return os.MkdirAll(out, 0o755)
 		}
@@ -61,6 +74,13 @@ func InstallDir(dst string) error {
 		}
 		return os.WriteFile(out, data, 0o644)
 	})
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dst); err != nil {
+		return err
+	}
+	return os.Rename(stage, dst)
 }
 
 // SkillTargets maps the global `skills` setting to install dirs: CLAUDE
@@ -122,30 +142,15 @@ func AgentsSkillDir() (string, error) {
 	return filepath.Join(home, ".agents", "skills", skillName), nil
 }
 
-// Install writes the embedded skill into each target dir.
+// Install writes the embedded skill into each target dir (exact replace,
+// see InstallDir).
 func Install(includeAgents bool) ([]string, error) {
 	targets, err := Targets(includeAgents)
 	if err != nil {
 		return nil, err
 	}
-	src := "bundled/" + skillName
 	for _, dst := range targets {
-		err := fs.WalkDir(bundled, src, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			rel, _ := filepath.Rel(src, path)
-			out := filepath.Join(dst, rel)
-			if d.IsDir() {
-				return os.MkdirAll(out, 0o755)
-			}
-			data, err := bundled.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			return os.WriteFile(out, data, 0o644)
-		})
-		if err != nil {
+		if err := InstallDir(dst); err != nil {
 			return nil, fmt.Errorf("install skill to %s: %w", dst, err)
 		}
 	}

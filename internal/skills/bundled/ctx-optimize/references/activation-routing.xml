@@ -250,10 +250,17 @@
       <cmd>ctx-optimize install  [--claude|--codex|--copilot|--devin] [--skills] [--hooks]</cmd>
     </route>
 
+    <route id="update" group="manage">
+      <when>just upgraded the binary, refresh the skill, skill looks stale, update ctx-optimize</when>
+      <goal>Refresh skills + hooks + global rule from the running binary (exact replace — files older versions shipped are removed). The binary itself updates via npm; `update` prints the one-liner.</goal>
+      <cmd>npm install -g @muthuishere/ctx-optimize   # the binary</cmd>
+      <cmd>ctx-optimize update                        # then the surfaces</cmd>
+    </route>
+
     <route id="uninstall" group="manage">
       <when>remove ctx-optimize, uninstall the skill</when>
-      <goal>Remove the agent skill and the global rule.</goal>
-      <cmd>ctx-optimize uninstall --skills</cmd>
+      <goal>Remove skills, hooks, and the global rule. Stores and committed repo pointer blocks stay (they self-gate on `command -v` and go inert).</goal>
+      <cmd>ctx-optimize uninstall</cmd>
     </route>
 
     <route id="version" group="manage">

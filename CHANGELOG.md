@@ -10,6 +10,28 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Added
+
+- **`update` — refresh every installed surface after a binary upgrade.**
+  `ctx-optimize update` re-runs the install lanes (skills + hooks + global
+  rule, same platform/flag selection as `install`) and prints the npm
+  one-liner for updating the binary itself — the CLI never phones a
+  registry (deterministic contract: no network except your remote).
+
+- **Skill installs are now an EXACT replace.** The bundle is staged in a
+  temp sibling and swapped in, so files an older version shipped but the
+  current one dropped are removed instead of lingering as stale orphans an
+  agent might read. Local edits to installed skill files are restored to
+  bundled truth.
+
+### Changed
+
+- **`uninstall` no longer requires `--skills`** (still accepted): plain
+  `ctx-optimize uninstall` removes everything `install` wrote — skill dirs,
+  hook entries (surgically: shared files like `~/.claude/settings.json`
+  only lose our `UserPromptSubmit` entry), and the global rule. Stores and
+  committed repo pointer blocks stay, and the report says so.
+
 ## [0.3.8] — 2026-07-16
 
 ### Added

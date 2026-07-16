@@ -312,3 +312,65 @@ func TestConfigHooksAndProjectLevel(t *testing.T) {
 		t.Fatalf("effective listing wrong:\n%s", out)
 	}
 }
+
+// TestInstallUpdateUninstall: the whole surface lifecycle against a hermetic
+// HOME — install writes skills + global rule, update is an exact refresh
+// (orphans from older versions die, local edits are restored to bundled
+// truth), uninstall needs no flag and removes skills, hooks, and the rule.
+func TestInstallUpdateUninstall(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	skillMd := filepath.Join(home, ".claude", "skills", "ctx-optimize", "SKILL.md")
+
+	// -- install -------------------------------------------------------------
+	out, _ := runCLI(t, 0, "install", "--claude")
+	if !strings.Contains(out, "global rule: added") {
+		t.Fatalf("install must write the global rule:\n%s", out)
+	}
+	if _, err := os.Stat(skillMd); err != nil {
+		t.Fatalf("skill not installed: %v", err)
+	}
+
+	// -- update: exact replace -----------------------------------------------
+	orphan := filepath.Join(filepath.Dir(skillMd), "references", "removed-in-v2.md")
+	if err := os.WriteFile(orphan, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bundled, err := os.ReadFile(skillMd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillMd, []byte("local edit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _ = runCLI(t, 0, "update", "--claude")
+	if !strings.Contains(out, "npm install -g @muthuishere/ctx-optimize") {
+		t.Fatalf("update must print the binary-update one-liner:\n%s", out)
+	}
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Fatal("update left an orphan file from an older version")
+	}
+	after, err := os.ReadFile(skillMd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(bundled) {
+		t.Fatal("update must restore the bundled SKILL.md exactly")
+	}
+
+	// -- uninstall: no flag needed, everything install wrote goes ------------
+	out, _ = runCLI(t, 0, "uninstall")
+	if !strings.Contains(out, "removed skill:") || !strings.Contains(out, "removed global rule from:") {
+		t.Fatalf("uninstall report incomplete:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Dir(skillMd)); !os.IsNotExist(err) {
+		t.Fatal("skill dir survived uninstall")
+	}
+	claudeMd, err := os.ReadFile(filepath.Join(home, ".claude", "CLAUDE.md"))
+	if err == nil && strings.Contains(string(claudeMd), "ctx-optimize:global:begin") {
+		t.Fatal("global rule survived uninstall")
+	}
+	// Legacy spelling still accepted.
+	runCLI(t, 0, "uninstall", "--skills")
+}

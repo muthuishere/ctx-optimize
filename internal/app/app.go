@@ -114,6 +114,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdInstall(rest, stdout)
 	case "hook-context":
 		err = cmdHookContext(rest, stdout)
+	case "update":
+		err = cmdUpdate(rest, stdout)
 	case "uninstall":
 		err = cmdUninstall(rest, stdout)
 	case "help", "-h", "--help":
@@ -2231,25 +2233,41 @@ func cmdInstall(args []string, stdout io.Writer) error {
 	return nil
 }
 
+// cmdUpdate refreshes every surface a previous install wrote — skills,
+// hooks, global rule — from THIS binary, through the same idempotent lanes
+// as `install` (skills are an exact replace: stale files from older versions
+// are removed, not left behind). The binary itself is the package manager's
+// job — the deterministic contract forbids the CLI phoning a registry — so
+// we print the one-liner instead of self-updating.
+func cmdUpdate(args []string, stdout io.Writer) error {
+	if err := cmdInstall(args, stdout); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "\nskills + hooks now match this binary (ctx-optimize %s). To update the binary itself:\n  npm install -g @muthuishere/ctx-optimize   # then `ctx-optimize update` again\n", version.Version)
+	return nil
+}
+
+// cmdUninstall removes everything `install` wrote: the skill dirs, the
+// hook files, and the global always-on rule. `--skills` is accepted for
+// back-compat but no longer required. Stores and per-repo pointer blocks
+// are deliberately untouched — stores are data, and committed pointer
+// blocks self-gate on `command -v ctx-optimize`, going inert on machines
+// without the binary.
 func cmdUninstall(args []string, stdout io.Writer) error {
-	f := parseFlags(args)
-	if !f.bools["skills"] {
-		return fmt.Errorf("usage: ctx-optimize uninstall --skills")
-	}
+	parseFlags(args) // tolerate --skills and friends
 	removed, err := skills.Uninstall()
-	if err != nil {
-		return err
-	}
-	hookFiles, err := skills.RemoveHooks()
-	if err != nil {
-		return err
-	}
-	removed = append(removed, hookFiles...)
 	if err != nil {
 		return err
 	}
 	for _, t := range removed {
 		fmt.Fprintf(stdout, "removed skill: %s\n", t)
+	}
+	hookFiles, err := skills.RemoveHooks()
+	if err != nil {
+		return err
+	}
+	for _, t := range hookFiles {
+		fmt.Fprintf(stdout, "removed hook:  %s\n", t)
 	}
 	// Strip the global always-on rule that install wrote (marker-fenced, so
 	// content outside it is preserved; a no-op when it was never installed).
@@ -2265,6 +2283,7 @@ func cmdUninstall(args []string, stdout io.Writer) error {
 			fmt.Fprintf(stdout, "removed global rule from: %s\n", t)
 		}
 	}
+	fmt.Fprintln(stdout, "stores at ~/ctxoptimize untouched (delete manually if wanted); committed repo pointer blocks go inert without the binary")
 	return nil
 }
 
@@ -2388,7 +2407,11 @@ commands:
                               whole store tree, a module dir only its prefix
   install                     skills + hooks for every agent CLI detected; report per platform
     --claude|--codex|--copilot|--devin   select platforms · --skills / --hooks narrow scope
-  uninstall --skills          remove the agent skill
+  update                      after a binary upgrade: refresh skills + hooks +
+                              global rule from this binary (exact replace —
+                              files older versions shipped are removed)
+  uninstall                   remove skills, hooks, and the global rule
+                              (stores + committed repo pointers untouched)
   version                     print version
 
 flags:  --path DIR   module the store is keyed by (default: cwd)

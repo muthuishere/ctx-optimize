@@ -76,7 +76,7 @@ verb as a `<route>` with its trigger `<when>`, `<goal>`, and exact `<cmd>` —
 answer (query/card/affected/path/explain/hubs/wiki/status/fresh), build
 (init/scan/add/multi-path modules), customize (routes/manifests/languages/
 adapters), share (remote init/push/pull), export (merge/export), learn
-(save-result/reflect), and manage (serve/config/log/install/uninstall/version).
+(save-result/reflect), and manage (serve/config/log/install/update/uninstall/version).
 Consult it whenever you're unsure which verb or flag fits — nothing is hidden
 there. The table below is the hot path; the XML is the whole map.
 
