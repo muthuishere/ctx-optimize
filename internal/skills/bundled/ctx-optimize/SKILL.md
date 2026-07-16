@@ -10,8 +10,10 @@ description: >
   of this codebase already exists, and one `ctx-optimize` call answers what a
   grep-and-read chain would: `query "<terms>"` (ranked, cited, signatures),
   `card <symbol>` (signature + doc + callers + callees, no file read),
-  `affected <symbol>` (impact/blast radius), `path <a> <b>`, `explain`,
-  plus a generated wiki. Use it for ANY question about code: where is X,
+  `change-plan <symbol>` (ONE composed answer for "I'm about to change X":
+  callers + blast radius + which tests to run + confidence — use it whenever
+  the intent is modifying code), `affected <symbol>` (impact/blast radius),
+  `path <a> <b>`, `explain`, plus a generated wiki. Use it for ANY question about code: where is X,
   how does Y work, who calls Z, what breaks if I change W, architecture,
   onboarding. Fall back to Grep/Read only for what the store lacks. Also
   builds/refreshes/shares the store ("gather this repo", "add the schema /
