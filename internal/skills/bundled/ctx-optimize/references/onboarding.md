@@ -29,7 +29,7 @@ Only fall through to the build steps below when there is NO committed config
 ctx-optimize init && ctx-optimize add .
 ```
 
-`init` scaffolds `.ctxoptimize/config.json` (name + adapters dir + example
+`init` scaffolds `.ctxoptimize/config.json` (`--instructions CLAUDE|AGENTS|ALL|NONE` picks which agent files get the pointer, persists to config; re-init is idempotent) (name + adapters dir + example
 pack samples) and writes the AGENTS.md/CLAUDE.md pointer block. `add .`
 gathers code + markdown + manifests + routes + git co-change in seconds.
 Confirm with `ctx-optimize status --json` (nodes > 0) and one `query`.

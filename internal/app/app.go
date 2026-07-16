@@ -338,6 +338,23 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if instr == "" {
 		instr = gcfg.Instructions
 	}
+	// --instructions CLAUDE|AGENTS|ALL|NONE overrides for this init AND
+	// persists into the project config (committed), so the choice sticks —
+	// accepted loosely ("agents.md" → AGENTS) but validated loudly: a typo
+	// must never silently fall back to writing both files.
+	if v, ok := f.strs["instructions"]; ok {
+		norm := strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(v)), ".MD")
+		if _, err := project.PointerTargets(norm); err != nil {
+			return fmt.Errorf("--instructions %q: want CLAUDE, AGENTS, ALL, or NONE (agents.md/claude.md accepted)", v)
+		}
+		instr = norm
+		if cfg.Instructions != norm {
+			cfg.Instructions = norm
+			if err := project.Save(path, cfg); err != nil {
+				return err
+			}
+		}
+	}
 	targets, err := project.PointerTargets(instr)
 	if err != nil {
 		return err
@@ -357,7 +374,11 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if len(pointed) > 0 {
 		fmt.Fprintf(stdout, "agent pointer written to %s — commit these too; they make agent CLIs use the store unprompted\n", strings.Join(pointed, " + "))
 	} else if len(targets) == 0 {
-		fmt.Fprintln(stdout, "instructions = NONE (global config) — no CLAUDE.md/AGENTS.md touched")
+		fmt.Fprintln(stdout, "instructions = NONE — no CLAUDE.md/AGENTS.md touched")
+	} else {
+		// Re-init with identical content: say so explicitly — the files were
+		// NOT rewritten (mtime untouched), which is the idempotency promise.
+		fmt.Fprintf(stdout, "agent pointer already current in %s — nothing rewritten\n", strings.Join(targets, " + "))
 	}
 	return nil
 }
@@ -2185,6 +2206,10 @@ usage: ctx-optimize <command> [flags]
 
 commands:
   init                        scaffold .ctxoptimize/ + prepare the store (--path, default: cwd)
+    --instructions CLAUDE|AGENTS|ALL|NONE
+                              which agent files get the pointer block (accepts
+                              claude.md/agents.md too); persists to the project
+                              config. Re-init never rewrites identical content.
     --scan [--yes] [--depth N] [--modules "globs"]
                               multi-module: scan, confirm, write the FULL found
                               list to config.json modules[] (generated once,

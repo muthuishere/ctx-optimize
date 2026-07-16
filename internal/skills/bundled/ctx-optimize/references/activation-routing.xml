@@ -96,6 +96,7 @@
       <when>set up ctx-optimize on this repo, onboard this repo, index this project, gather this codebase, no committed config yet</when>
       <goal>Create the config + gather the store. Single project vs monorepo differ.</goal>
       <cmd>single: ctx-optimize init &amp;&amp; ctx-optimize add .</cmd>
+      <note>`init --instructions CLAUDE|AGENTS|ALL|NONE` (claude.md/agents.md accepted) picks which agent files get the pointer block and persists the choice to the project config; re-init never rewrites identical content.</note>
       <cmd>monorepo: ctx-optimize scan  → confirm the FULL found list with the user →  ctx-optimize init --scan --yes &amp;&amp; ctx-optimize add .</cmd>
       <ref>references/onboarding.md</ref>
     </route>

@@ -490,3 +490,39 @@ func TestMultiPathModuleScopeFromSubdir(t *testing.T) {
 		t.Fatalf("module-scoped query missed Charge:\n%s", out)
 	}
 }
+
+// --instructions on init: chooses the pointer target (accepting agents.md /
+// claude.md forms), persists to project config, re-init stays idempotent
+// (identical content is never rewritten), and typos fail loudly.
+func TestInitInstructionsFlag(t *testing.T) {
+	repo := t.TempDir()
+	writeFiles(t, repo, map[string]string{"a.go": "package a\n\nfunc A() {}\n"})
+	store := t.TempDir()
+
+	runCLI(t, 0, "init", "--path", repo, "--store", store, "--instructions", "agents.md")
+	if _, err := os.Stat(filepath.Join(repo, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatal("CLAUDE.md written despite --instructions agents.md")
+	}
+	data, err := os.ReadFile(filepath.Join(repo, "AGENTS.md"))
+	if err != nil || !strings.Contains(string(data), "ctx-optimize") {
+		t.Fatalf("AGENTS.md missing pointer: %v", err)
+	}
+	cfg, err := project.Load(repo)
+	if err != nil || cfg.Instructions != "AGENTS" {
+		t.Fatalf("instructions not persisted: %+v %v", cfg, err)
+	}
+
+	// Idempotent re-init: same bytes, and the CLI says so.
+	before := sha256.Sum256(data)
+	out, _ := runCLI(t, 0, "init", "--path", repo, "--store", store)
+	if !strings.Contains(out, "already current") {
+		t.Errorf("re-init did not report already-current: %s", out)
+	}
+	after, _ := os.ReadFile(filepath.Join(repo, "AGENTS.md"))
+	if sha256.Sum256(after) != before {
+		t.Error("re-init rewrote identical pointer content")
+	}
+
+	// Typo: loud refusal, nothing written.
+	runCLI(t, 1, "init", "--path", repo, "--store", store, "--instructions", "agnets")
+}
