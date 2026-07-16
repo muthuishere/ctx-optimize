@@ -24,7 +24,20 @@ N tests/Billing.Tests/Billing.Tests.csproj | config | tests/Billing.Tests/Billin
 N tests/Billing.Tests/BillingEngineTests.cs | file | tests/Billing.Tests/BillingEngineTests.cs | 
 N tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests | class | tests/Billing.Tests/BillingEngineTests.cs | L3-L10
 N tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests.ChargeCardWorks | method | tests/Billing.Tests/BillingEngineTests.cs | L5-L9
-== store goldenmm/services/api (18 nodes, 17 edges)
+== store goldenmm/services/api (33 nodes, 30 edges)
+E Makefile -contains-> Makefile#lint | EXTRACTED
+E Makefile -contains-> Makefile#run | EXTRACTED
+E Makefile -contains-> Makefile::task:lint | EXTRACTED
+E Makefile -contains-> Makefile::task:run | EXTRACTED
+E Taskfile.yml -contains-> Taskfile.yml#build | EXTRACTED
+E Taskfile.yml -contains-> Taskfile.yml#cmds | EXTRACTED
+E Taskfile.yml -contains-> Taskfile.yml#cmds-2 | EXTRACTED
+E Taskfile.yml -contains-> Taskfile.yml#desc | EXTRACTED
+E Taskfile.yml -contains-> Taskfile.yml#tasks | EXTRACTED
+E Taskfile.yml -contains-> Taskfile.yml#test | EXTRACTED
+E Taskfile.yml -contains-> Taskfile.yml#version | EXTRACTED
+E Taskfile.yml -contains-> Taskfile.yml::task:build | EXTRACTED
+E Taskfile.yml -contains-> Taskfile.yml::task:test | EXTRACTED
 E deploy/app.yaml -contains-> deploy/app.yaml#apiversion | EXTRACTED
 E deploy/app.yaml -contains-> deploy/app.yaml#containers | EXTRACTED
 E deploy/app.yaml -contains-> deploy/app.yaml#image | EXTRACTED
@@ -42,6 +55,21 @@ E main.go -contains-> main.go::main | EXTRACTED
 E main.go -contains-> main.go::validateOrder | EXTRACTED
 E main.go::ProcessOrder -calls-> main.go::validateOrder | INFERRED
 E main.go::main -calls-> main.go::ProcessOrder | INFERRED
+N Makefile | config | Makefile | L1
+N Makefile#lint | config_key | Makefile | L4
+N Makefile#run | config_key | Makefile | L1
+N Makefile::task:lint | task | Makefile | L4
+N Makefile::task:run | task | Makefile | L1
+N Taskfile.yml | config | Taskfile.yml | L1
+N Taskfile.yml#build | config_key | Taskfile.yml | L4
+N Taskfile.yml#cmds | config_key | Taskfile.yml | L6
+N Taskfile.yml#cmds-2 | config_key | Taskfile.yml | L10
+N Taskfile.yml#desc | config_key | Taskfile.yml | L5
+N Taskfile.yml#tasks | config_key | Taskfile.yml | L3
+N Taskfile.yml#test | config_key | Taskfile.yml | L9
+N Taskfile.yml#version | config_key | Taskfile.yml | L1
+N Taskfile.yml::task:build | task | Taskfile.yml | L4
+N Taskfile.yml::task:test | task | Taskfile.yml | L9
 N dep:go/github.com/pkg/errors | dependency | dep://go/github.com/pkg/errors | 
 N deploy/app.yaml | config | deploy/app.yaml | L1
 N deploy/app.yaml#apiversion | config_key | deploy/app.yaml | L1

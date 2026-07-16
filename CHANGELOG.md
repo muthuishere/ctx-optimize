@@ -12,6 +12,18 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Added
 
+- **Dev-env lane, first slice: task-runner facts.** Taskfile.yml (+ env
+  variants), Makefile, and justfile targets become `task` nodes — same shape
+  as npm scripts (`<file>::task:<name>`, label `task:`/`make:`/`just:`,
+  command + desc metadata, line-anchored) — so "how do I build/test/run this
+  repo" is answerable from the graph. Literal-or-silent: variables, pattern
+  rules, `.PHONY`, assignments, and settings emit nothing. Landmarked in the
+  golden fixture; all floors/scores/bench gates held (judge 16.5/16.5 — L19
+  stays a gap: linux `block/Makefile` genuinely has no rule targets, only
+  `obj-y` config keys, which L16 already answers). Known follow-up: the
+  config lane also indexes these files as `config_key` nodes — overlapping
+  facts to dedupe when the lane grows.
+
 - **Golden acceptance suite** (`internal/golden/`) — the never-break net.
   Hermetic fixture repos (a multi-module config repo with a multi-path
   `src/`+`tests/` .NET module; a plain csproj/sln repo) are pinned as exact

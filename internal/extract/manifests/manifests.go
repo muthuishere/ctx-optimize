@@ -168,6 +168,12 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		switch kind {
 		case "npm":
 			extractPackageJSON(c, root, rel, data)
+		case "taskfile":
+			extractTaskfile(c, rel, data)
+		case "makefile":
+			extractMakefile(c, rel, data)
+		case "justfile":
+			extractJustfile(c, rel, data)
 		case "pom":
 			extractPomXML(c, rel, data)
 		case "csproj":
@@ -235,12 +241,20 @@ func manifestKind(name string) string {
 	switch lower {
 	case "package.json":
 		return "npm"
+	case "makefile", "gnumakefile":
+		return "makefile"
+	case "justfile", ".justfile":
+		return "justfile"
 	case "pom.xml":
 		return "pom"
 	case "go.mod":
 		return "gomod"
 	case "build.gradle", "build.gradle.kts":
 		return "gradle"
+	}
+	if strings.HasPrefix(lower, "taskfile.") &&
+		(strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml")) {
+		return "taskfile"
 	}
 	switch filepath.Ext(lower) {
 	case ".csproj":

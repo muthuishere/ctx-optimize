@@ -38,6 +38,8 @@ func TestGoldenMultiModuleConfigRepo(t *testing.T) {
 	// 3. Manifest facts: npm dependency + task, go.mod dependency, csproj, k8s.
 	mustContain(t, snap, "npm dependency node", "dep:npm/react")
 	mustContain(t, snap, "npm task node", "package.json::task:build")
+	mustContain(t, snap, "taskfile task node", "Taskfile.yml::task:build")
+	mustContain(t, snap, "makefile task node", "Makefile::task:run")
 	mustContain(t, snap, "go.mod dependency", "github.com/pkg/errors")
 	mustContain(t, snap, "k8s image", "ghcr.io/golden/api:1.0.0")
 
