@@ -39,6 +39,14 @@ exists to kill.
 
 ## Competitive fact-check (graphify 0.9.x, inventoried from source 2026-07-16)
 
+Reproducibility (review tightening): inventory taken from the local clone at
+`~/muthu/gitworkspace/graphifyread`, commit `f16ba8a` (2026-07-11). Key
+source paths: `graphify/extractors/__init__.py` (language registry),
+`graphify/detect.py` (extension map), `graphify/extractors/engine.py`,
+`graphify/cluster.py` (Leiden seed 42), `graphify/paths.py`
+(`_TEST_FILENAME_PATTERNS` — naming-heuristic scoping only), CHANGELOG.md
+("Dockerfile/Makefile … remains a follow-up").
+
 Where they are ahead, deterministically: ~40 languages (vs our 12+16+packs),
 Terraform/HCL, SQL **FK/JOIN edges**, live Postgres introspection (opt-in),
 rationale nodes (`# NOTE/WHY/HACK` comments + ADR `doc_ref` edges), indirect
@@ -65,50 +73,65 @@ tail, adapters for anything live. No LLM, no DB drivers, no network in the
 binary — ever. The LLM's only job is narrating facts the store already holds
 ("cherry on cake").
 
-### Binding rule 1 — every lane ships its pack door IN THE SAME CHANGE (maintainer, 2026-07-16)
+### Binding rule 1 — ONE versioned fact-pack contract, not per-lane doors (REVISED after external review, 2026-07-16)
 
-Extensibility is not a follow-up. A new lane that lands core-only is
-REJECTED at review: the change that adds a lane must also add the drop-in
-door for additional parsers, exactly as routes/manifests/languages have
-today. Concretely:
+Extensibility is not a follow-up — but the first draft of this rule
+(`ctx-optimize <lane> add` per lane) was rejected in review as CLI sprawl:
+`ci add`, `services add`, `schema add`, `tests add`… would multiply command
+surfaces and implementations. Revised design:
 
-- The pack schema (`internal/extract/manifests/packs.go`) widens its
-  `validEmits` from `{dependency, task}` to include every kind a new lane
-  introduces — `service`, `config`, `workflow`, `job`, `migration`, `test` —
-  and pack rules gain edge emission (`depends_on`, `runs`, `references`,
-  `tested_by`) with the same fail-closed validation as nodes.
-- Each move's core recognizers are themselves expressed through the SAME rule
-  shape the packs use (the routes-lane precedent: core recognizers are
-  built-in packs). GitHub Actions is the first CI pack, compose the first
-  service pack — GitLab CI, Jenkins, Procfile, tilt, skaffold, ORM schemas
-  are then user-addable JSON, no binary release needed.
-- `ctx-optimize <lane> add <name|github-url>` / `list` / `remove` work on
-  day one for every new lane — the CLI surface is part of the lane, not
-  polish.
+- **One pack surface**: `ctx-optimize packs add <name|url>` ·
+  `packs list [--capability ci]` · `packs remove <name>`. A pack DECLARES its
+  capabilities instead of belonging to a lane:
+  `{"schema": 1, "name": "github-actions", "capabilities": ["workflow",
+  "job", "task-link"], "rules": [...]}`.
+- **The contract covers what widening `validEmits` cannot**: input matching,
+  parser mechanism, node identity templates, node emission, EDGE emission
+  (direction, cardinality, unresolved-reference policy, cross-file linking,
+  collision behavior), confidence/provenance stamping, resource ceilings,
+  schema version, fail-closed validation. Today's manifest pack validation
+  recognizes only formats/paths/`{dependency, task}` — insufficient for
+  edges; the contract is a design task of its own (step 1 of the plan).
+- **Core recognizers and packs share the EMIT contract, not the parse
+  mechanism.** A hand-written single-pass Dockerfile recognizer is faster and
+  safer than forcing Dockerfile semantics into generic JSON rules; it must
+  emit through the same validated door a pack does, but may parse however it
+  likes. (This retires the first draft's "core recognizers are built-in
+  packs" claim.)
+- **Back-compat**: routes/manifests/languages `add/list/remove` are shipped
+  surface and keep working — they become aliases into the same pack registry;
+  no new lane ever grows its own verb family.
 
-### Binding rule 2 — scalability & performance are first-class, NOT optional (maintainer, 2026-07-16)
+### Binding rule 2 — scalability & performance gates are EXECUTABLE, not prose (REVISED after external review, 2026-07-16)
 
-The product promise is "gather in about a second, refresh on every commit".
-Every move below is admitted only with a measured performance budget, and a
-change that regresses the gather gate does not merge:
+The first draft said "stays ≲1s" — directionally right, unenforceable as
+written ("O(bytes) is necessary but not sufficient: five linear scans are
+still five scans, and allocation-heavy processing stays linear while getting
+slower"). Revised: a `task bench-extract` harness is the gate, and it runs
+CUMULATIVELY (all default recognizers on), not per-move.
 
-- **Gather budget**: the 4k-file reference repo stays ≲1s end-to-end after
-  ALL five moves. Each new recognizer is O(bytes) single-pass (yamlwalk /
-  line-anchored scans — no YAML/AST library, no backtracking); recognizers
-  run inside the existing per-module parallel fan-out, never as extra passes
-  over the tree.
-- **Post-passes are graph-linear**: `tested_by` is O(E) over already-loaded
-  edges; wiki pages render O(nodes+edges) like the existing pages. Nothing
-  quadratic, nothing that loads the graph twice.
-- **Scale ceilings are explicit**: recognizers skip files over the existing
-  size caps; pack rule counts are bounded (fail loudly, never slow-crawl);
-  the dashboard's budgeted-payload rule extends to every new node kind
-  (a 50k-task monorepo must not blow up /api/graph — same top-N + sample
-  fairness as producers get today).
-- **Every move's tasks.md carries a perf line**: the measured before/after
-  gather time on this repo AND one large corpus (chromium subset already in
-  the store), recorded in `proof/` next to the correctness A/B. A move
-  without its perf measurement is not done.
+Each benchmark record (committed to `proof/bench/`): corpus name + immutable
+commit, file count + total bytes, machine + Go version, cold gather p50/p95
+(≥10 runs), 5-file incremental refresh p50/p95, peak RSS, store bytes/nodes/
+edges, query/card p50/p95 (later: trace), correctness fixtures, baseline
+commit vs candidate commit.
+
+Merge gates:
+
+| Gate | Threshold |
+|---|---|
+| this repo, full gather | p95 ≤ 1s |
+| large-corpus gather throughput regression | ≤ 5% |
+| 5-file refresh regression | ≤ 5% |
+| query p95 regression | ≤ 10% |
+| peak RSS regression | ≤ 10% |
+| store growth | proportional to useful emitted facts |
+| duplicate semantic edges | zero |
+| gate scope | cumulative, all default recognizers enabled |
+
+Design constraints stay: recognizers are single-pass inside the existing
+per-module fan-out; post-passes graph-linear; explicit size caps; the
+dashboard's budgeted-payload rule extends to every new node kind.
 
 ### Move 1 — dev-env lane: "how do I run this locally" (manifests producer)
 
@@ -125,7 +148,10 @@ New core recognizers, all in the existing manifests lane:
 - **Dockerfile** → `image` node with base (`FROM`), exposed ports, entrypoint
   (line-anchored scan).
 - **.env.example / .env.sample** → `config` key nodes (NAMES only — values are
-  never stored, matching the secrets rule).
+  never stored, matching the secrets rule). Review tightening: multiple env
+  layers (compose `environment:`, .env.*, devcontainer) need a stated
+  precedence rule before edges claim "X configures service Y"; v1 emits keys
+  + `declared_in` provenance only, no cross-layer resolution.
 - **.devcontainer/devcontainer.json** → `config` node with the image/features.
 
 Pack door: `packs.go` `validEmits` currently allows only `dependency|task`;
@@ -136,37 +162,55 @@ stays pack-able without touching core.
 
 - **.github/workflows/*.yml** → `workflow` node (triggers from `on:`), `job`
   nodes, step commands; `runs` edges workflow→job→task. When a step invokes a
-  task the dev-env lane already knows (`task ci`, `npm test`, `go test`), the
-  edge lands on that SAME task node — CI and local dev join into one graph,
-  which is the whole point: "does CI run what I run locally?" becomes a path
-  query.
-- GitLab CI / Jenkinsfile / CircleCI: packs, not core (same doctrine as
-  routes).
+  task the dev-env lane already knows, the edge lands on that SAME task node —
+  "does CI run what I run locally?" becomes a path query.
+- **Linking needs command normalization + confidence semantics** (review
+  tightening): `task ci`, `task --silent ci`, shell wrappers, and matrix
+  substitutions are not identical strings. Exact command match → EXTRACTED;
+  normalized match (strip flags/wrappers) → INFERRED; matrix/expression
+  contexts (`${{ }}`) → skip rather than guess (literal-or-silent, the
+  yamlwalk contract). Reusable/composite workflows are out of scope for v1.
+- GitLab CI / Jenkinsfile / CircleCI: packs via the fact-pack contract, not
+  core.
 
-### Move 3 — test topology: `tested_by` as a pure post-pass (zero new parsing)
+### Move 3 — `tests-for`: a DERIVED VIEW, not a persisted edge (REVISED after external review, 2026-07-16)
 
-Verified 2026-07-16: test→source `calls` edges already exist in the store
-(`project_test.go::TestGlobalPointerLifecycle → project.go::EnsureGlobalPointer`).
-The move is a producer post-pass, not an extractor:
+The first draft proposed persisting `tested_by` edges. External review
+falsified the premise, and verification against the live store confirmed it:
+`affected EnsureGlobalPointer` ALREADY returns
+`TestGlobalPointerCreatesMissingFile` and `TestGlobalPointerLifecycle` at d1
+via existing incoming `calls` edges — `Affected` walks edges backward
+(internal/analyze/analyze.go). A persisted `tested_by` edge would duplicate
+reachability, grow the store, complicate relation semantics, risk duplicate
+impact rows, and (as a source→test outgoing edge) point the wrong way for
+`affected`'s incoming walk.
 
-- Classify decl nodes in test files (existing conventions: `_test.go`,
-  `test_*.py`, `*.spec.ts`, `*.Tests` csproj…) as `kind: test`.
-- Reverse their `calls` edges into `tested_by` edges (INFERRED confidence,
-  like call resolution).
-- `affected <symbol>` then answers the question agents ask before every edit:
-  **"which tests do I run for this change?"** — today that is a grep.
+Revised: **`ctx-optimize tests-for <symbol>`** — request-time computation,
+zero store growth:
 
-This was Move 3 of the 2026-07-14 modules ADR, deferred; the multi-path module
-work (test→source calls resolving across scattered folders) made it cheap.
+- Filter `affected`'s incoming callers to recognized test declarations
+  (naming/path conventions: `_test.go`, `test_*.py`, `*.spec.ts`,
+  `*.Tests/`…), transitively to a bounded depth.
+- Answer with confidence semantics: direct EXTRACTED call vs INFERRED
+  resolution vs co-change-only evidence, plus unresolved-dispatch counts.
+- The same request-time classifier feeds `change-plan` and `review-diff`'s
+  "relevant tests" row (companion ADR) — which therefore no longer waits on
+  any new edge.
+
+A persisted relation returns ONLY if a benchmark proves the derived view is
+too slow or misses cases a materialized edge would catch.
 
 ### Move 4 — schema lane: "what is the actual DB schema"
 
 - **FK edges in core SQL**: parse `REFERENCES` in `create_table` → `references`
   edges table→table (graphify has this; we parse the same tree-sitter grammar
   and simply drop the relation today).
-- **Migrations ordering**: a migrations dir (name-sorted, the universal
-  convention) → `migration` nodes with sequence edges + `applies_to` edges
-  into table nodes. The "current schema" is then a walk, not a guess.
+- **Migrations ordering**: NOT name-sorted-by-universal-convention (first
+  draft overclaimed — Django uses dependency declarations, Rails timestamps,
+  Flyway version tables, some systems code-defined order). Each framework's
+  ordering needs its own accuracy spike before `migration` nodes with
+  sequence + `applies_to` edges ship; start with the one the first real user
+  repo actually uses.
 - **ORM schemas as packs**: prisma (grammar exists upstream — addable by
   name), Django/JPA/GORM models (route-style declaration packs). Tail, not
   core.
@@ -191,13 +235,14 @@ This is the payoff shape: the agent opens ONE page (or one query) and answers
 else. It is also the demo: `ctx-optimize wiki` on a fresh clone producing a
 correct RUNBOOK is self-evidently "value without an LLM".
 
-### Cheap adjacent wins (from the graphify comparison, core-safe)
+### Cheap adjacent wins — all DEFERRED after review
 
-- **Rationale nodes**: `// NOTE|WHY|HACK|SAFETY` comments → `rationale` nodes
-  attached to the enclosing decl (we already walk every file; zero new IO).
-- **Grow the addable-by-name grammar list** toward their ~40 (each is a
-  build-once pack; no binary growth).
-- Widen `validEmits` (Move 1) — one-line unlock for the pack ecosystem.
+- **Rationale nodes** (`// NOTE|WHY|HACK` → nodes): deferred — expands index
+  and query noise without connecting to a proven user question yet.
+- **Grow the addable-by-name grammar list**: dropped — no demonstrated
+  demand (composed-answers ADR).
+- Pack-emit widening is no longer a "cheap win" — it is step 1 of the plan
+  (the fact-pack contract), designed properly.
 
 ## What we will NOT do (the core, restated)
 

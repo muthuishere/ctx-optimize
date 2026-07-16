@@ -48,11 +48,14 @@ Changed decls → inbound callers/reverse impact → affected modules/communitie
 confidence block. Bounded traversal from changed files only. Validation:
 replay recall against historical PRs (cheap: git log + affected).
 
-**Corrected dependency:** the "relevant tests" row REQUIRES `tested_by`
-(companion ADR Move 3, a zero-parse post-pass — verified: test→source calls
-edges already exist in stores). review-diff cannot ship before it. The
-"deployment surfaces" row is only as rich as the dev-env/CI lanes (companion
-ADR Moves 1–2) — it ships degraded without them and improves as lanes land.
+**Corrected dependency (twice-corrected 2026-07-16):** the "relevant tests"
+row needs the request-time TEST CLASSIFIER shared with `tests-for` (companion
+ADR Move 3 as revised) — NOT a persisted `tested_by` edge. Second external
+review proved, and live verification confirmed, that `affected` already
+surfaces test callers via existing incoming calls edges; the classifier just
+labels them. The "deployment surfaces" row is only as rich as the dev-env/CI
+lanes (companion ADR Moves 1–2) — it ships degraded without them and improves
+as lanes land.
 
 ### A4 — routing honesty (skill-side, not engine)
 
@@ -73,26 +76,14 @@ The two ADRs are complementary halves, not rivals:
   tested_by, schema) so those answers cover the operational axis nobody
   (including graphify) serves.
 
-Merged, dependency-honest sequencing — one list, both ADRs:
-
-1. **A1 confidence block** (output-only, smallest, lifts every answer)
-2. **A2 trace + change-plan** (pure composition)
-3. **Move 3 tested_by** (zero-parse post-pass; unlocks A3)
-4. **A3 review-diff** (+ historical-PR recall validation)
-5. **Moves 1–2 dev-env + CI lanes** (feed review-diff deploy surfaces,
-   RUNBOOK/PIPELINE wiki pages)
-6. **Move 4 schema lane + cross-system adapters, one at a time** (adopted
-   rule: a disabled producer costs exactly zero; an enabled adapter adds
-   <10% to incremental gather)
-7. **Move 5 / A6 wiki harvest** (CRITIQUE.md tier-2: commit messages, test
-   names, log/error strings, ADR refs — measured before/after, since wiki
-   value is the least-measured axis)
-
-A4 (routing) rides along with steps 2 and 4 as skill updates.
-
-Both binding rules from the companion ADR apply to EVERY step: the pack door
-ships in the same change wherever a lane is added, and performance budgets
-are merge gates.
+The unified execution plan for BOTH ADRs lives in `./tasks.md` (revised after
+the second external review): fact-pack contract + bench harness first, then
+the RUNBOOK vertical slice, compose/Dockerfile, `tests-for` as a derived
+view, GitHub Actions with normalized task-linking, schema topology behind
+per-framework accuracy spikes, and question-shaped views last — with A1
+(confidence block) and A2 (trace/change-plan) interleaved where their inputs
+exist. Both binding rules from the companion ADR (single fact-pack contract;
+executable cumulative bench gates) govern every step.
 
 ## Performance constitution (adopted as REGRESSION gates, with baselines)
 
