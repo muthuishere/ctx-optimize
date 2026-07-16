@@ -179,10 +179,10 @@
     <!-- ============ SHARE: sync the store across a team ============ -->
 
     <route id="remote-init" group="share">
-      <when>configure a remote, set up sharing, point the store at s3/a folder</when>
-      <goal>Write the remote into config.json (committable) so the team pulls one graph.</goal>
+      <when>configure a remote, set up sharing, share over github / a git repo, point the store at s3/r2/minio/a folder</when>
+      <goal>Set up the hosting lane END-TO-END, then write the remote into config.json (committable) so the team pulls one graph. Lane A: a private gh repo as store host (gh repo create/clone → remote init file://…). Lane B: S3-compatible bucket (remote init s3://…, ${VAR} credentials for non-AWS endpoints). `init` scaffolds both recipes into .ctxoptimize/remote.example.md — follow it if present.</goal>
       <cmd>ctx-optimize remote init &lt;url&gt;  [--local]</cmd>
-      <ref>references/push-pull.md</ref>
+      <ref>references/push-pull.md  (complete gh + s3 setup recipes)</ref>
     </route>
 
     <route id="remote-sync" group="share">

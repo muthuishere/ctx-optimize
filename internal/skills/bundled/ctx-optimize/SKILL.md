@@ -119,7 +119,7 @@ counted honestly.
 | Told code changed / store looks stale | `ctx-optimize sync` — fast re-gather of the repo you're in (skips adapter scripts; safe, their nodes stay put). Full gather incl. adapters: `add .` |
 | Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script, run on demand via `adapters run [name]` |
 | Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .` |
-| User says share / publish / push / pull / export to team / import / load a store | follow `./references/push-pull.md` — scope-aware `remote push`/`pull` |
+| User says share / publish / push / pull / export to team / import / load a store — or wants sharing SET UP (over a github repo or an s3/r2 bucket) | follow `./references/push-pull.md` — complete gh + s3 setup recipes (also scaffolded per-repo as `.ctxoptimize/remote.example.md`), then scope-aware `remote push`/`pull` |
 | Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `sync` (fast lane) / `add .` (full) / `adapters run` (slow lane); `fresh` gate |
 | Combining several repos/modules into one graph | `ctx-optimize merge <mod>... --into <name>` (opt-in, never automatic) |
 | Wanting a readable map of the module | open the store's `wiki/index.md` (regenerated on every `add`; `ctx-optimize wiki` to force) |
