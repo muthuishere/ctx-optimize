@@ -1,0 +1,2 @@
+api: process order -> main.go::ProcessOrder, main.go::validateOrder
+Billing: charge card -> src/Billing/BillingEngine.cs::BillingEngine.ChargeCard, tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests.ChargeCardWorks

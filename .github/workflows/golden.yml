@@ -1,0 +1,46 @@
+name: golden
+
+# The never-break net at real-world scale: shallow-clone PINNED corpora and
+# run the corpus golden suite (hermetic goldens already run in ci.yml via
+# `go test ./...`). Trigger on extraction-surface changes, weekly, or by hand.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1" # weekly, Monday 03:17 UTC
+  push:
+    branches: [main]
+    paths:
+      - "internal/extract/**"
+      - "internal/store/**"
+      - "internal/query/**"
+      - "internal/analyze/**"
+      - "internal/app/**"
+      - "internal/golden/**"
+
+concurrency:
+  group: golden-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      # Pins live in internal/golden/testdata/corpora/*.json — keep these
+      # clone refs in lockstep with the specs (a mismatch skips, never fails).
+      - name: clone pinned corpora (depth 1)
+        run: |
+          mkdir -p /tmp/corpora
+          git clone --depth 1 --branch v6.9 https://github.com/torvalds/linux.git /tmp/corpora/linux
+          git clone --depth 1 --branch 13.0.3 https://github.com/JamesNK/Newtonsoft.Json.git /tmp/corpora/Newtonsoft.Json
+      - name: corpus goldens
+        run: CTX_OPTIMIZE_GOLDEN_CORPORA=/tmp/corpora go test ./internal/golden/ -run TestCorpusGolden -v
+      - name: hermetic goldens (same suite, committed fixtures)
+        run: go test ./internal/golden/ -run TestGolden -v

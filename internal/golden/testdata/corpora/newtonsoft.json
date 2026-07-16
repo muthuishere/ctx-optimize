@@ -1,0 +1,33 @@
+{
+  "repo": "Newtonsoft.Json",
+  "ref": "13.0.3",
+  "config": {
+    "name": "newtonsoft-golden",
+    "modules": [
+      {
+        "name": "Json",
+        "paths": [
+          "Src/Newtonsoft.Json",
+          "Src/Newtonsoft.Json.Tests"
+        ]
+      }
+    ]
+  },
+  "min_nodes": 5000,
+  "min_edges": 5000,
+  "must_nodes": [
+    {
+      "suffix": "JsonConvert.cs::Newtonsoft.JsonConvert",
+      "kind": "class"
+    },
+    {
+      "suffix": "JsonSerializer.cs::Newtonsoft.JsonSerializer",
+      "kind": "class"
+    }
+  ],
+  "cross_split_calls": {
+    "from_prefix": "Src/Newtonsoft.Json.Tests/",
+    "to_prefix": "Src/Newtonsoft.Json/",
+    "min": 50
+  }
+}

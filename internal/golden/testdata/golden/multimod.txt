@@ -1,0 +1,76 @@
+== store goldenmm (4 nodes, 1 edges)
+E README.md -contains-> README.md::goldenmm-golden-fixture-monorepo | EXTRACTED
+N AGENTS.md | document | AGENTS.md | L1
+N CLAUDE.md | document | CLAUDE.md | L1
+N README.md | document | README.md | L1
+N README.md::goldenmm-golden-fixture-monorepo | section | README.md | L1-L3
+== store goldenmm/Billing (10 nodes, 9 edges)
+E src/Billing/Billing.csproj -declares-> src/Billing/dep:nuget/Newtonsoft.Json | EXTRACTED
+E src/Billing/BillingEngine.cs -contains-> src/Billing/BillingEngine.cs::BillingEngine | EXTRACTED
+E src/Billing/BillingEngine.cs::BillingEngine -contains-> src/Billing/BillingEngine.cs::BillingEngine.Audit | EXTRACTED
+E src/Billing/BillingEngine.cs::BillingEngine -contains-> src/Billing/BillingEngine.cs::BillingEngine.ChargeCard | EXTRACTED
+E src/Billing/BillingEngine.cs::BillingEngine.ChargeCard -calls-> src/Billing/BillingEngine.cs::BillingEngine.Audit | INFERRED
+E tests/Billing.Tests/Billing.Tests.csproj -depends_on-> tests/Billing.Tests/../../src/Billing/Billing.csproj | EXTRACTED
+E tests/Billing.Tests/BillingEngineTests.cs -contains-> tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests | EXTRACTED
+E tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests -contains-> tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests.ChargeCardWorks | EXTRACTED
+E tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests.ChargeCardWorks -calls-> src/Billing/BillingEngine.cs::BillingEngine.ChargeCard | INFERRED
+N src/Billing/Billing.csproj | config | src/Billing/Billing.csproj | L1
+N src/Billing/BillingEngine.cs | file | src/Billing/BillingEngine.cs | 
+N src/Billing/BillingEngine.cs::BillingEngine | class | src/Billing/BillingEngine.cs | L3-L8
+N src/Billing/BillingEngine.cs::BillingEngine.Audit | method | src/Billing/BillingEngine.cs | L7-L7
+N src/Billing/BillingEngine.cs::BillingEngine.ChargeCard | method | src/Billing/BillingEngine.cs | L5-L5
+N src/Billing/dep:nuget/Newtonsoft.Json | dependency | dep://nuget/Newtonsoft.Json | 
+N tests/Billing.Tests/Billing.Tests.csproj | config | tests/Billing.Tests/Billing.Tests.csproj | L1
+N tests/Billing.Tests/BillingEngineTests.cs | file | tests/Billing.Tests/BillingEngineTests.cs | 
+N tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests | class | tests/Billing.Tests/BillingEngineTests.cs | L3-L10
+N tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests.ChargeCardWorks | method | tests/Billing.Tests/BillingEngineTests.cs | L5-L9
+== store goldenmm/services/api (18 nodes, 17 edges)
+E deploy/app.yaml -contains-> deploy/app.yaml#apiversion | EXTRACTED
+E deploy/app.yaml -contains-> deploy/app.yaml#containers | EXTRACTED
+E deploy/app.yaml -contains-> deploy/app.yaml#image | EXTRACTED
+E deploy/app.yaml -contains-> deploy/app.yaml#kind | EXTRACTED
+E deploy/app.yaml -contains-> deploy/app.yaml#metadata | EXTRACTED
+E deploy/app.yaml -contains-> deploy/app.yaml#name | EXTRACTED
+E deploy/app.yaml -contains-> deploy/app.yaml#spec | EXTRACTED
+E deploy/app.yaml -contains-> deploy/app.yaml#spec-2 | EXTRACTED
+E deploy/app.yaml -contains-> deploy/app.yaml#template | EXTRACTED
+E deploy/app.yaml -contains-> k8s://default/deployment/goldenmm-api | EXTRACTED
+E go.mod -declares-> dep:go/github.com/pkg/errors | EXTRACTED
+E k8s://default/deployment/goldenmm-api -uses_image-> image:ghcr.io/golden/api:1.0.0 | EXTRACTED
+E main.go -contains-> main.go::ProcessOrder | EXTRACTED
+E main.go -contains-> main.go::main | EXTRACTED
+E main.go -contains-> main.go::validateOrder | EXTRACTED
+E main.go::ProcessOrder -calls-> main.go::validateOrder | INFERRED
+E main.go::main -calls-> main.go::ProcessOrder | INFERRED
+N dep:go/github.com/pkg/errors | dependency | dep://go/github.com/pkg/errors | 
+N deploy/app.yaml | config | deploy/app.yaml | L1
+N deploy/app.yaml#apiversion | config_key | deploy/app.yaml | L1
+N deploy/app.yaml#containers | config_key | deploy/app.yaml | L8
+N deploy/app.yaml#image | config_key | deploy/app.yaml | L10
+N deploy/app.yaml#kind | config_key | deploy/app.yaml | L2
+N deploy/app.yaml#metadata | config_key | deploy/app.yaml | L3
+N deploy/app.yaml#name | config_key | deploy/app.yaml | L4
+N deploy/app.yaml#spec | config_key | deploy/app.yaml | L5
+N deploy/app.yaml#spec-2 | config_key | deploy/app.yaml | L7
+N deploy/app.yaml#template | config_key | deploy/app.yaml | L6
+N go.mod | config | go.mod | L1
+N image:ghcr.io/golden/api:1.0.0 | image | image:ghcr.io/golden/api:1.0.0 | 
+N k8s://default/deployment/goldenmm-api | resource | deploy/app.yaml | L2
+N main.go | file | main.go | 
+N main.go::ProcessOrder | function | main.go | L4-L4
+N main.go::main | function | main.go | L8-L8
+N main.go::validateOrder | function | main.go | L6-L6
+== store goldenmm/web/ui (7 nodes, 6 edges)
+E app.js -contains-> app.js::mountWidgets | EXTRACTED
+E app.js -contains-> app.js::renderDashboard | EXTRACTED
+E app.js::renderDashboard -calls-> app.js::mountWidgets | INFERRED
+E package.json -contains-> package.json::task:build | EXTRACTED
+E package.json -contains-> package.json::task:test | EXTRACTED
+E package.json -declares-> dep:npm/react | EXTRACTED
+N app.js | file | app.js | 
+N app.js::mountWidgets | function | app.js | L3-L3
+N app.js::renderDashboard | function | app.js | L1-L1
+N dep:npm/react | dependency | dep://npm/react | 
+N package.json | config | package.json | L1
+N package.json::task:build | task | package.json | L5
+N package.json::task:test | task | package.json | L6

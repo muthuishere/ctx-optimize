@@ -1,0 +1,8 @@
+{
+  "name": "goldenmm",
+  "modules": [
+    {"name": "api", "path": "services/api"},
+    {"name": "ui", "path": "web/ui"},
+    {"name": "Billing", "paths": ["src/Billing", "tests/Billing.Tests"]}
+  ]
+}

@@ -88,3 +88,9 @@ tasks:
     deps: [build]
     cmds:
       - ./bin/ctx-optimize install --skills
+
+  golden:
+    desc: Golden acceptance suite — hermetic fixtures always; real corpora when CTX_OPTIMIZE_GOLDEN_CORPORA points at pinned shallow clones (linux v6.9, Newtonsoft.Json 13.0.3)
+    cmds:
+      - go test ./internal/golden/ -v -run TestGolden
+      - '{{if .CTX_OPTIMIZE_GOLDEN_CORPORA}}CTX_OPTIMIZE_GOLDEN_CORPORA={{.CTX_OPTIMIZE_GOLDEN_CORPORA}} go test ./internal/golden/ -run TestCorpusGolden -v{{else}}echo "corpus tier skipped — set CTX_OPTIMIZE_GOLDEN_CORPORA=<dir with pinned clones>"{{end}}'

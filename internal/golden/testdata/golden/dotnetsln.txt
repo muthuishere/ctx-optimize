@@ -1,0 +1,23 @@
+== store 001 (12 nodes, 10 edges)
+E App.sln -depends_on-> src/App/App.csproj | EXTRACTED
+E App.sln -depends_on-> tests/App.Tests/App.Tests.csproj | EXTRACTED
+E src/App/Engine.cs -contains-> src/App/Engine.cs::Engine | EXTRACTED
+E src/App/Engine.cs::Engine -contains-> src/App/Engine.cs::Engine.Add | EXTRACTED
+E src/App/Engine.cs::Engine -contains-> src/App/Engine.cs::Engine.Scale | EXTRACTED
+E src/App/Engine.cs::Engine.Add -calls-> src/App/Engine.cs::Engine.Scale | INFERRED
+E tests/App.Tests/App.Tests.csproj -depends_on-> src/App/App.csproj | EXTRACTED
+E tests/App.Tests/EngineTests.cs -contains-> tests/App.Tests/EngineTests.cs::EngineTests | EXTRACTED
+E tests/App.Tests/EngineTests.cs::EngineTests -contains-> tests/App.Tests/EngineTests.cs::EngineTests.AddWorks | EXTRACTED
+E tests/App.Tests/EngineTests.cs::EngineTests.AddWorks -calls-> src/App/Engine.cs::Engine.Add | INFERRED
+N AGENTS.md | document | AGENTS.md | L1
+N App.sln | config | App.sln | L1
+N CLAUDE.md | document | CLAUDE.md | L1
+N src/App/App.csproj | config | src/App/App.csproj | L1
+N src/App/Engine.cs | file | src/App/Engine.cs | 
+N src/App/Engine.cs::Engine | class | src/App/Engine.cs | L3-L8
+N src/App/Engine.cs::Engine.Add | method | src/App/Engine.cs | L5-L5
+N src/App/Engine.cs::Engine.Scale | method | src/App/Engine.cs | L7-L7
+N tests/App.Tests/App.Tests.csproj | config | tests/App.Tests/App.Tests.csproj | L1
+N tests/App.Tests/EngineTests.cs | file | tests/App.Tests/EngineTests.cs | 
+N tests/App.Tests/EngineTests.cs::EngineTests | class | tests/App.Tests/EngineTests.cs | L3-L10
+N tests/App.Tests/EngineTests.cs::EngineTests.AddWorks | method | tests/App.Tests/EngineTests.cs | L5-L9
