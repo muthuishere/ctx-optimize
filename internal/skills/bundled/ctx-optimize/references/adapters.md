@@ -30,6 +30,19 @@ node/python3/sh). Dropping the file IS the registration: every future
 `add .` re-runs it alongside the code and markdown producers. That's the
 refresh-the-world loop — leave the store refreshable, not hand-fed.
 
+## Running adapters on demand (the slow lane)
+
+Adapter scripts can be arbitrarily slow, so the fast sync skips them:
+
+- `ctx-optimize sync` (and `add . --no-adapters`) re-gathers code/docs/
+  manifests/git WITHOUT running scripts — safe, adapter nodes stay put
+  (replace is producer-scoped).
+- `ctx-optimize adapters list` shows every adapter (declared in config.json
+  + discovered scripts, declared names winning).
+- `ctx-optimize adapters run` re-runs them all; `adapters run <name>` just
+  one. Run it when the external system changed, not on every code edit.
+  Running one adapter never disturbs the code graph.
+
 ## Batch schema (the universal door)
 
 ```json

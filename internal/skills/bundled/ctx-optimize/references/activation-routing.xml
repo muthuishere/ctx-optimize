@@ -107,12 +107,28 @@
       <cmd>ctx-optimize scan --json  [--depth N]</cmd>
     </route>
 
+    <route id="sync" group="build">
+      <when>code changed, refresh the store, sync the graph with the code, is the graph current</when>
+      <goal>FAST re-gather of the repo you're in: code/docs/manifests/git, prunes deleted, re-emits changed — SKIPS adapter scripts (safe: their nodes stay put; prints how many were skipped). The default after code changes.</goal>
+      <cmd>ctx-optimize sync  [--jobs N] [--force]</cmd>
+      <note>Takes no path — always the repo you're in (`add &lt;path&gt;` for another repo). ≡ `add . --no-adapters`.</note>
+      <ref>references/sync.md</ref>
+    </route>
+
     <route id="add" group="build">
-      <when>code changed, re-gather, refresh the store, sync the graph with the code, gather again</when>
-      <goal>Incremental gather — built-ins + every adapter in `.ctxoptimize/adapters/`; prunes deleted, re-emits changed. `add .` IS the sync.</goal>
-      <cmd>ctx-optimize add .  [--jobs N] [--force]</cmd>
+      <when>full gather, re-gather everything including adapters, gather again, first build</when>
+      <goal>FULL incremental gather — built-ins + every adapter in `.ctxoptimize/adapters/`; prunes deleted, re-emits changed.</goal>
+      <cmd>ctx-optimize add .  [--jobs N] [--force] [--no-adapters]</cmd>
       <note>Refuses a &gt;50% shrink without `--force`. Multi-module root fans out one worker per module and refreshes the navigator (no auto-merge).</note>
       <ref>references/sync.md</ref>
+    </route>
+
+    <route id="adapters-run" group="build">
+      <when>refresh the DB schema/topics/docs the adapters gathered, re-run adapter scripts, the external system changed</when>
+      <goal>The SLOW lane `sync` skips: run adapter scripts on demand — all, or one by name. Producer-scoped replace: running one adapter never disturbs the code graph.</goal>
+      <cmd>ctx-optimize adapters list</cmd>
+      <cmd>ctx-optimize adapters run  [name]</cmd>
+      <ref>references/adapters.md</ref>
     </route>
 
     <route id="multi-project" group="build">

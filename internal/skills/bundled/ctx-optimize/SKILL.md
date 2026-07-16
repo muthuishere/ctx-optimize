@@ -116,11 +116,11 @@ counted honestly.
 | Repo ALREADY has a committed `.ctxoptimize/config.json` with a `remote` but no local store (a clone / teammate already set it up) | `ctx-optimize remote pull` then `status --json` — do NOT init/add (that rebuilds from source). `init` self-detects this and just prints the pull line. |
 | Setting up / onboarding a repo or monorepo (NO committed config yet, "index this repo") | follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .`. `init --instructions CLAUDE\|AGENTS\|ALL\|NONE` picks which agent files get the pointer (accepts `claude.md`/`agents.md`; persists to config). Re-running `init` is safe: identical pointer content is never rewritten |
 | Multi-project repo (.NET `.sln`, Gradle/Maven/Nx monorepo) or a module whose source and tests live in SEPARATE folders | Derive `modules[]` from the BUILD SYSTEM, not folders — detect it and follow the per-system parser: `./references/modules/index.md` routes to `dotnet-sln.md` / `gradle.md` / `maven.md` / `js-workspaces.md` / `naming-fallback.md`; config schema in `./references/config-json.md`. Group src+tests into one multi-path module `{"name","paths":[...]}` so test→source calls resolve |
-| Told code changed / store looks stale | `ctx-optimize add .` (incremental: prunes deleted, re-emits changed) |
-| Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script |
+| Told code changed / store looks stale | `ctx-optimize sync` — fast re-gather of the repo you're in (skips adapter scripts; safe, their nodes stay put). Full gather incl. adapters: `add .` |
+| Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script, run on demand via `adapters run [name]` |
 | Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .` |
 | User says share / publish / push / pull / export to team / import / load a store | follow `./references/push-pull.md` — scope-aware `remote push`/`pull` |
-| Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `add .` IS the sync; `fresh` gate |
+| Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `sync` (fast lane) / `add .` (full) / `adapters run` (slow lane); `fresh` gate |
 | Combining several repos/modules into one graph | `ctx-optimize merge <mod>... --into <name>` (opt-in, never automatic) |
 | Wanting a readable map of the module | open the store's `wiki/index.md` (regenerated on every `add`; `ctx-optimize wiki` to force) |
 | Exporting for other tools | `ctx-optimize export --format json|dot|graphml|csv|obsidian|all` |
@@ -206,6 +206,7 @@ model anywhere; you are the judge, the binary only tallies.
   navigator, scope-follows-cwd querying, merge policy
 - `./references/adapters.md` — everything beyond code + markdown: doc
   conversion lane, system adapters, the batch schema
-- `./references/sync.md` — sync = keep the graph matching the code (`add .`,
-  `fresh` gate)
+- `./references/sync.md` — sync = keep the graph matching the code: `sync`
+  fast lane (no adapter scripts) · `add .` full gather · `adapters run` slow
+  lane · `fresh` gate
 - `./references/push-pull.md` — share/publish/import the store across the team
