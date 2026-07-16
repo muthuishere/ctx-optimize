@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/muthuishere/ctx-optimize/internal/app"
 	"github.com/muthuishere/ctx-optimize/internal/store"
@@ -32,6 +33,19 @@ func runCLI(t *testing.T, args ...string) string {
 		t.Fatalf("%v: exit %d: %s%s", args, code, out.String(), errb.String())
 	}
 	return out.String()
+}
+
+// gatherWithin runs init+add and enforces a wall-clock ceiling — performance
+// is part of the golden contract even on the tiny hermetic fixtures (a repo
+// this small taking seconds means something pathological landed in gather).
+func gatherWithin(t *testing.T, ceiling time.Duration, repo, storeRoot string) {
+	t.Helper()
+	start := time.Now()
+	runCLI(t, "init", "--path", repo, "--store", storeRoot)
+	runCLI(t, "add", repo, "--path", repo, "--store", storeRoot)
+	if wall := time.Since(start); wall > ceiling {
+		t.Errorf("fixture gather took %s, performance ceiling %s — performance regression", wall.Round(time.Millisecond), ceiling)
+	}
 }
 
 // copyTree copies a committed fixture into a temp dir so gather never writes

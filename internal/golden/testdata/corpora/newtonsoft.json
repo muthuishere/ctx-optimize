@@ -13,8 +13,8 @@
       }
     ]
   },
-  "min_nodes": 5000,
-  "min_edges": 5000,
+  "min_nodes": 10131,
+  "min_edges": 19194,
   "must_nodes": [
     {
       "suffix": "JsonConvert.cs::Newtonsoft.JsonConvert",
@@ -28,6 +28,11 @@
   "cross_split_calls": {
     "from_prefix": "Src/Newtonsoft.Json.Tests/",
     "to_prefix": "Src/Newtonsoft.Json/",
-    "min": 50
+    "min": 344
+  },
+  "max_gather_seconds": 25,
+  "probe_query": {
+    "text": "serialize object",
+    "max_ms": 1500
   }
 }

@@ -8,6 +8,37 @@ All notable changes to ctx-optimize. Format loosely follows
 The contract never changes: **the binary is deterministic — no LLM, no DB, no
 embeddings, no MCP, no network except your configured remote.**
 
+## [Unreleased]
+
+### Added
+
+- **Golden acceptance suite** (`internal/golden/`) — the never-break net.
+  Hermetic fixture repos (a multi-module config repo with a multi-path
+  `src/`+`tests/` .NET module; a plain csproj/sln repo) are pinned as exact
+  snapshots + query-ranking goldens in every `go test ./...`. Pinned real
+  corpora run env-gated locally and via `.github/workflows/golden.yml`
+  (shallow clones at fixed refs).
+
+  **Baseline scores AND performance (measured locally 2026-07-16 before
+  commit; both are enforced — extraction floors at the exact measured
+  numbers, performance ceilings at ~10× measured wall so slow CI passes but
+  an order-of-magnitude regression fails. Neither the score nor the speed may
+  regress without a deliberate, reviewed spec change):**
+
+  | Corpus | Nodes (floor) | Edges (floor) | Gather measured / ceiling | Probe query measured / ceiling |
+  |---|---|---|---|---|
+  | linux v6.9 `block/` | 8,163 | 12,007 | 0.6–1.1s / 12s | 8ms / 1500ms |
+  | Newtonsoft.Json 13.0.3 (multi-path src+tests) | 10,131 | 19,194 | 1.3–2.6s / 25s | 33ms / 1500ms |
+  | fixture: multimod config repo | exact snapshot (76 lines) | — | ~0.4s / 10s | ranking goldened |
+  | fixture: csproj/sln repo | exact snapshot (23 lines) | — | ~0.4s / 10s | ranking goldened |
+
+  Landmarks enforced alongside: `ll_back_merge_fn` / `blk_rq_merge_ok` /
+  `elv_rqhash_add` + calls-into floors (linux); `JsonConvert` /
+  `JsonSerializer` classes + **344** cross-split test→source calls floor
+  (Newtonsoft); cross-split call edge, npm dep+task, go.mod dep, k8s image
+  (fixtures). Query latency reference on this repo's live metrics: query avg
+  7.0ms (n=92), card 0.6ms (n=91).
+
 ## [0.3.7] — 2026-07-16
 
 ### Fixed

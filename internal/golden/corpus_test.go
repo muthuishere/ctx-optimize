@@ -30,13 +30,13 @@ type nodeSpec struct {
 }
 
 type corpusSpec struct {
-	Repo         string `json:"repo"`
-	Ref          string `json:"ref"`
-	GatherSubdir string `json:"gather_subdir"`
-	Config       any    `json:"config"`
-	MinNodes     int    `json:"min_nodes"`
-	MinEdges     int    `json:"min_edges"`
-	MustNodes    []nodeSpec `json:"must_nodes"`
+	Repo          string     `json:"repo"`
+	Ref           string     `json:"ref"`
+	GatherSubdir  string     `json:"gather_subdir"`
+	Config        any        `json:"config"`
+	MinNodes      int        `json:"min_nodes"`
+	MinEdges      int        `json:"min_edges"`
+	MustNodes     []nodeSpec `json:"must_nodes"`
 	MustCallsInto []struct {
 		TargetSuffix string `json:"target_suffix"`
 		Min          int    `json:"min"`
@@ -46,6 +46,15 @@ type corpusSpec struct {
 		ToPrefix   string `json:"to_prefix"`
 		Min        int    `json:"min"`
 	} `json:"cross_split_calls"`
+	// Performance gates — the coarse "never goes away" ceilings that run on
+	// every machine. Set ~10x over measured local wall: slow CI runners pass,
+	// an order-of-magnitude regression (accidental O(n²), a double tree walk)
+	// fails. Fine-grained p50/p95 baseline diffs are the bench harness's job.
+	MaxGatherSeconds float64 `json:"max_gather_seconds"`
+	ProbeQuery       *struct {
+		Text  string `json:"text"`
+		MaxMS int64  `json:"max_ms"`
+	} `json:"probe_query"`
 }
 
 func TestCorpusGolden(t *testing.T) {
@@ -142,6 +151,21 @@ func runCorpus(t *testing.T, base, specPath string) {
 		}
 	}
 	t.Logf("%s@%s: %d nodes, %d edges, gather %.1fs", spec.Repo, spec.Ref, nodes, edges, gatherWall.Seconds())
+
+	// Performance is part of the golden contract — a gather that got an order
+	// of magnitude slower is as broken as one that lost nodes.
+	if spec.MaxGatherSeconds > 0 && gatherWall.Seconds() > spec.MaxGatherSeconds {
+		t.Errorf("gather took %.1fs, performance ceiling %.0fs — performance regression", gatherWall.Seconds(), spec.MaxGatherSeconds)
+	}
+	if pq := spec.ProbeQuery; pq != nil {
+		qs := time.Now()
+		runCLI(t, "query", pq.Text, "--path", gatherRoot, "--store", storeRoot)
+		qWall := time.Since(qs)
+		t.Logf("probe query %q: %dms (ceiling %dms)", pq.Text, qWall.Milliseconds(), pq.MaxMS)
+		if qWall.Milliseconds() > pq.MaxMS {
+			t.Errorf("probe query took %dms, ceiling %dms — query performance regression", qWall.Milliseconds(), pq.MaxMS)
+		}
+	}
 
 	if nodes < spec.MinNodes {
 		t.Errorf("nodes = %d, golden floor %d — extraction lost ground", nodes, spec.MinNodes)

@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestGoldenMultiModuleConfigRepo pins the full extraction contract for a
@@ -16,8 +17,7 @@ func TestGoldenMultiModuleConfigRepo(t *testing.T) {
 	copyTree(t, filepath.Join("testdata", "repos", "multimod"), repo)
 	storeRoot := t.TempDir()
 
-	runCLI(t, "init", "--path", repo, "--store", storeRoot)
-	runCLI(t, "add", repo, "--path", repo, "--store", storeRoot)
+	gatherWithin(t, 10*time.Second, repo, storeRoot)
 
 	snap := snapshot(t, storeRoot)
 
@@ -60,8 +60,7 @@ func TestGoldenDotnetSlnRepo(t *testing.T) {
 	copyTree(t, filepath.Join("testdata", "repos", "dotnetsln"), repo)
 	storeRoot := t.TempDir()
 
-	runCLI(t, "init", "--path", repo, "--store", storeRoot)
-	runCLI(t, "add", repo, "--path", repo, "--store", storeRoot)
+	gatherWithin(t, 10*time.Second, repo, storeRoot)
 
 	snap := snapshot(t, storeRoot)
 

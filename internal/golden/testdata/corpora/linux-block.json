@@ -2,14 +2,31 @@
   "repo": "linux",
   "ref": "v6.9",
   "gather_subdir": "block",
-  "min_nodes": 3000,
-  "min_edges": 5000,
+  "min_nodes": 8163,
+  "min_edges": 12007,
   "must_nodes": [
-    {"suffix": "blk-merge.c::ll_back_merge_fn", "kind": "function"},
-    {"suffix": "blk-merge.c::blk_rq_merge_ok", "kind": "function"},
-    {"suffix": "elevator.c::elv_rqhash_add", "kind": "function"}
+    {
+      "suffix": "blk-merge.c::ll_back_merge_fn",
+      "kind": "function"
+    },
+    {
+      "suffix": "blk-merge.c::blk_rq_merge_ok",
+      "kind": "function"
+    },
+    {
+      "suffix": "elevator.c::elv_rqhash_add",
+      "kind": "function"
+    }
   ],
   "must_calls_into": [
-    {"target_suffix": "::ll_back_merge_fn", "min": 1}
-  ]
+    {
+      "target_suffix": "::ll_back_merge_fn",
+      "min": 1
+    }
+  ],
+  "max_gather_seconds": 12,
+  "probe_query": {
+    "text": "back merge request",
+    "max_ms": 1500
+  }
 }
