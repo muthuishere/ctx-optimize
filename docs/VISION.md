@@ -86,6 +86,10 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
    declares its refresh strategy: hash-diff / snapshot-diff / since-timestamp —
    e.g. re-introspect postgres information_schema, diff, update only changed
    tables). Nothing unchanged is recomputed, ever.
+   *(2026-07-16: shipped spelling — `add` re-runs everything, `sync` is the
+   fast lane that skips adapter scripts, `adapters run [name]` re-runs the
+   slow lane on demand, and `up` is the omakase pull-or-gather-or-refresh
+   onboarding verb.)*
 5. **The store is the gathered world.** Agents GATHER from the store — code,
    DB schema, messaging topics, log shapes, docs — instead of going to every
    live system every time. Queries never touch live systems; `refresh` keeps
@@ -140,6 +144,10 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
   central-store design graphify ignored, made the default here).
 - **Push/pull anywhere:** plain files + manifest → sync adapters (S3, rsync, …),
   incremental. Layout configurable; user-home is only the default.
+  *(2026-07-16, v0.4.0: realized as scripted transports — the built-in
+  `file://`/`s3://` lanes and `remote init` are removed; `remote push`/`pull`
+  run commands declared in the committed `.ctxoptimize/config.json`, and
+  incrementality is the script's property.)*
 
 ## FINAL INTEGRATION CONTRACT (2026-07-11, maintainer) — three layers, "we are not those people"
 ### (superseded in part by the revision above: citenexus is now OPTIONAL at the skill layer, not a core doc lane)

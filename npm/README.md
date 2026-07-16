@@ -13,11 +13,13 @@ question it greps, opens files, chases callers, re-reads. ctx-optimize turns a
 repo — plus, via adapters, database schemas, messaging topics, log shapes,
 documents — into a queryable graph stored as plain files in a central
 per-module store, and your agent (Claude Code, Codex, Devin — any skill-capable
-harness) answers *from the store* in a single call. The binary never touches a
-model, a database, or the network: it's deterministic, and the only
-intelligence in the system is the agent you already run.
+harness) answers *from the store* in a single call. The binary is
+deterministic — no LLM, no DB, and network only when you ask: `update`
+(releases), `grammar build` (zig, downloaded once), and whatever your own
+remote scripts do. The only intelligence in the system is the agent you
+already run.
 
-> **Status: v0.3.x — published.** On npm (`@muthuishere/ctx-optimize`) with
+> **Status: v0.4.** On npm (`@muthuishere/ctx-optimize`) with
 > prebuilt binaries for macOS / Linux / Windows; CI green; benchmarks
 > reproducible (see [Proof](#proof--reproducible-not-our-word)). Working
 > today: code extraction for **12 embedded languages** (Go, Python, JS,
@@ -25,12 +27,22 @@ intelligence in the system is the agent you already run.
 > zero setup) plus **drop-in grammar packs** for any other language
 > (kotlin/swift/dart ship in `grammars/`), markdown docs, the universal
 > adapter door, `query`/`path`/`explain`/`affected`/`hubs`, **symbol cards**
-> (`card X`: signature + doc + callers/callees, no file read), the
+> (`card X`: signature + doc + callers/callees, no file read),
+> **`change-plan`** (one composed answer for "I'm about to change X":
+> signature + callers + blast radius + which tests to run), the
 > **deterministic wiki** (regenerated on every add) with a
 > **community-detected "Subsystems" map**, the save-result/reflect
-> learning loop, merge/export (json/dot/graphml/csv/obsidian), remote
-> init/push/pull, and **multi-module monorepo support** (`scan` /
+> learning loop, merge/export (json/dot/graphml/csv/obsidian), **scripted
+> remote push/pull**, and **multi-module monorepo support** (`scan` /
 > `init --scan` / parallel fan-out `add` / navigator + federated queries).
+> New in v0.4 (**breaking**): **the remote is your script** — the binary
+> ships no transport of its own; `remote push`/`pull` run the commands you
+> declare in the committed config (`remote init` and the built-in
+> `file://`/`s3://` lanes are gone — see [Sharing](#sharing--the-remote-is-your-script)),
+> **`up`** (the one onboarding verb: pull, gather, or refresh — whatever the
+> state needs), **`sync`** + **`adapters run`** (fast lane / slow lane around
+> adapter scripts), and **`update`** (self-updates the binary and every
+> installed surface — sha256-verified, user-invoked only).
 > New in v0.3: **framework routes** (FastAPI/Flask/Express/NestJS/Angular/
 > React Router/Vue + OpenAPI/Drupal/Ingress YAML — route nodes linked to
 > their handlers, so `affected <handler>` surfaces the URL that binds it),
@@ -62,24 +74,54 @@ Go:
 go install github.com/muthuishere/ctx-optimize/cmd/ctx-optimize@latest
 ```
 
-Then install the agent skill (writes to `~/.claude/skills`, and
-`~/.agents/skills` when codex is present):
+Then install the agent surface — skills + hooks for every agent CLI it
+detects (Claude Code, Codex, Copilot, Devin):
 
 ```sh
-ctx-optimize install --skills
+ctx-optimize install
 ```
+
+Later, one command updates the whole tool:
+
+```sh
+ctx-optimize update           # the binary itself (npm installs via npm; standalone
+                              # binaries from GitHub Releases, sha256-verified
+                              # against checksums.txt, swapped atomically; dev
+                              # builds left alone), then skills + hooks + the
+                              # global rule from the new binary — an exact replace
+ctx-optimize update --check   # report only, touch nothing
+```
+
+The network call happens only when YOU run it — the binary never checks for
+updates in the background. `ctx-optimize uninstall` removes everything
+`install` wrote; stores and committed repo pointers stay.
 
 ## Usage
 
 ```sh
-# first time in a repo: scaffold .ctxoptimize/ (config + adapters dir) + the store
+# first time in a repo (author-side): scaffold .ctxoptimize/ — config,
+# adapter + transport samples, remote.example.md — and prepare the store
 ctx-optimize init
 
 # gather a repo into the central store (~/ctxoptimize/<repo-name>/)
 ctx-optimize add .
 
+# every other time — fresh clone, teammate, CI — one idempotent verb decides:
+ctx-optimize up             # no store + remote.pull declared → pull (pull fails →
+                            # gathers locally and says so); no remote → gather;
+                            # stale vs git HEAD → fast re-gather; fresh → no-op
+
 # ask the store — complete, citable hits under a token budget
 ctx-optimize query "where is the refund flow" --json
+
+# about to change something? ONE composed call: signature + callers +
+# blast radius + WHICH TESTS TO RUN + co-change history
+ctx-optimize change-plan "RefundService"
+
+# fast lane / slow lane: re-gather code without running adapter scripts;
+# run adapters (DB dumps, doc converters) on demand — all, or one by name
+ctx-optimize sync
+ctx-optimize adapters run
 
 # feed ANY system through the universal adapter door (strictly validated)
 ./my-postgres-adapter | ctx-optimize add --json -
@@ -91,19 +133,59 @@ ctx-optimize export --format dot --out graph.dot
 # see it: local dashboard (embedded single file, zero external requests)
 ctx-optimize serve          # → http://127.0.0.1:4747 — graph, search, details
 
-# share the store: sync-only remotes (S3-compatible or any folder)
-ctx-optimize remote init s3://team-bucket/ctx/myrepo   # writes .ctxoptimize/config.json — commit it
-ctx-optimize remote push          # incremental — only changed artifacts move
-ctx-optimize remote pull          # a teammate who cloned the repo: this is ALL they run
-
 ctx-optimize status --json
 ```
 
 - The store is **plain files** (ndjson/json/md) — diffable, portable, at
   `~/ctxoptimize/<repo-name>/`. The only thing in your repo is the
   committable `.ctxoptimize/` directory.
-- **Remotes are for sync only.** Queries always run on the local folder.
-  `push`/`pull` take no URL — the remote is whatever the config says.
+- **Sharing is your script.** `remote push` / `remote pull` run the commands
+  declared in the committed config — the binary ships no transport of its
+  own. Queries always run on the local folder. See
+  [Sharing](#sharing--the-remote-is-your-script).
+
+## Sharing — the remote is your script
+
+The binary never moves bytes to a host it chose. `remote push` / `remote pull`
+run the commands you declare in `.ctxoptimize/config.json` — any shell line
+(js, py, sh, or inline):
+
+```json
+{
+  "remote": {
+    "push": "node .ctxoptimize/push.js",
+    "pull": "node .ctxoptimize/pull.js"
+  }
+}
+```
+
+Your command gets the store context in env — `CTX_STORE_DIR` (the local store
+tree; pull pre-creates it), `CTX_STORE_KEY`, `CTX_SCOPE_PREFIX` (module scope),
+`CTX_DIRECTION` (`push`/`pull` — one script can serve both) — and a non-zero
+exit fails the verb. Same trust model as adapters and npm scripts.
+
+`init` scaffolds a complete zero-dependency **git lane** as inert samples: a
+private git repo hosts every store (artifacts are sorted ndjson, so git diffs
+and merges them cleanly). Arming it:
+
+```sh
+gh repo create your-org/ctx-stores --private          # once per team
+mv .ctxoptimize/push.js.sample .ctxoptimize/push.js
+mv .ctxoptimize/pull.js.sample .ctxoptimize/pull.js
+# set STORE_REPO_URL in both, add the "remote" block to config.json, commit
+ctx-optimize remote push
+```
+
+A teammate who clones the repo runs `ctx-optimize up` — done. S3/R2/MinIO is
+a small aws-CLI script over the same env contract; GCS, artifactory,
+rsync-over-ssh, anything: write the script that copies `CTX_STORE_DIR` to and
+from your host and declare it. Recipes live in the scaffolded
+`.ctxoptimize/remote.example.md`. Secrets stay env-var NAMES that the shell
+expands at run time — never in config or scripts, never printed.
+
+Upgrading from v0.3: `remote init` and the built-in `file://`/`s3://`
+transports are gone. A legacy URL-shaped config still loads but is inert —
+`push`/`pull` print the migration pointer.
 
 ## Multi-module — monorepos get one graph per module, plus a navigator
 
@@ -192,8 +274,10 @@ Harness + full write-up: https://muthuishere.github.io/ctx-optimize-site/proof/a
 
 ```
 .ctxoptimize/
-  config.json     name + remote
-  adapters/       drop scripts here — every .js/.py/.sh runs on `add`
+  config.json          name + remote commands (+ modules[] in a monorepo)
+  adapters/            drop scripts here — every .js/.py/.sh runs on `add`
+  push.js / pull.js    your transport scripts (init writes an inert *.sample pair)
+  remote.example.md    transport recipes: git lane, s3 lane, custom
 ```
 
 `config.json`:
@@ -202,14 +286,8 @@ Harness + full write-up: https://muthuishere.github.io/ctx-optimize-site/proof/a
 {
   "name": "my-module",
   "remote": {
-    "type": "s3",
-    "url": "s3://team-bucket/ctx/my-module",
-    "credentials": {
-      "access_key_id": "${TEAM_R2_KEY_ID}",
-      "secret_access_key": "${TEAM_R2_SECRET}",
-      "region": "auto",
-      "endpoint": "${R2_ENDPOINT}"
-    }
+    "push": "node .ctxoptimize/push.js",
+    "pull": "node .ctxoptimize/pull.js"
   }
 }
 ```
@@ -217,17 +295,21 @@ Harness + full write-up: https://muthuishere.github.io/ctx-optimize-site/proof/a
 Commit the directory — it is safe by construction:
 
 - `name` picks the store folder under `~/ctxoptimize/` (default: repo basename).
-- `remote` is a plain string URL or the full object above. `${VAR}` anywhere
-  in the url/credentials resolves from the environment **at sync time** — the
-  file holds variable names, never secret values; resolved values are never
-  written or printed. Omitted credentials fall back to the standard `AWS_*`
-  env vars (endpoint override covers R2/Hetzner/MinIO).
+- `remote` declares the push/pull commands — plain shell lines the binary
+  runs as-is (cwd = repo root). Secrets stay env-var NAMES in scripts and
+  config alike; the shell expands them at run time — values are never
+  written or printed.
 - **Adapters are files**: dropping `kafka.js` into `.ctxoptimize/adapters/`
   is the whole registration (`.js`/`.mjs` → node, `.py` → python3, `.sh` →
   sh; other extensions inert — `init` seeds an `example.js.sample` template).
   Each script prints batch JSON to stdout; `ctx-optimize add` runs the
-  built-in extractors **and** every adapter through the fail-closed door. One
-  command refreshes the whole world; a fresh clone needs zero setup to `pull`.
+  built-in extractors **and** every adapter through the fail-closed door.
+  Adapters can be arbitrarily slow (DB dumps, doc converters), so they get
+  their own lanes: `sync` re-gathers the repo you're in and **skips** them
+  (safe — replace is producer-scoped, adapter nodes stay put), `adapters
+  run [name]` re-runs all or one on demand, `add --no-adapters` is the fast
+  lane spelled long. One `add` refreshes the whole world; a fresh clone
+  needs zero setup — `ctx-optimize up`.
 
 ## Grammar packs — add any language without recompiling
 
