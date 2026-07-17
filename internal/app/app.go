@@ -467,7 +467,7 @@ func cmdInit(args []string, stdout io.Writer) error {
 			}
 		}
 	}
-	targets, err := project.PointerTargets(instr)
+	targets, err := project.PointerTargetsFor(path, instr)
 	if err != nil {
 		return err
 	}

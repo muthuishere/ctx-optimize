@@ -315,6 +315,33 @@ func TestPointerTargets(t *testing.T) {
 	}
 }
 
+func TestPointerTargetsForNarrowsToExistingFiles(t *testing.T) {
+	dir := t.TempDir()
+	// Neither file exists: default creates both.
+	got, err := PointerTargetsFor(dir, "")
+	if err != nil || strings.Join(got, " ") != "CLAUDE.md AGENTS.md" {
+		t.Fatalf("empty repo: %v, %v", got, err)
+	}
+	// Only AGENTS.md exists: default must not drop a CLAUDE.md in.
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# repo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = PointerTargetsFor(dir, "ALL")
+	if err != nil || strings.Join(got, " ") != "AGENTS.md" {
+		t.Fatalf("AGENTS-only repo: %v, %v", got, err)
+	}
+	// Explicit setting overrides existence: the author asked by name.
+	got, err = PointerTargetsFor(dir, "CLAUDE")
+	if err != nil || strings.Join(got, " ") != "CLAUDE.md" {
+		t.Fatalf("explicit CLAUDE: %v, %v", got, err)
+	}
+	// NONE stays nil.
+	got, err = PointerTargetsFor(dir, "NONE")
+	if err != nil || got != nil {
+		t.Fatalf("NONE: %v, %v", got, err)
+	}
+}
+
 func TestGlobalPointerLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "CLAUDE.md")

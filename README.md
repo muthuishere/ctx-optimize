@@ -3,7 +3,7 @@
 [![CI](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml/badge.svg)](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/muthuishere/ctx-optimize.svg)](https://pkg.go.dev/github.com/muthuishere/ctx-optimize)
 [![npm](https://img.shields.io/npm/v/@muthuishere/ctx-optimize?logo=npm)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
-[![benchmark](https://img.shields.io/badge/benchmark-run%20it%20yourself-4ade80)](https://muthuishere.github.io/ctx-optimize-site/proof/agent/)
+[![benchmark](https://img.shields.io/badge/benchmark-run%20it%20yourself-4ade80)](proof/agent/)
 [![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -60,7 +60,7 @@ already run.
 > packs (`routes add` / `manifests add`, name or GitHub URL) exactly like
 > grammar packs. Exact call edges (x/tools + LSP) are next — see `openspec/`.
 
-**Site, demos, benchmarks:** https://muthuishere.github.io/ctx-optimize-site/
+**Demos, benchmarks, proof:** [`benchmarks/`](benchmarks/) · [`proof/`](proof/) — everything reproducible from this repo.
 — landing page, unedited demos, and the full proof write-up. Everything below
 is reproducible; see [Proof](#proof--reproducible-not-our-word).
 
@@ -292,7 +292,7 @@ Two kinds of evidence, both runnable.
 
 **Speed vs graphify** (raw data in [`benchmarks/`](benchmarks/)): a 12k-file
 corpus gathered in **0.67s vs 8.88s**, queries **~4× faster**, a smaller
-store. Methodology on the site.
+store. Methodology beside the raw data in [`benchmarks/`](benchmarks/).
 
 **What an agent actually saves.** A headless harness lets the *same* model
 answer a set of questions **three ways** over OpenRouter — plain shell,
@@ -322,7 +322,28 @@ bash proof/agent/run-bench.sh           # defaults: gorilla/mux, openai/gpt-4o-m
 
 Or fork and click **Run workflow** — [`.github/workflows/benchmark.yml`](.github/workflows/benchmark.yml)
 runs it headless on a clean runner and publishes the table to the job summary.
-Harness + full write-up: https://muthuishere.github.io/ctx-optimize-site/proof/agent/
+Harness + full write-up: [`proof/agent/`](proof/agent/)
+
+**The model ladder** ([`benchmarks/agent-model-bench/`](benchmarks/agent-model-bench/)):
+same prebuilt linux-kernel store (~274k nodes), same 8 block-layer questions,
+one fresh agent session per model, answers judged blind against withheld
+golden keys:
+
+| model · harness | score /80 | avg s/question | tool calls (8 q) |
+|---|---|---|---|
+| Fable 5 · Claude Code | **80** | 24.6 | 23 |
+| Sonnet 5 · Claude Code | **80** | 17.5 | 25 |
+| Opus 4.8 · Claude Code | **79** | 19.0 | 22 |
+| Haiku 4.5 · Claude Code | **72** | 13.6 | 18 |
+| gpt-4o-mini · toolnexus, one-shot | **54** | 9.4 | 24 |
+
+The store is model-portable: the cheapest Claude tier lands 90% of frontier
+quality at half the wall time, and a $0.15/M-token model reaches ~70% — for
+$0.015 total — when the mandatory protocol from the committed
+`.ctxoptimize/instructions.md` card ("Small models & custom runtimes") is
+pinned in its system prompt. Without that protocol the same small model
+scored 23/80. One-shot per question beats a continuous loop: same score,
+7× cheaper, no cross-question bleed.
 
 ## .ctxoptimize/ — config that travels with the repo
 

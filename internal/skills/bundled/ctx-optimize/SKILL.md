@@ -65,6 +65,12 @@ card CreateInvoice --json`.**
 yourself in this turn — never hand the command back to the user, and
 never ask the user for a symbol name you can `query` first.**
 
+**The repo's `.ctxoptimize/instructions.md` is THIS repo's committed
+usage card — when it exists, read it before deeper store work (verify
+discipline, sources, remote push/pull) and honor any repo-specific
+notes the team added outside the managed block; those customizations
+override the generic guidance in this skill.**
+
 **Wiring ctx-optimize into a SMALL-model agent runtime (gpt-4o-mini
 class, toolnexus, custom loops)? The committed usage card
 `.ctxoptimize/instructions.md` carries the measured-good system prompt

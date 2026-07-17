@@ -356,6 +356,32 @@ func PointerTargets(instructions string) ([]string, error) {
 	return nil, fmt.Errorf("instructions %q: want CLAUDE, AGENTS, ALL, or NONE", instructions)
 }
 
+// PointerTargetsFor resolves the files init actually touches: explicit
+// CLAUDE/AGENTS settings are honored verbatim (the author asked for that
+// file by name — create it if missing), but the default ALL narrows to
+// whichever of CLAUDE.md/AGENTS.md ALREADY EXIST at the repo root — a repo
+// that deliberately keeps only AGENTS.md must not get a CLAUDE.md dropped
+// in. When neither exists, both are created (someone has to be reached).
+func PointerTargetsFor(repo, instructions string) ([]string, error) {
+	targets, err := PointerTargets(instructions)
+	if err != nil || targets == nil {
+		return targets, err
+	}
+	switch strings.ToUpper(strings.TrimSpace(instructions)) {
+	case "", "ALL", "BOTH":
+		var existing []string
+		for _, fn := range targets {
+			if _, err := os.Stat(filepath.Join(repo, fn)); err == nil {
+				existing = append(existing, fn)
+			}
+		}
+		if len(existing) > 0 {
+			return existing, nil
+		}
+	}
+	return targets, nil
+}
+
 // EnsureAgentPointer writes or refreshes the pointer block in the repo's
 // agent-instruction files (targets from PointerTargets — global agents.type
 // picks CLAUDE.md, AGENTS.md, or both). Existing content outside the markers
@@ -463,6 +489,9 @@ func globalBlock() string {
 		"  one call) · blast radius → `affected <symbol>` · connection → `path <a> <b>`.\n" +
 		"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source;\n" +
 		"  open a file only for a body the store didn't show. Exhaustive literal-string sweeps stay grep's job.\n" +
+		"  The repo's committed usage card at `.ctxoptimize/instructions.md` is the deep doc — verify\n" +
+		"  discipline, sources, remote push/pull, PLUS any repo-specific notes the team added; read it\n" +
+		"  before deeper store work and honor its custom notes over this generic block.\n" +
 		"- **No `.ctxoptimize/` yet** — before you start a grep-and-read chain on a real codebase, OFFER to\n" +
 		"  build the graph: ONE command, `ctx-optimize up` — it bootstraps the config (monorepos via scan,\n" +
 		"  curatable in `.ctxoptimize/config.json`, commit it), gathers the store in seconds, and is a safe\n" +
