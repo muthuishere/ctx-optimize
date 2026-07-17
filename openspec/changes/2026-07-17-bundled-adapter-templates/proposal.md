@@ -424,3 +424,24 @@ a separate cli"), the split is adopted:
 - Gates: main-binary query p50 within noise of previous release
   (replaces the +1ms startup gate); companion carries the size/init
   budget lines.
+
+## E2E round — all 9 connectors vs live services (2026-07-17)
+
+Docker arena (postgres 16, mysql 8, mongo 7, redis 7, nats 2 -js, kafka
+3.7 KRaft, MinIO, azure-sql-edge) + local OpenAPI server; env-gated
+driver smokes AND the real-binary lane (`add`/`up --sources always`
+through the exec bridge, creds via `.ctxoptimize/.env`): 9/9 captured,
+store + repo scrub-clean.
+
+**Bug found and fixed by the lane**: a bare entry name's VALUE never got
+a template pass, so the documented folded shape
+(`DOCS_S3_URL='s3://$MINIO_KEY:$MINIO_SECRET@host/bucket'`) sent literal
+`$MINIO_KEY` to the wire (MinIO 403 InvalidAccessKeyId). Fix: exactly one
+extra LENIENT pass over a bare name's resolved value — resolvable refs
+substitute, unresolvable $tokens stay literal (provider passwords with
+'$' keep working), substituted values still never rescanned. Pinned in
+TestExpandBareNameValueGetsLenientTemplatePass.
+
+Note for e2e reruns: azure-sql-edge's self-signed cert has a negative
+serial (Go x509 rejects it) — the sqlserver URL needs
+`encrypt=disable`; that is container-side, not ours.

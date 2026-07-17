@@ -44,18 +44,25 @@ func isVarChar(c byte) bool {
 	return isVarStart(c) || (c >= '0' && c <= '9')
 }
 
-// Expand does single-pass $VAR / ${VAR} substitution against lookup. Values
-// are NEVER re-scanned (no recursive expansion — a resolved password
-// containing '$' stays literal). A bare env-var-shaped entry is a reference
-// to the whole entry; "$NAME" and templates substitute inline. missing lists
-// referenced-but-unset var names in order of appearance.
+// Expand does $VAR / ${VAR} substitution against lookup. A bare
+// env-var-shaped entry is a reference to the whole entry; "$NAME" and
+// templates substitute inline. missing lists referenced-but-unset var names
+// in order of appearance.
+//
+// A bare name's VALUE gets exactly one more, LENIENT template pass — the
+// documented "fold the URL into a single var" shape
+// (DOCS_S3_URL='s3://$MINIO_KEY:$MINIO_SECRET@host/bucket') must reach the
+// wire expanded. Lenient means an unresolvable $token in the value stays
+// LITERAL (a provider-issued password containing '$' keeps working) and is
+// never reported missing. Substituted values are NEVER re-scanned in either
+// pass — a resolved secret containing '$' stays literal.
 func Expand(entry string, lookup func(string) (string, bool)) (expanded string, missing []string) {
 	if IsEnvName(entry) { // form 1: bare env var name
 		v, ok := lookup(entry)
 		if !ok {
 			return "", []string{entry}
 		}
-		return v, nil
+		return expandLenient(v, lookup), nil
 	}
 	var b strings.Builder
 	for i := 0; i < len(entry); {
@@ -102,6 +109,54 @@ func Expand(entry string, lookup func(string) (string, bool)) (expanded string, 
 		i++
 	}
 	return b.String(), missing
+}
+
+// expandLenient substitutes $VAR/${VAR} refs that RESOLVE and leaves
+// everything else byte-for-byte literal (no missing reporting, malformed
+// forms untouched). Used only on a bare entry name's resolved value.
+func expandLenient(s string, lookup func(string) (string, bool)) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c != '$' {
+			b.WriteByte(c)
+			i++
+			continue
+		}
+		if i+1 < len(s) && s[i+1] == '{' { // ${VAR}
+			j := i + 2
+			for j < len(s) && s[j] != '}' {
+				j++
+			}
+			if j < len(s) && j > i+2 {
+				if v, ok := lookup(s[i+2 : j]); ok {
+					b.WriteString(v)
+					i = j + 1
+					continue
+				}
+			}
+			b.WriteByte(c)
+			i++
+			continue
+		}
+		j := i + 1
+		if j < len(s) && isVarStart(s[j]) {
+			for j < len(s) && isVarChar(s[j]) {
+				j++
+			}
+			if v, ok := lookup(s[i+1 : j]); ok {
+				b.WriteString(v)
+				i = j
+				continue
+			}
+			b.WriteString(s[i:j]) // unset — keep the literal $token
+			i = j
+			continue
+		}
+		b.WriteByte(c) // lone $ — literal
+		i++
+	}
+	return b.String()
 }
 
 // VarNames lists the env-var names an entry references, in order.

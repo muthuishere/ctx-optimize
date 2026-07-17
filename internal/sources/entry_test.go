@@ -60,6 +60,29 @@ func TestExpand(t *testing.T) {
 	}
 }
 
+func TestExpandBareNameValueGetsLenientTemplatePass(t *testing.T) {
+	env := map[string]string{
+		"FOLDED_S3_URL": "s3://$MINIO_KEY:$MINIO_SECRET@localhost:9009/docs?region=us-east-1",
+		"MINIO_KEY":     "miniouser",
+		"MINIO_SECRET":  "se$MINIO_KEY", // value with a resolvable-looking ref — must stay literal
+		"DOLLAR_PW_URL": "postgres://u:pa$sword@h/db",
+	}
+	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+
+	// The documented folded shape expands one level; substituted values are
+	// not rescanned ($MINIO_KEY inside MINIO_SECRET's value stays literal).
+	got, missing := Expand("FOLDED_S3_URL", lookup)
+	if want := "s3://miniouser:se$MINIO_KEY@localhost:9009/docs?region=us-east-1"; got != want || missing != nil {
+		t.Fatalf("folded: %q missing=%v", got, missing)
+	}
+	// An unresolvable $token in the value is a literal, never missing —
+	// provider-issued passwords containing '$' keep working.
+	got, missing = Expand("DOLLAR_PW_URL", lookup)
+	if want := "postgres://u:pa$sword@h/db"; got != want || missing != nil {
+		t.Fatalf("dollar pw: %q missing=%v", got, missing)
+	}
+}
+
 func TestDetectLiteralCreds(t *testing.T) {
 	cases := []struct {
 		entry   string
