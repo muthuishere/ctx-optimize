@@ -65,6 +65,11 @@ card CreateInvoice --json`.**
 yourself in this turn — never hand the command back to the user, and
 never ask the user for a symbol name you can `query` first.**
 
+**Wiring ctx-optimize into a SMALL-model agent runtime (gpt-4o-mini
+class, toolnexus, custom loops)? Load the skill reference
+small-models.md — it carries the measured-good system prompt; small
+models skip the store entirely without it.**
+
 **FIRST tool call for ANY code question in a repo with `.ctxoptimize/` =
 a ctx-optimize verb via shell. A grep/read BEFORE a store verb is a
 routing failure. The store returned nothing? SAY so in one line — then
