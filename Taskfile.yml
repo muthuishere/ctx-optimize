@@ -18,9 +18,10 @@ vars:
 
 tasks:
   build:
-    desc: Build the CLI (version stamped from git)
+    desc: Build both binaries (version stamped from git) — main + adapters companion
     cmds:
       - go build -ldflags "{{.LDFLAGS}}" -o bin/ctx-optimize ./cmd/ctx-optimize
+      - go build -ldflags "{{.LDFLAGS}}" -o bin/ctx-optimize-adapters ./cmd/ctx-optimize-adapters
 
   test:
     desc: Run all tests
@@ -40,6 +41,10 @@ tasks:
       - task: build
       - ./bin/ctx-optimize version
       - ./bin/ctx-optimize help
+      - ./bin/ctx-optimize-adapters version
+      # bridge smoke: main execs the sibling companion (help proxies its param
+      # table) — catches a broken exec bridge or a companion that won't start
+      - ./bin/ctx-optimize adapters help postgres > /dev/null
 
   # Dashboard UI targets are DEV-ONLY (need node). The built bundle is
   # COMMITTED at internal/dashboard/ui/ (treesitter.wasm precedent), so
