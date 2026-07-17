@@ -1,9 +1,14 @@
 ---
 name: ctx-optimize
 description: >
+  ctx-optimize is a SHELL COMMAND (a CLI on PATH), not a callable tool: run
+  every verb through your shell/bash tool, e.g. `ctx-optimize query "invoice
+  tax" --json`. NEVER call a tool named ctx_optimize — no such tool exists.
   If the repo has a `.ctxoptimize/config.json` — at the root or any parent of
   your cwd (the CLI walks up to find it) — INVOKE this skill before any
-  Grep/rg/Read. That file is the marker: a pre-built knowledge graph of this
+  Grep/rg/Read. CONFIRM/CHECK a claim or citation — "is X really at
+  file.go L10-L20?", "does this still hold?", verify before acting on a
+  location — → `ctx-optimize verify "<label or file:L10-L20>"`. That file is the marker: a pre-built knowledge graph of this
   codebase already exists, so use it.
   REQUIRED before Grep/rg/Read when exploring code in any repo that contains
   a `.ctxoptimize/` directory — that marker means a pre-built knowledge graph
@@ -23,20 +28,22 @@ description: >
   BUCKET / QUEUE / EXTERNAL API into the store — "add our postgres/mysql/
   mongo schema", "index the kafka topics / nats streams", "add the S3
   bucket", "capture the OpenAPI spec", "connect the DB" — native sources:
-  an env var holding a URL is the whole contract; follow
-  `./references/sources.md` (`adapters help <scheme>` → export the var →
+  an env var holding a URL is the whole contract; answer catalog/setup
+  questions by RUNNING `ctx-optimize adapters list` / `adapters help
+  <scheme>` and quoting the output — not from memory; deep guide: the
+  skill reference sources.md (load it via this skill, not the repo cwd) (`adapters help <scheme>` → export the var →
   `ctx-optimize add <ENV_NAME>`; names only on argv, never a raw URL). NO STORE, fresh clone, or
   bare repo? ONE command: `ctx-optimize up` — bootstraps the config when none
   exists (monorepos via scan), pulls the team's prebuilt store when declared,
   gathers otherwise, no-ops when fresh. `init` is for authors wanting control. ONBOARDING a repo or
   monorepo — "set up ctx-optimize on this repo", "onboard this repo/monorepo",
-  "index this project" — follow `./references/onboarding.md`: monorepos
+  "index this project" — follow the skill reference onboarding.md (via this skill, not the repo cwd): monorepos
   `scan` first, confirm the FULL found list with the user, then
   `init --scan --yes && add .` builds one store per module + a navigator.
   Want to SEE the store or manage it visually — "open the dashboard", "see the
   graph", "manage packs/config visually", "onboard repos interactively" —
   `ctx-optimize serve` opens a local 127.0.0.1:4747 UI (Overview / Repos /
-  Onboard / Query / Viewer / Settings / Changes); follow `./references/dashboard.md`.
+  Onboard / Query / Viewer / Settings / Changes); follow the skill reference dashboard.md (via this skill).
   ALSO the first-class helper for CUSTOMIZING extraction: "add my framework's
   routes", "extract our custom router / registerRoute", "index our k8s / helm
   / ingress", "add build-tool dependencies / gradle / pom / csproj", "support
@@ -46,6 +53,24 @@ description: >
 ---
 
 # ctx-optimize
+
+**HOW TO RUN IT: ctx-optimize is a CLI on PATH — every verb below is a
+SHELL command. The ONLY valid execution channel is your existing shell
+tool (`bash`/`shell`/`terminal`/`exec`); do NOT invent any tool or
+namespace containing "ctx" (`ctx_optimize`, `ctx_optimize:add`,
+`ctx-optimize.query` — all wrong). Example call: shell → `ctx-optimize
+card CreateInvoice --json`.**
+
+**ACT, don't delegate: when the store can answer, RUN the command
+yourself in this turn — never hand the command back to the user, and
+never ask the user for a symbol name you can `query` first.**
+
+**FIRST tool call for ANY code question in a repo with `.ctxoptimize/` =
+a ctx-optimize verb via shell. A grep/read BEFORE a store verb is a
+routing failure. The store returned nothing? SAY so in one line — then
+grep. An unknown or possibly-absent symbol → `query` it FIRST, cite the
+empty result, then answer "not found" — never describe it from priors,
+and never blind-grep for it before the store has spoken.**
 
 One local knowledge store per repo that you answer from. It indexes, in v0.3,
 far more than code: **source code** (12 embedded languages: go, python,
@@ -57,7 +82,7 @@ packs ship in the repo's `grammars/`), **markdown/txt docs**, framework
 **Kubernetes topology**, **config** keys, **git co-change** (which files move
 together), and detected **subsystems** — plus **native sources** (postgres /
 mysql / mongodb / redis / kafka / nats / s3 / mssql / OpenAPI: an env var
-holding a URL is the whole contract — `./references/sources.md`) and
+holding a URL is the whole contract — reference sources.md) and
 anything else via adapters.
 **Gather once, refresh cheaply, answer from the store.**
 
@@ -131,9 +156,9 @@ grep on structure wastes the store):
 | Asking "what breaks if X changes / blast radius / impact" | `ctx-optimize affected "X" --depth 2 --json` |
 | Asking "how are A and B connected / trace A to B" | `ctx-optimize path "A" "B" --json` |
 | Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |
-| Asking to see it visually / manage the store, packs, or config in a UI / onboard repos interactively | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link; follow `./references/dashboard.md` |
+| Asking to see it visually / manage the store, packs, or config in a UI / onboard repos interactively | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link; follow the skill reference dashboard.md (via this skill) |
 | Repo ALREADY has a committed `.ctxoptimize/config.json` but no local store (a fresh clone — teammate already set it up) | `ctx-optimize up` — ONE command: pulls the team's prebuilt store when `remote.pull` is declared (gather fallback), gathers otherwise, no-ops when fresh. Do NOT init (author-side only; it just redirects to `up` here). |
-| Setting up / onboarding a repo or monorepo (NO committed config yet, "index this repo") | fastest: `ctx-optimize up` (bootstraps + gathers in one shot; monorepos via scan, curate `.ctxoptimize/config.json` after). Wanting control / reviewing the module list first: follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .`. `init --instructions CLAUDE\|AGENTS\|ALL\|NONE` picks which agent files get the pointer (accepts `claude.md`/`agents.md`; persists to config). Re-running `init` is safe: identical pointer content is never rewritten |
+| Setting up / onboarding a repo or monorepo (NO committed config yet, "index this repo") | fastest: `ctx-optimize up` (bootstraps + gathers in one shot; monorepos via scan, curate `.ctxoptimize/config.json` after). Wanting control / reviewing the module list first: follow the skill reference onboarding.md (via this skill, not the repo cwd) — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .`. `init --instructions CLAUDE\|AGENTS\|ALL\|NONE` picks which agent files get the pointer (accepts `claude.md`/`agents.md`; persists to config). Re-running `init` is safe: identical pointer content is never rewritten |
 | Multi-project repo (.NET `.sln`, Gradle/Maven/Nx monorepo) or a module whose source and tests live in SEPARATE folders | Derive `modules[]` from the BUILD SYSTEM, not folders — detect it and follow the per-system parser: `./references/modules/index.md` routes to `dotnet-sln.md` / `gradle.md` / `maven.md` / `js-workspaces.md` / `naming-fallback.md`; config schema in `./references/config-json.md`. Group src+tests into one multi-path module `{"name","paths":[...]}` so test→source calls resolve |
 | Told code changed / store looks stale | `ctx-optimize sync` — fast re-gather of the repo you're in (skips adapter scripts; safe, their nodes stay put). Full gather incl. adapters: `add .` |
 | Asked to add a DATABASE / bucket / queue / external API ("add our postgres schema", "index the kafka topics", "capture the OpenAPI spec") | follow `./references/sources.md` — `ctx-optimize adapters help <scheme>` → `export MY_URL='...'` (value in env or `.ctxoptimize/.env`, never on argv) → `ctx-optimize add MY_URL`. Recorded in config; refreshed on every `up` (24h TTL). Unset var elsewhere = a clean one-line skip, not an error |

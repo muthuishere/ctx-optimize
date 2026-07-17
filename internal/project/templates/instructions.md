@@ -1,5 +1,11 @@
 # ctx-optimize — the usage card for this repo's knowledge store
 
+**ctx-optimize is a SHELL COMMAND (a CLI on PATH), not a callable tool: run
+every verb through your shell/bash/exec tool — e.g. shell → `ctx-optimize
+query "invoice tax" --json`. Never emit a tool call named `ctx_optimize`;
+no such tool exists. First tool call for any code question here = a
+ctx-optimize verb; grep/read before a store verb is a routing failure.**
+
 A pre-built knowledge graph of this codebase lives at `~/ctxoptimize/<name>/`
 (the name is in `.ctxoptimize/config.json`; default: the repo basename).
 Answer questions FROM the store instead of grep-and-read chains. The binary
