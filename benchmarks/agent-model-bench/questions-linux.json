@@ -1,0 +1,14 @@
+{
+  "arena": "linux kernel clone, full-tree store (~274k nodes), cwd = repo root, read-only",
+  "source": "internal/golden/testdata/questions/linux-block.json (judge keys withheld from contestants)",
+  "questions": [
+    {"id": "L01", "text": "Where are requests hashed for elevator merge lookups?", "key": "elv_rqhash_add (block/elevator.c)"},
+    {"id": "L02", "text": "Which function splits a bio into segments?", "key": "bio_split (block/bio.c)"},
+    {"id": "L03", "text": "Where does a new disk get added with its partitions?", "key": "device_add_disk (block/genhd.c)"},
+    {"id": "L05", "text": "Where is OPAL self-encrypting drive unlock handled?", "key": "block/sed-opal.c"},
+    {"id": "L06", "text": "Where is the flush request pending queue managed?", "key": "block/blk-flush.c"},
+    {"id": "L08", "text": "Where are request timeouts handled in the block layer?", "key": "block/blk-timeout.c"},
+    {"id": "L09", "text": "Where are user pages mapped into a block request?", "key": "block/blk-map.c"},
+    {"id": "L10", "text": "Where does blk-mq submit a bio onto a queue?", "key": "blk_mq_submit_bio (block/blk-mq.c)"}
+  ]
+}
