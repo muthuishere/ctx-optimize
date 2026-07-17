@@ -34,13 +34,16 @@ scoreboard the product already pins in CI).
 | **opus 4.8** | **79** | 19.0 | 22 | complete mechanisms; L02 described the split machinery without naming `bio_split` itself |
 | **haiku 4.5** | **72** | 13.6 | 18 | 6 exact keys; L02 → `bvec_split_segs` (internal, not the canonical splitter), L08 → blk-mq machinery, missed `blk-timeout.c` |
 
-## Results — toolnexus + OpenRouter (small non-Claude models)
+## Results — toolnexus + OpenRouter (gpt-4o-mini, protocol pinned)
 
-| model | score /80 | avg s/question | notes |
-|---|---|---|---|
-| gpt-4o-mini + forced protocol | **54** | 9.4 | 4 exact keys; fails on query re-crafting when the first hit is subsystem noise (L06 → xen driver, L09 → ublk/gup) |
-| gpt-4o-mini, skill only (no forced protocol) | 23* | 4.5 | *on the companion 8-question ctx-optimize-repo set: freelances into priors — 4 of 8 answers used zero tools |
-| gemini-2.5-flash-lite | n/a | — | below floor: invents tool names / returns empty turns regardless of prompt |
+| harness mode | score /80 | avg s/question | tool calls (8 q) | cost | notes |
+|---|---|---|---|---|---|
+| one-shot per question (CLI --once) | **54** | 9.4 | 24 | $0.015 | 4 exact keys; weak query re-crafting when the first hit is noise (L06 → xen driver, L09 → ublk/gup) |
+| continuous loop (Go library harness, one conversation, hook-counted) | **56** | 11.5 | 16 | $0.107 | same quality, **7x cost** — the loop resends the transcript every turn (13.5k → 160k prompt tokens); one memory-contamination artifact (OPAL bled into L06). Verdict: use one-shot |
+
+(The protocol matters: without it the same model scored 23/80, answering
+half the questions with zero tool calls. gemini-flash-lite class is
+below floor — invents tool names / empty turns regardless of prompt.)
 
 ## What it means
 
@@ -52,8 +55,11 @@ scoreboard the product already pins in CI).
    questions.
 2. **Small models need the protocol pinned in the system prompt** —
    without it they answer from priors (23/80). The measured-good prompt
-   ships in the skill: `.ctxoptimize/instructions.md` ("Small models & custom runtimes"). With it, a
-   $0.15/M-token model reaches ~70% of frontier quality at ~1/100th cost.
+   ships in the committed usage card: `.ctxoptimize/instructions.md`
+   ("Small models & custom runtimes"). With it, a $0.15/M-token model
+   reaches ~70% of frontier quality at ~1/100th cost — and ONE-SHOT per
+   question beats a continuous conversation (same score, 7x cheaper, no
+   cross-question contamination).
 3. **What frontier still buys**: canonical-symbol precision (haiku's two
    near-misses), query re-crafting when the first hit is noise, and
    honest abstention under near-matches (in the companion trick-question
