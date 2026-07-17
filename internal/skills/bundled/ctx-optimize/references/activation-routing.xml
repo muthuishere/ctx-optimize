@@ -130,6 +130,31 @@
       <ref>references/sync.md</ref>
     </route>
 
+    <route id="source-add" group="build">
+      <when>get a database/bucket/queue/external API into the store, add our postgres/mysql/mongo schema, index the kafka topics / nats streams, add the S3 bucket, capture the OpenAPI spec, connect the DB to the graph</when>
+      <goal>NATIVE sources — no script to author: an env var holds the URL, the scheme picks the connector (postgres, mysql, mongodb, redis, kafka, nats, s3, mssql, http(s)→openapi, no scheme→spec file). `add NAME` captures AND records the name in config sources, so every `up` refreshes it (24h TTL; --sources=always|never). Unset var on a teammate's machine = one clean skip line (nodes arrive via remote pull); --strict for CI. Captures are logical shape only (system schemas skipped, partitions collapsed to a count, caps reported).</goal>
+      <cmd>ctx-optimize adapters help &lt;scheme&gt;   # setup card: value format, credential params, paste-ready commands</cmd>
+      <cmd>export MY_DB_URL='postgres://user:$PG_PASS@host:5432/db'   # value in env or .ctxoptimize/.env (gitignored by construction)</cmd>
+      <cmd>ctx-optimize add MY_DB_URL   # names only on argv — NEVER a raw URL with credentials</cmd>
+      <note>Hard rule: argv/config carry env-var NAMES (or $VAR templates) only; a literal password in a committed entry is refused. Never read any .env yourself — the binary resolves the ladder (process env → .ctxoptimize/.env → root .env) internally so secret values stay out of model context. Drivers ride the ctx-optimize-adapters companion installed beside the binary; an error naming it means reinstall the package, not debug the URL.</note>
+      <ref>references/sources.md</ref>
+    </route>
+
+    <route id="source-capture" group="build">
+      <when>debug a failing source, see what a connector would emit, compose a capture from an adapter script (tunnel/vault)</when>
+      <goal>One connector → Batch JSON on stdout, NO store write. The composition/debug primitive; adapter scripts set the env var in their own process and call it back (teardown in finally).</goal>
+      <cmd>ctx-optimize capture &lt;ENV_NAME&gt;</cmd>
+      <ref>references/sources.md</ref>
+    </route>
+
+    <route id="adapters-catalog" group="build">
+      <when>what sources are recorded, which schemes are supported, how do I format a postgres/kafka/s3 URL, credential/TLS params for a connector</when>
+      <goal>The catalog + per-scheme setup card, generated from the connector's own parameter table (never drifts from code).</goal>
+      <cmd>ctx-optimize adapters list</cmd>
+      <cmd>ctx-optimize adapters help &lt;scheme&gt;</cmd>
+      <ref>references/sources.md</ref>
+    </route>
+
     <route id="adapters-run" group="build">
       <when>refresh the DB schema/topics/docs the adapters gathered, re-run adapter scripts, the external system changed</when>
       <goal>The SLOW lane `sync` skips: run adapter scripts on demand — all, or one by name. Producer-scoped replace: running one adapter never disturbs the code graph.</goal>
@@ -177,8 +202,8 @@
     </route>
 
     <route id="adapters" group="customize">
-      <when>index docs/PDF/DB schema/kafka topics/logs/anything non-code, add the schema, ingest a system</when>
-      <goal>Anything beyond code+markdown: docs convert to markdown then `add .`; systems get an adapter script in `.ctxoptimize/adapters/` that prints batch JSON.</goal>
+      <when>index docs/PDF/logs/anything non-code that has NO native connector, ingest an exotic system</when>
+      <goal>The escape hatch beyond code+markdown+native sources: docs convert to markdown then `add .`; exotic systems get an adapter script in `.ctxoptimize/adapters/` that prints batch JSON. Databases/buckets/queues/APIs route to source-add FIRST — a connector beats a hand-written script.</goal>
       <cmd>drop a .js/.py/.sh adapter in .ctxoptimize/adapters/  → ctx-optimize add .</cmd>
       <ref>references/adapters.md</ref>
     </route>
@@ -285,7 +310,7 @@
     <rule>Two query misses = change tactics, not wording: go to `hubs`, `explain` a neighbor, or a legitimate grep lane. A third rephrase is thrash.</rule>
     <rule>Things the store does NOT index — member fields/variables, build files (BUILD.gn, CMake), string literals, config values, comments — use grep directly (lane 1), and say so first.</rule>
     <rule>"Add my routes/deps/language" ⇒ check `routes|manifests|languages list` FIRST (often already core → just `add .`) before scaffolding a pack.</rule>
-    <rule>Non-code input (docs, DB, queue) ⇒ the adapters route, not a built-in verb.</rule>
+    <rule>A database / bucket / queue / external API ⇒ the source-add route (native connectors, env-var name = the contract); the adapters route is ONLY for docs and systems with no connector. Never paste a URL with credentials on argv or into config — env-var names only.</rule>
     <rule>Never claim a node/edge/path the CLI didn't output; report counts (added/pruned/transferred) as printed.</rule>
   </disambiguation>
 

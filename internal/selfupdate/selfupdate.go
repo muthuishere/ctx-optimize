@@ -148,11 +148,40 @@ func Apply(dlBase, tag, target string, out io.Writer) error {
 		return fmt.Errorf("%s sha256 mismatch — refusing to install", asset)
 	}
 
-	bin, err := extractBinary(data, strings.HasSuffix(asset, ".zip"))
+	isZip := strings.HasSuffix(asset, ".zip")
+	bin, err := extractBinary(data, isZip, "ctx-optimize")
 	if err != nil {
 		return err
 	}
+	if err := swapBinary(bin, target); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "binary: %s → %s\n", tag, target)
 
+	// The archive also carries the ctx-optimize-adapters companion (releases
+	// since the native-sources split). Swap it beside the main binary; absent
+	// in the archive (older tag) → note and move on, never fail the update.
+	compName := "ctx-optimize-adapters"
+	if strings.HasSuffix(target, ".exe") {
+		compName += ".exe"
+	}
+	comp, err := extractBinary(data, isZip, "ctx-optimize-adapters")
+	if err != nil {
+		fmt.Fprintf(out, "companion: not in %s release archive — skipped\n", tag)
+		return nil
+	}
+	compTarget := filepath.Join(filepath.Dir(target), compName)
+	if err := swapBinary(comp, compTarget); err != nil {
+		return fmt.Errorf("companion install: %w", err)
+	}
+	fmt.Fprintf(out, "companion: %s → %s\n", tag, compTarget)
+	return nil
+}
+
+// swapBinary atomically replaces target with bin (temp write → rename dance).
+// A missing target (first companion install) is created fresh; any failure
+// leaves an existing target untouched.
+func swapBinary(bin []byte, target string) error {
 	dir := filepath.Dir(target)
 	tmp, err := os.CreateTemp(dir, ".ctx-optimize-new-")
 	if err != nil {
@@ -173,23 +202,30 @@ func Apply(dlBase, tag, target string, out io.Writer) error {
 		return err
 	}
 	old := target + ".old"
+	hadOld := true
 	if err := os.Rename(target, old); err != nil {
-		os.Remove(tmpName)
-		return err
+		if !os.IsNotExist(err) {
+			os.Remove(tmpName)
+			return err
+		}
+		hadOld = false // first install of this binary — nothing to back up
 	}
 	if err := os.Rename(tmpName, target); err != nil {
-		os.Rename(old, target) // roll back
+		if hadOld {
+			os.Rename(old, target) // roll back
+		}
 		os.Remove(tmpName)
 		return err
 	}
-	os.Remove(old) // best effort (fails on windows while running — harmless)
-	fmt.Fprintf(out, "binary: %s → %s\n", tag, target)
+	if hadOld {
+		os.Remove(old) // best effort (fails on windows while running — harmless)
+	}
 	return nil
 }
 
-// extractBinary pulls the ctx-optimize executable out of the release archive.
-func extractBinary(data []byte, isZip bool) ([]byte, error) {
-	names := map[string]bool{"ctx-optimize": true, "ctx-optimize.exe": true}
+// extractBinary pulls the named executable out of the release archive.
+func extractBinary(data []byte, isZip bool, name string) ([]byte, error) {
+	names := map[string]bool{name: true, name + ".exe": true}
 	if isZip {
 		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 		if err != nil {

@@ -38,6 +38,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/selfupdate"
 	"github.com/muthuishere/ctx-optimize/internal/skills"
+	"github.com/muthuishere/ctx-optimize/internal/sources"
 	"github.com/muthuishere/ctx-optimize/internal/store"
 	metrics "github.com/muthuishere/ctx-optimize/internal/usage"
 	"github.com/muthuishere/ctx-optimize/internal/version"
@@ -51,6 +52,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		usage(stderr)
 		return 2
 	}
+	// Main binary carries zero driver imports: real connector dials exec the
+	// ctx-optimize-adapters companion. In-process registrations (test stubs,
+	// the companion's own build) always win over the bridge.
+	sources.ArmExecBridge()
 	cmd, rest := args[0], args[1:]
 	var err error
 	switch cmd {
@@ -70,6 +75,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		} else {
 			err = cmdAdd(append(rest, ".", "--no-adapters"), stdout, os.Stdin)
 		}
+	case "capture": // one source connector → Batch JSON on stdout, no store write
+		err = cmdCapture(rest, stdout)
 	case "adapters":
 		err = cmdAdapters(rest, stdout)
 	case "query", "ask": // `ask` — same verb graphify users reach for
@@ -248,6 +255,31 @@ func served(s *store.Store, verb, arg string, hits int, cw *countingWriter, t0 t
 // --instructions, module curation); `up` reports what it decided so the
 // written config stays inspectable.
 func cmdUp(args []string, stdout io.Writer) error {
+	if err := upCore(args, stdout); err != nil {
+		return err
+	}
+	// The committed usage card follows the binary: refresh the managed block
+	// in .ctxoptimize/instructions.md (upgrade-only; user text outside the
+	// markers untouched) — one person upgrades + commits, the whole team's
+	// agents upgrade. Bootstrap already wrote it via init's Scaffold; this
+	// covers the existing-config lanes.
+	if sc, err := resolveScope(parseFlags(args)); err == nil && sc.cfg != nil {
+		changed, err := project.EnsureInstructions(sc.rootDir)
+		if err != nil {
+			return err
+		}
+		if changed {
+			fmt.Fprintf(stdout, "%s refreshed — commit it (teammates' agents read it)\n", project.InstructionsFile)
+		}
+	}
+	// Sources are the slow lane, run AFTER whatever the core decided (ADR
+	// 2026-07-17): recorded env-var sources re-capture under the 24h TTL
+	// rule (--sources=always|never), plus the reconcile report. A repo with
+	// no sources declared adds zero cost here.
+	return upSources(args, stdout)
+}
+
+func upCore(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	sc, err := resolveScope(f)
 	if err != nil {
@@ -450,7 +482,11 @@ func cmdInit(args []string, stdout io.Writer) error {
 	if _, err := s.UpdateManifest(); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "store ready: %s\n%s/ scaffolded — commit it (config.json + adapters/)\n", s.Dir, project.Dir)
+	fmt.Fprintf(stdout, "store ready: %s\n%s/ scaffolded — commit it (config.json + instructions.md + adapters/)\n", s.Dir, project.Dir)
+	// The scaffolded .ctxoptimize/.gitignore covers .env* going forward, but
+	// a file committed BEFORE the ignore stays tracked (the index wins) —
+	// detect and say so loudly.
+	warnTrackedEnv(path, stdout)
 	if len(pointed) > 0 {
 		fmt.Fprintf(stdout, "agent pointer written to %s — commit these too; they make agent CLIs use the store unprompted\n", strings.Join(pointed, " + "))
 	} else if len(targets) == 0 {
@@ -595,6 +631,13 @@ func cmdConfig(args []string, stdout io.Writer) error {
 // world enters here, strictly validated.
 func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	f := parseFlags(args)
+	// Source lane (ADR 2026-07-17, H2): a var-name-shaped positional
+	// (^[A-Z_][A-Z0-9_]*$) is a SOURCE — resolve the env var, dial its URL,
+	// capture, merge, record. Anything else keeps today's dir semantics.
+	if _, jsonDoor := f.strs["json"]; !jsonDoor && !f.bools["json"] &&
+		len(f.args) == 1 && sources.IsEnvName(f.args[0]) {
+		return cmdAddSource(f, f.args[0], stdout)
+	}
 	// A positional target IS the module: `add ~/other-repo` must open
 	// other-repo's store, never Replace the cwd's graph with foreign code.
 	if f.strs["path"] == "" && len(f.args) > 0 {
@@ -736,11 +779,27 @@ func cmdAdapters(args []string, stdout io.Writer) error {
 	case "list":
 		if len(adapters) == 0 {
 			fmt.Fprintln(stdout, "no adapters — drop .js/.py/.sh scripts in .ctxoptimize/adapters/ (see example.js.sample)")
-			return nil
 		}
 		for _, a := range adapters {
 			fmt.Fprintf(stdout, "%s\t%s\n", a.Name, a.Run)
 		}
+		// Native sources ride the same catalog: recorded entries + the
+		// scheme set the built-in connectors route.
+		pc, err := project.Load(sc.rootDir)
+		if err != nil {
+			return err
+		}
+		listSources(pc, stdout)
+		return nil
+	case "help": // setup card, generated from the connector's own Params()
+		if len(f.args) < 2 {
+			return fmt.Errorf("usage: ctx-optimize adapters help <scheme> — schemes: %s", strings.Join(sources.SupportedSchemes(), " "))
+		}
+		card, err := sources.HelpCard(f.args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Fprint(stdout, card)
 		return nil
 	case "run":
 		name := ""
@@ -787,7 +846,7 @@ func cmdAdapters(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
 		return nil
 	}
-	return fmt.Errorf("usage: ctx-optimize adapters <list | run [name]>")
+	return fmt.Errorf("usage: ctx-optimize adapters <list | run [name] | help <scheme>>")
 }
 
 func cmdQuery(args []string, stdout io.Writer) error {
@@ -951,6 +1010,9 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		"remote":    remoteLine,
 		"freshness": reports, "fresh": string(overall),
 	}
+	if stamps, err := sources.SourceStamps(s.Dir); err == nil && len(stamps) > 0 {
+		st["sources"] = stamps // id → last-captured unix (sanitized ids only)
+	}
 	sum, sumErr := metrics.Summarize(s.Dir)
 	if sumErr == nil && sum.Total > 0 {
 		st["served"] = sum
@@ -960,6 +1022,9 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "store:  %s\nnodes:  %d\nedges:  %d\nremote: %s", s.Dir, len(nodes), len(edges), orNone(remoteLine))
 	fmt.Fprintf(stdout, "\nfresh:  %s\n", freshnessLine(reports, overall))
+	if line := sourcesStatusLine(s.Dir, time.Now()); line != "" {
+		fmt.Fprintf(stdout, "sources: %s\n", line)
+	}
 	// The money line: what answering from the store (instead of a
 	// grep-and-read chain) has saved so far, per the usage estimator.
 	if sumErr == nil && sum.Total > 0 {
@@ -2460,7 +2525,17 @@ commands:
                               via scan) + gather · fresh clone → pull the
                               team's store (gather fallback) · stale → fast
                               re-gather · fresh → no-op. Idempotent, run it
-                              whenever
+                              whenever. Recorded sources re-capture after the
+                              gather (24h TTL; --sources=always|never ·
+                              --strict fails on unset vars · --prune-sources
+                              removes undeclared source producers)
+  add <ENV_NAME>              native source: the env var's value is a URL, its
+                              scheme picks the connector (postgres, mysql,
+                              mongodb, redis, kafka, nats, s3, http(s) openapi,
+                              or a file path). Resolves env → .ctxoptimize/.env
+                              → root .env, dials, captures, merges, and records
+                              the name in config sources (refreshed on up).
+                              Names only on argv — never a raw URL
   add [<path>] [--json -|F]   gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
                               (--force to allow >50%% shrink); --no-adapters skips
@@ -2469,8 +2544,15 @@ commands:
                               [--jobs N] + refreshes the navigator (no auto-merge)
   sync                        fast re-gather of the repo you're in: "add ." minus
                               adapter scripts (code/docs/manifests/git only)
+  capture <ENV_NAME>          one source connector → Batch JSON on stdout, no
+                              store write (the composition/debug primitive;
+                              adapter scripts call it back with their own env)
   adapters <list|run [name]>  the slow lane sync skips: run adapter scripts
-                              (DB, docs, queues) on demand — all, or one by name
+                              (DB, docs, queues) on demand — all, or one by
+                              name; list also shows recorded sources + schemes
+  adapters help <scheme>      setup card: value format, credential/cert params
+                              (percent-encoding hints), export example, and the
+                              paste-ready add command
   query|ask "<question>"      answer from the local store  [--budget N] [--json]
                               scope = where you ask: module dir → that module,
                               zero hits escalate; root → navigator-ranked

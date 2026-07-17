@@ -190,6 +190,57 @@ func TestScaffold(t *testing.T) {
 	}
 }
 
+func TestScaffoldGitignore(t *testing.T) {
+	repo := t.TempDir()
+	if err := Scaffold(repo, "x"); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(repo, Dir, ".gitignore")
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), ".env*") || !strings.Contains(string(data), "!.env.example") {
+		t.Fatalf(".ctxoptimize/.gitignore = %q", data)
+	}
+	// Never overwrite a user-edited ignore.
+	if err := os.WriteFile(p, []byte("custom\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Scaffold(repo, "x"); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(p); string(data) != "custom\n" {
+		t.Fatalf("scaffold overwrote .gitignore: %q", data)
+	}
+}
+
+// The literal-credential gate fires at Load — a committed password never
+// survives to a verb, and the error carries the skeleton only.
+func TestLoadRefusesLiteralCreds(t *testing.T) {
+	dir := t.TempDir()
+	writeCfg(t, dir, `{"sources": ["OK_URL", "postgres://user:sekretpass@host/db"]}`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected literal-credential error")
+	}
+	if strings.Contains(err.Error(), "sekretpass") {
+		t.Fatalf("error echoes the literal secret: %v", err)
+	}
+	if !strings.Contains(err.Error(), "sources[1]") {
+		t.Fatalf("error should name the entry index: %v", err)
+	}
+	// Var-shaped entries load fine.
+	writeCfg(t, dir, `{"sources": ["OK_URL", "postgres://$U:$P@host/db", "./api/spec.yaml"]}`)
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Sources) != 3 {
+		t.Fatalf("sources = %v", c.Sources)
+	}
+}
+
 func TestLoadGarbageFails(t *testing.T) {
 	dir := t.TempDir()
 	writeCfg(t, dir, "{nope")

@@ -10,6 +10,74 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Added
+
+- **Native sources — an env var holding a URL is the whole contract** (ADR
+  `openspec/changes/2026-07-17-bundled-adapter-templates/`). Databases,
+  buckets, queues, and external APIs enter the store with one declaration:
+  the env var's value is a URL, the URL scheme picks the connector.
+  **9 connectors**, all pure Go, wire-protocol-native (no pg_dump/atlas/tbls
+  on any machine): postgres, mysql, mongodb, redis, kafka, nats, s3
+  (stdlib SigV4 — minio-go banned for its 15ms init), mssql, openapi
+  (http(s) or a spec file path).
+  - **Verbs**: `add <ENV_NAME>` (resolve → dial → capture → merge → record
+    in config `sources` on success only); `capture <ENV_NAME>` (one
+    connector, Batch JSON on stdout, no store write — the composition/debug
+    primitive, also the callback for adapter scripts doing tunnels/vaults);
+    `adapters list` (recorded sources + schemes); `adapters help <scheme>`
+    (setup card generated from the connector's own parameter table — never
+    drifts from code). `up` re-captures recorded sources after the gather
+    under a **24h TTL** (`--sources=always|never`), reports per-source
+    outcomes — captured | skipped | failed (failed keeps prior nodes) —
+    with staleness ages, and reconciles undeclared source producers
+    (`--prune-sources`). Unset var = a clean one-line skip so teammates
+    without credentials still `up`; `--strict` turns those into CI
+    failures. A repo with no sources adds zero cost to the gather path.
+  - **Secret hygiene by construction**: argv takes env-var NAMES only
+    (`^[A-Z_][A-Z0-9_]*$`); a literal password in a committed entry is a
+    hard error at load; values resolve process env → `.ctxoptimize/.env` →
+    root `.env` (validated dotenv subset; origins reported name-only; a
+    git-TRACKED `.env` warns loudly) in memory at dial time; stored ids go
+    through a fail-closed textual sanitizer (never `net/url.Parse`, which
+    echoes full URLs and chokes on real AWS secrets); every output —
+    errors, summaries, panics — passes a value-scrub choke; a hermetic
+    grep gate plants a fake password and greps the entire store tree plus
+    all output (wrong-password and panicking-connector cases included).
+    `.ctxoptimize/.gitignore` (scaffolded) covers `.env*` by construction.
+  - **The logical-shape rule**: every connector captures what a developer
+    reasons about, never physical/instance data — system schemas/dbs/topics
+    skipped, a partitioned table is ONE node with `partitions: N`
+    (chunks/children never enumerated), redis is a bounded prefix-pattern
+    SCAN summary, s3 lists prefixes only (depth-capped), mongo fields from
+    a capped sample; any truncating cap is reported in the summary line.
+  - **Measured (postgres, 5-run medians, connect included, localhost)**:
+    a 100-table / 3-schema / 1,307-column corpus captures in **31 ms** —
+    vs pg_dump `--schema-only` 101 ms, atlas 248 ms, tbls 1,356 ms — and on
+    the trap corpus (1 table with 100 partitions + 500 fake Timescale
+    chunks = 706 raw tables) it emits **101 logical tables** with
+    `partitions: 100` as a fact, where the others emit 606–716. Filtering
+    is free (naive unfiltered: 33.8 ms).
+  - **Companion binary**: drivers live in **`ctx-optimize-adapters`**
+    (19.7 MB), shipped beside the main binary in every archive and npm
+    package. The main binary keeps **zero driver imports** — 43.2 MB
+    unchanged, query p50 within noise (compiling the drivers in breached
+    the ≤+10% query gate at +13%) — and execs the sibling (names-only argv;
+    the child re-resolves the same env ladder) only when a source dials.
+    Companion missing → loud error naming the binary + install hint.
+- **`.ctxoptimize/instructions.md` — the committed usage card** (same ADR,
+  Scaffold additions). `init`/`up` scaffold and refresh a self-contained
+  card — intent table, verify discipline, store-vs-grep ladder, sources
+  flow, remote push/pull, `up` — inside a version-stamped managed block:
+  refresh is **upgrade-only** (an older binary never rewrites a newer
+  file's block) and never touches text outside the markers. Teammates'
+  agents inherit full usage with zero installation; the CLAUDE.md/AGENTS.md
+  pointer blocks shrink to the one-liner verb discipline plus a reference
+  to the card.
+- **Skill surfaces**: `references/sources.md` (the sources flow, env-var
+  routes, skip semantics, companion note), the adapter-callback pattern in
+  `references/adapters.md`, and `source-add`/`source-capture`/
+  `adapters-catalog` routes in `activation-routing.xml`.
+
 ## [0.4.2] — 2026-07-17
 
 ### Added

@@ -25,6 +25,27 @@ builds:
         # amd64 → x64 to match npm platform-package naming.
         - sh -c 'arch="{{ .Arch }}"; [ "$arch" = "amd64" ] && arch=x64; dst="npm/platforms/{{ .Os }}-$arch/bin"; mkdir -p "$dst" && cp "{{ .Path }}" "$dst/"'
 
+  # Capture companion: all database/queue/API drivers link here; the main
+  # binary execs it (sibling lookup) to dial. Same archives, side by side.
+  - id: ctx-optimize-adapters
+    main: ./cmd/ctx-optimize-adapters
+    binary: ctx-optimize-adapters
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/muthuishere/ctx-optimize/internal/version.Version={{.Version}}
+      - -X github.com/muthuishere/ctx-optimize/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/muthuishere/ctx-optimize/internal/version.Date={{.Date}}
+    hooks:
+      post:
+        - sh -c 'arch="{{ .Arch }}"; [ "$arch" = "amd64" ] && arch=x64; dst="npm/platforms/{{ .Os }}-$arch/bin"; mkdir -p "$dst" && cp "{{ .Path }}" "$dst/"'
+
 archives:
   - formats: [tar.gz]
     format_overrides:

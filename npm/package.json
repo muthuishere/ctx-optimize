@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "description": "Gather a codebase (and its world) into one local knowledge store an AI agent answers from — deterministic, no LLM API, no DB.",
   "bin": {
-    "ctx-optimize": "bin/ctx-optimize.js"
+    "ctx-optimize": "bin/ctx-optimize.js",
+    "ctx-optimize-adapters": "bin/ctx-optimize-adapters.js"
   },
   "files": [
     "bin/",

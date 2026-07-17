@@ -19,7 +19,13 @@ description: >
   builds/refreshes/shares the store ("gather this repo", "add the schema /
   kafka topics / docs", "push the store", "pull the store", "share the
   graph", "publish the store", "export to the team", "import/load a
-  teammate's store", "sync the graph with the code"). NO STORE, fresh clone, or
+  teammate's store", "sync the graph with the code"). GET A DATABASE /
+  BUCKET / QUEUE / EXTERNAL API into the store — "add our postgres/mysql/
+  mongo schema", "index the kafka topics / nats streams", "add the S3
+  bucket", "capture the OpenAPI spec", "connect the DB" — native sources:
+  an env var holding a URL is the whole contract; follow
+  `./references/sources.md` (`adapters help <scheme>` → export the var →
+  `ctx-optimize add <ENV_NAME>`; names only on argv, never a raw URL). NO STORE, fresh clone, or
   bare repo? ONE command: `ctx-optimize up` — bootstraps the config when none
   exists (monorepos via scan), pulls the team's prebuilt store when declared,
   gathers otherwise, no-ops when fresh. `init` is for authors wanting control. ONBOARDING a repo or
@@ -49,7 +55,10 @@ drop-in grammar pack — `<name>.wasm` + `<name>.json` in
 packs ship in the repo's `grammars/`), **markdown/txt docs**, framework
 **routes**, build-tool **dependencies** (npm/maven/gradle/go.mod/csproj),
 **Kubernetes topology**, **config** keys, **git co-change** (which files move
-together), and detected **subsystems** — plus anything else via adapters.
+together), and detected **subsystems** — plus **native sources** (postgres /
+mysql / mongodb / redis / kafka / nats / s3 / mssql / OpenAPI: an env var
+holding a URL is the whole contract — `./references/sources.md`) and
+anything else via adapters.
 **Gather once, refresh cheaply, answer from the store.**
 
 **ctx-optimize needs no API key, no model, no database — never prompt for
@@ -127,7 +136,8 @@ grep on structure wastes the store):
 | Setting up / onboarding a repo or monorepo (NO committed config yet, "index this repo") | fastest: `ctx-optimize up` (bootstraps + gathers in one shot; monorepos via scan, curate `.ctxoptimize/config.json` after). Wanting control / reviewing the module list first: follow `./references/onboarding.md` — single project: `init && add .`; monorepo: `scan` → confirm the FULL list → `init --scan --yes && add .`. `init --instructions CLAUDE\|AGENTS\|ALL\|NONE` picks which agent files get the pointer (accepts `claude.md`/`agents.md`; persists to config). Re-running `init` is safe: identical pointer content is never rewritten |
 | Multi-project repo (.NET `.sln`, Gradle/Maven/Nx monorepo) or a module whose source and tests live in SEPARATE folders | Derive `modules[]` from the BUILD SYSTEM, not folders — detect it and follow the per-system parser: `./references/modules/index.md` routes to `dotnet-sln.md` / `gradle.md` / `maven.md` / `js-workspaces.md` / `naming-fallback.md`; config schema in `./references/config-json.md`. Group src+tests into one multi-path module `{"name","paths":[...]}` so test→source calls resolve |
 | Told code changed / store looks stale | `ctx-optimize sync` — fast re-gather of the repo you're in (skips adapter scripts; safe, their nodes stay put). Full gather incl. adapters: `add .` |
-| Asked to add docs/PDF/DB/queue/logs/anything non-code | follow `./references/adapters.md` — docs convert to markdown then `add .`; systems get an adapter script, run on demand via `adapters run [name]` |
+| Asked to add a DATABASE / bucket / queue / external API ("add our postgres schema", "index the kafka topics", "capture the OpenAPI spec") | follow `./references/sources.md` — `ctx-optimize adapters help <scheme>` → `export MY_URL='...'` (value in env or `.ctxoptimize/.env`, never on argv) → `ctx-optimize add MY_URL`. Recorded in config; refreshed on every `up` (24h TTL). Unset var elsewhere = a clean one-line skip, not an error |
+| Asked to add docs/PDF/logs/anything non-code with NO native connector | follow `./references/adapters.md` — docs convert to markdown then `add .`; exotic systems get an adapter script, run on demand via `adapters run [name]` (dynamic creds/tunnels: the script sets the env var and calls `ctx-optimize capture <NAME>` back) |
 | Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .` |
 | User says share / publish / push / pull / export to team / import / load a store — or wants sharing SET UP (github repo, s3/r2 bucket, anything) | follow `./references/push-pull.md` — the remote is a script YOU AUTHOR: arm init's `push.js.sample`/`pull.js.sample` (git lane) or write one, declare `{"remote": {"push": "<cmd>", "pull": "<cmd>"}}` in config.json, commit; then `remote push`/`pull` run it |
 | Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `sync` (fast lane) / `add .` (full) / `adapters run` (slow lane); `fresh` gate |
@@ -217,8 +227,15 @@ model anywhere; you are the judge, the binary only tallies.
   drop-in packs (`routes/manifests/languages add`), the pack doctrine
 - `./references/multi-module.md` — monorepos: scan → confirm → fan-out add,
   navigator, scope-follows-cwd querying, merge policy
-- `./references/adapters.md` — everything beyond code + markdown: doc
-  conversion lane, system adapters, the batch schema
+- `./references/sources.md` — native sources: databases/buckets/queues/APIs
+  by env-var name (URL scheme picks the connector), the env-var-only rule +
+  `.env` ladder, skip semantics + staleness, `capture` as the debug
+  primitive, the logical-shape promise, the `ctx-optimize-adapters`
+  companion binary
+- `./references/adapters.md` — everything beyond code + markdown with no
+  native connector: doc conversion lane, hand-authored batch emitters (the
+  escape hatch), the callback pattern for dynamic creds/tunnels, the batch
+  schema
 - `./references/sync.md` — sync = keep the graph matching the code: `sync`
   fast lane (no adapter scripts) · `add .` full gather · `adapters run` slow
   lane · `fresh` gate

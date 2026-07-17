@@ -1,9 +1,13 @@
-# Adding content beyond code and markdown — adapters are the one door
+# Adding content beyond code and markdown — adapters are the escape hatch
 
 The binary reads source code (12 embedded languages + grammar packs) and
-`.md`/`.txt`. Everything else enters through adapters — scripts YOU write
-that print one batch JSON to stdout. No LLM lane, no fetcher, no DB driver
-in the binary, ever.
+`.md`/`.txt`. **Databases, buckets, queues, and OpenAPI services have
+NATIVE connectors now — route those through `./sources.md`
+(`adapters help <scheme>` → export the var → `ctx-optimize add <NAME>`),
+not through a hand-written script.** Everything else enters through
+adapters — scripts YOU write that print one batch JSON to stdout. No LLM
+lane and no drivers in the MAIN binary (connectors ride the
+`ctx-optimize-adapters` companion, dialing only at your command).
 
 ## Documents (PDF, docx, wiki pages, anything human-authored)
 
@@ -12,15 +16,36 @@ Simplest lane: convert to markdown, drop it in the repo (e.g. `docs/`), run
 into clean markdown, keep headings (they become section nodes). If the
 source must stay external, emit a batch through the door instead.
 
-## Systems (Postgres schema, Kafka topics, Redis, log shapes, anything live)
+## Systems with NO native connector (log shapes, LDAP, anything exotic)
 
-Introspect the system yourself, print ONE batch, pipe it in:
+First check the native lane: postgres/mysql/mongodb/redis/kafka/nats/s3/
+mssql/openapi are one `ctx-optimize add <ENV_NAME>` away (`./sources.md`).
+For everything else, introspect the system yourself, print ONE batch, pipe
+it in:
 
 ```
-python3 pg_schema.py | ctx-optimize add --json -
+python3 ldap_schema.py | ctx-optimize add --json -
 ```
 
 The door validates fail-closed; a bad batch is rejected whole.
+
+## The callback pattern — dynamic credentials, tunnels, vaults
+
+When a NATIVE connector fits but the URL only exists at run time (an SSH
+tunnel, a vault-minted credential), don't re-implement the capture: the
+adapter script sets the env var IN ITS OWN PROCESS, calls
+`ctx-optimize capture <NAME>` back, and prints that Batch — teardown in a
+plain `finally`:
+
+```js
+// .ctxoptimize/adapters/prod-db.js — auto-discovered at gather
+const { execSync } = require("node:child_process");
+openTunnel();
+try {
+  process.env.PG_TUNNEL_URL = "postgres://localhost:5433/app";
+  process.stdout.write(execSync("ctx-optimize capture PG_TUNNEL_URL"));
+} finally { closeTunnel(); }
+```
 
 ## Make it repeatable — always
 

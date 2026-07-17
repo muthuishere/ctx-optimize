@@ -1,6 +1,7 @@
 # ctx-optimize
 
 [![CI](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml/badge.svg)](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/muthuishere/ctx-optimize.svg)](https://pkg.go.dev/github.com/muthuishere/ctx-optimize)
 [![npm](https://img.shields.io/npm/v/@muthuishere/ctx-optimize?logo=npm)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
 [![benchmark](https://img.shields.io/badge/benchmark-run%20it%20yourself-4ade80)](https://muthuishere.github.io/ctx-optimize-site/proof/agent/)
 [![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
@@ -35,6 +36,10 @@ already run.
 > learning loop, merge/export (json/dot/graphml/csv/obsidian), **scripted
 > remote push/pull**, and **multi-module monorepo support** (`scan` /
 > `init --scan` / parallel fan-out `add` / navigator + federated queries).
+> New on main (unreleased): **native sources** — databases, buckets, queues,
+> and external APIs enter the store by env-var name (`ctx-optimize add
+> BILLING_DB_URL`); 9 wire-protocol connectors in a companion binary — see
+> [Databases, buckets, queues, APIs](#databases-buckets-queues-apis--native-sources).
 > New in v0.4 (**breaking**): **the remote is your script** — the binary
 > ships no transport of its own; `remote push`/`pull` run the commands you
 > declare in the committed config (`remote init` and the built-in
@@ -133,8 +138,12 @@ ctx-optimize change-plan "RefundService"
 ctx-optimize sync
 ctx-optimize adapters run
 
-# feed ANY system through the universal adapter door (strictly validated)
-./my-postgres-adapter | ctx-optimize add --json -
+# native sources: a database/bucket/queue/API by env-var name — the value
+# is a URL, its scheme picks the connector; recorded, refreshed on every up
+ctx-optimize add BILLING_DB_URL
+
+# feed ANY other system through the universal adapter door (strictly validated)
+./my-exotic-adapter | ctx-optimize add --json -
 
 # combine module stores into one view; dump for other tools
 ctx-optimize merge api worker billing --into everything
@@ -196,6 +205,41 @@ expands at run time — never in config or scripts, never printed.
 Upgrading from v0.3: `remote init` and the built-in `file://`/`s3://`
 transports are gone. A legacy URL-shaped config still loads but is inert —
 `push`/`pull` print the migration pointer.
+
+## Databases, buckets, queues, APIs — native sources
+
+**A source is an environment variable name. Its value is a URL. The URL
+scheme picks the connector.** One command from zero to "refreshed on every
+`up`":
+
+```sh
+ctx-optimize adapters help postgres    # setup card: value format, credential params, paste-ready commands
+export BILLING_DB_URL='postgres://reader:$PG_PASS@db.internal:5432/billing'   # or .ctxoptimize/.env (gitignored by construction)
+ctx-optimize add BILLING_DB_URL        # resolve → dial → capture → merge → recorded in config sources
+```
+
+Nine wire-protocol-native connectors — **postgres, mysql, mongodb, redis,
+kafka, nats, s3** (MinIO/R2 via endpoint hosts, bare AWS via the credential
+chain), **mssql**, and **openapi** (http(s) URL or a spec file path) — no
+pg_dump/atlas/tbls needed on any machine. Captures are the **logical shape**
+a developer reasons about: system schemas skipped, a partitioned table is one
+node with `partitions: N`, bounded samples with every cap reported. Measured:
+a 100-table / 3-schema postgres captures in **31 ms** including connect
+(pg_dump 101 ms, atlas 248 ms, tbls 1356 ms) — and where a 100-partition
+table plus 500 Timescale chunks bloat other tools to 600–716 raw tables, it
+emits **101 logical tables**.
+
+Secret hygiene is structural: argv and committed config carry env-var
+**names** only (a literal password in an entry is a hard error), values
+resolve process env → `.ctxoptimize/.env` → root `.env` in memory at dial
+time, stored ids are sanitized, and every output is scrubbed. A teammate
+without the credentials still runs `up` cleanly — that source is a one-line
+skip and the nodes arrive via `remote pull`; `--strict` turns skips into CI
+failures. Recorded sources refresh on `up` under a 24h TTL
+(`--sources=always|never`). The drivers live in a **companion binary**,
+`ctx-optimize-adapters`, shipped beside the main one in every archive and
+npm package — the main binary stays driver-free and exactly as fast, and
+execs the sibling only when a source dials.
 
 ## Multi-module — monorepos get one graph per module, plus a navigator
 
@@ -284,10 +328,15 @@ Harness + full write-up: https://muthuishere.github.io/ctx-optimize-site/proof/a
 
 ```
 .ctxoptimize/
-  config.json          name + remote commands (+ modules[] in a monorepo)
+  config.json          name + remote commands + sources[] (+ modules[] in a monorepo)
+  instructions.md      the committed usage card agents read — managed block,
+                       version-stamped, refreshed by `up` (upgrade-only; your
+                       edits outside the markers are never touched)
   adapters/            drop scripts here — every .js/.py/.sh runs on `add`
   push.js / pull.js    your transport scripts (init writes an inert *.sample pair)
   remote.example.md    transport recipes: git lane, s3 lane, custom
+  .gitignore           covers .env* by construction — put source URLs with
+                       secrets in .ctxoptimize/.env, never in config
 ```
 
 `config.json`:

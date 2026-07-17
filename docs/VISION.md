@@ -121,6 +121,26 @@ the HOST AGENT answers. We serve context. What remains of the doc lane (extract
   its chunker parameters and light-index/pages/log layout are ported as
   PATTERNS, never imported.
 
+### Native sources (2026-07-17) — an env var holding a URL is the whole contract
+
+The tier-2 story grew a native lane (ADR
+`openspec/changes/2026-07-17-bundled-adapter-templates/`): **a source is an
+environment variable NAME, its value is a URL, and the URL scheme picks a
+compiled-in connector** (postgres, mysql, mongodb, redis, kafka, nats, s3,
+mssql, openapi). `ctx-optimize add BILLING_DB_URL` resolves the name
+(process env → `.ctxoptimize/.env` → root `.env`, in memory, at dial time),
+captures the LOGICAL shape only (system schemas skipped, partitions
+collapsed to a count, caps reported), merges through the same Batch door,
+and records the name in the committed config so every `up` refreshes it
+(24h TTL). Secrets are structural non-events: names on argv/config only,
+sanitized ids, scrubbed output, a grep gate in CI. The doctrine line is
+amended, not broken — the MAIN binary still carries **zero drivers** (its
+hot paths are byte-identical); drivers live in the `ctx-optimize-adapters`
+companion shipped beside it, which dials ONLY inside `add`/`up`/`capture`
+at the user's command — the same user-invoked-network doctrine as `update`
+and the zig download. Hand-authored adapter scripts remain the escape hatch
+(now with a callback pattern: set the var in-process, call `capture` back).
+
 ## Store layout (maintainer, default) — central, file-based, multi-module
 ```
 ~/.ctx-optimize/store/<module-key>/       # user-home central store, keyed by module

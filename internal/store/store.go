@@ -417,8 +417,8 @@ func (s *Store) UpdateManifest() (*Manifest, error) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if rel == "manifest.json" || rel == "config.json" || rel == "source.json" || strings.HasSuffix(rel, ".tmp") {
-			return nil // machine-local (config/source) or transient (.tmp) — never fingerprinted
+		if rel == "manifest.json" || rel == "config.json" || rel == "source.json" || rel == "sources.json" || strings.HasSuffix(rel, ".tmp") {
+			return nil // machine-local (config/source/sources freshness) or transient (.tmp) — never fingerprinted
 		}
 		h, size, err := hashFile(path)
 		if os.IsNotExist(err) {

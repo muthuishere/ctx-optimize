@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/muthuishere/ctx-optimize/internal/scan"
+	"github.com/muthuishere/ctx-optimize/internal/sources"
 )
 
 const (
@@ -136,6 +137,13 @@ type Config struct {
 	Remote   *Remote   `json:"remote,omitempty"`
 	Adapters []Adapter `json:"adapters,omitempty"`
 
+	// Sources are native source entries (ADR 2026-07-17): each is an env-var
+	// NAME ("DATABASE_URL"), a $-form ("$ORDERS_DB_URL"), or a URL template
+	// with embedded $VARs. Values resolve at dial time (process env →
+	// .ctxoptimize/.env → root .env); literal credentials in a committed
+	// entry are a hard error at Load.
+	Sources []string `json:"sources,omitempty"`
+
 	// Modules is the generated, owned module list of a multi-module root
 	// (written by `init --scan`, hand-editable; globs allowed). Present ⇒
 	// this config is a ROOT: `add` fans out and read verbs resolve scope
@@ -171,6 +179,14 @@ func Load(repo string) (*Config, error) {
 	var c Config
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", FileName, err)
+	}
+	// Literal-credential gate: a committed entry carrying a real password is
+	// refused HERE, before any verb can persist or print it. The error names
+	// the entry's var-shaped skeleton only — never the literal.
+	for i, e := range c.Sources {
+		if err := sources.DetectLiteralCreds(e); err != nil {
+			return nil, fmt.Errorf("%s sources[%d]: %w", FileName, i, err)
+		}
 	}
 	return &c, nil
 }
@@ -239,6 +255,9 @@ func Scaffold(repo, name string) error {
 		{Dir + "/push.js.sample", pushSample},
 		{Dir + "/pull.js.sample", pullSample},
 		{Dir + "/remote.example.md", strings.ReplaceAll(remoteTemplate, "${NAME}", name)},
+		// .ctxoptimize/.env (source credentials) is ignored BY CONSTRUCTION —
+		// no user discipline required (ADR 2026-07-17, M4).
+		{Dir + "/.gitignore", ".env*\n!.env.example\n"},
 	}
 	for _, s := range seed {
 		p := filepath.Join(repo, filepath.FromSlash(s.rel))
@@ -247,6 +266,12 @@ func Scaffold(repo, name string) error {
 				return err
 			}
 		}
+	}
+	// instructions.md is the one scaffold file with REFRESH semantics: its
+	// managed block follows the binary version (upgrade-only; user text
+	// outside the markers untouched) — see instructions.go.
+	if _, err := EnsureInstructions(repo); err != nil {
+		return err
 	}
 	return nil
 }
@@ -269,6 +294,13 @@ const pointerGate = "  <precondition>Run `command -v ctx-optimize` first. If it 
 	"  (install later with `npm install -g @muthuishere/ctx-optimize`, or download the binary). Everything\n" +
 	"  below applies ONLY when the command exists.</precondition>\n"
 
+// deepDoc points every pointer block at the committed usage card — the deep
+// doc lives in .ctxoptimize/instructions.md (scaffolded + refreshed by
+// init/up), so the per-repo instruction files stay a one-liner.
+const deepDoc = "  <deep-doc>The FULL usage card — verify discipline, store-vs-grep ladder, sources (databases/\n" +
+	"  buckets/queues/APIs by env-var name), remote push/pull, `up` — is committed at\n" +
+	"  `.ctxoptimize/instructions.md`. Read it before deeper store work.</deep-doc>\n"
+
 func pointerBlock(name string, modules int) string {
 	if modules > 0 {
 		return pointerBegin + "\n" +
@@ -276,14 +308,14 @@ func pointerBlock(name string, modules int) string {
 			pointerGate +
 			"  <store>MULTI-MODULE repo, pre-built knowledge store at `~/ctxoptimize/" + name + "/` — " +
 			fmt.Sprintf("one graph per module + a navigator, %d modules declared in `.ctxoptimize/config.json`.</store>\n", modules) +
-			"  <use>For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I\n" +
-			"  change W — use it INSTEAD of grep-and-read chains, not in addition:\n" +
-			"  PICK BY INTENT — find: `ctx-optimize query \"<terms>\"` · inspect a symbol: `ctx-optimize card <symbol>` ·\n" +
-			"  about to EDIT: `ctx-optimize change-plan <symbol>` (callers+impact+tests, one call) · blast radius: `ctx-optimize affected <symbol>` · connection: `ctx-optimize path <a> <b>`.\n" +
-			"  Scope follows your cwd: inside a module dir answers come from that module (zero hits escalate repo-wide);\n" +
-			"  at the root the navigator federates across the best-matching modules (`--modules all|a,b` to widen).\n" +
-			"  Module map + hubs: `~/ctxoptimize/" + name + "/navigator.md`; unified wiki at `~/ctxoptimize/" + name + "/wiki/index.md`.\n" +
-			"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source.</use>\n" +
+			"  <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
+			"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one\n" +
+			"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>`.\n" +
+			"  Scope follows your cwd: a module dir answers from that module (zero hits escalate repo-wide); the root\n" +
+			"  federates via the navigator (`~/ctxoptimize/" + name + "/navigator.md`; `--modules all|a,b` widens).\n" +
+			"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source.\n" +
+			"  Exhaustive literal-string sweeps stay grep's job.</use>\n" +
+			deepDoc +
 			"  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/" + name + "/`? Run `ctx-optimize up` —\n" +
 			"  it pulls the team's prebuilt store when the config declares one, otherwise rebuilds every module store in seconds.</no-local-store>\n" +
 			"</ctx-optimize>\n" +
@@ -293,14 +325,13 @@ func pointerBlock(name string, modules int) string {
 		"<ctx-optimize>\n" +
 		pointerGate +
 		"  <store>Pre-built knowledge store at `~/ctxoptimize/" + name + "/` (config in `.ctxoptimize/` here).</store>\n" +
-		"  <use>For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —\n" +
-		"  use it INSTEAD of grep-and-read chains, not in addition:\n" +
-		"  PICK BY INTENT — find: `ctx-optimize query \"<terms>\"` · inspect a symbol: `ctx-optimize card <symbol>` ·\n" +
-		"  about to EDIT: `ctx-optimize change-plan <symbol>` (callers+impact+tests, one call) · blast radius:\n" +
-		"  `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>` · wiki at `~/ctxoptimize/" + name + "/wiki/`.\n" +
-		"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source; open a file only\n" +
-		"  when the answer needs a body the store didn't show. Exhaustive text sweeps (every literal occurrence of a\n" +
-		"  string) are still grep's job.</use>\n" +
+		"  <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
+		"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one\n" +
+		"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` · wiki at\n" +
+		"  `~/ctxoptimize/" + name + "/wiki/`. Output is parsed fact with exact file:line — cite it directly, do\n" +
+		"  NOT re-verify in source; open a file only for a body the store didn't show. Exhaustive literal-string\n" +
+		"  sweeps stay grep's job.</use>\n" +
+		deepDoc +
 		"  <no-local-store>Fresh clone with nothing at `~/ctxoptimize/" + name + "/`? Run `ctx-optimize up` —\n" +
 		"  it pulls the team's prebuilt store when the config declares one, otherwise rebuilds in seconds.</no-local-store>\n" +
 		"</ctx-optimize>\n" +

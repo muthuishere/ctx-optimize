@@ -149,3 +149,68 @@ func TestApplyChecksumMismatchLeavesTarget(t *testing.T) {
 		t.Fatal("target modified despite checksum failure")
 	}
 }
+
+// The release archive carries the ctx-optimize-adapters companion since the
+// native-sources split: one Apply swaps BOTH binaries; a first install (no
+// existing companion) creates it fresh.
+func TestApplySwapsCompanion(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("release asset is a zip on windows; the tar lane is what ships here")
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for name, payload := range map[string]string{
+		"ctx-optimize": "NEWMAIN", "ctx-optimize-adapters": "NEWCOMP",
+	} {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(payload)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(payload)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tw.Close()
+	gz.Close()
+	archive := buf.Bytes()
+	tag := "v9.9.8"
+	asset := AssetName(tag)
+	sum := sha256.Sum256(archive)
+	checksums := hex.EncodeToString(sum[:]) + "  " + asset + "\n"
+	prefix := "/muthuishere/ctx-optimize/releases/download/" + tag + "/"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch strings.TrimPrefix(r.URL.Path, prefix) {
+		case "checksums.txt":
+			fmt.Fprint(w, checksums)
+		case asset:
+			w.Write(archive)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "ctx-optimize")
+	if err := os.WriteFile(target, []byte("OLD"), 0o755); err != nil {
+		t.Fatal(err)
+	} // note: NO existing companion — first-install lane
+	var out bytes.Buffer
+	if err := Apply(srv.URL, tag, target, &out); err != nil {
+		t.Fatalf("Apply: %v\n%s", err, out.String())
+	}
+	if data, _ := os.ReadFile(target); string(data) != "NEWMAIN" {
+		t.Fatalf("main not swapped: %q", data)
+	}
+	comp := filepath.Join(dir, "ctx-optimize-adapters")
+	data, err := os.ReadFile(comp)
+	if err != nil || string(data) != "NEWCOMP" {
+		t.Fatalf("companion not installed fresh: %q err=%v", data, err)
+	}
+	if fi, _ := os.Stat(comp); fi.Mode()&0o111 == 0 {
+		t.Fatal("companion not executable")
+	}
+	if !strings.Contains(out.String(), "companion: "+tag) {
+		t.Fatalf("companion line missing from output:\n%s", out.String())
+	}
+}
