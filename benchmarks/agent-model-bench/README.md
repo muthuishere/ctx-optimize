@@ -20,7 +20,7 @@ scoreboard the product already pins in CI).
   - **toolnexus** (the maintainer's agent runtime): `run --once` per
     question over OpenRouter, bundled skill loaded, plus the
     mandatory-protocol system prompt from the skill's
-    `references/small-models.md`.
+    `.ctxoptimize/instructions.md` ("Small models & custom runtimes").
 - Scoring: 10 per question — exact golden-key hit with correct
   citations = 10; right mechanism/file but canonical symbol missed =
   5–7; wrong subsystem or fabrication = 0–2.
@@ -52,7 +52,7 @@ scoreboard the product already pins in CI).
    questions.
 2. **Small models need the protocol pinned in the system prompt** —
    without it they answer from priors (23/80). The measured-good prompt
-   ships in the skill: `references/small-models.md`. With it, a
+   ships in the skill: `.ctxoptimize/instructions.md` ("Small models & custom runtimes"). With it, a
    $0.15/M-token model reaches ~70% of frontier quality at ~1/100th cost.
 3. **What frontier still buys**: canonical-symbol precision (haiku's two
    near-misses), query re-crafting when the first hit is noise, and
@@ -68,7 +68,7 @@ scoreboard the product already pins in CI).
    the 8 questions + "store-first, cite file:line, not-found after two
    empty queries, self-time each question".
 3. Small-model lane: toolnexus `run --once` per question with the skill
-   dir + the `references/small-models.md` system prompt verbatim (pass
+   dir + the `.ctxoptimize/instructions.md` ("Small models & custom runtimes") system prompt verbatim (pass
    the API key via env, never argv).
 4. Judge blind against `questions-linux.json` keys before reading any
    contestant's answer.

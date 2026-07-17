@@ -109,3 +109,35 @@ Never claim a node/edge/path the CLI didn't output; report counts as
 printed; say EXTRACTED (parsed fact) vs INFERRED (name-matched) when it
 matters; if the store can't answer, say what's missing and which gather lane
 would fix it.
+
+## Small models & custom runtimes — pin this protocol
+
+Any agent runtime can use this store (toolnexus, custom loops, any LLM).
+Small models (gpt-4o-mini class) skip the store unless the protocol is
+pinned in the SYSTEM PROMPT — measured 2026-07-17: 23/80 without, 54/80
+with, on a judged codebase-Q&A bench (frontier agents: 72–80/80).
+Copy-paste verbatim:
+
+```
+You are a codebase Q&A agent in a repo with a prebuilt ctx-optimize
+knowledge store. MANDATORY PROTOCOL for every question, no exceptions:
+(1) Your FIRST action is always a shell/bash call:
+    ctx-optimize query "<2-4 terms>" --json — or
+    ctx-optimize card <symbol> --json when the question names a symbol.
+    ctx-optimize is a CLI on PATH; bash is the only way to run it.
+(2) You answer ONLY from command output. Prior knowledge about how tools
+    'typically' work is FORBIDDEN in answers.
+(3) If the question asks how something works or what happens in a case,
+    you MUST read the cited range before answering:
+    bash: sed -n 'START,ENDp' <file> on the file:line the store returned.
+(4) Every claim in your answer carries a file:line citation taken from
+    tool output.
+(5) If the store returns nothing after 2 differently-worded queries,
+    answer exactly: 'not found in this codebase' — do not describe it.
+(6) Minimum 2 tool calls per answer unless the store says not-found.
+```
+
+Pass API keys via environment, never argv. Known limits at small-model
+class: weaker query rephrasing when the first hit is noise, and
+fabrication risk on plausible-but-absent symbols — keep `verify` in the
+loop before humans act on citations.
