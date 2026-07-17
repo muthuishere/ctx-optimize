@@ -75,9 +75,10 @@ ctx-optimize add BILLING_DB_URL       # resolve → dial → capture → merge �
 
 - **Names only on argv** — never a raw URL with credentials on the command
   line or in committed config; literal passwords in an entry are a hard
-  error. Values resolve process env → `.ctxoptimize/.env` → root `.env`
-  (`.ctxoptimize/.env` is gitignored by construction — put ctx-optimize-only
-  URLs like a read-only replica there).
+  error. Values resolve process env → root `.env` →
+  `~/.config/ctx-optimize/.env` (the machine-global file is for URLs shared
+  across every repo on this machine — a read-only replica, a local MinIO —
+  and lives outside the repo, so it can never be committed).
 - **Skips are normal**: a teammate without the credentials still runs `up`
   cleanly — that source reports one skip line naming the unset var, prior
   nodes stay, and they get the nodes via `remote pull`. `--strict` turns

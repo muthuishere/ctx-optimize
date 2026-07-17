@@ -59,23 +59,22 @@ func TestParseDotenvMultiline(t *testing.T) {
 	}
 }
 
-// The ladder: process env → .ctxoptimize/.env → root .env, specific over
-// general, with the origin reported name-only.
+// The ladder: process env → repo-root .env → ~/.config/ctx-optimize/.env,
+// specific over general, with the origin reported name-only.
 func TestResolverLadder(t *testing.T) {
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".ctxoptimize"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(filepath.Join(repo, ".ctxoptimize", ".env"), []byte("OURS=from-ours\nSHADOWED=from-ours\nENV_WINS=from-ours\n"), 0o600)
 	os.WriteFile(filepath.Join(repo, ".env"), []byte("ROOTS=from-root\nSHADOWED=from-root\nENV_WINS=from-root\n"), 0o600)
+	global := filepath.Join(t.TempDir(), ".env")
+	os.WriteFile(global, []byte("GLOBALS=from-global\nSHADOWED=from-global\nENV_WINS=from-global\n"), 0o600)
+	t.Setenv("CTX_OPTIMIZE_GLOBAL_ENV", global)
 	t.Setenv("ENV_WINS", "from-env")
 
 	r := NewResolver(repo)
 	cases := []struct{ name, wantVal, wantOrigin string }{
-		{"ENV_WINS", "from-env", OriginEnv},     // real env always wins
-		{"OURS", "from-ours", OriginOurEnv},     // ours over root
-		{"SHADOWED", "from-ours", OriginOurEnv}, // specific over general
-		{"ROOTS", "from-root", OriginRootEnv},   // root .env zero-setup lane
+		{"ENV_WINS", "from-env", OriginEnv},         // real env always wins
+		{"SHADOWED", "from-root", OriginRootEnv},    // repo-specific over machine-global
+		{"ROOTS", "from-root", OriginRootEnv},       // root .env zero-setup lane
+		{"GLOBALS", "from-global", OriginGlobalEnv}, // machine-global fallback
 	}
 	for _, c := range cases {
 		v, origin, ok := r.Lookup(c.name)

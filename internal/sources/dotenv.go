@@ -58,29 +58,48 @@ func indexInlineComment(s string) int {
 
 // Origin labels for Resolver lookups — printed name-only in summaries (M4).
 const (
-	OriginEnv     = "env"
-	OriginOurEnv  = ".ctxoptimize/.env"
-	OriginRootEnv = ".env"
+	OriginEnv       = "env"
+	OriginRootEnv   = ".env"
+	OriginGlobalEnv = "~/.config/ctx-optimize/.env"
 )
 
-// Resolver resolves env-var names through the ladder: process environment →
-// .ctxoptimize/.env → repo-root .env (specific over general; the real env
-// always wins for CI/prod). The files are read once, in memory, only while
-// resolving sources — values are never copied elsewhere or printed.
-type Resolver struct {
-	repo string
-	our  map[string]string
-	root map[string]string
+// GlobalEnvPath is the machine-global dotenv — the last ladder rung, for
+// credentials shared across every repo on this machine (a personal dev DB,
+// a MinIO on localhost). Lives outside any repo, so it can never be
+// committed. Overridable for tests via CTX_OPTIMIZE_GLOBAL_ENV.
+func GlobalEnvPath() string {
+	if p := os.Getenv("CTX_OPTIMIZE_GLOBAL_ENV"); p != "" {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "ctx-optimize", ".env")
 }
 
-// NewResolver loads both dotenv files under repo (absent → empty maps).
+// Resolver resolves env-var names through the ladder: process environment →
+// repo-root .env → ~/.config/ctx-optimize/.env (specific over general; the
+// real env always wins for CI/prod, the machine-global file is the
+// shared-across-repos fallback and lives outside any repo so it can never
+// be committed). The files are read once, in memory, only while resolving
+// sources — values are never copied elsewhere or printed.
+type Resolver struct {
+	repo   string
+	root   map[string]string
+	global map[string]string
+}
+
+// NewResolver loads the dotenv files (absent → empty maps).
 func NewResolver(repo string) *Resolver {
-	r := &Resolver{repo: repo, our: map[string]string{}, root: map[string]string{}}
-	if data, err := os.ReadFile(filepath.Join(repo, ".ctxoptimize", ".env")); err == nil {
-		r.our = ParseDotenv(string(data))
-	}
+	r := &Resolver{repo: repo, root: map[string]string{}, global: map[string]string{}}
 	if data, err := os.ReadFile(filepath.Join(repo, ".env")); err == nil {
 		r.root = ParseDotenv(string(data))
+	}
+	if p := GlobalEnvPath(); p != "" {
+		if data, err := os.ReadFile(p); err == nil {
+			r.global = ParseDotenv(string(data))
+		}
 	}
 	return r
 }
@@ -90,11 +109,11 @@ func (r *Resolver) Lookup(name string) (value, origin string, ok bool) {
 	if v, ok := os.LookupEnv(name); ok {
 		return v, OriginEnv, true
 	}
-	if v, ok := r.our[name]; ok {
-		return v, OriginOurEnv, true
-	}
 	if v, ok := r.root[name]; ok {
 		return v, OriginRootEnv, true
+	}
+	if v, ok := r.global[name]; ok {
+		return v, OriginGlobalEnv, true
 	}
 	return "", "", false
 }
@@ -107,7 +126,7 @@ func (r *Resolver) Lookup(name string) (value, origin string, ok bool) {
 // no-op (not a repo, no git, not tracked).
 func TrackedEnvFiles(repo string) []string {
 	var tracked []string
-	for _, rel := range []string{OriginOurEnv, OriginRootEnv} {
+	for _, rel := range []string{OriginRootEnv} {
 		if _, err := os.Stat(filepath.Join(repo, filepath.FromSlash(rel))); err != nil {
 			continue
 		}

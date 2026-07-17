@@ -104,7 +104,7 @@ func cmdAddSource(f *flags, name string, stdout io.Writer) error {
 func cmdCapture(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) != 1 || !sources.IsEnvName(f.args[0]) {
-		return fmt.Errorf("usage: ctx-optimize capture <ENV_NAME> — names only on argv (^[A-Z_][A-Z0-9_]*$); the value (a URL) lives in the environment or .ctxoptimize/.env")
+		return fmt.Errorf("usage: ctx-optimize capture <ENV_NAME> — names only on argv (^[A-Z_][A-Z0-9_]*$); the value (a URL) lives in the environment, repo-root .env, or ~/.config/ctx-optimize/.env")
 	}
 	sc, err := resolveScope(f)
 	if err != nil {

@@ -140,8 +140,8 @@ type Config struct {
 	// Sources are native source entries (ADR 2026-07-17): each is an env-var
 	// NAME ("DATABASE_URL"), a $-form ("$ORDERS_DB_URL"), or a URL template
 	// with embedded $VARs. Values resolve at dial time (process env →
-	// .ctxoptimize/.env → root .env); literal credentials in a committed
-	// entry are a hard error at Load.
+	// root .env → ~/.config/ctx-optimize/.env); literal credentials in a
+	// committed entry are a hard error at Load.
 	Sources []string `json:"sources,omitempty"`
 
 	// Modules is the generated, owned module list of a multi-module root
@@ -255,9 +255,10 @@ func Scaffold(repo, name string) error {
 		{Dir + "/push.js.sample", pushSample},
 		{Dir + "/pull.js.sample", pullSample},
 		{Dir + "/remote.example.md", strings.ReplaceAll(remoteTemplate, "${NAME}", name)},
-		// .ctxoptimize/.env (source credentials) is ignored BY CONSTRUCTION —
-		// no user discipline required (ADR 2026-07-17, M4).
-		{Dir + "/.gitignore", ".env*\n!.env.example\n"},
+		// No .gitignore is scaffolded: nothing secret lives in .ctxoptimize/
+		// — source credentials resolve from the process env, the repo-root
+		// .env (the user's own, warned loudly if tracked), or the
+		// machine-global ~/.config/ctx-optimize/.env outside the repo.
 	}
 	for _, s := range seed {
 		p := filepath.Join(repo, filepath.FromSlash(s.rel))

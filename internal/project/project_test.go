@@ -190,20 +190,18 @@ func TestScaffold(t *testing.T) {
 	}
 }
 
-func TestScaffoldGitignore(t *testing.T) {
+func TestScaffoldWritesNoGitignore(t *testing.T) {
 	repo := t.TempDir()
 	if err := Scaffold(repo, "x"); err != nil {
 		t.Fatal(err)
 	}
+	// Nothing secret lives in .ctxoptimize/ — the env ladder is repo-root
+	// .env and ~/.config/ctx-optimize/.env, so no ignore file is scaffolded.
+	if _, err := os.Stat(filepath.Join(repo, Dir, ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf(".ctxoptimize/.gitignore must not be scaffolded: %v", err)
+	}
+	// A user's own .gitignore there is left alone.
 	p := filepath.Join(repo, Dir, ".gitignore")
-	data, err := os.ReadFile(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), ".env*") || !strings.Contains(string(data), "!.env.example") {
-		t.Fatalf(".ctxoptimize/.gitignore = %q", data)
-	}
-	// Never overwrite a user-edited ignore.
 	if err := os.WriteFile(p, []byte("custom\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +209,7 @@ func TestScaffoldGitignore(t *testing.T) {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(p); string(data) != "custom\n" {
-		t.Fatalf("scaffold overwrote .gitignore: %q", data)
+		t.Fatalf("scaffold touched a user .gitignore: %q", data)
 	}
 }
 

@@ -8,7 +8,7 @@ adapter script to author, no per-ecosystem CLI on the machine.
 
 ```sh
 ctx-optimize adapters help postgres    # 1. the setup card for the scheme
-export BILLING_DB_URL='postgres://user:$PG_PASS@db.internal:5432/billing'   # 2. value in env (or .ctxoptimize/.env)
+export BILLING_DB_URL='postgres://user:$PG_PASS@db.internal:5432/billing'   # 2. value in env (or a .env file — see ladder)
 ctx-optimize add BILLING_DB_URL        # 3. resolve → dial → capture → merge → recorded in config sources
 ```
 
@@ -34,12 +34,13 @@ hand-written. `adapters list` shows recorded sources + supported schemes.
   vars"); literal usernames are fine. Config entries may be a bare name, a
   `$NAME`, or a URL template with embedded `$VARs`
   (`postgres://$PG_USER:$PG_PASS@db.internal:5432/billing`).
-- **Resolution ladder**: process env → `.ctxoptimize/.env` → repo-root
-  `.env` (specific over general; real env wins for CI/prod).
-  `.ctxoptimize/.env` is ctx-optimize's own secret file — gitignored BY
-  CONSTRUCTION by the scaffolded `.ctxoptimize/.gitignore`. NEVER read any
-  `.env` yourself — the binary resolves names internally so secret values
-  stay out of model context. A TRACKED root `.env` triggers a loud warning
+- **Resolution ladder**: process env → repo-root `.env` →
+  `~/.config/ctx-optimize/.env` (specific over general; real env wins for
+  CI/prod). The machine-global `~/.config/ctx-optimize/.env` is for
+  credentials shared across every repo on this machine — it lives outside
+  any repo, so it can never be committed. NEVER read any `.env` yourself —
+  the binary resolves names internally so secret values stay out of model
+  context. A TRACKED root `.env` triggers a loud warning
   (`git rm --cached` it).
 - Every output is scrubbed: summaries, errors, ids, the store itself carry
   at most `postgres://user:***@host/db`. Don't try to "check" a value.

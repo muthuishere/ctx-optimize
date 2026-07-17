@@ -96,7 +96,7 @@ func HelpCard(scheme string) (string, error) {
 	fmt.Fprintf(&b, "notes:\n")
 	fmt.Fprintf(&b, "  secrets with URL-special characters must be percent-encoded ('/' → %%2F, '@' → %%40, ':' → %%3A)\n")
 	fmt.Fprintf(&b, "  cert/key PATHS may sit in the URL; key contents never leave this machine and key params are stripped from stored ids\n")
-	fmt.Fprintf(&b, "setup (value in env or .ctxoptimize/.env — gitignored by construction):\n")
+	fmt.Fprintf(&b, "setup (value in env, repo-root .env, or ~/.config/ctx-optimize/.env):\n")
 	fmt.Fprintf(&b, "  export MY_%s_URL='%s'\n", strings.ToUpper(c.Scheme()), c.Example())
 	fmt.Fprintf(&b, "add (names only on argv — never a raw URL):\n")
 	fmt.Fprintf(&b, "  ctx-optimize add MY_%s_URL\n", strings.ToUpper(c.Scheme()))

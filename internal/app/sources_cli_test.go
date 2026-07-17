@@ -75,10 +75,9 @@ func TestSourcesCLI(t *testing.T) {
 	}
 
 	run(0, "init", "--path", repo)
-	// Scaffold wrote the by-construction ignore.
-	gi, err := os.ReadFile(filepath.Join(repo, ".ctxoptimize", ".gitignore"))
-	if err != nil || !strings.Contains(string(gi), ".env*") || !strings.Contains(string(gi), "!.env.example") {
-		t.Fatalf(".ctxoptimize/.gitignore: %q, %v", gi, err)
+	// No ignore file is scaffolded — nothing secret lives in .ctxoptimize/.
+	if _, err := os.Stat(filepath.Join(repo, ".ctxoptimize", ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf(".ctxoptimize/.gitignore must not exist: %v", err)
 	}
 
 	// ---- add: dir positional (unchanged semantics) vs NAME positional ----

@@ -134,9 +134,9 @@
       <when>get a database/bucket/queue/external API into the store, add our postgres/mysql/mongo schema, index the kafka topics / nats streams, add the S3 bucket, capture the OpenAPI spec, connect the DB to the graph</when>
       <goal>NATIVE sources — no script to author: an env var holds the URL, the scheme picks the connector (postgres, mysql, mongodb, redis, kafka, nats, s3, mssql, http(s)→openapi, no scheme→spec file). `add NAME` captures AND records the name in config sources, so every `up` refreshes it (24h TTL; --sources=always|never). Unset var on a teammate's machine = one clean skip line (nodes arrive via remote pull); --strict for CI. Captures are logical shape only (system schemas skipped, partitions collapsed to a count, caps reported).</goal>
       <cmd>ctx-optimize adapters help &lt;scheme&gt;   # setup card: value format, credential params, paste-ready commands</cmd>
-      <cmd>export MY_DB_URL='postgres://user:$PG_PASS@host:5432/db'   # value in env or .ctxoptimize/.env (gitignored by construction)</cmd>
+      <cmd>export MY_DB_URL='postgres://user:$PG_PASS@host:5432/db'   # value in env, root .env, or ~/.config/ctx-optimize/.env</cmd>
       <cmd>ctx-optimize add MY_DB_URL   # names only on argv — NEVER a raw URL with credentials</cmd>
-      <note>Hard rule: argv/config carry env-var NAMES (or $VAR templates) only; a literal password in a committed entry is refused. Never read any .env yourself — the binary resolves the ladder (process env → .ctxoptimize/.env → root .env) internally so secret values stay out of model context. Drivers ride the ctx-optimize-adapters companion installed beside the binary; an error naming it means reinstall the package, not debug the URL.</note>
+      <note>Hard rule: argv/config carry env-var NAMES (or $VAR templates) only; a literal password in a committed entry is refused. Never read any .env yourself — the binary resolves the ladder (process env → root .env → ~/.config/ctx-optimize/.env) internally so secret values stay out of model context. Drivers ride the ctx-optimize-adapters companion installed beside the binary; an error naming it means reinstall the package, not debug the URL.</note>
       <ref>references/sources.md</ref>
     </route>
 

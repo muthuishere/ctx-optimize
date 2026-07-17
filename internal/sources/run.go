@@ -56,7 +56,7 @@ const (
 type Outcome struct {
 	Entry  string        `json:"entry"`            // raw config entry (committed, var-shaped by the load gate)
 	ID     string        `json:"id"`               // producer identity: var name, or sanitized template
-	Origin string        `json:"origin,omitempty"` // where the value came from: env | .ctxoptimize/.env | .env
+	Origin string        `json:"origin,omitempty"` // where the value came from: env | .env | ~/.config/ctx-optimize/.env
 	Status string        `json:"status"`           // captured | skipped | failed
 	Reason string        `json:"reason,omitempty"` // for skips: unset | fresh | never
 	Detail string        `json:"detail,omitempty"` // scrubbed skip/error text
@@ -170,7 +170,7 @@ func dial(oc Outcome, res *Resolver) Outcome {
 	oc.Origin = joinOrigins(origins)
 	if len(missing) > 0 {
 		oc.Status, oc.Reason = StatusSkipped, ReasonUnset
-		oc.Detail = strings.Join(missing, ", ") + " not set (checked env, .ctxoptimize/.env, .env)"
+		oc.Detail = strings.Join(missing, ", ") + " not set (checked env, .env, ~/.config/ctx-optimize/.env)"
 		return oc
 	}
 	name, err := Route(expanded)

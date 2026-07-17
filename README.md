@@ -214,7 +214,7 @@ scheme picks the connector.** One command from zero to "refreshed on every
 
 ```sh
 ctx-optimize adapters help postgres    # setup card: value format, credential params, paste-ready commands
-export BILLING_DB_URL='postgres://reader:$PG_PASS@db.internal:5432/billing'   # or .ctxoptimize/.env (gitignored by construction)
+export BILLING_DB_URL='postgres://reader:$PG_PASS@db.internal:5432/billing'   # or root .env / ~/.config/ctx-optimize/.env
 ctx-optimize add BILLING_DB_URL        # resolve → dial → capture → merge → recorded in config sources
 ```
 
@@ -231,7 +231,7 @@ emits **101 logical tables**.
 
 Secret hygiene is structural: argv and committed config carry env-var
 **names** only (a literal password in an entry is a hard error), values
-resolve process env → `.ctxoptimize/.env` → root `.env` in memory at dial
+resolve process env → root `.env` → `~/.config/ctx-optimize/.env` in memory at dial
 time, stored ids are sanitized, and every output is scrubbed. A teammate
 without the credentials still runs `up` cleanly — that source is a one-line
 skip and the nodes arrive via `remote pull`; `--strict` turns skips into CI
@@ -356,8 +356,9 @@ scored 23/80. One-shot per question beats a continuous loop: same score,
   adapters/            drop scripts here — every .js/.py/.sh runs on `add`
   push.js / pull.js    your transport scripts (init writes an inert *.sample pair)
   remote.example.md    transport recipes: git lane, s3 lane, custom
-  .gitignore           covers .env* by construction — put source URLs with
-                       secrets in .ctxoptimize/.env, never in config
+  (no secrets here)    source URLs with secrets live in the environment,
+                       your root .env, or ~/.config/ctx-optimize/.env
+                       (machine-global, outside the repo) — never in config
 ```
 
 `config.json`:

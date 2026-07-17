@@ -28,7 +28,7 @@ func TestEnsureInstructionsCreates(t *testing.T) {
 	}
 	// The card is self-contained: intent verbs, verify, sources, remote, up.
 	for _, want := range []string{"change-plan", "verify", "adapters help", "ctx-optimize add BILLING_DB_URL",
-		".ctxoptimize/.env", "remote push", "ctx-optimize up", "grep"} {
+		"~/.config/ctx-optimize/.env", "remote push", "ctx-optimize up", "grep"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("card missing %q", want)
 		}

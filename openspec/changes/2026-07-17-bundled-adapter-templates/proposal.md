@@ -445,3 +445,13 @@ TestExpandBareNameValueGetsLenientTemplatePass.
 Note for e2e reruns: azure-sql-edge's self-signed cert has a negative
 serial (Go x509 rejects it) — the sqlserver URL needs
 `encrypt=disable`; that is container-side, not ours.
+
+## Amendment (2026-07-17, owner-directed): ladder simplified — no .ctxoptimize/.env, no scaffolded gitignore
+
+The `.ctxoptimize/.env` tier and the scaffolded `.ctxoptimize/.gitignore`
+are REMOVED. Final ladder: process env → repo-root `.env` →
+`~/.config/ctx-optimize/.env` (machine-global, for URLs shared across every
+repo on this machine; lives outside any repo so it can never be committed;
+`CTX_OPTIMIZE_GLOBAL_ENV` overrides the path for tests). Nothing secret
+lives in `.ctxoptimize/` anymore, so no ignore file is scaffolded; the
+tracked-root-`.env` loud warning stays.

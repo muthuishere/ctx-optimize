@@ -2532,8 +2532,9 @@ commands:
   add <ENV_NAME>              native source: the env var's value is a URL, its
                               scheme picks the connector (postgres, mysql,
                               mongodb, redis, kafka, nats, s3, http(s) openapi,
-                              or a file path). Resolves env → .ctxoptimize/.env
-                              → root .env, dials, captures, merges, and records
+                              or a file path). Resolves env → root .env →
+                              ~/.config/ctx-optimize/.env, dials, captures,
+                              merges, and records
                               the name in config sources (refreshed on up).
                               Names only on argv — never a raw URL
   add [<path>] [--json -|F]   gather built-ins + every adapter script in

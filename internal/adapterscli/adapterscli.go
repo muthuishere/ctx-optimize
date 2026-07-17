@@ -69,17 +69,17 @@ usage:
   %[1]s --version            print version
 
 Invoked by ctx-optimize's exec bridge; argv carries NAMES only — the value
-(a URL) lives in the environment or .ctxoptimize/.env at the repo root.
+(a URL) lives in the environment, the repo-root .env, or ~/.config/ctx-optimize/.env.
 `, sources.CompanionName)
 }
 
 // cmdCapture mirrors the main binary's capture contract: ONE env-var name on
-// argv, resolved through the same env → .ctxoptimize/.env → .env ladder from
+// argv, resolved through the same env → .env → ~/.config/ctx-optimize/.env ladder from
 // the repo root (found by walking up from cwd, exactly how the main binary's
 // scope resolution does), one dial, Batch JSON on stdout, no store write.
 func cmdCapture(args []string, stdout io.Writer) error {
 	if len(args) != 1 || !sources.IsEnvName(args[0]) {
-		return fmt.Errorf("usage: %s capture <ENV_NAME> — names only on argv (^[A-Z_][A-Z0-9_]*$); the value (a URL) lives in the environment or .ctxoptimize/.env", sources.CompanionName)
+		return fmt.Errorf("usage: %s capture <ENV_NAME> — names only on argv (^[A-Z_][A-Z0-9_]*$); the value (a URL) lives in the environment, repo-root .env, or ~/.config/ctx-optimize/.env", sources.CompanionName)
 	}
 	repo, err := repoRoot()
 	if err != nil {
