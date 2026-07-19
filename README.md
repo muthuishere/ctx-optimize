@@ -60,6 +60,8 @@ already run.
 > packs (`routes add` / `manifests add`, name or GitHub URL) exactly like
 > grammar packs. Exact call edges (x/tools + LSP) are next — see `openspec/`.
 
+**Docs:** [`docs/`](docs/) — [CLI reference](docs/cli.md) (every verb: when & why) · [monorepos](docs/monorepos.md) · [share the store over GitHub](docs/remote-github.md) · [native sources](docs/sources.md) · [custom adapters](docs/adapters.md) · [agent integration](docs/agents.md)
+
 **Demos, benchmarks, proof:** [`benchmarks/`](benchmarks/) · [`proof/`](proof/) — everything reproducible from this repo.
 — landing page, unedited demos, and the full proof write-up. Everything below
 is reproducible; see [Proof](#proof--reproducible-not-our-word).
