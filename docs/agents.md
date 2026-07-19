@@ -35,12 +35,49 @@ Installs, per platform:
 - **Pointer blocks** in `CLAUDE.md` / `AGENTS.md` (whichever the repo
   already has; both created if neither exists; `--instructions NONE` to opt
   out). Marker-fenced, idempotent, self-gating — this one block is the
-  mechanism measured to make agents use the store unprompted.
+  mechanism measured to make agents use the store unprompted. What actually
+  lands in your file:
+
+  ```markdown
+  <!-- ctx-optimize:begin -->
+  <ctx-optimize>
+    <precondition>Run `command -v ctx-optimize` first. If it is NOT installed, IGNORE this entire
+    block and answer by reading the code normally — the store is an optimization, not a requirement
+    (install later with `npm install -g @muthuishere/ctx-optimize`, or download the binary). Everything
+    below applies ONLY when the command exists.</precondition>
+    <store>Pre-built knowledge store at `~/ctxoptimize/myrepo/` (config in `.ctxoptimize/` here).</store>
+    <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query "<terms>"` ·
+    inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one
+    call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` · wiki at
+    `~/ctxoptimize/myrepo/wiki/`. Output is parsed fact with exact file:line — cite it directly, do
+    NOT re-verify in source; open a file only for a body the store didn't show. Exhaustive literal-string
+    sweeps stay grep's job.</use>
+    <deep-doc>The FULL usage card — verify discipline, store-vs-grep ladder, sources (databases/
+    buckets/queues/APIs by env-var name), remote push/pull, `up` — is committed at
+    `.ctxoptimize/instructions.md`. Read it before deeper store work.</deep-doc>
+    <no-local-store>Fresh clone with nothing at `~/ctxoptimize/myrepo/`? Run `ctx-optimize up` —
+    it pulls the team's prebuilt store when the config declares one, otherwise rebuilds in seconds.</no-local-store>
+  </ctx-optimize>
+  <!-- ctx-optimize:end -->
+  ```
+
+  Everything outside the markers is yours; re-running `init` only refreshes
+  the fenced region. Multi-module repos get the navigator/scope wording
+  instead.
 - **`.ctxoptimize/instructions.md`** — the full usage card: verify
   discipline, store-vs-grep ladder, sources, remote push/pull. It carries a
   version-stamped managed block that `init`/`up` refresh upgrade-only;
   **your own text outside the markers is never touched** — add repo-specific
-  notes there and every agent reads them.
+  notes there and every agent reads them. For example, appended after the
+  managed block:
+
+  ```markdown
+  <!-- your team's notes, below the managed block — never overwritten -->
+  ## Repo-specific
+  - Query `payments ledger` before touching anything under internal/billing.
+  - Our kafka topics live in the store: `ctx-optimize query "order events topic"`.
+  - Never edit generated/ — change the protos and re-run `task gen`.
+  ```
 
 ## 3. Small models & custom runtimes
 

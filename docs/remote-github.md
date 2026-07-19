@@ -62,8 +62,38 @@ The scripts clone/pull `~/ctx-stores`, copy the store tree in/out under the
 store key, and commit+push. Auth is whatever your git already does (ssh
 keys, gh auth) — nothing new to manage.
 
-**CI refresh** (optional): a job that runs `ctx-optimize up && ctx-optimize
-remote push` on main keeps the shared store current so humans never gather.
+**CI refresh** (optional but recommended): a job on main keeps the shared
+store current so humans never gather. Paste-ready workflow:
+
+```yaml
+# .github/workflows/ctx-store.yml
+name: ctx-store refresh
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }        # git-history co-change edges need history
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install -g @muthuishere/ctx-optimize
+      - run: ctx-optimize up            # gather (or refresh) this repo's store
+      - name: push the store
+        env:
+          # deploy key or PAT with write access to <org>/ctx-stores —
+          # referenced by NAME; the value never appears in config or logs
+          GIT_SSH_COMMAND: ssh -i ${{ runner.temp }}/store_key -o StrictHostKeyChecking=accept-new
+        run: |
+          echo "${{ secrets.CTX_STORE_DEPLOY_KEY }}" > ${{ runner.temp }}/store_key
+          chmod 600 ${{ runner.temp }}/store_key
+          ctx-optimize remote push
+```
+
+Teammates then never gather: `git pull && ctx-optimize up` grabs CI's store.
 
 ## Lane B — S3-compatible bucket (AWS, R2, MinIO)
 

@@ -12,6 +12,8 @@ the 60-second tour.
 | [sources.md](sources.md) | a database / bucket / queue / external API should be part of the graph — the env-var-URL contract, credentials, the resolution ladder |
 | [adapters.md](adapters.md) | something has no native connector — drop-in scripts, the `--json` door, composing with `capture` |
 | [agents.md](agents.md) | wiring coding agents (Claude Code, Codex, Copilot, Devin, custom runtimes) — skills, pointer blocks, the committed instructions card, small-model protocol |
+| [languages-packs.md](languages-packs.md) | your language/framework/build tool isn't extracted — grammar packs, route packs, manifest packs, all drop-in |
+| [troubleshooting.md](troubleshooting.md) | **the tool refused or warned you** — every guard message verbatim, its cause, and the one command |
 | [VISION.md](VISION.md) | the long-term design position |
 | [CRITIQUE.md](CRITIQUE.md) | the standing counter-argument we keep honest against |
 
