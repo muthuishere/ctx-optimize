@@ -1694,21 +1694,27 @@ func cmdMerge(args []string, stdout io.Writer) error {
 	}
 	totalN, totalE := 0, 0
 	for _, src := range f.args {
-		key := store.SanitizeKey(src)
+		var key string
 		if fi, err := os.Stat(src); err == nil && fi.IsDir() {
-			// A path resolves like openStore does: config name > basename.
-			pc, err := project.Load(src)
+			// A dir resolves through the SAME scope resolution as every verb
+			// (ADR 2026-07-19-merge-nested-module-keys): a declared module dir
+			// yields its nested store key (mono/services/api); a standalone
+			// dir falls back to config name > basename exactly as before.
+			sc, err := resolveScope(&flags{strs: map[string]string{"path": src}, bools: map[string]bool{}})
 			if err != nil {
 				return err
 			}
-			key = store.SanitizeKey(pc.Name)
-			if key == "" {
-				if key, err = store.ModuleKey(src); err != nil {
-					return err
-				}
+			key = sc.storeKey
+		} else {
+			// Bare name: try the store-relative path form first (slashes
+			// preserved — how fan-out keys nested module stores), then the
+			// flattened single-segment form.
+			key = store.SanitizeKeyPath(src)
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(key), "graph")); err != nil {
+				key = store.SanitizeKey(src)
 			}
 		}
-		if _, err := os.Stat(filepath.Join(root, key, "graph")); err != nil {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(key), "graph")); err != nil {
 			return fmt.Errorf("no module %q in %s — run `ctx-optimize add` there first", key, root)
 		}
 		ss, err := store.Open(root, key)

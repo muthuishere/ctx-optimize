@@ -1,6 +1,6 @@
 # merge cannot address nested module stores — DRAFT, no code until owner agrees
 
-Date: 2026-07-19 · Status: DRAFT (found by the 32-scenario validation matrix, S25)
+Date: 2026-07-19 · Status: ADOPTED (owner 2026-07-19)
 
 ## Problem — reproduced
 

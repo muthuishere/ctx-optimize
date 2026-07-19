@@ -2,8 +2,9 @@
 # Scenario matrix runner — every scenario executes against the real binary.
 # Output format: "=== S<id> <name>" then the commands' real output, then
 # "--- PASS|FAIL S<id>". No set -e: every scenario reports independently.
-D="$(cd "$(dirname "$0")" && pwd)"
-W="$D/work"; rm -rf "$W"; mkdir -p "$W"
+# Work OUTSIDE any repo: scenario repos must never sit under a parent
+# .ctxoptimize (the upward config walk would adopt them into ITS scope).
+W="${TMPDIR:-/tmp}/ctxopt-scenarios"; rm -rf "$W"; mkdir -p "$W"
 export CTX_OPTIMIZE_STORE="$W/store"
 export CTX_OPTIMIZE_GLOBAL_ENV="$W/globalenv"   # isolate the machine-global .env
 BIN=ctx-optimize
@@ -170,8 +171,8 @@ c['modules']=[m for m in c['modules'] if m['path']!='services/billing']; json.du
 EOF
 { $BIN add . | grep -A1 'no longer'; ls "$CTX_OPTIMIZE_STORE/mono/services/" ; } 2>&1 | ck S24 "billing"
 
-echo "=== S25 merge: KNOWN LIMITATION — nested module stores not addressable"
-cd "$M"; { $BIN merge mono/services/api mono/services/worker --into everything; } 2>&1 | ck S25 "no module"   # KNOWN LIMITATION — ADR 2026-07-19-merge-nested-module-keys
+echo "=== S25 merge: combined view from nested module stores (by dir path)"
+cd "$M"; { $BIN merge "$M/services/api" "$M/services/worker" --into everything; grep RunPayroll "$CTX_OPTIMIZE_STORE/everything/graph/nodes.ndjson" | head -1; } 2>&1 | ck S25 "RunPayroll"
 
 echo "=== S26 remote git-lane E2E: push to a local bare repo, wipe, pull back"
 H="$W/storehost.git"; git init -q --bare "$H"

@@ -214,11 +214,15 @@ module list) — the 200k→3k volentis case now converges with zero `--force`.
 note: 1 module store(s) on disk are no longer in config.json — never searched, safe to delete under ~/ctxoptimize/mono: services/billing
 ```
 
-### S25 · KNOWN LIMITATION — `merge` can't reach nested module stores
+### S25 · Merge nested module stores into one combined view
 
-`merge` addresses top-level store keys only (v0.6.0). Tracked in
-`openspec/changes/2026-07-19-merge-nested-module-keys/`; root federation
-covers the combined view meanwhile.
+```
+$ ctx-optimize merge services/api services/worker --into everything
+merged 2 modules -> everything
+```
+
+Arguments are module dir paths (resolved like every verb) or
+store-relative keys (`mono/services/api`).
 
 ---
 

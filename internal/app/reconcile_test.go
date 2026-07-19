@@ -100,6 +100,39 @@ func TestUpRegathersOnlyMissingResidual(t *testing.T) {
 	}
 }
 
+// merge reaches nested module stores (ADR 2026-07-19-merge-nested-module-keys):
+// by module DIR path and by store-relative key — the two forms a monorepo
+// user naturally types. Pre-fix both failed with `no module "api"`.
+func TestMergeReachesNestedModuleStores(t *testing.T) {
+	repo := fakeMonorepo(t)
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+	runCLI(t, 0, "init", "--scan", "--yes", "--path", repo)
+	runCLI(t, 0, "add", repo, "--path", repo)
+	rootKey := filepath.Base(repo)
+
+	// By dir path (scope resolution).
+	out, _ := runCLI(t, 0, "merge",
+		filepath.Join(repo, "services", "api"),
+		filepath.Join(repo, "services", "worker"),
+		"--into", "everything", "--path", repo)
+	if !strings.Contains(out, "everything") {
+		t.Fatalf("merge by dir path failed:\n%s", out)
+	}
+	q, _ := runCLI(t, 0, "query", "RunPayrollJob", "--path", repo, "--store", storeRoot)
+	_ = q // module query still fine; now check the merged store directly
+	data, err := os.ReadFile(filepath.Join(storeRoot, "everything", "graph", "nodes.ndjson"))
+	if err != nil || !strings.Contains(string(data), "RunPayrollJob") || !strings.Contains(string(data), "HandleCheckout") {
+		t.Fatalf("merged store missing module symbols: %v", err)
+	}
+
+	// By store-relative key (slashes preserved).
+	out, _ = runCLI(t, 0, "merge", rootKey+"/services/api", "--into", "apionly", "--path", repo)
+	if !strings.Contains(out, "apionly") {
+		t.Fatalf("merge by store-relative key failed:\n%s", out)
+	}
+}
+
 // (e) A module added to config.json (no commit — no git at all here) is a
 // missing store on the next up, and up gathers EXACTLY it.
 func TestUpGathersNewlyDeclaredModule(t *testing.T) {
