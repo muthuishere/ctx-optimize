@@ -99,3 +99,9 @@ ctx-optimize merge api worker billing --into everything
 ```
 
 Merged stores are **derived** — re-derive after a pull, never sync them.
+
+> **Known limitation (v0.6.0)**: `merge` addresses top-level store keys
+> only — the nested module stores of a declared monorepo
+> (`~/ctxoptimize/<root>/services/api`) are not yet reachable by merge.
+> Tracked in `openspec/changes/2026-07-19-merge-nested-module-keys/`.
+> Federated queries at the root cover the combined-view need meanwhile.

@@ -20,10 +20,13 @@ deletion — so the old store is kept intact.
    config `name`). Two different clones sharing a basename overwrite each
    other. `ctx-optimize status` shows which repo the store was built from;
    if it's not yours, give your repo its own name and re-run — do **not**
-   `--force` (that would destroy the other repo's store):
-   ```sh
-   ctx-optimize config name my-unique-name --project && ctx-optimize add .
+   `--force` (that would destroy the other repo's store). Set `"name"` in
+   `.ctxoptimize/config.json`:
+   ```json
+   {"name": "my-unique-name"}
    ```
+   then `ctx-optimize add .` — the store lands under
+   `~/ctxoptimize/my-unique-name/`, leaving the other repo's store alone.
 2. **Wrong directory / scope** — you ran `add .` from a subdirectory, or
    the config now covers a slice of what the original gather covered.
 3. **A genuinely smaller checkout** — sparse/shallow clone, or a branch

@@ -13,6 +13,7 @@ the 60-second tour.
 | [adapters.md](adapters.md) | something has no native connector — drop-in scripts, the `--json` door, composing with `capture` |
 | [agents.md](agents.md) | wiring coding agents (Claude Code, Codex, Copilot, Devin, custom runtimes) — skills, pointer blocks, the committed instructions card, small-model protocol |
 | [languages-packs.md](languages-packs.md) | your language/framework/build tool isn't extracted — grammar packs, route packs, manifest packs, all drop-in |
+| [cookbook.md](cookbook.md) | you want it SHOWN — 32 executed-and-verified scenarios with real output, from first `up` to guards firing (reproduce: `proof/scenarios/run.sh`) |
 | [troubleshooting.md](troubleshooting.md) | **the tool refused or warned you** — every guard message verbatim, its cause, and the one command |
 | [VISION.md](VISION.md) | the long-term design position |
 | [CRITIQUE.md](CRITIQUE.md) | the standing counter-argument we keep honest against |
