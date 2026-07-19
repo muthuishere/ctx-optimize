@@ -1,6 +1,6 @@
 # Config-aware freshness — `up` must rebuild when `.ctxoptimize/config.json` changes
 
-Date: 2026-07-19 · Status: DRAFT — under discussion, no code until owner agrees
+Date: 2026-07-19 · Status: SUPERSEDED by 2026-07-19-config-reconciliation — snapshot-hash freshness dissolved once every `up` reconciles against the PRESENT config; implementation was reverted unmerged
 
 ## Problem — observed, not hypothetical
 
