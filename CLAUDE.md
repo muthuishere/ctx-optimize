@@ -40,6 +40,10 @@ connector), everything else via adapter scripts through the validated
 - Secrets by env-var NAME at call time; never store, print, or log values.
 - Spec-driven: decisions live in `openspec/` + `docs/VISION.md` (+ `docs/CRITIQUE.md`
   as the standing counter-weight). Every claim traces to a measured spike.
+- **Change flow (owner-directed 2026-07-19): ADR draft → DISCUSS with the
+  owner → openspec finalized → THEN code. Never touch product code for a
+  design change until the owner explicitly agrees — a reported bug still
+  gets its ADR and sign-off first; only trivial typo-grade fixes skip this.**
 - Conventional commits; never add Co-authored-by.
 - Golden net: `internal/golden/` pins extraction snapshots, landmark facts,
   perf ceilings, AND a judged 20-question scoreboard per corpus (floors in
