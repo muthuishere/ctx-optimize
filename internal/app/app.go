@@ -336,6 +336,56 @@ func upCore(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// Multi-module root: reconcile the DECLARED module set against what is
+	// on disk (ADR 2026-07-19-config-reconciliation). The root store's node
+	// count gates nothing here — a broken/empty residual must re-gather the
+	// residual, never trigger a full fan-out while populated module stores
+	// sit on disk. A module just added to config (committed or not) is
+	// simply a missing store and gets gathered on this run.
+	if sc.kind == scopeRoot && len(sc.modules) > 0 {
+		tasks, err := planTasks(sc.rootDir, sc.rootKey, sc.modules, map[string]bool{})
+		if err != nil {
+			return err
+		}
+		var missing []gatherTask
+		for _, t := range tasks {
+			ts, err := store.Open(storeRoot, t.storeKey)
+			if err != nil {
+				return err
+			}
+			tn, err := ts.Nodes()
+			if err != nil {
+				return err
+			}
+			if len(tn) == 0 {
+				missing = append(missing, t)
+			}
+		}
+		if len(missing) > 0 && len(missing) < len(tasks) {
+			fmt.Fprintf(stdout, "up: %d of %d declared stores missing — gathering only those:\n", len(missing), len(tasks))
+			for _, t := range missing {
+				ts, err := store.Open(storeRoot, t.storeKey)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(stdout, "== %s\n", t.label)
+				if err := gatherInto(ts, t.base, t.dirs, t.excludes, f.bools["force"] || t.residual, f.bools["no-adapters"], stdout); err != nil {
+					return err
+				}
+			}
+			if err := writeNavigator(sc, storeRoot, tasks, stdout); err != nil {
+				return err
+			}
+			fmt.Fprintln(stdout, "up: store ready — missing modules gathered")
+			return nil
+		}
+		// All missing → the bootstrap lane below (pull, else full gather).
+		// None missing → the freshness lane below. Both key off the ROOT
+		// store here only because reconcile proved it representative.
+		if len(missing) == len(tasks) {
+			nodes = nil
+		}
+	}
 	if len(nodes) == 0 {
 		pc, err := project.Load(sc.rootDir)
 		if err != nil {

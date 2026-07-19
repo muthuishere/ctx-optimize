@@ -121,13 +121,16 @@ func TestMultiModuleLifecycle(t *testing.T) {
 		t.Fatalf("re-scan must restore modules and keep remote: %+v", cfg3)
 	}
 
-	// -- 6: re-adoption makes the root residual shrink — guard fires loudly,
-	// --force prunes, and the symbol lives in exactly one store afterwards ---
-	out, errb = runCLI(t, 1, "add", "--path", repo)
-	if !strings.Contains(out+errb, "refusing to shrink") {
-		t.Fatalf("root residual shrink after re-adoption must be refused:\n%s%s", out, errb)
+	// -- 6: re-adoption makes the root residual shrink — and that is a
+	// CORRECT gather (ADR 2026-07-19-config-reconciliation): the residual's
+	// scope follows the module list, so the count-shrink guard is skipped
+	// for it. One plain add converges; the symbol lives in exactly one
+	// store afterwards. (Module stores keep the guard — pinned in
+	// TestModuleStoreKeepsShrinkGuard.)
+	out, errb = runCLI(t, 0, "add", "--path", repo)
+	if strings.Contains(out+errb, "refusing to shrink") {
+		t.Fatalf("residual shrink after re-adoption must NOT be refused:\n%s%s", out, errb)
 	}
-	runCLI(t, 0, "add", "--force", "--path", repo)
 	rootGraph, err = os.ReadFile(rootNodes)
 	if err != nil {
 		t.Fatal(err)

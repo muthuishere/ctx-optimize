@@ -404,6 +404,7 @@ type gatherTask struct {
 	storeKey string   // store key
 	label    string   // print label ("services/api" or "." for the root residual)
 	excludes []string // abs subtree roots NOT to walk (child module dirs)
+	residual bool     // root-tree-minus-modules task: its scope follows the module list, so the count-shrink guard is meaningless for it (ADR 2026-07-19-config-reconciliation)
 }
 
 // planTasks expands a root config into one task per module (recursing into
@@ -484,7 +485,7 @@ func planTasks(rootDir, rootKey string, mods []scan.Module, seen map[string]bool
 			}
 		}
 	}
-	tasks = append(tasks, gatherTask{base: rootDir, dirs: []string{rootDir}, storeKey: rootKey, label: ".", excludes: allDirs})
+	tasks = append(tasks, gatherTask{base: rootDir, dirs: []string{rootDir}, storeKey: rootKey, label: ".", excludes: allDirs, residual: true})
 	return tasks, nil
 }
 
@@ -719,7 +720,12 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 				results[i].err = err
 				return
 			}
-			results[i].err = gatherInto(s, t.base, t.dirs, t.excludes, force, f.bools["no-adapters"], &results[i].out)
+			// residual: adding/removing a module legitimately moves most of
+			// the root store's nodes into/out of module stores — a raw count
+			// comparison there refuses correct gathers (volentis 206717→3018),
+			// so the residual always replaces. Module stores keep the guard:
+			// their scope is stable, a >50% drop there still means a broken run.
+			results[i].err = gatherInto(s, t.base, t.dirs, t.excludes, force || t.residual, f.bools["no-adapters"], &results[i].out)
 		}(i)
 	}
 	wg.Wait()
@@ -737,8 +743,14 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 		return fmt.Errorf("%d of %d modules failed: %s", len(failed), len(tasks), strings.Join(failed, ", "))
 	}
 
-	// Navigator: the root artifact. Every completed multi-module add
-	// refreshes it.
+	return writeNavigator(sc, storeRoot, tasks, stdout)
+}
+
+// writeNavigator rebuilds the root navigator from the FULL task plan and
+// reports orphaned stores. Called by every completed multi-module add and by
+// up's partial reconcile (which gathers a task subset but must never shrink
+// the navigator to that subset).
+func writeNavigator(sc *scope, storeRoot string, tasks []gatherTask, stdout io.Writer) error {
 	entries := make([]navigator.ModuleEntry, 0, len(tasks)-1)
 	for _, t := range tasks {
 		if t.label == "." {

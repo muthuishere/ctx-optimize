@@ -1,6 +1,6 @@
 # config.json is the reconciliation contract — root residual, shrink guard, and `up` all answer to it
 
-Date: 2026-07-19 · Status: DRAFT — under discussion, no code until owner agrees
+Date: 2026-07-19 · Status: ADOPTED (owner 2026-07-19) — SCOPE NARROWED to changes 1+2 (the add/shrink-guard fix and the up reconcile); change 3 (failed-gather surfacing) and orphan logging are DEFERRED to a future ADR
 Supersedes: 2026-07-19-config-aware-freshness (snapshot-hash comparison —
 reverted unmerged; reconciliation against the present config dissolves the
 problem it chased)
