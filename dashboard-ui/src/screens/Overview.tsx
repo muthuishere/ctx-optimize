@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { kindColorMap } from '../App'
 import { useStores } from '../stores'
-import { groupByRepo } from '../grouping'
+import { groupByRepo, OVERVIEW_MODULE_PREVIEW } from '../grouping'
 
 // Overview — the landing page. Global roll-up (stores, nodes, edges, fresh vs
 // stale, producer breakdown) summed client-side from /api/stores, plus a
@@ -104,26 +104,49 @@ export default function Overview() {
             )}
           </div>
 
+          {/* One card per REPO — a monorepo's modules belong inside their
+              product, not beside it as peers (ADR 2026-07-19-dashboard-repo-grouping). */}
           <div className="grid-cards">
-            {(stores || []).slice().sort((a, b) => b.nodes - a.nodes).map((s) => (
-              <div className="card ov-repo" key={s.key}>
-                <div className="card-title">
-                  <h3>{s.key}</h3>
-                  <span className={'badge ' + s.fresh}>{s.fresh}</span>
+            {groupByRepo(stores || []).slice().sort((a, b) => b.nodes - a.nodes).map((g) => {
+              const primary = g.self || g.modules[0]
+              const top = g.modules.slice(0, OVERVIEW_MODULE_PREVIEW)
+              return (
+                <div className="card ov-repo" key={g.root}>
+                  <div className="card-title">
+                    <h3>{g.root}</h3>
+                    <span className={'badge ' + g.fresh}>{g.fresh}</span>
+                  </div>
+                  <div className="stat-grid">
+                    <div className="stat"><b>{g.nodes.toLocaleString()}</b><span>nodes</span></div>
+                    <div className="stat"><b>{g.edges.toLocaleString()}</b><span>edges</span></div>
+                    {g.modules.length > 0 && (
+                      <div className="stat"><b>{g.modules.length.toLocaleString()}</b><span>modules</span></div>
+                    )}
+                  </div>
+                  {g.summary && <div className="muted" style={{ marginTop: 10, fontSize: '.85rem' }}>{g.summary}</div>}
+                  {g.modules.length > 0 && (
+                    <div className="row" style={{ marginTop: 10, gap: 6, flexWrap: 'wrap' }}>
+                      {top.map((m) => (
+                        <span className="chip" key={m.key} title={m.key}>
+                          {m.key.slice(g.root.length + 1)} <b>{m.nodes.toLocaleString()}</b>
+                        </span>
+                      ))}
+                      {g.modules.length > top.length && (
+                        <a href="#/repos" className="chip">+{g.modules.length - top.length} more</a>
+                      )}
+                    </div>
+                  )}
+                  <div className="row" style={{ marginTop: 14 }}>
+                    {primary && <>
+                      <a href={'#/viewer/' + encodeURIComponent(primary.key)}><button>Viewer</button></a>
+                      <a href={'#/query/' + encodeURIComponent(primary.key)}><button>Query</button></a>
+                    </>}
+                    <span className="grow" />
+                    <a href="#/repos" className="k" style={{ fontSize: '.8rem' }}>manage →</a>
+                  </div>
                 </div>
-                <div className="stat-grid">
-                  <div className="stat"><b>{s.nodes.toLocaleString()}</b><span>nodes</span></div>
-                  <div className="stat"><b>{s.edges.toLocaleString()}</b><span>edges</span></div>
-                </div>
-                {s.summary && <div className="muted" style={{ marginTop: 10, fontSize: '.85rem' }}>{s.summary}</div>}
-                <div className="row" style={{ marginTop: 14 }}>
-                  <a href={'#/viewer/' + encodeURIComponent(s.key)}><button>Viewer</button></a>
-                  <a href={'#/query/' + encodeURIComponent(s.key)}><button>Query</button></a>
-                  <span className="grow" />
-                  <a href="#/repos" className="k" style={{ fontSize: '.8rem' }}>manage →</a>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </>
       )}

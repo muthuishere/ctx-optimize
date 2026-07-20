@@ -111,3 +111,6 @@ export function groupByRepo(stores: StoreInfo[]): RepoGroup[] {
 
 /** How many modules render inline before the "+N more" expander. */
 export const MODULE_PREVIEW = 5
+
+/** How many module chips the Overview card previews before "+N more". */
+export const OVERVIEW_MODULE_PREVIEW = 4
