@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { kindColorMap } from '../App'
 import { useStores } from '../stores'
+import { groupByRepo } from '../grouping'
 
 // Overview — the landing page. Global roll-up (stores, nodes, edges, fresh vs
 // stale, producer breakdown) summed client-side from /api/stores, plus a
@@ -35,7 +36,12 @@ export default function Overview() {
         producers[p] = (producers[p] || 0) + n
       }
     }
-    return { count: s.length, nodes, edges, fresh, stale, served, saved, usd, producers }
+    // Repos vs modules: a monorepo's module stores are parts of ONE product,
+    // so the headline counts repos and reports modules separately (ADR
+    // 2026-07-19-dashboard-repo-grouping).
+    const groups = groupByRepo(s)
+    const modules = groups.reduce((n, g) => n + g.modules.length, 0)
+    return { count: groups.length, modules, nodes, edges, fresh, stale, served, saved, usd, producers }
   }, [stores])
 
   if (!stores) return err
@@ -69,7 +75,10 @@ export default function Overview() {
         <>
           <div className="card">
             <div className="stat-grid">
-              <div className="stat"><b>{roll.count.toLocaleString()}</b><span>stores</span></div>
+              <div className="stat"><b>{roll.count.toLocaleString()}</b><span>{roll.count === 1 ? 'repo' : 'repos'}</span></div>
+              {roll.modules > 0 && (
+                <div className="stat"><b>{roll.modules.toLocaleString()}</b><span>modules</span></div>
+              )}
               <div className="stat"><b>{roll.nodes.toLocaleString()}</b><span>nodes</span></div>
               <div className="stat"><b>{roll.edges.toLocaleString()}</b><span>edges</span></div>
               <div className="stat"><b>{roll.fresh.toLocaleString()}</b><span>fresh</span></div>
