@@ -4,6 +4,7 @@
 package app
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,6 +98,88 @@ func TestUpRegathersOnlyMissingResidual(t *testing.T) {
 	}
 	if strings.Contains(out, "== services/api") || strings.Contains(out, "gathering from source") {
 		t.Fatalf("up must NOT re-gather populated modules or full-rebuild:\n%s", out)
+	}
+}
+
+// A hand-written .ctxoptimize/ carrying ONLY config.json: `up` fills in the
+// missing inert templates and NEVER overwrites anything the user brought
+// (ADR 2026-07-19-up-progress-and-scaffold).
+func TestUpScaffoldsMissingTemplatesWithoutOverwriting(t *testing.T) {
+	repo := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	if err := os.WriteFile(filepath.Join(repo, "pay.go"), []byte("package pay\n\nfunc Charge() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Only config.json — hand-written, with a custom store name.
+	cfgDir := filepath.Join(repo, ".ctxoptimize")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const myCfg = `{"name":"my-custom-store"}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(myCfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// One sample pre-existing AND user-edited — must survive untouched.
+	editedPush := "// my own transport, hands off\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "push.js.sample"), []byte(editedPush), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runCLI(t, 0, "up", "--path", repo)
+
+	// Every template now present.
+	for _, rel := range []string{
+		"adapters/example.js.sample", "push.js.sample", "pull.js.sample",
+		"remote.example.md", "instructions.md", "config.json",
+	} {
+		if _, err := os.Stat(filepath.Join(cfgDir, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("template not scaffolded: %s (%v)", rel, err)
+		}
+	}
+	// NOTHING the user brought was overwritten.
+	if got, _ := os.ReadFile(filepath.Join(cfgDir, "config.json")); string(got) != myCfg {
+		t.Fatalf("config.json was modified: %q", got)
+	}
+	if got, _ := os.ReadFile(filepath.Join(cfgDir, "push.js.sample")); string(got) != editedPush {
+		t.Fatalf("edited sample was overwritten: %q", got)
+	}
+	// The custom store name was honored.
+	if _, err := os.Stat(filepath.Join(os.Getenv("CTX_OPTIMIZE_STORE"), "my-custom-store", "graph")); err != nil {
+		t.Fatalf("custom store name not honored: %v", err)
+	}
+	// Idempotent: a second up creates nothing new and still overwrites nothing.
+	out, _ := runCLI(t, 0, "up", "--path", repo)
+	if strings.Contains(out, "scaffolded") {
+		t.Fatalf("second up must not re-scaffold:\n%s", out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(cfgDir, "push.js.sample")); string(got) != editedPush {
+		t.Fatalf("second up overwrote the edited sample: %q", got)
+	}
+}
+
+// Fan-out emits live progress ticks (stderr) while stdout stays the ordered,
+// deterministic result output.
+func TestFanOutEmitsProgress(t *testing.T) {
+	repo := fakeMonorepo(t)
+	t.Setenv("CTX_OPTIMIZE_STORE", t.TempDir())
+	runCLI(t, 0, "init", "--scan", "--yes", "--path", repo)
+
+	var prog bytes.Buffer
+	old := progressOut
+	progressOut = &prog
+	defer func() { progressOut = old }()
+
+	out, _ := runCLI(t, 0, "add", repo, "--path", repo)
+	got := prog.String()
+	if !strings.Contains(got, "gathering ") || !strings.Contains(got, "modules (jobs=") {
+		t.Fatalf("missing the fan-out header:\n%s", got)
+	}
+	if !strings.Contains(got, "[1/") {
+		t.Fatalf("missing per-module progress ticks:\n%s", got)
+	}
+	// Progress must NOT pollute stdout (determinism + clean pipes).
+	if strings.Contains(out, "[1/") || strings.Contains(out, "gathering ") {
+		t.Fatalf("progress leaked into stdout:\n%s", out)
 	}
 }
 

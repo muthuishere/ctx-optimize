@@ -28,6 +28,19 @@ ctx-optimize init --scan --yes    # write the FULL found list to config.json
 ctx-optimize add .                # fan-out gather: one worker per module
 ```
 
+While a fan-out runs, progress ticks stream to stderr as each module
+finishes:
+
+```
+gathering 17 modules (jobs=8)…
+[1/17] infra/postgresbackup
+[2/17] tests/api-e2e
+...
+```
+
+The detailed per-module results print to stdout in a deterministic order
+once all workers finish — so piping stdout to a file stays clean.
+
 `scan` finds project markers (package.json, go.mod, pom.xml, pyproject.toml,
 csproj/sln, …) to a depth bound (`--depth N`). The generated `modules[]` list
 in `.ctxoptimize/config.json` is **yours after generation** — edit, add,

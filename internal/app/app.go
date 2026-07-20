@@ -264,6 +264,19 @@ func cmdUp(args []string, stdout io.Writer) error {
 	// agents upgrade. Bootstrap already wrote it via init's Scaffold; this
 	// covers the existing-config lanes.
 	if sc, err := resolveScope(parseFlags(args)); err == nil && sc.cfg != nil {
+		// A hand-written .ctxoptimize/ often carries ONLY config.json; the
+		// bootstrap lane that scaffolds the inert templates never runs when a
+		// config already exists (ADR 2026-07-19-up-progress-and-scaffold).
+		// Fill in what is MISSING — never overwriting anything present, so
+		// the brought-in config and any edited sample stay byte-identical.
+		created, err := project.EnsureSamples(sc.rootDir, sc.rootKey)
+		if err != nil {
+			return err
+		}
+		if len(created) > 0 {
+			fmt.Fprintf(stdout, "scaffolded %d missing template file(s) in %s/ — commit them: %s\n",
+				len(created), project.Dir, strings.Join(created, ", "))
+		}
 		changed, err := project.EnsureInstructions(sc.rootDir)
 		if err != nil {
 			return err

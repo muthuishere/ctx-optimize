@@ -259,6 +259,22 @@ Text outside the managed markers is never touched — add team notes freely.
 
 ---
 
+## Bring your own config
+
+### Hand-written `.ctxoptimize/config.json` → `up` completes the rest
+
+```sh
+$ mkdir -p .ctxoptimize && cp my-config.json .ctxoptimize/config.json
+$ ctx-optimize up
+scaffolded 4 missing template file(s) in .ctxoptimize/ — commit them: ...
+```
+
+Your `config.json` is never touched — nor is any sample you already edited.
+Only ABSENT files are written. (Avoid `--scan`, which regenerates
+`modules[]` by design.)
+
+---
+
 ## Reproduce all of this
 
 ```sh

@@ -241,14 +241,19 @@ var pullSample string
 // the module name), adapters/ seeded with an inert template, the inert
 // git-lane transport samples, and remote.example.md (transport authoring
 // guide). Existing files are never overwritten.
-func Scaffold(repo, name string) error {
+// EnsureSamples writes the inert template files — the adapter template, the
+// push/pull transport pair, and the remote recipe doc — that are MISSING
+// from .ctxoptimize/. It NEVER overwrites: a file that already exists is
+// left byte-for-byte alone, whether it is the pristine sample or one the
+// user edited. Returns the repo-relative paths actually created (nil when
+// everything was already there), so callers can report honestly.
+//
+// This is what lets `up` complete a hand-written .ctxoptimize/ that carries
+// only a config.json (ADR 2026-07-19-up-progress-and-scaffold) without ever
+// touching the config the user brought.
+func EnsureSamples(repo, name string) ([]string, error) {
 	if err := os.MkdirAll(filepath.Join(repo, filepath.FromSlash(AdaptersDir)), 0o755); err != nil {
-		return err
-	}
-	if _, err := os.Stat(path(repo)); os.IsNotExist(err) {
-		if err := Save(repo, &Config{Name: name}); err != nil {
-			return err
-		}
+		return nil, err
 	}
 	seed := []struct{ rel, body string }{
 		{AdaptersDir + "/example.js.sample", adapterTemplate},
@@ -260,13 +265,30 @@ func Scaffold(repo, name string) error {
 		// .env (the user's own, warned loudly if tracked), or the
 		// machine-global ~/.config/ctx-optimize/.env outside the repo.
 	}
+	var created []string
 	for _, s := range seed {
 		p := filepath.Join(repo, filepath.FromSlash(s.rel))
 		if _, err := os.Stat(p); os.IsNotExist(err) {
 			if err := os.WriteFile(p, []byte(s.body), 0o644); err != nil {
-				return err
+				return created, err
 			}
+			created = append(created, s.rel)
 		}
+	}
+	return created, nil
+}
+
+func Scaffold(repo, name string) error {
+	if err := os.MkdirAll(filepath.Join(repo, filepath.FromSlash(AdaptersDir)), 0o755); err != nil {
+		return err
+	}
+	if _, err := os.Stat(path(repo)); os.IsNotExist(err) {
+		if err := Save(repo, &Config{Name: name}); err != nil {
+			return err
+		}
+	}
+	if _, err := EnsureSamples(repo, name); err != nil {
+		return err
 	}
 	// instructions.md is the one scaffold file with REFRESH semantics: its
 	// managed block follows the binary version (upgrade-only; user text

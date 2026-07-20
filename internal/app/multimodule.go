@@ -31,6 +31,12 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/wiki"
 )
 
+// progressOut receives live progress ticks (stderr by default). Stdout is
+// reserved for the deterministic, ordered result output, so piping stdout
+// to a file stays clean and every stdout assertion is unaffected. Tests
+// swap this to capture ticks.
+var progressOut io.Writer = os.Stderr
+
 type scopeKind int
 
 const (
@@ -708,6 +714,20 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 	results := make([]result, len(tasks))
 	sem := make(chan struct{}, jobs)
 	var wg sync.WaitGroup
+	// Live progress (ADR 2026-07-19-up-progress-and-scaffold): worker output
+	// stays buffered so stdout is deterministic across --jobs, but a one-line
+	// tick per finished module goes to progressOut (stderr) the moment it
+	// lands — a fan-out over many modules is otherwise silent until every
+	// worker is done. Plain lines (no \r) keep CI logs readable.
+	var doneN int
+	var progressMu sync.Mutex
+	tick := func(label string) {
+		progressMu.Lock()
+		defer progressMu.Unlock()
+		doneN++
+		fmt.Fprintf(progressOut, "[%d/%d] %s\n", doneN, len(tasks), label)
+	}
+	fmt.Fprintf(progressOut, "gathering %d modules (jobs=%d)…\n", len(tasks), jobs)
 	for i := range tasks {
 		wg.Add(1)
 		go func(i int) {
@@ -715,6 +735,7 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			t := tasks[i]
+			defer func() { tick(t.label) }()
 			s, err := store.Open(storeRoot, t.storeKey)
 			if err != nil {
 				results[i].err = err

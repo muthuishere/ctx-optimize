@@ -21,7 +21,8 @@ ctx-optimize up
 **When**: always. Bare repo, fresh clone, teammate machine, CI, stale store —
 run it whenever, it's idempotent.
 **Why**: it looks at the state and does the right thing: no config →
-bootstraps (monorepos via scan) and gathers · committed config with a
+bootstraps (monorepos via scan) and gathers · config present but templates
+missing → fills in the inert samples (never overwriting anything you wrote) · committed config with a
 `remote.pull` and no local store → pulls the team's prebuilt graph (falls
 back to gathering, loudly) · declared module stores missing → gathers exactly
 those · stale vs git HEAD → fast re-gather · fresh → no-op. Recorded
@@ -72,7 +73,8 @@ nodes (producer-scoped truth). A >50% shrink of one producer is refused
 unless `--force` — that guard protects module stores; the monorepo root
 residual is exempt (its scope legitimately follows the module list). At a
 multi-module root it fans out one worker per module (`--jobs N`) and
-refreshes the navigator.
+refreshes the navigator, printing live `[3/17] services/api` progress to
+stderr while the detailed results stay ordered on stdout.
 
 ### `sync` — fast lane
 
