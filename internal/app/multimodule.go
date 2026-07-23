@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
+	"github.com/muthuishere/ctx-optimize/internal/extract/deplink"
 	"github.com/muthuishere/ctx-optimize/internal/extract/githistory"
 	"github.com/muthuishere/ctx-optimize/internal/extract/manifests"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
@@ -616,6 +617,14 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	batches = append(batches, mb)
 	if len(mb.Nodes) > 0 || len(mb.Edges) > 0 {
 		fmt.Fprintf(out, "manifests: %d nodes, %d edges\n", len(mb.Nodes), len(mb.Edges))
+	}
+	// Deplink lane: module:// → dep: bridges from this gather's own two
+	// batches. Always Replace, same reasoning — a dropped dependency must
+	// prune its resolves_to edges, never keep them silently.
+	dl := deplink.Link(cb, mb, deplink.GoModulePaths(base, dirs))
+	batches = append(batches, dl)
+	if len(dl.Edges) > 0 {
+		fmt.Fprintf(out, "deplink: %d resolves_to edges\n", len(dl.Edges))
 	}
 	// Co-change lane: edges only, best-effort (non-repo → empty batch).
 	// Always Replace, same reasoning as the code batch — an empty history

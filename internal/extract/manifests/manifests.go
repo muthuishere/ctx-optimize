@@ -82,7 +82,8 @@ func (c *collector) depNode(namespace, name string) string {
 }
 
 // declares emits the manifest-file → dependency edge (EXTRACTED — it is in
-// the file), carrying version_spec and scope.
+// the file), carrying version_spec and scope, plus the normalized
+// scope_class when the raw scope maps into the shared vocabulary.
 func (c *collector) declares(rel, depID, versionSpec, scope string) {
 	md := map[string]string{}
 	if versionSpec != "" {
@@ -90,6 +91,9 @@ func (c *collector) declares(rel, depID, versionSpec, scope string) {
 	}
 	if scope != "" {
 		md["scope"] = scope
+		if cls := scopeClass(scope); cls != "" {
+			md["scope_class"] = cls
+		}
 	}
 	c.edge(schema.Edge{
 		Source: rel, Target: depID, Relation: "declares",
@@ -196,6 +200,7 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		return nil, err
 	}
 	k8s.emit(c)
+	applyScopeAggregates(c)
 	b := &schema.Batch{Producer: ProducerName, Nodes: c.nodes, Edges: c.edges}
 	sort.Slice(b.Nodes, func(i, j int) bool { return b.Nodes[i].ID < b.Nodes[j].ID })
 	sort.Slice(b.Edges, func(i, j int) bool {

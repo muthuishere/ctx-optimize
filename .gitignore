@@ -16,6 +16,7 @@
 
 # local drafts (marketing / launch copy — never committed)
 /MARKETING.md
+/marketing/
 
 # os / editor
 .DS_Store
