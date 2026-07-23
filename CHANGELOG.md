@@ -10,6 +10,8 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-24
+
 ### Added
 
 - **Code → dependency links + normalized scope** (ADR
