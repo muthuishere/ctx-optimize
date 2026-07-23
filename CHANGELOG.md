@@ -12,6 +12,21 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Added
 
+- **Code → dependency links + normalized scope** (ADR
+  `openspec/changes/2026-07-23-code-dependency-edges/`, issue #5). A new
+  `deplink` producer bridges the code lane's `module://<import>` targets to
+  the manifest lane's `dep:<ns>/<name>` nodes with `resolves_to` edges, so
+  the graph answers "which files use package X" and `affected dep:npm/react`
+  crosses the dependency boundary to every importing file. Resolution is
+  exact for npm (subpath-stripped) and go (longest-prefix, the repo's own
+  go.mod module skipped), unambiguous-prefix-only for maven/nuget —
+  ambiguous candidates dropped, never guessed; all links `INFERRED` +
+  `synthesized_by`. Dependency scope is now filterable without a hardcoded
+  framework ignore-list: each `declares` edge carries a normalized
+  `scope_class` (`runtime|dev|peer|optional|test|build|indirect`) beside the
+  raw section name, and each `dep:` node carries a `scopes` aggregate.
+  Measured: +0.4–1.7% edges, ≤1.4 ms on a 220k-edge monorepo store
+  (`spikes.md`).
 - **Native sources — an env var holding a URL is the whole contract** (ADR
   `openspec/changes/2026-07-17-bundled-adapter-templates/`). Databases,
   buckets, queues, and external APIs enter the store with one declaration:
