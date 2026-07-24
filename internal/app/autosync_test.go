@@ -179,3 +179,32 @@ func TestSyncFlagsNoAdaptersNoSources(t *testing.T) {
 	runCLI(t, 0, "sync", "--adapters")
 	runCLI(t, 0, "sync", "--all")
 }
+
+// --no-wiki (the resync path, ADR 2026-07-24-wiki-scale): the graph refreshes
+// but the wiki is left untouched — query reads the graph, so it must still see
+// the edit while the wiki stays as it was.
+func TestSyncNoWikiRefreshesGraphNotWiki(t *testing.T) {
+	repo, storeRoot, key := setupIncremental(t, map[string]string{
+		"go.mod": "module ex\n\ngo 1.22\n", "main.go": baseMain,
+	})
+	wikiBefore := readFile(t, filepath.Join(storeRoot, key, "wiki"), "index.md")
+	mustWrite(t, repo, "main.go", baseMain+"func Beta() {}\n")
+
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+	out, _ := runCLI(t, 0, "sync", "--no-wiki")
+
+	if !strings.Contains(out, "wiki: skipped (resync") {
+		t.Fatalf("--no-wiki must report the wiki was skipped: %s", out)
+	}
+	if !strings.Contains(graphOf(t, storeRoot, key), "::Beta") {
+		t.Fatal("--no-wiki must still refresh the GRAPH (query source)")
+	}
+	if got := readFile(t, filepath.Join(storeRoot, key, "wiki"), "index.md"); got != wikiBefore {
+		t.Fatal("--no-wiki must leave the wiki untouched")
+	}
+}

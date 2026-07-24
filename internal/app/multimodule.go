@@ -671,7 +671,12 @@ func recordedSource(s *store.Store, absBase string) (freshness.Source, bool) {
 	return freshness.Source{}, false
 }
 
-func gatherInto(s *store.Store, base string, dirs, excludes []string, force, skipAdapters bool, out io.Writer) error {
+// skipWiki (lever 3 / --no-wiki, ADR 2026-07-24-wiki-scale): refresh the GRAPH
+// but leave the wiki untouched. Query/card/affected read the graph, never the
+// wiki, so a resync only needs the graph fresh; regenerating the per-file wiki
+// (O(files×degree) — ~98% of a Linux gather) is pure waste on that path. The
+// wiki refreshes on an explicit add / sync without --no-wiki.
+func gatherInto(s *store.Store, base string, dirs, excludes []string, force, skipAdapters, skipWiki bool, out io.Writer) error {
 	absBase, _ := filepath.Abs(base)
 	prev, hasPrev := recordedSource(s, absBase)
 	curHead, curHeadUnix, _ := gitHead(absBase)
@@ -781,7 +786,7 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 		wikiExists = true
 	}
 	pages := 0
-	if force || graphChanged || !wikiExists {
+	if !skipWiki && (force || graphChanged || !wikiExists) {
 		var werr error
 		if pages, werr = wiki.Generate(s); werr != nil {
 			return werr
@@ -806,6 +811,8 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	fmt.Fprintf(out, " → %s\n", s.Dir)
 	if pages > 0 {
 		fmt.Fprintf(out, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
+	} else if skipWiki {
+		fmt.Fprintf(out, "wiki: skipped (resync — graph is the query source; refresh with `sync` / `add`)\n")
 	} else {
 		fmt.Fprintf(out, "wiki: unchanged, skipped\n")
 	}
@@ -872,7 +879,7 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 			// comparison there refuses correct gathers (volentis 206717→3018),
 			// so the residual always replaces. Module stores keep the guard:
 			// their scope is stable, a >50% drop there still means a broken run.
-			results[i].err = gatherInto(s, t.base, t.dirs, t.excludes, force || t.residual, f.bools["no-adapters"], &results[i].out)
+			results[i].err = gatherInto(s, t.base, t.dirs, t.excludes, force || t.residual, f.bools["no-adapters"], f.bools["no-wiki"], &results[i].out)
 		}(i)
 	}
 	wg.Wait()

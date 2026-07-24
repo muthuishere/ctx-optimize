@@ -175,7 +175,9 @@ func anyStale(tasks []autosyncTask, storeRoot string) bool {
 // runAutosyncInline runs the code-only resync (block mode) — `sync`'s default
 // path — routed to stderr, forwarding only the scope-selecting flags.
 func runAutosyncInline(f *flags, stderr io.Writer) {
-	args := []string{"--no-adapters"}
+	// --no-wiki: resync refreshes the graph only; the wiki is off the query path
+	// (ADR 2026-07-24-wiki-scale) — never pay the wiki regen on a background sync.
+	args := []string{"--no-adapters", "--no-wiki"}
 	if p := f.strs["path"]; p != "" {
 		args = append(args, "--path", p)
 	} else {
@@ -277,7 +279,7 @@ func cmdAutosyncChild(args []string) error {
 	if dir == "" {
 		dir = "."
 	}
-	a := []string{"--no-adapters", "--path", dir}
+	a := []string{"--no-adapters", "--no-wiki", "--path", dir}
 	if st := f.strs["store"]; st != "" {
 		a = append(a, "--store", st)
 	}

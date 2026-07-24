@@ -393,7 +393,7 @@ func upCore(args []string, stdout io.Writer) error {
 					return err
 				}
 				fmt.Fprintf(stdout, "== %s\n", t.label)
-				if err := gatherInto(ts, t.base, t.dirs, t.excludes, f.bools["force"] || t.residual, f.bools["no-adapters"], stdout); err != nil {
+				if err := gatherInto(ts, t.base, t.dirs, t.excludes, f.bools["force"] || t.residual, f.bools["no-adapters"], f.bools["no-wiki"], stdout); err != nil {
 					return err
 				}
 			}
@@ -793,7 +793,7 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	if err != nil {
 		return err
 	}
-	if err := gatherInto(s, base, dirs, nil, f.bools["force"], f.bools["no-adapters"], stdout); err != nil {
+	if err := gatherInto(s, base, dirs, nil, f.bools["force"], f.bools["no-adapters"], f.bools["no-wiki"], stdout); err != nil {
 		return err
 	}
 	if sc.kind == scopeModule {
