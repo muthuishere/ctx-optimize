@@ -118,13 +118,14 @@ func TestEmptyPredPassthrough(t *testing.T) {
 
 func TestProjection(t *testing.T) {
 	n := nodes()[0]
+	n.Scope = "runtime" // F1: top-level scope now populated on dep nodes
 	m := ProjectNode(n, Fields("id,scope,metadata.scopes"))
 	if m["id"] != "dep:npm/react" || m["metadata.scopes"] != "runtime" {
 		t.Fatalf("projection = %v", m)
 	}
-	// 'scope' is not a real field and not metadata → nil (documents the F1 gap)
-	if m["scope"] != nil {
-		t.Fatalf("scope should be nil until promoted: %v", m["scope"])
+	// 'scope' is now a first-class field (F1) — projects the top-level value.
+	if m["scope"] != "runtime" {
+		t.Fatalf("scope should project the top-level field: %v", m["scope"])
 	}
 }
 

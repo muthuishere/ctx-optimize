@@ -72,6 +72,7 @@ func Link(codeB, manifestB *schema.Batch, goSelf []string) *schema.Batch {
 	sort.Slice(goMods, func(i, j int) bool { return len(goMods[i]) > len(goMods[j]) })
 
 	seen := map[string]bool{}
+	resolved := map[string]bool{} // module:// id -> did it resolve to a dep?
 	for _, n := range codeB.Nodes {
 		spec, ok := strings.CutPrefix(n.ID, modulePrefix)
 		if !ok || spec == "" {
@@ -81,12 +82,24 @@ func Link(codeB, manifestB *schema.Batch, goSelf []string) *schema.Batch {
 		if depID == "" || seen[n.ID+"\x00"+depID] {
 			continue
 		}
+		resolved[n.ID] = true
 		seen[n.ID+"\x00"+depID] = true
 		b.Edges = append(b.Edges, schema.Edge{
 			Source: n.ID, Target: depID, Relation: "resolves_to",
 			Confidence: schema.Inferred,
 			Metadata:   map[string]string{"ecosystem": ecosystem, "synthesized_by": ProducerName},
 		})
+	}
+
+	// F2 — undeclared-dependency drift (ADR 2026-07-23 follow-up): a SCOPED
+	// npm import (@scope/pkg) that resolves to no declared dep is almost always
+	// a workspace-internal package imported without being declared in this
+	// module's manifest — the reporter's "undeclared integration" signal.
+	// Scoped-only keeps false positives near zero. Emitted as a queryable
+	// node + file edges (nodes --kind undeclared_dependency / edges --relation
+	// undeclared_dependency). npm context only (len(npm) > 0).
+	if len(npm) > 0 {
+		linkUndeclared(b, codeB, resolved)
 	}
 	sort.Slice(b.Edges, func(i, j int) bool {
 		if b.Edges[i].Source != b.Edges[j].Source {
@@ -95,6 +108,67 @@ func Link(codeB, manifestB *schema.Batch, goSelf []string) *schema.Batch {
 		return b.Edges[i].Target < b.Edges[j].Target
 	})
 	return b
+}
+
+// linkUndeclared flags scoped-npm imports with no resolved dependency and
+// wires each importing file to a shared undeclared_dependency node.
+func linkUndeclared(b *schema.Batch, codeB *schema.Batch, resolved map[string]bool) {
+	// Which scoped module specs are undeclared?
+	undeclared := map[string]string{} // module:// id -> undeclared node id
+	for _, n := range codeB.Nodes {
+		spec, ok := strings.CutPrefix(n.ID, modulePrefix)
+		if !ok || !strings.HasPrefix(spec, "@") || resolved[n.ID] {
+			continue
+		}
+		name := npmName(spec) // @scope/pkg
+		id := "undeclared:npm/" + name
+		if _, done := undeclared[n.ID]; !done {
+			undeclared[n.ID] = id
+		}
+	}
+	if len(undeclared) == 0 {
+		return
+	}
+	// One node per undeclared package (dedup by id).
+	nodeSeen := map[string]bool{}
+	for _, id := range undeclared {
+		if nodeSeen[id] {
+			continue
+		}
+		nodeSeen[id] = true
+		name := strings.TrimPrefix(id, "undeclared:npm/")
+		b.Nodes = append(b.Nodes, schema.Node{
+			ID: id, Label: name, Kind: "undeclared_dependency", FileType: "manifest",
+			Source:   "deplink://undeclared/npm/" + name,
+			Metadata: map[string]string{"ecosystem": "npm", "producer": ProducerName, "synthesized_by": ProducerName},
+		})
+	}
+	// file --undeclared_dependency--> undeclared node, from the imports edges.
+	edgeSeen := map[string]bool{}
+	for _, e := range codeB.Edges {
+		if e.Relation != "imports" {
+			continue
+		}
+		id, ok := undeclared[e.Target]
+		if !ok {
+			continue
+		}
+		key := e.Source + "\x00" + id
+		if edgeSeen[key] {
+			continue
+		}
+		edgeSeen[key] = true
+		b.Edges = append(b.Edges, schema.Edge{
+			Source: e.Source, Target: id, Relation: "undeclared_dependency",
+			Confidence: schema.Inferred,
+			Metadata:   map[string]string{"ecosystem": "npm", "synthesized_by": ProducerName},
+		})
+	}
+	sortNodes(b.Nodes)
+}
+
+func sortNodes(ns []schema.Node) {
+	sort.Slice(ns, func(i, j int) bool { return ns[i].ID < ns[j].ID })
 }
 
 type mavenDep struct{ group, id string }

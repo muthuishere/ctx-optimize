@@ -74,8 +74,14 @@ func (p Pred) MatchNode(n schema.Node) bool {
 	if p.Producer != "" && n.Metadata["producer"] != p.Producer {
 		return false
 	}
-	if p.ScopeContains != "" && !strings.Contains(n.Metadata["scopes"], p.ScopeContains) {
-		return false
+	if p.ScopeContains != "" {
+		scope := n.Scope
+		if scope == "" {
+			scope = n.Metadata["scopes"] // back-compat for pre-F1 stores
+		}
+		if !strings.Contains(scope, p.ScopeContains) {
+			return false
+		}
 	}
 	return matchWhere(p.Where, n.Metadata, func(k string) (string, bool) {
 		return nodeField(n, k)
@@ -153,6 +159,8 @@ func nodeField(n schema.Node, k string) (string, bool) {
 		return n.Source, true
 	case "location":
 		return n.Location, true
+	case "scope":
+		return n.Scope, true
 	}
 	return "", false
 }

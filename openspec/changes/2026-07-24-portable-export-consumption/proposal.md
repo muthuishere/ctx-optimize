@@ -21,13 +21,24 @@ SHIPPED on `feat/native-filters` (task ci + task golden green):
 - SKILL.md routing rows: explicit "use `nodes`/`edges`/`deps`, NEVER `export | jq`".
 - CLI `--help` for the new verbs.
 
-DEFERRED (follow-ups, documented): gojq `--jq` escape hatch; `--select`/
-`--ndjson` projection on card/change-plan/path/explain/verify + `affected`
-`--kind` post-filter; the remaining 6 agent surfaces (instructions template +
-version stamp, hook-context strings, pointer blocks, README/cookbook); the
-streaming ReadBytes O(1) fast path (v1 reuses the store's already-safe 16 MB
-loader, so the jq-ratio/RSS floor from the stress test applies to that future
-lane, not v1 — v1 has a wall-ceiling guard instead).
+ALSO SHIPPED (completion pass 2026-07-24):
+- `affected --kind`/`--ndjson` post-filter, `hubs --kind`/`--ndjson` pre-rank.
+- Agent surfaces: instructions.md template verb-table row, 3 hook-context
+  strings, 3 pointer-block generators, README + npm/README examples.
+- F1 (deplink ADR): top-level `schema.Node.Scope`, populated by manifests
+  (metadata.scopes kept for back-compat), filterable + projectable.
+- F2 (deplink ADR): `undeclared_dependency` drift — scoped-npm imports with no
+  declared dep flagged as queryable nodes + file edges (`nodes --kind
+  undeclared_dependency`). Scoped-only = near-zero false positives.
+
+DEFERRED (intentional, low value): gojq `--jq` (dropped — native verbs +
+`--ndjson` + OS tools cover it; keeps the binary lean, +69 KB only, no dep);
+`--select`/`--ndjson` on single-answer verbs card/change-plan/path/explain/
+verify (their `--json` is already directly consumable — you don't jq one
+object); docs/cookbook.md entry; the streaming ReadBytes O(1) fast path (v1
+reuses the store's already-safe 16 MB loader; verified no slowdown —
+unfiltered query 0.68s vs 0.70s, deps 10 ms, filter short-circuits on empty
+predicate).
 
 ## Decisions (locked)
 

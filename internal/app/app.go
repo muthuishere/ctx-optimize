@@ -1546,7 +1546,7 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 		if len(nodes) == 0 {
 			return nil
 		}
-		msg = fmt.Sprintf("You are inside module %q of a multi-module repo with a pre-built ctx-optimize knowledge store (%d nodes for this module). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. Answers are scoped to this module; zero hits auto-escalate repo-wide (`--root` forces it). Output is parsed fact with file:line — cite it directly. TOOL CHOICE: symbols/structure/callers → store verbs; exact literal strings, config VALUES, comments, member fields → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. When the answer depends on BEHAVIOR, read the cited range — that is the point of the location. Before a human acts on a citation: `ctx-optimize verify \"<label or file:L10-L20>\"`.", sc.moduleName, len(nodes))
+		msg = fmt.Sprintf("You are inside module %q of a multi-module repo with a pre-built ctx-optimize knowledge store (%d nodes for this module). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>` · list/filter by kind or relation (no jq, all modules): `ctx-optimize nodes --kind K` / `edges --relation R` / `deps --scope dev`. Answers are scoped to this module; zero hits auto-escalate repo-wide (`--root` forces it). Output is parsed fact with file:line — cite it directly. TOOL CHOICE: symbols/structure/callers → store verbs; exact literal strings, config VALUES, comments, member fields → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. When the answer depends on BEHAVIOR, read the cited range — that is the point of the location. Before a human acts on a citation: `ctx-optimize verify \"<label or file:L10-L20>\"`.", sc.moduleName, len(nodes))
 	case sc.kind == scopeRoot && len(sc.modules) > 0:
 		total := len(nodes)
 		count := 0
@@ -1563,12 +1563,12 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 		if total == 0 {
 			return nil
 		}
-		msg = fmt.Sprintf("This is a multi-module repo with a pre-built ctx-optimize knowledge store: %d modules, %d nodes total, plus a navigator (module map + hubs at `~/ctxoptimize/%s/navigator.md`). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. From the root, query federates across the best-matching modules; run inside a module dir to scope to it. Output is parsed fact with file:line — cite it directly. TOOL CHOICE: symbols/structure/callers → store verbs; exact literal strings, config VALUES, comments, member fields → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. When the answer depends on BEHAVIOR, read the cited range — that is the point of the location. Before a human acts on a citation: `ctx-optimize verify \"<label or file:L10-L20>\"`.", count, total, sc.rootKey)
+		msg = fmt.Sprintf("This is a multi-module repo with a pre-built ctx-optimize knowledge store: %d modules, %d nodes total, plus a navigator (module map + hubs at `~/ctxoptimize/%s/navigator.md`). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>` · list/filter by kind or relation (no jq, all modules): `ctx-optimize nodes --kind K` / `edges --relation R` / `deps --scope dev`. From the root, query federates across the best-matching modules; run inside a module dir to scope to it. Output is parsed fact with file:line — cite it directly. TOOL CHOICE: symbols/structure/callers → store verbs; exact literal strings, config VALUES, comments, member fields → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. When the answer depends on BEHAVIOR, read the cited range — that is the point of the location. Before a human acts on a citation: `ctx-optimize verify \"<label or file:L10-L20>\"`.", count, total, sc.rootKey)
 	default:
 		if len(nodes) == 0 {
 			return nil
 		}
-		msg = fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks. TOOL CHOICE: symbols/structure/callers → store verbs; exact literal strings, config VALUES, comments, member fields → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. When the answer depends on BEHAVIOR, read the cited range — that is the point of the location. Before a human acts on a citation: `ctx-optimize verify \"<label or file:L10-L20>\"`.", len(nodes))
+		msg = fmt.Sprintf("This repo has a pre-built ctx-optimize knowledge store (%d nodes). Use it INSTEAD of grep-and-read. PICK BY INTENT — find something: `ctx-optimize query \"<2-4 terms>\"` · inspect a known symbol (sig/doc/callers, no file read): `ctx-optimize card <symbol>` · ABOUT TO EDIT a symbol (one call = callers + blast radius + which tests to run): `ctx-optimize change-plan <symbol>` · blast radius only: `ctx-optimize affected <symbol>` · list/filter by kind or relation (no jq, all modules): `ctx-optimize nodes --kind K` / `edges --relation R` / `deps --scope dev`. Output is parsed fact with file:line — cite it directly; open files only for what the store lacks. TOOL CHOICE: symbols/structure/callers → store verbs; exact literal strings, config VALUES, comments, member fields → grep directly (the store does not index those — say so and grep). Two store misses = switch tools, not words. When the answer depends on BEHAVIOR, read the cited range — that is the point of the location. Before a human acts on a citation: `ctx-optimize verify \"<label or file:L10-L20>\"`.", len(nodes))
 	}
 	t0 := time.Now()
 	cw := &countingWriter{w: stdout}
@@ -1636,9 +1636,31 @@ func cmdAffected(args []string, stdout io.Writer) error {
 	if aerr != nil {
 		return aerr
 	}
+	// Post-filter the blast set by the shared predicate (e.g. --kind test →
+	// "which impacted nodes are tests"). Node-dims only; ordering preserved.
+	if pred, perr := graphfilter.ParsePred(f.strs); perr != nil {
+		return perr
+	} else if !pred.Empty() {
+		kept := impacts[:0:0]
+		for _, im := range impacts {
+			if pred.MatchNode(im.Node) {
+				kept = append(kept, im)
+			}
+		}
+		impacts = kept
+	}
 	note := ""
 	if sc != nil && sc.kind == scopeModule && crossModuleEcho(sc, storeRoot, target.Label) {
 		note = boundaryNote
+	}
+	if f.bools["ndjson"] {
+		enc := json.NewEncoder(stdout)
+		for _, im := range impacts {
+			if err := enc.Encode(im); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	if f.bools["json"] {
 		out := map[string]any{"target": target, "affected": impacts}
@@ -1680,7 +1702,23 @@ func cmdHubs(args []string, stdout io.Writer) error {
 			top = n
 		}
 	}
+	// Pre-filter so hubs rank WITHIN the kind (e.g. --kind file → top file
+	// hubs), not "top hubs, keep files".
+	if pred, perr := graphfilter.ParsePred(f.strs); perr != nil {
+		return perr
+	} else if !pred.Empty() {
+		nodes, edges = graphfilter.Apply(nodes, edges, pred)
+	}
 	hubs := analyze.Hubs(nodes, edges, top)
+	if f.bools["ndjson"] {
+		enc := json.NewEncoder(stdout)
+		for _, h := range hubs {
+			if err := enc.Encode(h); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if f.bools["json"] {
 		return emit(stdout, map[string]any{"hubs": hubs})
 	}

@@ -34,6 +34,7 @@ type Node struct {
 	FileType string            `json:"file_type"`          // code|document|schema|infra|...
 	Source   string            `json:"source"`             // repo-relative path or adapter URI (pg://db/table)
 	Location string            `json:"location,omitempty"` // "L42" or "L42-L60"
+	Scope    string            `json:"scope,omitempty"`    // dependency nodes: normalized scope class(es), e.g. "runtime" / "dev,runtime" (mirrors metadata["scopes"]; ADR 2026-07-23 F1)
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 

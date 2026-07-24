@@ -221,9 +221,13 @@ func emitDepsWithImporters(w io.Writer, deps []schema.Node, importers map[string
 	}
 	rows := make([]depOut, len(deps))
 	for i, d := range deps {
+		scopes := d.Scope
+		if scopes == "" {
+			scopes = d.Metadata["scopes"]
+		}
 		rows[i] = depOut{
 			ID: d.ID, Label: d.Label,
-			Scopes:    d.Metadata["scopes"],
+			Scopes:    scopes,
 			Ecosystem: d.Metadata["ecosystem"],
 		}
 		if withImporters {

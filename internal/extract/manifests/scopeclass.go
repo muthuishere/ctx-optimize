@@ -82,9 +82,11 @@ func applyScopeAggregates(c *collector) {
 			classes = append(classes, cls)
 		}
 		sort.Strings(classes)
+		joined := strings.Join(classes, ",")
 		if c.nodes[i].Metadata == nil {
 			c.nodes[i].Metadata = map[string]string{}
 		}
-		c.nodes[i].Metadata["scopes"] = strings.Join(classes, ",")
+		c.nodes[i].Metadata["scopes"] = joined // back-compat
+		c.nodes[i].Scope = joined              // F1: top-level, the field consumers reach for first
 	}
 }

@@ -333,7 +333,8 @@ func pointerBlock(name string, modules int) string {
 			fmt.Sprintf("one graph per module + a navigator, %d modules declared in `.ctxoptimize/config.json`.</store>\n", modules) +
 			"  <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
 			"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one\n" +
-			"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>`.\n" +
+			"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·\n" +
+			"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps --scope dev`.\n" +
 			"  Scope follows your cwd: a module dir answers from that module (zero hits escalate repo-wide); the root\n" +
 			"  federates via the navigator (`~/ctxoptimize/" + name + "/navigator.md`; `--modules all|a,b` widens).\n" +
 			"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source.\n" +
@@ -350,7 +351,8 @@ func pointerBlock(name string, modules int) string {
 		"  <store>Pre-built knowledge store at `~/ctxoptimize/" + name + "/` (config in `.ctxoptimize/` here).</store>\n" +
 		"  <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
 		"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one\n" +
-		"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` · wiki at\n" +
+		"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·\n" +
+		"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps`. wiki at\n" +
 		"  `~/ctxoptimize/" + name + "/wiki/`. Output is parsed fact with exact file:line — cite it directly, do\n" +
 		"  NOT re-verify in source; open a file only for a body the store didn't show. Exhaustive literal-string\n" +
 		"  sweeps stay grep's job.</use>\n" +
@@ -509,7 +511,8 @@ func globalBlock() string {
 		"  means a pre-built knowledge graph of that codebase already exists. Use it BEFORE any\n" +
 		"  Grep/rg/Glob/find or exploratory Read — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
 		"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests,\n" +
-		"  one call) · blast radius → `affected <symbol>` · connection → `path <a> <b>`.\n" +
+		"  one call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·\n" +
+		"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps --scope dev`.\n" +
 		"  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source;\n" +
 		"  open a file only for a body the store didn't show. Exhaustive literal-string sweeps stay grep's job.\n" +
 		"  The repo's committed usage card at `.ctxoptimize/instructions.md` is the deep doc — verify\n" +
