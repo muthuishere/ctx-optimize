@@ -1,0 +1,239 @@
+{
+  "machine": "Apple M5 Pro, 18 cores, 48 GB",
+  "versions": {
+    "ctx-optimize": "ctx-optimize v0.7.0-dirty (66c9705, 2026-07-24T04:51:00Z)",
+    "graphify": "graphify 0.9.12",
+    "ast-grep": "ast-grep 0.45.0",
+    "codegraph": "1.5.0",
+    "gitnexus": "1.6.9"
+  },
+  "corpora": {
+    "corpus-flask": {
+      "files": 265,
+      "ctx-optimize": {
+        "cold_s": 0.529,
+        "warm_s": 0.557,
+        "nodes": 2381,
+        "edges": 3835,
+        "store_bytes": 1496313,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 0.863,
+        "warm_s": 0.771,
+        "nodes": 1473,
+        "edges": 2801,
+        "store_bytes": 3315943,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM; fastest path)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 0.458,
+        "warm_s": 0.143,
+        "nodes": 2705,
+        "edges": 5168,
+        "store_bytes": 5206016,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite backend, no embeddings/LLM)",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled via CODEGRAPH_TELEMETRY=0)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 6.523,
+        "warm_s": 5.341,
+        "nodes": 2201,
+        "edges": 3658,
+        "store_bytes": 63400427,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM)",
+        "runtime_deps": "none (local LadybugDB; FTS extension unavailable in this sandbox, noted in log)",
+        "error": null,
+        "_registry_name": "bench-corpus-flask"
+      },
+      "query": {
+        "question": "route decorator handling",
+        "ctx-optimize_ms": 59,
+        "graphify_ms": 307,
+        "codegraph_ms": 416,
+        "codegraph_query_term": "route",
+        "gitnexus_ms": 3778,
+        "ast-grep_ms": 40,
+        "ast-grep_pattern": "def $NAME($$$):",
+        "ast-grep_lang": "python"
+      }
+    },
+    "corpus-gin": {
+      "files": 159,
+      "ctx-optimize": {
+        "cold_s": 0.566,
+        "warm_s": 0.585,
+        "nodes": 2063,
+        "edges": 4325,
+        "store_bytes": 1473362,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 0.784,
+        "warm_s": 0.748,
+        "nodes": 1975,
+        "edges": 4866,
+        "store_bytes": 4964924,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM; fastest path)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 0.615,
+        "warm_s": 0.147,
+        "nodes": 2531,
+        "edges": 8041,
+        "store_bytes": 8065024,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite backend, no embeddings/LLM)",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled via CODEGRAPH_TELEMETRY=0)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 7.885,
+        "warm_s": 5.289,
+        "nodes": 2823,
+        "edges": 8086,
+        "store_bytes": 76232930,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM)",
+        "runtime_deps": "none (local LadybugDB; FTS extension unavailable in this sandbox, noted in log)",
+        "error": null,
+        "_registry_name": "bench-corpus-gin"
+      },
+      "query": {
+        "question": "router group handling",
+        "ctx-optimize_ms": 49,
+        "graphify_ms": 345,
+        "codegraph_ms": 368,
+        "codegraph_query_term": "router",
+        "gitnexus_ms": 3457,
+        "ast-grep_ms": 52,
+        "ast-grep_pattern": "func $NAME($$$) { $$$ }",
+        "ast-grep_lang": "go"
+      }
+    },
+    "corpus-ctx-src": {
+      "files": 207,
+      "ctx-optimize": {
+        "cold_s": 0.537,
+        "warm_s": 0.575,
+        "nodes": 1742,
+        "edges": 4480,
+        "store_bytes": 1690364,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 1.333,
+        "warm_s": 1.341,
+        "nodes": 1825,
+        "edges": 5656,
+        "store_bytes": 6741643,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM; fastest path)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 0.798,
+        "warm_s": 0.131,
+        "nodes": 3230,
+        "edges": 9830,
+        "store_bytes": 12001280,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite backend, no embeddings/LLM)",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled via CODEGRAPH_TELEMETRY=0)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 13.428,
+        "warm_s": 9.22,
+        "nodes": 4042,
+        "edges": 15026,
+        "store_bytes": 143769009,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM)",
+        "runtime_deps": "none (local LadybugDB; FTS extension unavailable in this sandbox, noted in log)",
+        "error": null,
+        "_registry_name": "bench-corpus-ctx-src"
+      },
+      "query": {
+        "question": "store merge producer",
+        "ctx-optimize_ms": 31,
+        "graphify_ms": 341,
+        "codegraph_ms": 464,
+        "codegraph_query_term": "store",
+        "gitnexus_ms": 3124,
+        "ast-grep_ms": 49,
+        "ast-grep_pattern": "func $NAME($$$) { $$$ }",
+        "ast-grep_lang": "go"
+      }
+    },
+    "corpus-graphify-src": {
+      "files": 754,
+      "ctx-optimize": {
+        "cold_s": 1.174,
+        "warm_s": 1.233,
+        "nodes": 12512,
+        "edges": 21150,
+        "store_bytes": 9428079,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 5.429,
+        "warm_s": 8.609,
+        "nodes": 11863,
+        "edges": 21997,
+        "store_bytes": 26862764,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM; fastest path)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 1.9,
+        "warm_s": 0.2,
+        "nodes": 7808,
+        "edges": 22276,
+        "store_bytes": 26284032,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite backend, no embeddings/LLM)",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled via CODEGRAPH_TELEMETRY=0)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 18.489,
+        "warm_s": 27.928,
+        "nodes": 13767,
+        "edges": 26749,
+        "store_bytes": 201322994,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM)",
+        "runtime_deps": "none (local LadybugDB; FTS extension unavailable in this sandbox, noted in log)",
+        "error": null,
+        "_registry_name": "bench-corpus-graphify-src"
+      },
+      "query": {
+        "question": "graph extraction parse",
+        "ctx-optimize_ms": 82,
+        "graphify_ms": 1091,
+        "codegraph_ms": 182,
+        "codegraph_query_term": "graph",
+        "gitnexus_ms": 1912,
+        "ast-grep_ms": 80,
+        "ast-grep_pattern": "def $NAME($$$):",
+        "ast-grep_lang": "python"
+      }
+    }
+  },
+  "commit_shas": {
+    "ctx-optimize (this repo)": "8a5057ba2f185f8d2fcaee6d724bdf46b1351f8b",
+    "graphify": "2fa6cd3d5548577f8c5f591b713f0bf80c1af183",
+    "codegraph": "572d22bfbe82602080e457bec655f72e3314f9ef",
+    "gitnexus": "91b22676ceaa66ce7941fcb146ffc68ff9a144e6"
+  },
+  "ast_grep_note": "pre-installed globally per instructions (v0.45.0), not cloned"
+}

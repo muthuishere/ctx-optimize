@@ -1,0 +1,708 @@
+{
+  "method": "Correctness: definition location (file+symbol \u22650.75); Coverage: presence of signature+docstring",
+  "date": "2026-07-24",
+  "results_by_qid": {
+    "corpus-ctx-src_q1": {
+      "target": "cmdQuery(app.go)",
+      "arms": {
+        "baseline": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 441,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 9290,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 17963,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 2496,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 6344,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 1736,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6891,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-ctx-src_q2": {
+      "target": "loadGraphScoped(app.go)",
+      "arms": {
+        "baseline": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 1364,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 4406,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 21496,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 3142,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 691,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 2013,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 7368,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-ctx-src_q3": {
+      "target": "Merge(store.go)",
+      "arms": {
+        "baseline": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 101890,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 8770,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 17774,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 4582,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6476,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.75,
+          "coverage": 1.0,
+          "ctx_bytes": 771,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6895,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-flask_q1": {
+      "target": "url_for(helpers.py)",
+      "arms": {
+        "baseline": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 5693,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 20744,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 19927,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 1031,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6471,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 329,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6024,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-flask_q2": {
+      "target": "send_file(helpers.py)",
+      "arms": {
+        "baseline": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 5664,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 15467,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 19904,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 1462,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 923,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 2239,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 5761,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-flask_q3": {
+      "target": "dispatch_request(views.py)",
+      "arms": {
+        "baseline": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 4569,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 7648,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 19923,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 2225,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6449,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.75,
+          "coverage": 1.0,
+          "ctx_bytes": 794,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 5634,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-flask_q4": {
+      "target": "Flask(app.py)",
+      "arms": {
+        "baseline": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 5322,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 179612,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 19907,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 4103,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6491,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 1083,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6219,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-gin_q1": {
+      "target": "JSON(context.go)",
+      "arms": {
+        "baseline": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 6146,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 3421,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 13984,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 1710,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 6401,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 346,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 5101,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-gin_q2": {
+      "target": "ServeHTTP(server.go)",
+      "arms": {
+        "baseline": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 4336,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 2006,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 13265,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 1017,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 1616,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 575,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 5755,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-gin_q3": {
+      "target": "Handle(gin.go)",
+      "arms": {
+        "baseline": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 5118,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 863,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 14799,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 1195,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6402,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 543,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 6550,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-gin_q4": {
+      "target": "addRoute(gin.go)",
+      "arms": {
+        "baseline": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 5055,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 12976,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 13388,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 994,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 1.0,
+          "coverage": 0.5,
+          "ctx_bytes": 6469,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.75,
+          "coverage": 1.0,
+          "ctx_bytes": 569,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 1.0,
+          "coverage": 1.0,
+          "ctx_bytes": 5373,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-graphify-src_q1": {
+      "target": "to_json(main.py)",
+      "arms": {
+        "baseline": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 6762,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 12646,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 24672,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 2592,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 6432,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 3691,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 0,
+          "coverage": 0,
+          "ctx_bytes": 5588,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-graphify-src_q2": {
+      "target": "node_link_graph(main.py)",
+      "arms": {
+        "baseline": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 7324,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 4613,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 22726,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 0,
+          "coverage": 0,
+          "ctx_bytes": 6940,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 0,
+          "coverage": 0,
+          "ctx_bytes": 6468,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 903,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 0,
+          "coverage": 0,
+          "ctx_bytes": 6244,
+          "note": "ok"
+        }
+      }
+    },
+    "corpus-graphify-src_q3": {
+      "target": "cluster(main.py)",
+      "arms": {
+        "baseline": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 8595,
+          "note": "ok"
+        },
+        "ast-grep": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 19958,
+          "note": "ok"
+        },
+        "codegraph": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 12517,
+          "note": "ok"
+        },
+        "gitnexus": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 1068,
+          "note": "ok"
+        },
+        "graphify": {
+          "correctness": 0.5,
+          "coverage": 0,
+          "ctx_bytes": 1202,
+          "note": "ok"
+        },
+        "ctx-optimize__card": {
+          "correctness": 0.5,
+          "coverage": 1.0,
+          "ctx_bytes": 2034,
+          "note": "ok"
+        },
+        "ctx-optimize__query": {
+          "correctness": 0.5,
+          "coverage": 0.5,
+          "ctx_bytes": 4483,
+          "note": "ok"
+        }
+      }
+    }
+  },
+  "summary_by_tool": {
+    "baseline": {
+      "mean_correctness": 0.7142857142857143,
+      "mean_coverage": 0.7142857142857143,
+      "mean_ctx_bytes": 12019.92857142857,
+      "n_questions": 14
+    },
+    "ast-grep": {
+      "mean_correctness": 0.8214285714285714,
+      "mean_coverage": 0.8214285714285714,
+      "mean_ctx_bytes": 21601.428571428572,
+      "n_questions": 14
+    },
+    "codegraph": {
+      "mean_correctness": 0.8571428571428571,
+      "mean_coverage": 1.0,
+      "mean_ctx_bytes": 18017.5,
+      "n_questions": 14
+    },
+    "gitnexus": {
+      "mean_correctness": 0.7857142857142857,
+      "mean_coverage": 0.39285714285714285,
+      "mean_ctx_bytes": 2468.3571428571427,
+      "n_questions": 14
+    },
+    "graphify": {
+      "mean_correctness": 0.8214285714285714,
+      "mean_coverage": 0.5357142857142857,
+      "mean_ctx_bytes": 4916.785714285715,
+      "n_questions": 14
+    },
+    "ctx-optimize__card": {
+      "mean_correctness": 0.6607142857142857,
+      "mean_coverage": 0.75,
+      "mean_ctx_bytes": 1259.0,
+      "n_questions": 14
+    },
+    "ctx-optimize__query": {
+      "mean_correctness": 0.7857142857142857,
+      "mean_coverage": 0.7857142857142857,
+      "mean_ctx_bytes": 5991.857142857143,
+      "n_questions": 14
+    }
+  }
+}
