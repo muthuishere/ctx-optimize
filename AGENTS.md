@@ -39,14 +39,16 @@ the validated `add --json` door.
   (install later with `npm install -g @muthuishere/ctx-optimize`, or download the binary). Everything
   below applies ONLY when the command exists.</precondition>
   <store>Pre-built knowledge store at `~/ctxoptimize/ctx-optimize/` (config in `.ctxoptimize/` here).</store>
-  <use>For questions about this codebase — where is X, how does Y work, who calls Z, what breaks if I change W —
-  use it INSTEAD of grep-and-read chains, not in addition:
-  PICK BY INTENT — find: `ctx-optimize query "<terms>"` · inspect a symbol: `ctx-optimize card <symbol>` ·
-  about to EDIT: `ctx-optimize change-plan <symbol>` (callers+impact+tests, one call) · blast radius:
-  `ctx-optimize affected <symbol>` · `ctx-optimize path <a> <b>` · wiki at `~/ctxoptimize/ctx-optimize/wiki/`.
-  Output is parsed fact with exact file:line — cite it directly, do NOT re-verify in source; open a file only
-  when the answer needs a body the store didn't show. Exhaustive text sweeps (every literal occurrence of a
-  string) are still grep's job.</use>
+  <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query "<terms>"` ·
+  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one
+  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·
+  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps`. wiki at
+  `~/ctxoptimize/ctx-optimize/wiki/`. Output is parsed fact with exact file:line — cite it directly, do
+  NOT re-verify in source; open a file only for a body the store didn't show. Exhaustive literal-string
+  sweeps stay grep's job.</use>
+  <deep-doc>The FULL usage card — verify discipline, store-vs-grep ladder, sources (databases/
+  buckets/queues/APIs by env-var name), remote push/pull, `up` — is committed at
+  `.ctxoptimize/instructions.md`. Read it before deeper store work.</deep-doc>
   <no-local-store>Fresh clone with nothing at `~/ctxoptimize/ctx-optimize/`? Run `ctx-optimize up` —
   it pulls the team's prebuilt store when the config declares one, otherwise rebuilds in seconds.</no-local-store>
 </ctx-optimize>

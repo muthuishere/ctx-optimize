@@ -1,4 +1,4 @@
-<!-- ctx-optimize:instructions:begin v0.0.0-dev -->
+<!-- ctx-optimize:instructions:begin vv0.8.0-12-ga0ff582-dirty -->
 # ctx-optimize — the usage card for this repo's knowledge store
 
 **ctx-optimize is a SHELL COMMAND (a CLI on PATH), not a callable tool: run
@@ -34,6 +34,7 @@ CI gate: `up && fresh`.
 | **Blast radius** — is it safe to change | `ctx-optimize affected <symbol> --depth 2 --json` |
 | **Connection** — how are A and B related | `ctx-optimize path "A" "B" --json` |
 | **Orient** — where do I start | `ctx-optimize hubs --top 10 --json` |
+| **List / filter** — every node of a kind, edges of a relation, deps by scope ("all k8s services", "which files use react", "our dev deps") | `ctx-optimize nodes --kind K` / `edges --relation R` / `deps --scope dev [--importers]` — native, portable, **never `export \| jq`** |
 
 Query with 2–4 terms, not sentences; `card` wants the exact label (query the
 short name first if unsure). Output is parsed fact with exact `file:line` —
