@@ -10,6 +10,29 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-07-24
+
+### Fixed
+
+- **Definitions beat import stubs and tests** (ADR
+  `openspec/changes/2026-07-24-answer-quality/`, F1/F2 — the measured `card`
+  0.66 judge score). `card url_for` on flask returned the `module://url_for`
+  import stub (no signature, no body, no file:line) because exact-label ties
+  broke by smallest ID; `query "where is url_for defined"` ranked tests and
+  stubs above the definition. Now: real declarations outrank `module://` stubs
+  at every resolve tier, and query downranks stubs (×0.25) and test-file nodes
+  (×0.5) unless the question itself asks about imports/tests. `card url_for` →
+  `src/flask/helpers.py L200-L251`. No perf change (~10ms queries).
+- Instructions marker no longer stamps `vv0.8.0-…` on dev builds.
+
+### Changed
+
+- Agent skills + committed usage card teach the 0.9.0 surface:
+  `--include-content`, `sync --adapters/--all/--no-wiki`, autosync config,
+  `node`/`impact` aliases.
+- Golden net pins the 0-change resync short-circuit (message + ceiling) — the
+  incremental-sync win may only move down.
+
 ## [0.9.0] — 2026-07-24
 
 ### Added
