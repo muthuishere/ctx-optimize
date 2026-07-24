@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ctx-optimize — get the real answer from your AI, not a guess</title>
+<meta name="description" content="Give your coding agent cited file:line answers about any codebase — where is X, who calls Y, what breaks if I change Z. Fewer wrong turns, lower token bills, answers you can trust. One static Go binary, no database, no server, no LLM at query time.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0c10; --bg2:#0f1319; --panel:#141a22; --border:#1f2833; --border2:#2b3644;
+  --text:#e8edf4; --muted:#94a3b8; --dim:#64748b;
+  --accent:#4ade80; --accent-dim:#166534; --contrast:#f87171;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;
+  --disp:"Space Grotesk","Inter",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;font-size:16px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 40px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:.92em;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.1em .4em}
+::selection{background:var(--accent-dim);color:#fff}
+
+/* nav */
+nav{position:sticky;top:0;z-index:50;background:rgba(10,12,16,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
+.logo{font-family:var(--disp);font-weight:700;font-size:1.1rem;color:var(--text)}
+.logo em{color:var(--accent);font-style:normal}
+nav ul{display:flex;gap:28px;list-style:none}
+nav ul a{color:var(--muted);font-size:.88rem;font-weight:500}
+nav ul a:hover{color:var(--text);text-decoration:none}
+
+/* hero */
+.hero{padding:72px 0 64px;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;background:radial-gradient(900px 420px at 70% -10%,rgba(74,222,128,.09),transparent 60%);pointer-events:none}
+.kicker{font-family:var(--mono);font-size:.82rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:22px}
+h1{font-family:var(--disp);font-weight:700;font-size:clamp(2.4rem,5.6vw,4.2rem);line-height:1.06;letter-spacing:-.025em;max-width:820px}
+h1 .ghost{color:var(--dim)}
+.lede{margin-top:26px;font-size:1.22rem;color:var(--muted);max-width:640px}
+.lede b{color:var(--text);font-weight:600}
+.cta{margin-top:38px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-block;font-weight:600;font-size:.95rem;border-radius:10px;padding:13px 26px;transition:transform .15s ease}
+.btn:hover{text-decoration:none;transform:translateY(-1px)}
+.btn-primary{background:var(--accent);color:#052e12}
+.btn-ghost{border:1px solid var(--border2);color:var(--text)}
+
+/* the number */
+.bignum{padding:80px 0}
+.bignum .frame{background:linear-gradient(180deg,var(--bg2),var(--bg));border:1px solid var(--border);border-radius:20px;padding:56px 56px 48px}
+.bignum h2{font-family:var(--disp);font-size:1.05rem;font-weight:500;color:var(--muted);letter-spacing:.01em}
+.bignum h2 b{color:var(--text)}
+.bars{margin-top:36px;display:grid;gap:26px}
+.bar-row{display:grid;grid-template-columns:150px 1fr;gap:18px;align-items:center}
+.bar-label{font-family:var(--mono);font-size:.85rem;color:var(--muted);text-align:right}
+.bar-track{position:relative;height:44px}
+.bar{height:100%;border-radius:8px;display:flex;align-items:center;min-width:fit-content}
+.bar span{font-family:var(--mono);font-weight:600;font-size:1.05rem;padding:0 14px;white-space:nowrap}
+.bar-us{background:var(--accent);color:#052e12;width:7.6%}
+.bar-them{background:#232b36;color:var(--muted);width:100%;border:1px solid var(--border2)}
+.bar-us.q{width:26%}
+.bar-them.q{width:100%}
+.bignum .foot{margin-top:34px;font-size:.88rem;color:var(--dim)}
+.bignum .foot a{color:var(--muted)}
+.bignum .headline{font-family:var(--disp);font-size:clamp(1.6rem,3.4vw,2.5rem);font-weight:700;letter-spacing:-.02em;margin-bottom:10px}
+.bignum .headline em{color:var(--accent);font-style:normal}
+
+/* enemy / promised land */
+.contrast{padding:90px 0}
+.contrast .duo{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:44px}
+.pane{border-radius:16px;padding:34px;border:1px solid var(--border)}
+.pane.was{background:var(--bg2)}
+.pane.now{background:linear-gradient(180deg,rgba(74,222,128,.07),transparent);border-color:rgba(74,222,128,.25)}
+.pane .tag{font-family:var(--mono);font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;margin-bottom:16px;display:block}
+.pane.was .tag{color:var(--contrast)}
+.pane.now .tag{color:var(--accent)}
+.pane p{color:var(--muted);font-size:.98rem}
+.pane p b{color:var(--text)}
+.pane pre{margin-top:18px;background:#0a0e13;border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:.8rem;line-height:1.8;color:var(--dim);overflow-x:auto}
+.pane.now pre{color:var(--muted)}
+.pane pre .g{color:var(--accent)}
+.pane pre .r{color:var(--contrast)}
+
+/* section headers */
+.sec-kicker{font-family:var(--mono);font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+h2.sec{font-family:var(--disp);font-size:clamp(1.7rem,3.6vw,2.6rem);font-weight:700;letter-spacing:-.02em;line-height:1.15;max-width:720px}
+.sec-sub{margin-top:16px;color:var(--muted);font-size:1.05rem;max-width:620px}
+
+/* hero demo */
+.herodemo{padding:90px 0}
+.herodemo video{width:100%;margin-top:44px;border-radius:16px;border:1px solid var(--border2);box-shadow:0 30px 80px -20px rgba(0,0,0,.7),0 0 0 1px rgba(74,222,128,.06);display:block}
+.herodemo .cap{margin-top:18px;font-size:.9rem;color:var(--dim);text-align:center}
+.herodemo .cap code{font-size:.85em}
+
+/* three things */
+.three{padding:90px 0}
+.three .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:48px}
+.three .item{border-top:2px solid var(--accent);padding-top:26px}
+.three .item .n{font-family:var(--mono);color:var(--dim);font-size:.8rem;margin-bottom:12px}
+.three .item h3{font-family:var(--disp);font-size:1.35rem;font-weight:700;letter-spacing:-.01em;margin-bottom:12px}
+.three .item p{color:var(--muted);font-size:.95rem}
+.three .item p b{color:var(--text)}
+
+/* gallery */
+.gallery{padding:90px 0}
+.gallery .grid{display:grid;grid-template-columns:1fr 1fr;gap:34px 26px;margin-top:48px}
+.gallery figure video{width:100%;border-radius:12px;border:1px solid var(--border);display:block;transition:border-color .2s}
+.gallery figure:hover video{border-color:var(--border2)}
+.gallery figcaption{margin-top:12px}
+.gallery figcaption h4{font-family:var(--disp);font-size:1.02rem;font-weight:500}
+.gallery figcaption p{color:var(--dim);font-size:.86rem;margin-top:2px}
+
+/* numbers detail */
+.numbers{padding:90px 0}
+.bench{margin-top:44px;display:grid;gap:14px}
+.b-row{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px 26px}
+.b-head{display:flex;align-items:baseline;gap:14px;margin-bottom:16px}
+.b-head h4{font-family:var(--disp);font-size:1.05rem;font-weight:500}
+.b-files{font-family:var(--mono);font-size:.78rem;color:var(--dim)}
+.b-mult{margin-left:auto;font-family:var(--mono);font-weight:600;font-size:.85rem;color:var(--accent);background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);border-radius:20px;padding:3px 12px;white-space:nowrap}
+.b-bars{display:grid;gap:8px}
+.b-line{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:center}
+.b-who{font-family:var(--mono);font-size:.75rem;color:var(--dim);text-align:right}
+.b-track{display:flex;align-items:center;gap:12px}
+.b-rail{flex:1;height:22px}
+.b-rail i{display:block;height:100%;border-radius:5px}
+.b-rail .us{background:var(--accent)}
+.b-rail .them{background:#26303d}
+.b-track em{font-family:var(--mono);font-style:normal;font-size:.82rem;color:var(--muted);width:64px;flex-shrink:0}
+.b-line.is-us .b-track em{color:var(--accent);font-weight:600}
+.b-fine{margin-top:14px;font-family:var(--mono);font-size:.75rem;color:var(--dim)}
+.b-fine b{color:var(--muted);font-weight:400}
+.b-group{font-family:var(--mono);font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:26px 0 0}
+.b-mult.na{color:var(--muted);background:rgba(148,163,184,.08);border-color:rgba(148,163,184,.28)}
+details.rawtable{margin-top:26px}
+details.rawtable summary{cursor:pointer;font-family:var(--mono);font-size:.85rem;color:var(--muted);padding:12px 0;list-style:none}
+details.rawtable summary::-webkit-details-marker{display:none}
+details.rawtable[open] summary{color:var(--text)}
+details.rawtable summary:hover{color:var(--text)}
+.tablewrap{overflow-x:auto;margin-top:12px;border:1px solid var(--border);border-radius:14px}
+table{width:100%;border-collapse:collapse;font-size:.9rem;background:var(--bg2)}
+th,td{padding:13px 18px;text-align:right;border-bottom:1px solid var(--border)}
+th:first-child,td:first-child{text-align:left}
+tr:last-child td{border-bottom:none}
+th{color:var(--dim);font-weight:500;font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;background:var(--panel)}
+td{font-family:var(--mono);font-size:.85rem;color:var(--muted)}
+td:first-child{font-family:var(--sans);color:var(--text)}
+.win{color:var(--accent);font-weight:600}
+.method{margin-top:26px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;padding:22px 26px;font-size:.92rem;color:var(--muted);background:var(--bg2)}
+.method b{color:var(--text)}
+
+/* design contract */
+.contract{padding:90px 0}
+.contract .duo{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:44px}
+.contract ul{list-style:none}
+.contract li{padding:13px 0;border-bottom:1px solid var(--border);font-size:.95rem;color:var(--muted);display:flex;gap:14px;align-items:baseline}
+.contract li:last-child{border-bottom:none}
+.contract li .m{font-family:var(--mono);font-size:1rem;flex-shrink:0}
+.contract .in .m{color:var(--accent)}
+.contract .out .m{color:var(--contrast)}
+.contract li b{color:var(--text);font-weight:600}
+.contract .pane-title{font-family:var(--disp);font-weight:700;font-size:1.1rem;margin-bottom:10px}
+
+/* lineage + get it */
+.lineage{padding:90px 0}
+.lineage blockquote{margin-top:40px;border-left:3px solid var(--border2);padding:6px 0 6px 30px;font-size:1.08rem;color:var(--muted);max-width:760px}
+.lineage blockquote b{color:var(--text)}
+.getit{padding:90px 0 110px}
+.getit pre{margin-top:40px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:26px 30px;font-family:var(--mono);font-size:.9rem;line-height:2;overflow-x:auto;color:var(--muted)}
+.getit pre .c{color:var(--dim)}
+.getit pre .g{color:var(--accent)}
+.hero pre{margin-top:24px;width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;font-family:var(--mono);font-size:clamp(.72rem,2.6vw,.85rem);line-height:1.9;overflow-x:auto;color:var(--muted)}
+.hero pre .g{color:var(--accent)}
+.hero pre .c{color:var(--dim)}
+
+footer{border-top:1px solid var(--border);padding:44px 0;color:var(--dim);font-size:.86rem}
+footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+footer a{color:var(--muted)}
+
+hr.sep{border:none;border-top:1px solid var(--border);max-width:1080px;margin:0 auto}
+
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+.reveal.on{opacity:1;transform:none}
+@media (prefers-reduced-motion: reduce){.reveal{opacity:1;transform:none;transition:none}}
+
+@media (max-width:800px){
+  .wrap{padding:0 22px}
+  .contrast .duo,.contract .duo,.gallery .grid,.three .grid{grid-template-columns:1fr}
+  .bar-row{grid-template-columns:1fr;gap:6px}
+  .bar-label{text-align:left}
+  .bignum .frame{padding:32px 24px}
+  .b-line{grid-template-columns:64px 1fr;gap:10px}
+  .hero pre{max-width:100%}
+  nav ul{display:none}
+}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <div class="logo">ctx-<em>optimize</em></div>
+  <ul>
+    <li><a href="#getstart">Get started</a></li>
+    <li><a href="#demo">Demo</a></li>
+    <li><a href="#numbers">Benchmarks</a></li>
+    <li><a href="docs.html">Docs</a></li>
+    <li><a href="compare.html">Compare</a></li>
+    <li><a href="https://github.com/muthuishere/ctx-optimize">GitHub</a></li>
+  </ul>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <div class="kicker">the answer you actually want from your coding agent</div>
+  <h1>Get the real answer from your AI — <br><span class="ghost">not a confident guess.</span></h1>
+  <p class="lede">ctx-optimize gives your coding agent a deterministic map of your codebase, so it answers <b>where is X, who calls Y, what breaks if I change Z</b> with cited <code>file:line</code> facts — in ~100ms, on any repo, in any shell, with nothing else installed. <b>Fewer wrong turns, lower token bills, answers you can trust.</b> One static Go binary. No LLM at query time, no database, no server.</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="#getstart">Get started</a>
+    <a class="btn btn-ghost" href="#watch">Watch it work</a>
+  </div>
+  <pre class="reveal herocmd"><span class="g">npm install -g @muthuishere/ctx-optimize</span>
+ctx-optimize install --skills            <span class="c"># one-time: teach your agent (global)</span>
+cd your-repo &amp;&amp; <span class="g">ctx-optimize up</span>          <span class="c"># one verb: bootstrap, gather, or pull — then ask anything</span></pre>
+</div></header>
+
+<section class="herodemo" id="watch" style="padding:80px 0 20px"><div class="wrap">
+  <div class="sec-kicker">watch it work · 60 seconds</div>
+  <h2 class="sec">The same coding session — with and without it.</h2>
+  <p class="sec-sub">One measured Claude Code session, the same questions on the same repo. Without a knowledge graph the agent greps, reads, and opens the wrong file again — <b>more turns, more tokens, more dollars</b>. With the store it asks and gets cited answers instead. The numbers on screen are from one real kill-test run and <b>change with every question, repo, and model</b> — but the savings hold up.</p>
+  <video src="media/explainer.mp4" controls preload="metadata" poster="media/explainer-poster.jpg" playsinline class="reveal"></video>
+  <p class="cap">Narrated · one measured session · ~⅓ lower cost, ~¼ fewer turns — actual numbers vary by question &amp; repo</p>
+</div></section>
+
+<section class="getit" id="getstart" style="padding:70px 0 20px"><div class="wrap">
+  <div class="sec-kicker">get started</div>
+  <h2 class="sec">Three commands to a smarter agent.</h2>
+  <pre class="reveal"><span class="g">npm install -g @muthuishere/ctx-optimize</span>   <span class="c"># one static binary per platform, no postinstall downloads</span>
+ctx-optimize install --skills               <span class="c"># one-time: teach your coding agent to answer from the store</span>
+cd your-repo && <span class="g">ctx-optimize up</span>             <span class="c"># bare repo → bootstraps config + gathers (about a second);</span>
+                                            <span class="c"># monorepo → scan-bootstraps one store per module + a navigator;</span>
+                                            <span class="c"># clone with a shared store declared → pulls it; stale → refresh</span></pre>
+  <p class="sec-sub" style="margin-top:16px">Want control instead of <code>up</code>'s defaults — review a monorepo's module list before gathering, pick pointer targets? That's <code>init</code>:</p>
+  <pre class="reveal" style="margin-top:12px"><span class="g">ctx-optimize scan</span>                           <span class="c"># lists every project it found (read-only)</span>
+ctx-optimize init --scan --yes && ctx-optimize add .   <span class="c"># curate config.json, then gather explicitly</span></pre>
+  <p class="sec-sub" style="margin-top:16px">Source and tests in <b>separate folders</b> (the .NET / Gradle case)? Declare one module across both — they share a graph, and test→source calls resolve across the split:</p>
+  <pre class="reveal" style="margin-top:12px"><span class="c"># .ctxoptimize/config.json</span>
+"modules": [{ <span class="g">"name"</span>: "Billing", <span class="g">"paths"</span>: [<span class="g">"src/Billing"</span>, <span class="g">"tests/Billing.Tests"</span>] }]</pre>
+  <p class="sec-sub" style="margin-top:16px">A teammate cloning your repo runs the same <b>one</b> command — <code>ctx-optimize up</code> — which does whatever the state needs: pulls the team's prebuilt store when the committed config declares a pull, gathers locally otherwise, fast-refreshes a stale store, no-ops on a fresh one. Idempotent — run it whenever.</p>
+  <p class="sec-sub" style="margin-top:18px">macOS / Linux / Windows · works with Claude Code, Codex, Copilot &amp; Devin · framework <a href="docs.html#v03">routes, build-tool dependencies, k8s topology, subsystems, multi-path modules &amp; a first-class dashboard</a> · <a href="docs.html#v04">scripted sharing, one-verb onboarding &amp; change-plan</a> · <a href="https://github.com/muthuishere/ctx-optimize">source on GitHub</a>.</p>
+</div></section>
+
+<section class="herodemo" id="agent" style="padding:70px 0"><div class="wrap">
+  <div class="sec-kicker">agent skills — and everything else your repo knows</div>
+  <h2 class="sec">Docs, your database schema, any data — one graph, one question.</h2>
+  <p class="sec-sub">The installed skill makes your agent query the store before it greps. Markdown docs are gathered natively. Your Postgres schema arrives via a <a href="examples/adapters/postgres-schema.py">drop-in adapter script</a> — tables become nodes, foreign keys become edges. Anything else goes through the validated JSON door. Then one question cites the table, the code, and the doc together:</p>
+  <video src="media/adapters.mp4" autoplay loop muted playsinline class="reveal"></video>
+  <p class="cap">Unedited recording · a repo with <code>.ctxoptimize/adapters/postgres-schema.py</code> against a live Postgres</p>
+</div></section>
+
+<section class="bignum"><div class="wrap"><div class="frame reveal">
+  <div class="headline">Same corpus. Same machine. <em>13&times; faster.</em></div>
+  <h2>Cold gather of a <b>12,484-file</b> repository — and ctx-optimize's run <b>includes</b> building the full markdown wiki.</h2>
+  <div class="bars">
+    <div class="bar-row">
+      <div class="bar-label">ctx-optimize</div>
+      <div class="bar-track"><div class="bar bar-us"><span>0.67s</span></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">graphify 0.9.12</div>
+      <div class="bar-track"><div class="bar bar-them"><span>8.88s&nbsp;&nbsp;(its fastest path — no clustering, no LLM)</span></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">query, median</div>
+      <div class="bar-track"><div class="bar bar-us q"><span>96ms</span></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">graphify query</div>
+      <div class="bar-track"><div class="bar bar-them q"><span>367ms</span></div></div>
+    </div>
+  </div>
+  <p class="foot">Apple M5 Pro · 2026-07-11 · methodology and every corpus below · <a href="bench/results.json">raw results.json</a></p>
+</div></div></section>
+
+<section class="contrast"><div class="wrap">
+  <div class="sec-kicker">the problem</div>
+  <h2 class="sec">The most expensive thing your agent does is look for things.</h2>
+  <div class="duo">
+    <div class="pane was reveal">
+      <span class="tag">without a graph</span>
+      <p>Grep. Open the file. Wrong one. Grep again. Open three more files <b>just to see one signature</b>. Every hop is tokens, latency, and context that's gone for the rest of the session.</p>
+      <pre>&gt; grep -rn "Merge" .        <span class="r">— 214 matches</span>
+&gt; read store.go             <span class="r">— 9.4k tokens</span>
+&gt; read store_test.go        <span class="r">— 11k tokens</span>
+&gt; read app.go               <span class="r">— 14k tokens</span>
+<span class="r">… and the window is half gone</span></pre>
+    </div>
+    <div class="pane now reveal">
+      <span class="tag">with the store</span>
+      <p>One query. Complete, citable hits — id, kind, file, line range, <b>signature, doc, callers, callees</b> — under a hard token budget. The agent reads a file only when it truly must.</p>
+      <pre>&gt; ctx-optimize card "Store.Merge"   <span class="g">— 96ms</span>
+<span class="g">sig:</span> func (s *Store) Merge(b *schema.Batch) …
+<span class="g">doc:</span> Merge upserts a validated batch …
+<span class="g">called by (12):</span> cmdAdd, cmdMerge, …
+<span class="g">calls (6):</span> Batch.Validate, writeNDJSON, …</pre>
+    </div>
+  </div>
+</div></section>
+
+<hr class="sep">
+
+<section class="herodemo" id="demo"><div class="wrap">
+  <div class="sec-kicker">the demo that matters</div>
+  <h2 class="sec">A symbol card answers what used to take four file reads.</h2>
+  <p class="sec-sub">Signature, doc comment, location, callers, callees — in one shot, from the graph. This is the read your agent no longer makes. About to <em>edit</em>? <code>change-plan X</code> goes further: one composed answer with the signature, the callers, the blast radius, and <b>which tests to run</b> — measured ~90% fewer answer tokens than the query+card+affected chain it replaces.</p>
+  <video src="media/card.mp4" autoplay loop muted playsinline class="reveal"></video>
+  <p class="cap">Unedited recording · <code>ctx-optimize card "Store.Merge"</code> on this project's own source</p>
+</div></section>
+
+<section class="three" id="three"><div class="wrap">
+  <div class="sec-kicker">remember three things</div>
+  <h2 class="sec">Fast. Honest. Deterministic.</h2>
+  <div class="grid">
+    <div class="item reveal">
+      <div class="n">01</div>
+      <h3>Fast</h3>
+      <p>Tree-sitter grammars compiled to WASM, hosted by wazero, fanned across every core. <b>12 languages embedded</b> in one static binary; any other language is a one-command grammar pack. Re-gather after a change in under a second.</p>
+    </div>
+    <div class="item reveal">
+      <div class="n">02</div>
+      <h3>Honest</h3>
+      <p>Every edge carries confidence: <b>EXTRACTED</b> is parsed fact, <b>INFERRED</b> is name-matched. Ambiguous calls are dropped, never guessed. The benchmarks on this page show where the other tool wins, too.</p>
+    </div>
+    <div class="item reveal">
+      <div class="n">03</div>
+      <h3>Deterministic</h3>
+      <p>Same input, same graph, byte for byte — git-diffable NDJSON, a markdown wiki regenerated on every add, atomic writes. <b>The binary never calls a model.</b> Your agent supplies the intelligence; the store supplies precise recall.</p>
+    </div>
+  </div>
+</div></section>
+
+<hr class="sep">
+
+<section class="gallery"><div class="wrap">
+  <div class="sec-kicker">more demos — all unedited</div>
+  <h2 class="sec">The rest of the toolbox.</h2>
+  <div class="grid">
+    <figure class="reveal"><video src="media/add.mp4" autoplay loop muted playsinline></video>
+      <figcaption><h4>Gather flask in under a second</h4><p><code>add .</code> — parse, graph, prune stale nodes, rebuild the wiki</p></figcaption></figure>
+    <figure class="reveal"><video src="media/query.mp4" autoplay loop muted playsinline></video>
+      <figcaption><h4>Cited answers with signatures</h4><p><code>ask</code> — deterministic retrieval under a token budget</p></figcaption></figure>
+    <figure class="reveal"><video src="media/impact.mp4" autoplay loop muted playsinline></video>
+      <figcaption><h4>Blast radius &amp; paths</h4><p><code>affected</code> walks reverse dependencies; <code>path</code> connects symbols</p></figcaption></figure>
+    <figure class="reveal"><video src="media/languages.mp4" autoplay loop muted playsinline></video>
+      <figcaption><h4>Languages on demand</h4><p>12 embedded · <code>languages add &lt;name-or-url&gt;</code> for the rest</p></figcaption></figure>
+    <figure class="reveal"><video src="media/wiki.mp4" autoplay loop muted playsinline></video>
+      <figcaption><h4>Wiki + Obsidian export</h4><p>A readable map of the repo, regenerated on every add</p></figcaption></figure>
+  </div>
+</div></section>
+
+<section class="numbers" id="numbers"><div class="wrap">
+  <div class="sec-kicker">all the numbers</div>
+  <h2 class="sec">Benchmarks, with the parts that don't flatter us.</h2>
+  <p class="sec-sub">Head-to-head vs <b>graphify</b> — the one rival we've run the full measured harness against. Measured 2026-07-11 · Apple M5 Pro (18 cores, 48&nbsp;GB) · graphify 0.9.12 vs a ctx-optimize dev build · <a href="bench/results.json">raw data</a>. How we stack up against <b>CodeGraph, GitNexus, potpie &amp; Serena</b> — on architecture, setup, and their own published numbers — is on <a href="compare.html">the comparison</a>.</p>
+  <p class="b-group">cold gather — full extraction, bars scaled per corpus</p>
+  <div class="bench">
+    <div class="b-row reveal">
+      <div class="b-head"><h4>graphify's own source</h4><span class="b-files">12,484 files</span><span class="b-mult">13.3× faster</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">ctx-optimize</span><div class="b-track"><div class="b-rail"><i class="us" style="width:7.5%"></i></div><em>0.67s</em></div></div>
+        <div class="b-line"><span class="b-who">graphify</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>8.88s</em></div></div>
+      </div>
+      <p class="b-fine">nodes <b>11,056 vs 10,996</b> — within 1% · store <b>8.3 MB vs 30.1 MB</b> — 3.6× smaller</p>
+    </div>
+    <div class="b-row reveal">
+      <div class="b-head"><h4>flask</h4><span class="b-files">265 files</span><span class="b-mult">1.3× faster</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">ctx-optimize</span><div class="b-track"><div class="b-rail"><i class="us" style="width:74.5%"></i></div><em>0.79s</em></div></div>
+        <div class="b-line"><span class="b-who">graphify</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>1.06s</em></div></div>
+      </div>
+      <p class="b-fine">nodes <b>1,978 vs 1,473</b> — we also graph docs &amp; import modules · store <b>1.3 MB vs 4.2 MB</b></p>
+    </div>
+    <div class="b-row reveal">
+      <div class="b-head"><h4>gin</h4><span class="b-files">159 files</span><span class="b-mult">2.2× faster</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">ctx-optimize</span><div class="b-track"><div class="b-rail"><i class="us" style="width:45.6%"></i></div><em>0.41s</em></div></div>
+        <div class="b-line"><span class="b-who">graphify</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>0.90s</em></div></div>
+      </div>
+      <p class="b-fine">nodes <b>1,922 vs 1,975</b> — graphify finds more here, shown as-is · store <b>1.4 MB vs 6.2 MB</b></p>
+    </div>
+    <div class="b-row reveal">
+      <div class="b-head"><h4>ctx-optimize source</h4><span class="b-files">75 files</span><span class="b-mult">1.4× faster</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">ctx-optimize</span><div class="b-track"><div class="b-rail"><i class="us" style="width:72.5%"></i></div><em>0.37s</em></div></div>
+        <div class="b-line"><span class="b-who">graphify</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>0.51s</em></div></div>
+      </div>
+      <p class="b-fine">nodes <b>572 vs 599</b> — graphify finds more here too · store <b>0.4 MB vs 2.2 MB</b></p>
+    </div>
+  </div>
+
+  <p class="b-group">query latency — 12k-file corpus, median of 5 runs, 2,000-token budget</p>
+  <div class="bench">
+    <div class="b-row reveal">
+      <div class="b-head"><h4>"how does clustering work"</h4><span class="b-mult">4.1× faster</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">ctx-optimize</span><div class="b-track"><div class="b-rail"><i class="us" style="width:24.3%"></i></div><em>89 ms</em></div></div>
+        <div class="b-line"><span class="b-who">graphify</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>367 ms</em></div></div>
+      </div>
+    </div>
+    <div class="b-row reveal">
+      <div class="b-head"><h4>"remote push pull hooks"</h4><span class="b-mult">3.8× faster</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">ctx-optimize</span><div class="b-track"><div class="b-rail"><i class="us" style="width:26.4%"></i></div><em>96 ms</em></div></div>
+        <div class="b-line"><span class="b-who">graphify</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>364 ms</em></div></div>
+      </div>
+    </div>
+    <div class="b-row reveal">
+      <div class="b-head"><h4>"community labeling"</h4><span class="b-mult">3.9× faster</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">ctx-optimize</span><div class="b-track"><div class="b-rail"><i class="us" style="width:25.9%"></i></div><em>96 ms</em></div></div>
+        <div class="b-line"><span class="b-who">graphify</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>370 ms</em></div></div>
+      </div>
+    </div>
+  </div>
+
+  <details class="rawtable reveal">
+    <summary>▸ raw table — every number in one place</summary>
+    <div class="tablewrap">
+    <table>
+      <tr><th>corpus</th><th>files</th><th>ctx cold</th><th>graphify cold</th><th>ctx nodes</th><th>graphify nodes</th><th>ctx size</th><th>graphify size</th></tr>
+      <tr><td>graphify's own source</td><td>12,484</td><td class="win">0.67s</td><td>8.88s</td><td>11,056</td><td>10,996</td><td class="win">8.3 MB</td><td>30.1 MB</td></tr>
+      <tr><td>flask</td><td>265</td><td class="win">0.79s</td><td>1.06s</td><td>1,978</td><td>1,473</td><td class="win">1.3 MB</td><td>4.2 MB</td></tr>
+      <tr><td>gin</td><td>159</td><td class="win">0.41s</td><td>0.90s</td><td>1,922</td><td>1,975</td><td class="win">1.4 MB</td><td>6.2 MB</td></tr>
+      <tr><td>ctx-optimize source</td><td>75</td><td class="win">0.37s</td><td>0.51s</td><td>572</td><td>599</td><td class="win">0.4 MB</td><td>2.2 MB</td></tr>
+      <tr><td>query "how does clustering work"</td><td>—</td><td class="win">89 ms</td><td>367 ms</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>query "remote push pull hooks"</td><td>—</td><td class="win">96 ms</td><td>364 ms</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>query "community labeling"</td><td>—</td><td class="win">96 ms</td><td>370 ms</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+    </table>
+    </div>
+  </details>
+  <div class="method reveal"><b>Methodology — read this before quoting the numbers.</b>
+    graphify was timed on its <em>fastest</em> deterministic path (<code>update --no-cluster</code>: extraction only, no clustering, no LLM). ctx-optimize was timed on <code>add</code>, which does <em>more</em> work per run: extraction, graph build, stale-node pruning, and full wiki regeneration. Query latency is the median of 5 runs, same question, same 2,000-token budget, both CLIs invoked cold from the shell. Node counts are shown for scale, not equivalence — the tools disagree about what counts as a node (ctx-optimize graphs import modules and markdown documents as first-class nodes; graphify includes some file types we skip), which is why ctx-optimize shows ~34% more nodes on flask while the 12k-file totals land within 1%. On gin and on its own source graphify finds slightly more nodes and edges than we do, and we show that as-is. graphify also does things ctx-optimize deliberately does not: LLM-assisted community labeling and semantic clustering. If you want those, use graphify — the comparison here is the deterministic core both tools share.</div>
+</div></section>
+
+<hr class="sep">
+
+<section class="numbers" id="proof"><div class="wrap">
+  <div class="sec-kicker">the kill test</div>
+  <h2 class="sec">We tried to kill this product. Published, either way.</h2>
+  <p class="sec-sub">Before launch we pre-committed a kill bar: if the store can't beat a plain grep-<em>and-read</em> agent by 25% on hostile terrain, stop. Then we ran it — 12 Linux-kernel questions, answered twice by the <em>same</em> agent (grep-and-read vs store-first — a real agent always reads, never just greps), every answer judged against source-derived ground truth <em>before</em> tokens counted. Measured 2026-07-12 · <a href="proof/">full write-up</a> · <a href="proof/questions.json">questions&nbsp;+&nbsp;keys (raw json)</a> · raw runs ship in the repo's <code>proof/</code>.</p>
+
+  <div class="method reveal" style="margin-top:26px">
+    <b>graphify headlines 71.5× — against pasting your entire repo into every prompt.</b> No agent does that. And graphify's output is a static <code>graphify-out/</code> dump; ours is extensible by design — drop-in adapters, grammar packs, skills installed by default. We threw the strawman out and tested against a real grep-and-read agent. A smaller honest number beats a big fake one.
+  </div>
+
+  <div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:30px">
+    <div class="b-row" style="text-align:center;padding:24px 16px"><div style="font-family:var(--disp);font-size:2.2rem;font-weight:700;color:var(--accent);letter-spacing:-.02em">−43%</div><div style="font-family:var(--mono);font-size:.7rem;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin-top:6px">tokens to answer</div></div>
+    <div class="b-row" style="text-align:center;padding:24px 16px"><div style="font-family:var(--disp);font-size:2.2rem;font-weight:700;color:var(--accent);letter-spacing:-.02em">−32%</div><div style="font-family:var(--mono);font-size:.7rem;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin-top:6px">cost per session</div></div>
+    <div class="b-row" style="text-align:center;padding:24px 16px"><div style="font-family:var(--disp);font-size:2.2rem;font-weight:700;color:var(--accent);letter-spacing:-.02em">96ms</div><div style="font-family:var(--mono);font-size:.7rem;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);margin-top:6px">per query · ~4× graphify</div></div>
+  </div>
+  <p class="b-fine" style="margin-top:12px">Tokens &amp; cost: natural usage on Claude Code — plain questions, real dollars, no store vs store. Query latency: 12k-file benchmark. Honest caveat: total session wall runs <b>+31%</b> today (the store trades wall-time for tokens and dollars — more tool calls); we just cut query latency 40% and that gap is closing.</p>
+
+  <div class="method reveal" style="margin-top:30px">
+    <b>Don't take our word — run it yourself.</b> Same model, same questions, answered three ways over <a href="https://openrouter.ai">OpenRouter</a> — shell, ctx-optimize, graphify. Last CI run on <code>gorilla/mux</code>:
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:16px 0 4px">
+      <div style="text-align:center"><div style="font-family:var(--mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)">vs plain shell</div><div style="font-family:var(--disp);font-size:1.5rem;font-weight:700;color:var(--accent);margin-top:4px">−31% cost</div><div style="font-size:.82rem;color:var(--muted)">−64% tool calls · −36% tokens</div></div>
+      <div style="text-align:center"><div style="font-family:var(--mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)">vs graphify</div><div style="font-family:var(--disp);font-size:1.5rem;font-weight:700;color:var(--accent);margin-top:4px">~½ the tokens</div><div style="font-size:.82rem;color:var(--muted)">half the tool calls, lower cost</div></div>
+      <div style="text-align:center"><div style="font-family:var(--mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)">graphify vs shell</div><div style="font-family:var(--disp);font-size:1.5rem;font-weight:700;color:var(--dim);margin-top:4px">+22% tokens</div><div style="font-size:.82rem;color:var(--muted)">its node-dump query costs more than grep</div></div>
+    </div>
+    <p style="margin:14px 0 0"><a href="proof/agent/" style="font-weight:600">See the full table, the harness, and how to run it yourself →</a></p>
+  </div>
+
+  <p class="b-group">the result that clears the bar — natural usage, plain questions, real dollars billed</p>
+  <div class="bench">
+    <div class="b-row reveal">
+      <div class="b-head"><h4>Natural usage · Claude Code · zero steering</h4><span class="b-files">12 plain questions · real $ billed</span><span class="b-mult">−31.6% cost</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">with store</span><div class="b-track"><div class="b-rail"><i class="us" style="width:68.4%"></i></div><em>$2.16</em></div></div>
+        <div class="b-line"><span class="b-who">no store</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>$3.16</em></div></div>
+      </div>
+      <p class="b-fine">the fix: <b>cards now carry the function body head</b> (first ~30 lines) — the follow-up read they used to force is gone · turns <b>70→53 (−24%)</b> · 56 unprompted store calls · before the fix the same harness measured <b>+6% worse</b> (published, below) · quality spot-verified: the $0.05 answers are complete and correct</p>
+    </div>
+  </div>
+
+  <details class="rawtable reveal" style="margin-top:28px">
+  <summary>▸ the full autopsy — the misses, every tier, the mechanism (skeptics, open this)</summary>
+  <div class="duo" style="margin-top:20px">
+    <div class="pane was reveal">
+      <span class="tag">what died</span>
+      <p><b>"Cuts raw input+output tokens on a cached frontier agent" — dead.</b> Claude Code and Codex grep well, and prompt caching absorbs every extra hop, so on that one narrow metric the store is parity on locate/mechanism questions. We don't claim otherwise anywhere on this page. But raw tokens aren't the bill →</p>
+    </div>
+    <div class="pane now reveal">
+      <span class="tag">what survived</span>
+      <p><b>The real bill is cheaper.</b> Cache reads still bill (~10%), and fewer steps means fewer of them — so on each harness's own dollar report the store wins every Claude tier: <b>−9% to −16%</b>. Plus <b>onboarding −34% to −49% tokens</b>, <b>correctness</b> (grep arms of Codex and Devin named the wrong gatekeeper; the store arms didn't), and <b>−13% to −29% steps</b> everywhere.</p>
+    </div>
+  </div>
+
+  <p class="b-group" style="margin-top:26px">fresh tokens per tier — where even a hand-tuned grep baseline shows parity (the adversarial version of the test)</p>
+  <div class="bench">
+    <div class="b-row reveal">
+      <div class="b-head"><h4>Claude Code · default</h4><span class="b-files">linux/block · 98 files</span><span class="b-mult na">token parity</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">with store</span><div class="b-track"><div class="b-rail"><i class="us" style="width:99.8%"></i></div><em>370k</em></div></div>
+        <div class="b-line"><span class="b-who">grep+read</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>370k</em></div></div>
+      </div>
+      <p class="b-fine">steps <b>~flat</b> · wall <b>−14%</b> (347→298s) · quality <b>12/12 vs 11.5/12</b> — the best grep agent on earth doesn't need us for tokens</p>
+    </div>
+    <div class="b-row reveal">
+      <div class="b-head"><h4>Claude Code · Sonnet</h4><span class="b-files">linux slice · 3,987 files</span><span class="b-mult na">grep wins by 5%</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">with store</span><div class="b-track"><div class="b-rail"><i class="us" style="width:100%"></i></div><em>390k</em></div></div>
+        <div class="b-line"><span class="b-who">grep+read</span><div class="b-track"><div class="b-rail"><i class="them" style="width:95%"></i></div><em>370k</em></div></div>
+      </div>
+      <p class="b-fine">steps <b>−13%</b> · wall <b>+3%</b> (386→397s) · quality <b>11.5/12 vs 12/12</b> — the store arm was the only one to catch a comment posing as a real caller</p>
+    </div>
+    <div class="b-row reveal">
+      <div class="b-head"><h4>Claude Code · Haiku</h4><span class="b-files">linux slice · 3,987 files</span><span class="b-mult na">token parity</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">with store</span><div class="b-track"><div class="b-rail"><i class="us" style="width:98.9%"></i></div><em>284k</em></div></div>
+        <div class="b-line"><span class="b-who">grep+read</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>287k</em></div></div>
+      </div>
+      <p class="b-fine">steps <b>−29%</b> · wall <b>+9%</b> (641→698s) · quality <b>11/12 vs 11/12</b> — a third fewer hops, but caching makes hops free</p>
+    </div>
+    <div class="b-row reveal">
+      <div class="b-head"><h4>Codex CLI · default</h4><span class="b-files">linux/block · 98 files</span><span class="b-mult na">token parity</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">with store</span><div class="b-track"><div class="b-rail"><i class="us" style="width:100%"></i></div><em>397k</em></div></div>
+        <div class="b-line"><span class="b-who">grep+read</span><div class="b-track"><div class="b-rail"><i class="them" style="width:97.1%"></i></div><em>386k</em></div></div>
+      </div>
+      <p class="b-fine">steps <b>~flat</b> · wall <b>±0%</b> (683→680s) · quality <b>11.5/12 vs 11.5/12</b> — its grep arm named the wrong gatekeeper; the store arm didn't</p>
+    </div>
+    <div class="b-row reveal">
+      <div class="b-head"><h4>Devin CLI · SWE-1.6</h4><span class="b-files">linux/block · 98 files · n=6</span><span class="b-mult">−42% tokens</span></div>
+      <div class="b-bars">
+        <div class="b-line is-us"><span class="b-who">with store</span><div class="b-track"><div class="b-rail"><i class="us" style="width:57.5%"></i></div><em>2.30M</em></div></div>
+        <div class="b-line"><span class="b-who">grep+read</span><div class="b-track"><div class="b-rail"><i class="them" style="width:100%"></i></div><em>4.00M</em></div></div>
+      </div>
+      <p class="b-fine">steps <b>−24%</b> · wall <b>−34%</b> (294→195s) · quality <b>5/6 vs 6/6</b> · no prompt caching — every step re-pays full context, so saved steps become saved money · daily quota cut the run at 6 pairs</p>
+    </div>
+  </div>
+
+  <details class="rawtable reveal">
+    <summary>▸ raw table — every number in one place</summary>
+    <div class="tablewrap">
+    <table>
+      <tr><th>harness · model</th><th>corpus</th><th>tokens, grep→store</th><th>steps</th><th>wall time</th><th>answer quality (grep vs store)</th></tr>
+      <tr><td>Claude Code · default</td><td>linux/block · 98 files</td><td>370,398 → 369,673 (±0%)</td><td>~flat</td><td class="win">347→298s (−14%)</td><td>12/12 vs 11.5/12</td></tr>
+      <tr><td>Claude Code · Sonnet</td><td>linux slice · 3,987 files</td><td>370,308 → 389,647 (+5%)</td><td class="win">89→77 (−13%)</td><td>386→397s (+3%)</td><td>11.5/12 vs <b>12/12</b></td></tr>
+      <tr><td>Claude Code · Haiku</td><td>linux slice · 3,987 files</td><td>286,943 → 283,669 (−1%)</td><td class="win">174→124 (−29%)</td><td>641→698s (+9%)</td><td>11/12 vs 11/12</td></tr>
+      <tr><td>Codex CLI · default</td><td>linux/block · 98 files</td><td>385,794 → 397,323 (+3%)</td><td>~flat</td><td>683→680s (±0%)</td><td>11.5/12 vs 11.5/12</td></tr>
+      <tr><td>Devin CLI · SWE-1.6</td><td>linux/block · 98 files (n=6)</td><td class="win">4,004,232 → 2,300,736 (−42%)</td><td class="win">−24%</td><td class="win">294→195s (−34%)</td><td>5/6 vs <b>6/6</b></td></tr>
+    </table>
+    </div>
+  </details>
+
+  <div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:16px;margin-top:30px">
+    <div class="method" style="margin:0">
+      <b>The mechanism: step-cost economics.</b> The store cuts agent <em>steps</em> at every tier (Haiku −29%, Devin −24%, Sonnet −13%). Whether that becomes fewer tokens depends on what your harness pays per step. Devin re-pays the whole context every step — zero cached tokens — so −24% steps became <b>−42% tokens</b>. Claude Code caches, so extra hops are nearly free: <b>token parity, −14% wall</b>.
+    </div>
+    <div class="method" style="margin:0">
+      <b>The correction that helps us.</b> "Parity" prices cache reads at zero — they bill at ~10%. On each harness's own <em>dollar</em> report the store is cheaper at every Claude tier: <b>−9.2% default · −5.6% Sonnet · −16.2% Haiku</b>, from ~26% fewer cache re-reads. Fewer steps is a real bill cut wherever a step costs money.
+    </div>
+    <div class="method" style="margin:0">
+      <b>What we don't hide.</b> Skill-only, plain questions, before the card fix: <b>+6% worse</b> — agents used the store (57 calls) but re-verified in source. Total session wall is <b>+31%</b> today (more tool calls). The test surfaced three defects in our own ranking/card output, now fixed; the after-number re-run is pending. Scale: 3,987 files → a 274,812-node store + 3,989 wiki pages in <b>5.5s</b>. Everything, unrounded, is in the <a href="proof/">write-up</a>.
+    </div>
+  </div>
+  </details>
+</div></section>
+
+<hr class="sep">
+
+<section class="numbers" id="ladder"><div class="wrap">
+  <div class="sec-kicker">the model ladder</div>
+  <h2 class="sec">One store. Every model class. Judged blind.</h2>
+  <p class="sec-sub">Same prebuilt store (linux kernel, ~274k nodes), same 8 block-layer questions, one fresh agent session per model — answers graded against withheld golden keys the product already pins in CI. Measured 2026-07-17 · <a href="https://github.com/muthuishere/ctx-optimize/tree/main/benchmarks/agent-model-bench">questions, keys &amp; raw transcripts</a>.</p>
+
+  <div class="tablewrap reveal" style="margin-top:26px">
+  <table>
+    <tr><th>model · harness</th><th>score /80</th><th>avg s/question</th><th>tool calls (8 q)</th><th>notes</th></tr>
+    <tr><td>Fable 5 · Claude Code</td><td class="win"><b>80</b></td><td>24.6</td><td>23</td><td>every key + full mechanism chains</td></tr>
+    <tr><td>Sonnet 5 · Claude Code</td><td class="win"><b>80</b></td><td>17.5</td><td>25</td><td>every key; fastest frontier-quality run</td></tr>
+    <tr><td>Opus 4.8 · Claude Code</td><td><b>79</b></td><td>19.0</td><td>22</td><td>one canonical symbol described but not named</td></tr>
+    <tr><td>Haiku 4.5 · Claude Code</td><td><b>72</b></td><td>13.6</td><td>18</td><td>90% of frontier quality at half the wall time</td></tr>
+    <tr><td>gpt-4o-mini · toolnexus, one-shot</td><td><b>54</b></td><td>9.4</td><td>24</td><td>$0.015 for all 8 — protocol pinned from the committed <code>.ctxoptimize/instructions.md</code> card</td></tr>
+  </table>
+  </div>
+
+  <div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:16px;margin-top:26px">
+    <div class="method" style="margin:0">
+      <b>The store is model-portable.</b> Sonnet matches Fable exactly at 1.4× the speed. Haiku — the cheapest Claude tier — lands 90% of frontier quality with just 18 tool calls. Agent discipline + the store beats raw model size: Haiku (72) outscored gpt-4o-mini (54) on identical questions.
+    </div>
+    <div class="method" style="margin:0">
+      <b>Small models need the protocol pinned.</b> A short mandatory system prompt — query first, answer only from output, cite file:line, say "not found" after two empty queries — ships in the usage card every store commits at <code>.ctxoptimize/instructions.md</code>. With it, a $0.15/M-token model reaches ~70% of frontier quality at ~1/100th the cost. One-shot per question beats a continuous conversation: same score, 7× cheaper, no cross-question bleed.
+    </div>
+    <div class="method" style="margin:0">
+      <b>What frontier still buys.</b> Canonical-symbol precision, query re-crafting when the first hit is noise, and honest abstention — on a trick question with no real answer, gpt-4o-mini fabricated a module even under protocol; every Claude tier declined to.
+    </div>
+  </div>
+</div></section>
+
+<hr class="sep">
+
+<section class="contract"><div class="wrap">
+  <div class="sec-kicker">the design contract</div>
+  <h2 class="sec">What's in the binary — and what never will be.</h2>
+  <div class="duo">
+    <div class="pane was in reveal" style="background:var(--bg2)">
+      <div class="pane-title">In</div>
+      <ul class="in">
+        <li><span class="m">✓</span><span><b>tree-sitter → WASM</b>, hosted by wazero — pure Go, CGO_ENABLED=0</span></li>
+        <li><span class="m">✓</span><span><b>one committable <code>.ctxoptimize/</code></b> per repo: config + drop-in adapter scripts</span></li>
+        <li><span class="m">✓</span><span><b>central store</b> at <code>~/ctxoptimize/&lt;repo&gt;/</code> — multi-module, git-diffable NDJSON</span></li>
+        <li><span class="m">✓</span><span><b>team sync is your script</b> — <code>remote push/pull</code> run commands you declare in the committed config (a git repo, any bucket, anything); secrets stay env-var names</span></li>
+        <li><span class="m">✓</span><span>query · card · change-plan · explain · path · affected · hubs · wiki · export · serve · up</span></li>
+      </ul>
+    </div>
+    <div class="pane was out reveal" style="background:var(--bg2)">
+      <div class="pane-title">Out — forever</div>
+      <ul class="out">
+        <li><span class="m">✕</span><span><b>No LLM API.</b> The host agent answers; we serve context.</span></li>
+        <li><span class="m">✕</span><span><b>No database.</b> Files, sorted, atomic writes.</span></li>
+        <li><span class="m">✕</span><span><b>No embeddings.</b> Lexical + graph retrieval, deterministic.</span></li>
+        <li><span class="m">✕</span><span><b>No server.</b> A static binary and your filesystem.</span></li>
+        <li><span class="m">✕</span><span><b>No telemetry.</b> Nothing leaves your machine unless you push it.</span></li>
+      </ul>
+    </div>
+  </div>
+</div></section>
+
+<hr class="sep">
+
+<section class="numbers" id="different"><div class="wrap">
+  <div class="sec-kicker">different by design</div>
+  <h2 class="sec">Not a clone of any of them. A different bet.</h2>
+  <p class="sec-sub">The lane has graph-DB tools (CodeGraph on SQLite, GitNexus on an embedded DB, potpie on Neo4j), a Python central-store (graphify), and a live language-server (Serena). We're the one that's <b>a single static binary you extend</b> — here's what that changes versus the whole field.</p>
+  <div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:16px;margin-top:36px">
+    <div class="method" style="margin:0"><b>One binary — no store to run.</b> CGO-free Go, tree-sitter compiled to WASM. Nothing to stand up: no SQLite file, no LadybugDB, no Neo4j service, no Python venv, no language server per language. <code>npm i -g</code> and it runs, offline.</div>
+    <div class="method" style="margin:0"><b>Deterministic — no model, ever.</b> CodeGraph and GitNexus are structural like us; graphify reaches for an LLM to label communities and potpie keeps one in the loop. We hand all semantics to the agent you already run — zero API keys, reproducible every time.</div>
+    <div class="method" style="margin:0"><b>Extensible without a fork.</b> A new language is a drop-in grammar pack; a framework's routes, a build tool's deps, Postgres, Kafka, logs — drop-in route/manifest packs and adapter scripts through one validated door. No other tool here lets you add a recognizer as a committed JSON file.</div>
+    <div class="method" style="margin:0"><b>More than code, in one graph.</b> Routes→handlers, dependencies that federate across build tools, k8s topology, git co-change, subsystems. Serena has no persistent graph; the graph-DB tools mostly stop at code. And team sync is a script you declare — push/pull to a git repo or any bucket, no server, no built-in transport to trust.</div>
+  </div>
+  <p class="sec-sub" style="margin-top:28px">The full board — where every rival wins and where we lose, with numbers — is on <a href="compare.html">the honest comparison</a>.</p>
+</div></section>
+
+<hr class="sep">
+
+<section class="getit" id="getit"><div class="wrap">
+  <div class="sec-kicker">install</div>
+  <h2 class="sec">Convinced? It's still three commands.</h2>
+  <pre class="reveal"><span class="g">npm install -g @muthuishere/ctx-optimize</span>
+ctx-optimize install --skills   <span class="c"># one-time: teaches your coding agent to use the store</span>
+cd your-repo && <span class="g">ctx-optimize up</span></pre>
+  <p class="sec-sub" style="margin-top:22px">Every command and every config key — repo config, machine-global config, monorepos, remotes, adapters, route/manifest/grammar packs — on one page: <a href="docs.html">the docs</a>. See where we stand against the field, honestly: <a href="compare.html">the comparison</a>.</p>
+</div></section>
+
+<footer><div class="wrap">
+  <span>built by <a href="https://github.com/muthuishere">Muthukumaran Navaneethakrishnan</a> · credit to <a href="https://github.com/Graphify-Labs/graphify">graphify</a>, whose central-store and push/pull design this project's author contributed (<a href="https://github.com/Graphify-Labs/graphify/issues/1751">#1751</a>/<a href="https://github.com/Graphify-Labs/graphify/pull/1752">#1752</a>)</span>
+  <span>benchmarks reproducible from <a href="bench/results.json">raw data</a> · demos recorded with <a href="https://github.com/charmbracelet/vhs">vhs</a>, unedited</span>
+</div></footer>
+
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('on');io.unobserve(e.target)}}),{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>

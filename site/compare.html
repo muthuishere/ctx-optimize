@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ctx-optimize vs the field — an honest comparison</title>
+<meta name="description" content="An honest, self-critical comparison of ctx-optimize against CodeGraph, GitNexus, graphify, potpie, and Serena — where each wins, where we lose, and the bet we're actually making.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0c10; --bg2:#0f1319; --panel:#141a22; --border:#1f2833; --border2:#2b3644;
+  --text:#e8edf4; --muted:#94a3b8; --dim:#64748b;
+  --accent:#4ade80; --accent-dim:#166534; --contrast:#f87171; --warn:#fbbf24;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;
+  --disp:"Space Grotesk","Inter",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;font-size:16px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;padding:0 40px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:.9em;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.1em .4em}
+::selection{background:var(--accent-dim);color:#fff}
+
+nav{position:sticky;top:0;z-index:50;background:rgba(10,12,16,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
+.logo{font-family:var(--disp);font-weight:700;font-size:1.1rem;color:var(--text)}
+.logo em{color:var(--accent);font-style:normal}
+nav ul{display:flex;gap:26px;list-style:none}
+nav ul a{color:var(--muted);font-size:.88rem;font-weight:500}
+nav ul a:hover{color:var(--text);text-decoration:none}
+
+.hero{padding:64px 0 24px;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;background:radial-gradient(900px 420px at 70% -10%,rgba(74,222,128,.08),transparent 60%);pointer-events:none}
+.kicker{font-family:var(--mono);font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px}
+h1{font-family:var(--disp);font-weight:700;font-size:clamp(2rem,4.6vw,3.1rem);line-height:1.08;letter-spacing:-.025em;max-width:800px}
+h1 .ghost{color:var(--dim)}
+.lede{margin-top:22px;font-size:1.12rem;color:var(--muted);max-width:720px}
+.lede b{color:var(--text);font-weight:600}
+
+section.doc{padding:52px 0;border-top:1px solid var(--border)}
+.sec-kicker{font-family:var(--mono);font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+h2.sec{font-family:var(--disp);font-size:clamp(1.5rem,3vw,2.1rem);font-weight:700;letter-spacing:-.02em;line-height:1.15;max-width:780px}
+.sec-sub{margin-top:14px;color:var(--muted);font-size:1rem;max-width:720px}
+.sec-sub b{color:var(--text)}
+
+.tablewrap{overflow-x:auto;margin-top:26px;border:1px solid var(--border);border-radius:14px}
+table{width:100%;border-collapse:collapse;font-size:.88rem;background:var(--bg2);min-width:720px}
+th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+th{color:var(--dim);font-weight:500;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;background:var(--panel)}
+td{color:var(--muted)}
+td:first-child{color:var(--text);font-weight:500}
+.win{color:var(--accent)}
+.lose{color:var(--contrast)}
+.mid{color:var(--warn)}
+
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:32px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:26px 28px}
+.card h3{font-family:var(--disp);font-size:1.2rem;font-weight:700;letter-spacing:-.01em;margin-bottom:4px}
+.card .meta{font-family:var(--mono);font-size:.76rem;color:var(--dim);margin-bottom:16px}
+.card .row{display:flex;gap:10px;padding:8px 0;font-size:.92rem;color:var(--muted);align-items:baseline;border-top:1px solid var(--border)}
+.card .row:first-of-type{border-top:none}
+.card .row .m{flex-shrink:0;font-family:var(--mono);font-size:.85rem;width:64px}
+.card .row.up .m{color:var(--accent)}
+.card .row.down .m{color:var(--contrast)}
+.card .row b{color:var(--text);font-weight:600}
+
+.note{margin-top:26px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;padding:20px 24px;font-size:.95rem;color:var(--muted);background:var(--bg2)}
+.note.warn{border-left-color:var(--warn)}
+.note b{color:var(--text)}
+p.body{margin-top:14px;color:var(--muted);font-size:.98rem;max-width:780px}
+p.body b{color:var(--text)}
+h3.sub{font-family:var(--disp);font-size:1.15rem;font-weight:700;margin-top:36px;letter-spacing:-.01em}
+ul.clean{margin-top:14px;list-style:none;max-width:780px}
+ul.clean li{padding:9px 0;border-bottom:1px solid var(--border);color:var(--muted);font-size:.95rem;display:flex;gap:12px;align-items:baseline}
+ul.clean li:last-child{border-bottom:none}
+ul.clean li .m{flex-shrink:0;font-family:var(--mono);font-size:.9rem}
+ul.clean li.up .m{color:var(--accent)}
+ul.clean li.down .m{color:var(--contrast)}
+ul.clean li b{color:var(--text)}
+
+footer{border-top:1px solid var(--border);padding:44px 0;color:var(--dim);font-size:.86rem;margin-top:52px}
+footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+footer a{color:var(--muted)}
+
+@media (max-width:820px){
+  .wrap{padding:0 22px}
+  nav ul{display:none}
+  .cards{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <div class="logo"><a href="index.html" style="color:inherit;text-decoration:none">ctx-<em>optimize</em></a></div>
+  <ul>
+    <li><a href="index.html#getstart">Get started</a></li>
+    <li><a href="index.html#demo">Demo</a></li>
+    <li><a href="index.html#numbers">Benchmarks</a></li>
+    <li><a href="docs.html">Docs</a></li>
+    <li><a href="compare.html">Compare</a></li>
+    <li><a href="https://github.com/muthuishere/ctx-optimize">GitHub</a></li>
+  </ul>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <div class="kicker">an honest comparison</div>
+  <h1>We're not the biggest tool in this category.<br><span class="ghost">Here's the bet we're making instead.</span></h1>
+  <p class="lede">This page is written the way the rest of this site is: <b>if a competitor is better at something, it says so.</b> ctx-optimize is a fresh entrant in a lane that already has two 40K-star leaders. We think our design choices are right — but you should see the whole board, including where we lose, before you decide.</p>
+</div></header>
+
+<section class="doc" id="landscape"><div class="wrap">
+  <div class="sec-kicker">the landscape · mid-2026</div>
+  <h2 class="sec">The category converged on one pattern: a local graph, served over MCP.</h2>
+  <p class="body">A year ago "give your agent codebase context" meant embeddings and a vector DB. It doesn't anymore. The tools that broke out — <b>CodeGraph</b> (~47K stars, MIT) and <b>GitNexus</b> (~42K stars) — both pre-compute a structural graph <b>on-device</b> and expose it to agents over the <b>Model Context Protocol (MCP)</b>: no cloud, no embeddings API, no code leaving the machine. <b>graphify</b> popularized the central-store idea; <b>potpie</b> took the funded, Neo4j-backed platform route; <b>Serena</b> skips the graph entirely and wraps live language servers. We share the local-first, deterministic half of that consensus — and we make one deliberately contrarian choice, spelled out below.</p>
+  <div class="note warn"><b>Numbers are approximate, mid-2026, and move fast.</b> Star counts and feature lists here are from public repos and third-party write-ups (linked at the bottom), not our benchmarks. The head-to-head performance harness is still being built (<code>proof/compare/</code>) — when it lands, the measured rows replace the claimed ones, wins and losses alike.</p>
+</div></section>
+
+<section class="doc" id="table"><div class="wrap">
+  <div class="sec-kicker">the table</div>
+  <h2 class="sec">Where everyone stands, as honestly as we can draw it.</h2>
+  <div class="tablewrap"><table>
+    <tr>
+      <th>&nbsp;</th><th>ctx-optimize</th><th>CodeGraph</th><th>GitNexus</th><th>graphify</th><th>potpie</th><th>Serena</th>
+    </tr>
+    <tr><td>Adoption (approx)</td><td class="lose">new</td><td class="win">~47K★</td><td class="win">~42K★</td><td class="win">~82K★</td><td>funded</td><td>established</td></tr>
+    <tr><td>Runtime</td><td class="win">one static Go binary</td><td>SQLite</td><td>embedded DB</td><td>Python</td><td class="lose">Neo4j service</td><td>language servers</td></tr>
+    <tr><td>Setup deps</td><td class="win">zero</td><td class="win">zero (1 file)</td><td class="win">zero</td><td class="mid">model key</td><td class="lose">DB + infra</td><td class="mid">LSP per lang</td></tr>
+    <tr><td>Distribution</td><td class="win">agent skill + hook</td><td>MCP (42 tools)</td><td>MCP (16 tools)</td><td>skill</td><td>API</td><td>MCP</td></tr>
+    <tr><td>Agent reach</td><td>CC / Codex / Copilot / Devin</td><td class="win">8 hosts via MCP</td><td class="win">MCP hosts</td><td>skill</td><td>API</td><td class="win">MCP hosts</td></tr>
+    <tr><td>Determinism</td><td class="win">no model, ever</td><td class="win">structural</td><td class="win">structural</td><td class="mid">model-assisted</td><td class="lose">LLM in loop</td><td class="win">LSP-exact</td></tr>
+    <tr><td>Extraction engine</td><td class="win">tree-sitter AST</td><td>AST</td><td>AST</td><td>AST</td><td>AST</td><td class="win">language server</td></tr>
+    <tr><td>Call-edge precision</td><td>AST + conservative name-resolve</td><td>AST name-resolve</td><td>AST name-resolve</td><td>AST name-resolve</td><td>AST name-resolve</td><td class="win">LSP type-exact</td></tr>
+    <tr><td>Freshness / staleness gate</td><td class="win">git-HEAD gate</td><td class="win">auto-sync</td><td>sync</td><td class="lose">static dump</td><td>re-index</td><td class="win">live</td></tr>
+    <tr><td>Routes / deps / k8s as graph</td><td class="win">yes (v0.3)</td><td class="win">routes+bridges</td><td class="mid">partial</td><td class="lose">no</td><td>no</td><td class="lose">no</td></tr>
+    <tr><td>Extensible without forking</td><td class="win">packs (4 axes)</td><td class="mid">config</td><td class="mid">config</td><td>plugins</td><td>no</td><td class="lose">no</td></tr>
+    <tr><td>Module = scattered folders (src/ + tests/)</td><td class="win">yes (v0.3.5)</td><td class="mid">one graph</td><td class="mid">one graph</td><td class="mid">one graph</td><td>—</td><td>—</td></tr>
+    <tr><td>Team clone → prebuilt graph in one step</td><td class="win">one verb: <code>up</code></td><td class="lose">rebuild</td><td class="lose">rebuild</td><td class="lose">rebuild</td><td class="lose">re-index</td><td class="lose">re-warm</td></tr>
+    <tr><td>License</td><td class="win">MIT</td><td class="win">MIT</td><td class="lose">noncommercial</td><td>open</td><td>open-core</td><td class="win">MIT</td></tr>
+  </table></div>
+  <p class="body"><span class="win">green</span> = a genuine strength, <span class="mid">amber</span> = partial / caveated, <span class="lose">red</span> = a real weakness. Notice ours has red in it. The most important red is <b>MCP</b> — see "our bet."</p>
+</div></section>
+
+<section class="doc" id="performance"><div class="wrap">
+  <div class="sec-kicker">performance · where we beat</div>
+  <h2 class="sec">Two kinds of numbers: what we measured, and what's structurally true of everyone.</h2>
+
+  <h3 class="sub">1. Setup &amp; footprint — true for every rival, by architecture</h3>
+  <p class="body">You don't need a benchmark to count dependencies. This is the win we hold against the <i>whole</i> field, not just one tool — the deterministic single binary carries none of the runtime cost a graph-DB, a model, or a language-server does:</p>
+  <div class="tablewrap"><table>
+    <tr><th>&nbsp;</th><th>ctx-optimize</th><th>CodeGraph</th><th>GitNexus</th><th>graphify</th><th>potpie</th><th>Serena</th></tr>
+    <tr><td>Services to run</td><td class="win">0</td><td>SQLite (embedded)</td><td>embedded DB</td><td class="mid">Python runtime</td><td class="lose">Neo4j</td><td class="mid">LSP / language</td></tr>
+    <tr><td>Model / API key</td><td class="win">none</td><td class="win">none</td><td class="win">none</td><td class="mid">for labeling</td><td class="lose">LLM in loop</td><td class="win">none</td></tr>
+    <tr><td>Install</td><td class="win">1 static binary</td><td>binary + index</td><td>binary</td><td class="mid">pip + deps</td><td class="lose">containers</td><td class="mid">server + LSPs</td></tr>
+    <tr><td>Works fully offline</td><td class="win">yes</td><td class="win">yes</td><td class="win">yes</td><td class="mid">not for labeling</td><td class="lose">no</td><td class="win">yes</td></tr>
+    <tr><td>Cold start → first answer</td><td class="win">seconds</td><td>seconds</td><td>seconds</td><td class="mid">index + model</td><td class="lose">DB bring-up</td><td class="mid">LSP warmup</td></tr>
+  </table></div>
+
+  <h3 class="sub">2. Measured head-to-head — graphify (the one we've fully run)</h3>
+  <p class="body">The cross-tool harness (<code>proof/compare/</code>) that runs CodeGraph, GitNexus, potpie and Serena on the same repos is still being built — so for a real, apples-to-apples number today we only claim graphify, on the deterministic core both tools share (M5 Pro, cold shell, <a href="bench/results.json">raw data</a>):</p>
+  <div class="tablewrap"><table>
+    <tr><th>operation</th><th>corpus</th><th>ctx-optimize vs graphify</th><th>note</th></tr>
+    <tr><td>Cold gather</td><td>graphify source, 12,484 files</td><td class="win">13.3× faster</td><td>store 8.3 MB vs 30.1 MB — 3.6× smaller; nodes within 1%</td></tr>
+    <tr><td>Cold gather</td><td>gin, 159 files</td><td class="win">2.2× faster</td><td>graphify finds slightly more nodes here — shown as-is</td></tr>
+    <tr><td>Query latency</td><td>12k-file corpus, median of 5</td><td class="win">~4× faster</td><td>3.8–4.1× across three questions, 2,000-token budget</td></tr>
+  </table></div>
+  <p class="body">Honest caveats, same as on the <a href="index.html#numbers">benchmarks page</a>: graphify was timed on its fastest deterministic path (no clustering, no LLM); on gin and its own source it finds a few more nodes than we do, shown as-is; and it does things we deliberately don't (LLM community labeling). This is the shared core, not a claim we win at everything.</p>
+
+  <h3 class="sub">3. Our absolute numbers + their published claims</h3>
+  <div class="tablewrap"><table>
+    <tr><th>ours (measured)</th><th>result</th><th>theirs (their claim)</th></tr>
+    <tr><td>Cold gather, 12,484 files</td><td class="win">0.67 s</td><td>CodeGraph: <i>58% fewer tool calls, 22% faster</i></td></tr>
+    <tr><td>Query, 1.49M-node Chromium store</td><td class="win">&lt; 1 s</td><td>GitNexus / graphify: <i>large token savings</i></td></tr>
+    <tr><td>Federated query, 188K-node monorepo</td><td class="win">≈ 0.6 s</td><td>(measured their way, not ours)</td></tr>
+  </table></div>
+  <p class="body">When the full harness lands, every rival gets a measured row here — including the ones where we lose. Until then we won't fake a head-to-head we haven't run. Raw data behind ours: <a href="proof/agent/">proof/agent</a> · <a href="bench/results.json">bench/results.json</a>.</p>
+</div></section>
+
+<section class="doc" id="each"><div class="wrap">
+  <div class="sec-kicker">each rival, straight</div>
+  <h2 class="sec">What each competitor is genuinely better at — and where we'd pick ourselves.</h2>
+  <div class="cards">
+    <div class="card">
+      <h3>CodeGraph</h3>
+      <div class="meta">~47K★ · MIT · SQLite + MCP · 38 languages</div>
+      <div class="row up"><span class="m">theirs</span><span><b>The one to beat.</b> MCP-native with 42 tools across 8 agent hosts, a VS Code extension, auto-sync on change, and framework-route + cross-language-bridge extraction we're only now matching. Easiest thing in the category to adopt.</span></div>
+      <div class="row down"><span class="m">ours</span><span>A SQLite file is still a store format; our single static binary has literally zero moving parts, and our <b>pack doctrine</b> lets a team add routes/manifests/languages without a fork. But today, honestly: they reach more agents than we do.</span></div>
+    </div>
+    <div class="card">
+      <h3>GitNexus</h3>
+      <div class="meta">~42K★ · noncommercial · zero-server DB · 16 MCP tools</div>
+      <div class="row up"><span class="m">theirs</span><span>The deepest Claude Code integration going — 16 MCP tools including impact detection and PR triage, plus skills and hooks. Temporal / git-aware analysis is their strength.</span></div>
+      <div class="row down"><span class="m">ours</span><span>Their license is <b>noncommercial</b> — a real blocker for company use; we're MIT. And we ship git co-change edges in the same deterministic binary. Their MCP depth still beats our reach today.</span></div>
+    </div>
+    <div class="card">
+      <h3>graphify</h3>
+      <div class="meta">~82K★ · open · Python · central store</div>
+      <div class="row up"><span class="m">theirs</span><span>The star magnet and the idea's popularizer — community detection, the central-store layout, a big plugin ecosystem, huge mindshare.</span></div>
+      <div class="row down"><span class="m">ours</span><span>Its output is a <b>static dump</b> that goes stale silently, it leans on a model, and multi-repo merge is weak — the exact gaps we built <code>fresh</code>, determinism, and mirrored per-module stores against. We adopted its best idea (community subsystems) without the staleness.</span></div>
+    </div>
+    <div class="card">
+      <h3>potpie &amp; Serena</h3>
+      <div class="meta">potpie: funded, Neo4j · Serena: LSP-as-MCP</div>
+      <div class="row up"><span class="m">theirs</span><span><b>potpie:</b> a funded platform with task-specific agents on a real graph DB. <b>Serena:</b> language-server-exact symbol precision — genuinely more accurate call edges and rename-safety than any static index, ours included.</span></div>
+      <div class="row down"><span class="m">ours</span><span>potpie's Neo4j is infra we refuse to require; a single binary is the opposite bet. Serena has no persistent graph and no cross-language/route/dep view — and needs an LSP per language. Their precision is the thing we most want to close (exact call edges are on our roadmap).</span></div>
+    </div>
+  </div>
+</div></section>
+
+<section class="doc" id="bet"><div class="wrap">
+  <div class="sec-kicker">our bet — and our one honest gap</div>
+  <h2 class="sec">A single deterministic binary you extend, not a service you run.</h2>
+  <p class="body">Strip away the scoreboard and the difference is philosophical. Everyone else is a <b>store format + a server</b> (SQLite, LadybugDB, Neo4j) or a <b>live service</b> (LSP). We're a <b>single static Go binary</b> — no database process, no embeddings, no model, no network except what you invoke yourself (a self-update, a one-time toolchain fetch, your own remote scripts) — whose artifacts are plain, sorted, git-diffable files. What that buys:</p>
+  <ul class="clean">
+    <li class="up"><span class="m">+</span><span><b>Truly zero setup.</b> <code>npm i -g</code> or one binary, works offline, nothing to stand up — not even a local DB daemon.</span></li>
+    <li class="up"><span class="m">+</span><span><b>Extend without forking.</b> Routes, manifests, languages, and any data source are drop-in packs/adapters — commit the file, the whole team's agents inherit it. No other tool here lets you add a framework recognizer as a committed JSON file.</span></li>
+    <li class="up"><span class="m">+</span><span><b>Honest provenance + freshness.</b> Every edge is <code>EXTRACTED</code> (parsed) or <code>INFERRED</code> (name-matched); <code>fresh</code> gates answers against git HEAD so the agent never trusts a stale graph.</span></li>
+    <li class="up"><span class="m">+</span><span><b>More than code.</b> Routes→handlers, dependencies that federate across build tools, k8s topology, git co-change, community subsystems — in one graph, one query.</span></li>
+    <li class="up"><span class="m">±</span><span><b>Agent skill over MCP — a deliberate bet.</b> The leaders distribute over MCP; we bet on the <b>agent-skill + hook + committed pointer</b> path instead. A skill is richer than a fixed MCP tool list — it teaches the agent <i>when</i> and <i>how</i> to use the store, carries the query-craft rules, and drives onboarding and customization end-to-end. The tradeoff, stated plainly: on MCP-only hosts (Cursor, Kiro, Gemini CLI) you'd wire the CLI in yourself — there's no MCP server, by choice, and there won't be one. On Claude Code, Codex, Copilot and Devin the skill lands the moment you run <code>install --skills</code>.</span></li>
+    <li class="down"><span class="m">−</span><span><b>Call edges are conservative, not LSP-exact.</b> We parse with tree-sitter (real ASTs, same engine class as CodeGraph/GitNexus/graphify) and resolve a call to its declaration by unique name — <b>dropping ambiguous matches rather than guessing</b>, so there are no false edges. That's the same precision tier as the other graph tools; only Serena's language server is genuinely type-exact (it knows the exact overload). Closing that last gap (go/x/tools first) is on the roadmap.</span></li>
+  </ul>
+  <div class="note"><b>The honest summary:</b> if you want the most-adopted, MCP-everywhere tool today, that's CodeGraph or GitNexus. If you want a company-safe license, avoid GitNexus. If you want symbol-exact refactors, add Serena. If you want <b>one zero-dependency binary that indexes code + routes + dependencies + infra deterministically and lets your team extend it without a fork</b>, delivered to your agent as a skill rather than an MCP server, on Claude Code / Codex / Copilot / Devin — that's us. We'd rather earn the comparison than hide from it.</p></div>
+</div></section>
+
+<footer><div class="wrap">
+  <div>ctx-<em style="color:var(--accent);font-style:normal">optimize</em> — gather once, refresh cheaply, answer from the store.</div>
+  <div><a href="index.html">Home</a> · <a href="docs.html">Docs</a> · <a href="https://github.com/muthuishere/ctx-optimize">GitHub</a> · sources: <a href="https://rywalker.com/research/code-intelligence-tools">rywalker research</a>, <a href="https://www.knolli.ai/post/graphify-alternatives">knolli</a></div>
+</div></footer>
+
+</body>
+</html>

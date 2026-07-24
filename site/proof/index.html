@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The kill test — ctx-optimize proof matrix</title>
+<style>
+:root{--bg:#0b0e13;--bg2:#11151d;--border:#1e2632;--text:#dbe2ec;--muted:#9aa7b8;--dim:#64748b;--accent:#4ade80;--red:#f87171;--mono:ui-monospace,'SF Mono',Menlo,monospace;--disp:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--disp);line-height:1.65;font-size:16px}
+.wrap{max-width:860px;margin:0 auto;padding:60px 24px 100px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.kicker{font-family:var(--mono);font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+h1{font-size:2rem;line-height:1.25;margin-bottom:18px;font-weight:650}
+h2{font-size:1.3rem;margin:48px 0 14px;font-weight:600}
+p{margin:12px 0;color:var(--muted)}
+p b,li b{color:var(--text);font-weight:600}
+em{color:var(--text)}
+code{font-family:var(--mono);font-size:.85em;background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--text)}
+blockquote{border-left:3px solid var(--accent);padding:10px 18px;margin:18px 0;background:var(--bg2);border-radius:0 10px 10px 0;font-family:var(--mono);font-size:.9rem;color:var(--text)}
+.tbl{overflow-x:auto;margin:20px 0}
+table{border-collapse:collapse;width:100%;font-size:.85rem;font-family:var(--mono)}
+th{color:var(--dim);font-weight:500;text-align:left;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em}
+th,td{padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{color:var(--muted)}
+.win{color:var(--accent);font-weight:600}
+.loss{color:var(--red)}
+ol,ul{margin:12px 0 12px 24px;color:var(--muted)}
+li{margin:8px 0}
+.note{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;padding:16px 20px;margin:20px 0;font-size:.92rem}
+.back{font-family:var(--mono);font-size:.85rem}
+.foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--border);font-family:var(--mono);font-size:.8rem;color:var(--dim)}
+</style>
+</head>
+<body><div class="wrap">
+<p class="back"><a href="../#proof">← ctx-optimize</a></p>
+<div class="kicker" style="margin-top:34px">the kill test · full write-up · 2026-07-12</div>
+<h1>We pre-committed a kill bar, ran the test on ourselves, and published it either way.</h1>
+
+<p>Before launch, this project's standing critique pre-committed a kill criterion: <em>if the composite product (query + symbol cards + deterministic wiki) can't beat a plain grep agent by 25% on hostile terrain, stop — or pivot.</em> This page is that test, run for real, with the losses left in.</p>
+
+<h2>Protocol</h2>
+<ul>
+<li><b>Corpus:</b> <code>linux/block</code> (98 C files / ~73k lines of kernel C — opaque naming, the terrain where a graph should help most), then a <b>40× bigger slice</b> (3,987 files: block+mm+kernel+fs+drivers/block+drivers/nvme+lib) for the model-tier runs.</li>
+<li><b>Arms:</b> the <em>same</em> agent answers each question twice. Arm A: shell search + file reads only, forbidden from using ctx-optimize. Arm B: told the store exists and to prefer it (<code>query</code> / <code>card</code> / <code>explain</code> / <code>path</code> / <code>affected</code> / wiki), file reads allowed to fill gaps.</li>
+<li><b>Questions:</b> 12 real block-layer questions — 3 locate, 5 mechanism, 2 impact, 2 conceptual — with ground-truth keys derived by reading the source directly (never via the store, so the key can't favor arm B). <a href="questions.json">questions.json</a> (raw).</li>
+<li><b>Judging:</b> every answer graded against the key <em>before</em> tokens count. A cheaper wrong answer is a loss, not a saving.</li>
+<li><b>Token accounting:</b> each harness's own usage reporting; "fresh tokens" = input + cache-creation + output, cache reads tracked separately. <b>Tokens are only ever compared within one harness</b> — cross-harness token accounting is fiction.</li>
+</ul>
+
+<h2>The verdict</h2>
+<blockquote>composite &lt;25% on hostile terrain → stop, or pivot</blockquote>
+<div class="tbl"><table>
+<tr><th>harness · model</th><th>corpus</th><th>tokens A→B</th><th>steps</th><th>wall</th><th>quality A / B</th></tr>
+<tr><td>Claude Code · default</td><td>98 files</td><td>370,398 → 369,673 <b>(±0%)</b></td><td>~flat</td><td class="win">347→298s (−14%)</td><td>12/12 vs 11.5/12</td></tr>
+<tr><td>Claude Code · Sonnet</td><td>3,987 files</td><td>370,308 → 389,647 <span class="loss">(+5%)</span></td><td class="win">89→77 (−13%)</td><td>386→397s (+3%)</td><td>11.5/12 vs <b>12/12</b></td></tr>
+<tr><td>Claude Code · Haiku</td><td>3,987 files</td><td>286,943 → 283,669 <b>(−1%)</b></td><td class="win">174→124 (−29%)</td><td>641→698s (+9%)</td><td>11/12 vs 11/12</td></tr>
+<tr><td>Codex CLI · default</td><td>98 files</td><td>385,794 → 397,323 <span class="loss">(+3%)</span></td><td>~flat</td><td>683→680s (±0%)</td><td>11.5/12 vs 11.5/12</td></tr>
+<tr><td>Devin CLI · SWE-1.6</td><td>98 files · n=6</td><td class="win">4,004,232 → 2,300,736 (−42%)</td><td class="win">−24%</td><td class="win">294→195s (−34%)</td><td>5/6 vs <b>6/6</b></td></tr>
+</table></div>
+<p><b>The 25% bar was not cleared on frontier harnesses.</b> Claude Code and Codex grep superbly and cache aggressively; the store lands at token parity at equal answer quality. Per the pre-commitment, the universal "saves tokens" claim is dead, and this site doesn't make it. Devin's daily quota cut its run at 6 of 12 pairs; its numbers carry high variance (single questions ranged −82% to +103%) and are labeled accordingly.</p>
+
+<h2>What survived — measured, not asserted</h2>
+<ol>
+<li><b>Onboarding / architecture traces: −34% to −49% tokens on both frontier CLIs.</b> "Trace the lifecycle of a bio from submission to driver": Claude −34% tokens / −48% wall (22→11 turns), Codex −49% tokens. The wiki + cards class. Shallow enumeration questions ("list the three schedulers") show no such win — the class that pays is deep structure, not trivia.</li>
+<li><b>Correctness where grep looks right and is wrong.</b> On "which gatekeeper allows a back-merge", the grep arms of <em>both</em> Codex and Devin confidently named the wrong function; every store arm cited <code>ll_back_merge_fn</code> via call edges. On "which files call <code>blk_mq_run_hw_queue</code>", Sonnet's grep arm reported a comment mention as a real caller — the store arm explicitly flagged it as "comment, not an actual call".</li>
+<li><b>Steps fall at every tier: −13% (Sonnet), −24% (Devin), −29% (Haiku).</b> Whether saved steps become saved tokens is pure economics — see below.</li>
+</ol>
+
+<h2>The mechanism: step-cost economics</h2>
+<p>Devin reports <b>zero cached tokens</b> — every step re-pays the entire context — so −24% steps became −42% tokens and −34% wall. Claude Code's prompt caching makes an extra step nearly free, so even Haiku (−29% steps) lands at token parity, and the smaller models actually spend slightly <em>longer</em> per store call digesting output (+3%/+9% wall). The savings are real exactly where caching is absent or you pay per step: API scaffolds, CI loops, custom harnesses. On a cached frontier CLI the product buys fewer steps and fewer confidently-wrong answers, not a smaller bill.</p>
+
+<h2>Scale check (bonus finding)</h2>
+<p>The 3,987-file kernel slice became a <b>274,812-node / 529,562-edge store with 3,989 wiki pages in 5.5 seconds</b>; queries answer in ~1.7s at that scale. (For calibration: graphify produced a similar node count on kubernetes in 6m46s.)</p>
+
+<h2>Defects this test surfaced in our own product</h2>
+<ol>
+<li><b>Query noise:</b> C local-variable declarations are extracted as child nodes and pollute 50–80% of top-10 hits on kernel queries, burying the real symbol.</li>
+<li><b>Card caller cap:</b> <code>card</code> truncates caller lists at 15 ("… 4 more") — the hidden tail cost one arm a complete impact answer.</li>
+<li><b>Doc terms unindexed:</b> "writeback throttling" ranks <code>blk-throttle.c</code> (cgroup throttling) above <code>blk-wbt.c</code> (the actual wbt).</li>
+</ol>
+<p>All three are on the fix list. When they're fixed we'll re-run arm B and publish both numbers, before and after.</p>
+
+<h2>Addendum 1 — cost-true accounting (cache reads are not free)</h2>
+<p>The tables above compare "fresh tokens", which prices cache reads at zero. They bill at ~10% of input price, and every extra agent turn re-reads the whole conversation. On <code>total_cost_usd</code> — the harness's own bill — the steered store arm is <b>cheaper at every Claude tier: −9.2% (default, $3.55→$3.22), −5.6% (Sonnet), −16.2% (Haiku)</b>, driven by ~26% fewer cache re-reads. The parity verdict above is the free-cache view; the dollar view favors the store.</p>
+
+<h2>Addendum 2 — the natural-usage test (no steering at all)</h2>
+<p>The arms above steer the agent with a prompt. The honest product test is: install the skill, ask a <em>plain</em> question, observe. Measured:</p>
+<ul>
+<li><b>A skill alone never fires</b> — 0 store calls across one-shots with both a passive and a maximally imperative description. (graphify's skill uses the same passive trigger pattern; this failure mode is not unique to us.)</li>
+<li><b>What works: a pointer block in the repo's <code>CLAUDE.md</code>/<code>AGENTS.md</code></b> — the instruction files Claude Code, Codex, Copilot, OpenCode and Devin all load natively. With it the agent made <b>55–57 unprompted store calls</b> per 12-question run. <code>ctx-optimize init</code> now writes this block; <code>install --skills</code> covers every CLI with a native skill dir.</li>
+<li><b>Cost today: +6% vs a no-store baseline</b> (v1 of the block: +11%; v2 "use it INSTEAD, cite directly, don't re-verify": +6%, turns −6%). Mechanism/architecture questions already win naturally (−13…25% cost); enumeration sweeps and body-constant questions lose — cards don't yet carry function bodies, so those reads still happen <em>on top</em>. That body-head card (in the original design, unbuilt) plus the three defects above are the fix list; we'll re-run this exact harness after and publish both runs.</li>
+</ul>
+
+<h2>Addendum 3 — the re-run: body-head cards clear the bar</h2>
+<p>Same day, same frozen harness, promise kept. The fix was the card the original design specified but v0 never built: <code>card</code> now returns the first ~30 lines of the symbol's <em>body</em> alongside signature/doc/callers, killing the follow-up read. Natural usage (skill + repo pointer, plain questions, zero steering), harness-billed dollars:</p>
+<div class="tbl"><table>
+<tr><th>run</th><th>total cost</th><th>vs baseline</th><th>turns</th><th>store calls</th></tr>
+<tr><td>baseline (no store)</td><td>$3.16</td><td>—</td><td>70</td><td>0</td></tr>
+<tr><td>pointer v1 · no-body cards</td><td>$3.50</td><td class="loss">+11%</td><td>71</td><td>55</td></tr>
+<tr><td>pointer v2 · no-body cards</td><td>$3.36</td><td class="loss">+6%</td><td>66</td><td>57</td></tr>
+<tr><td><b>pointer v2 · body-head cards</b></td><td class="win">$2.16</td><td class="win">−31.6%</td><td class="win">53</td><td>56</td></tr>
+</table></div>
+<p><b>The pre-committed 25% bar is cleared in the most honest configuration we know how to build.</b> Quality spot-verified on the cheapest runs — the $0.049 and $0.054 answers are complete, correct, straight-off-one-card, and again name the merge gatekeeper the grep arms kept getting wrong. Residuals stay published: 3 of 12 questions still cost more, and wall time is +31% (store calls run ~1–2s each at 275k nodes — latency is the next target). Trigger stack shipped as: generic skills (two standard dirs) + <code>init</code>-written repo pointer (CLAUDE.md/AGENTS.md) + one Claude Code UserPromptSubmit hook (the only supported CLI with a hook API); a hook-only one-shot with no repo files still used the store unprompted and answered correctly at baseline cost.</p>
+
+<h2>Raw data</h2>
+<ul>
+<li><a href="questions.json">questions.json</a> — the 12 questions with ground-truth keys</li>
+<li><a href="metrics-frontier.json">metrics-frontier.json</a> — per-run extraction, Claude/Codex/Devin</li>
+<li><a href="metrics-tiers.json">metrics-tiers.json</a> — per-run extraction, Haiku/Sonnet on the 40× corpus</li>
+<li><a href="RESULTS.md">RESULTS.md</a> · <a href="README.md">README.md</a> — the in-repo write-up and protocol (plain markdown)</li>
+<li>Full per-run payloads (every answer, every usage report) ship in the product repo's <code>proof/results*/</code>.</li>
+</ul>
+
+<p class="foot">Measured 2026-07-12 · Apple M5 Pro · Claude Code 2.1.207, Codex CLI 0.142.4, Devin CLI 2026.8.18, each on its own default settings, identical in both arms · <a href="../#proof">back to the site</a></p>
+</div></body>
+</html>

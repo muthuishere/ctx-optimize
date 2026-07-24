@@ -1,0 +1,19 @@
+{
+  "model": "openai/gpt-4o-mini",
+  "arm": "b",
+  "question": "If I change the Route.Match method, what other code depends on it or calls it?",
+  "wall_s": 2.09,
+  "steps": 1,
+  "tool_calls": {
+    "run_shell": 0,
+    "ctx_optimize": 1,
+    "graphify": 0
+  },
+  "tokens": {
+    "prompt": 933,
+    "completion": 54,
+    "total": 987
+  },
+  "cost_usd": 0.000171,
+  "answer": "The `Route.Match` method, defined in `route.go` (lines 47-114), is called by other code within the same file, `route.go`."
+}
