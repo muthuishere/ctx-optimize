@@ -279,13 +279,28 @@ func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error) {
 // re-gather emitting less than half the producer's previous nodes is more
 // likely a broken run than a huge refactor — refuse unless forced.
 func (s *Store) Replace(b *schema.Batch, force bool) (added, pruned int, err error) {
-	if err := b.Validate(); err != nil {
-		return 0, 0, fmt.Errorf("reject batch: %w", err)
-	}
 	existing, err := s.Nodes()
 	if err != nil {
 		return 0, 0, err
 	}
+	// SPIKE (ADR 2026-07-24-scale-robust-gather): partition instead of
+	// reject-whole. Invalid nodes are quarantined, the valid remainder committed;
+	// edges are cascade-dropped ONLY when an endpoint was quarantined this batch
+	// (cross-batch/forward edges to absent nodes stay — original Validate allowed
+	// them). The abort guard keys off NODE drops (a broken producer emits bad
+	// nodes wholesale), not edge drops.
+	accepted, quarantined, verr := b.PartitionValidate(nil)
+	if verr != nil {
+		return 0, 0, fmt.Errorf("reject batch: %w", verr)
+	}
+	nodeDrops := len(b.Nodes) - len(accepted.Nodes)
+	if total := len(b.Nodes); total > 0 && float64(nodeDrops)/float64(total) > 0.05 {
+		return 0, 0, fmt.Errorf("reject batch: %d/%d nodes invalid (>5%%) — producer likely broken; first: %q (%s)", nodeDrops, total, quarantined[0].ID, quarantined[0].Reason)
+	}
+	if len(quarantined) > 0 {
+		fmt.Fprintf(os.Stderr, "ctx-optimize: quarantined %d invalid item(s), committing %d valid nodes (e.g. %q: %s)\n", len(quarantined), len(accepted.Nodes), quarantined[0].ID, quarantined[0].Reason)
+	}
+	b = accepted
 	prev := 0
 	for _, n := range existing {
 		if n.Metadata["producer"] == b.Producer {

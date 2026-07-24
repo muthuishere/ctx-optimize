@@ -100,3 +100,83 @@ func (b *Batch) Validate() error {
 	}
 	return nil
 }
+
+// --- SPIKE (ADR 2026-07-24-scale-robust-gather) ---------------------------
+// nodeReason returns "" if the node is valid, else the reason it's invalid.
+// Single source of truth reused by Validate-style checks and PartitionValidate.
+func nodeReason(n Node) string {
+	switch {
+	case strings.TrimSpace(n.ID) == "":
+		return "id is required"
+	case strings.TrimSpace(n.Label) == "":
+		return "label is required"
+	case strings.TrimSpace(n.Kind) == "":
+		return "kind is required"
+	case strings.TrimSpace(n.FileType) == "":
+		return "file_type is required"
+	case strings.TrimSpace(n.Source) == "":
+		return "source is required"
+	}
+	return ""
+}
+
+func edgeReason(e Edge) string {
+	switch {
+	case strings.TrimSpace(e.Source) == "" || strings.TrimSpace(e.Target) == "":
+		return "source and target are required"
+	case strings.TrimSpace(e.Relation) == "":
+		return "relation is required"
+	case !validConfidence[e.Confidence]:
+		return "confidence not in {EXTRACTED,INFERRED,AMBIGUOUS}"
+	}
+	return ""
+}
+
+// Quarantine is one dropped node/edge with the reason it failed validation.
+type Quarantine struct {
+	ID     string `json:"id"`     // node id, or "src->tgt" for an edge
+	Reason string `json:"reason"`
+}
+
+// PartitionValidate splits a batch into an accepted (fully-valid, deduped,
+// no-dangling) batch and the quarantined nodes/edges. Deterministic: input
+// order is preserved; first occurrence of a duplicate id wins. existingIDs are
+// node ids already in the store (valid edge endpoints). Producer is still a
+// hard requirement — a batch with no provenance tag is a caller bug, not data.
+func (b *Batch) PartitionValidate(existingIDs map[string]bool) (accepted *Batch, quarantined []Quarantine, err error) {
+	if strings.TrimSpace(b.Producer) == "" {
+		return nil, nil, fmt.Errorf("batch: producer is required (provenance tag)")
+	}
+	accepted = &Batch{Producer: b.Producer}
+	seen := make(map[string]bool, len(b.Nodes))
+	// dropped = node ids we quarantined THIS batch (invalid). Cross-batch/forward
+	// edge targets that are simply absent are NOT dropped — the original Validate
+	// never required an edge's endpoints to be present (code↔docs↔schema links
+	// span batches by design). We only cascade edges whose endpoint we removed.
+	dropped := make(map[string]bool)
+	for _, n := range b.Nodes {
+		if r := nodeReason(n); r != "" {
+			quarantined = append(quarantined, Quarantine{ID: n.ID, Reason: r})
+			dropped[n.ID] = true
+			continue
+		}
+		if seen[n.ID] {
+			quarantined = append(quarantined, Quarantine{ID: n.ID, Reason: "duplicate id in batch"})
+			continue // the first copy is accepted, so the id is NOT dropped
+		}
+		seen[n.ID] = true
+		accepted.Nodes = append(accepted.Nodes, n)
+	}
+	for _, e := range b.Edges {
+		if r := edgeReason(e); r != "" {
+			quarantined = append(quarantined, Quarantine{ID: e.Source + "->" + e.Target, Reason: r})
+			continue
+		}
+		if dropped[e.Source] || dropped[e.Target] {
+			quarantined = append(quarantined, Quarantine{ID: e.Source + "->" + e.Target, Reason: "dangling: endpoint quarantined this batch"})
+			continue
+		}
+		accepted.Edges = append(accepted.Edges, e)
+	}
+	return accepted, quarantined, nil
+}
