@@ -35,6 +35,9 @@ const (
 var instructionsBody string
 
 func instructionsBlock(ver string) string {
+	// Dev builds carry a leading "v" (git describe) — strip it so the marker
+	// never stamps "vv0.8.0-…".
+	ver = strings.TrimPrefix(ver, "v")
 	return instrBeginPrefix + ver + instrBeginSuffix + "\n" +
 		strings.TrimSuffix(instructionsBody, "\n") + "\n" +
 		instrEnd + "\n"

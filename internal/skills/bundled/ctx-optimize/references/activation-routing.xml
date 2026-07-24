@@ -24,15 +24,15 @@
     <route id="query" group="answer">
       <when>any question about the codebase, where is X, how does Y work, who uses Z, find the code that does W, search for, look up, locate</when>
       <goal>The default answer verb. Ranked, cited hits with signatures — replaces a grep-and-read chain.</goal>
-      <cmd>ctx-optimize query "&lt;2-4 terms&gt;" --json  [--budget N] [--modules all|a,b] [--root]</cmd>
-      <note>Query with 2-4 terms, not sentences; drop paths and `::`/`.` qualifiers. Scope follows cwd: a module dir answers from that module (zero hits escalate); the repo root federates via the navigator (`--modules` widens, `--root` forces root).</note>
+      <cmd>ctx-optimize query "&lt;2-4 terms&gt;" --json  [--budget N] [--include-content] [--modules all|a,b] [--root]</cmd>
+      <note>Query with 2-4 terms, not sentences; drop paths and `::`/`.` qualifiers. Scope follows cwd: a module dir answers from that module (zero hits escalate); the repo root federates via the navigator (`--modules` widens, `--root` forces root). Need the actual code, not just the pointer? `--include-content` hydrates each hit's verbatim body from the source file at answer time (nothing stored; default stays terse).</note>
     </route>
 
     <route id="card" group="answer">
       <when>need a symbol's signature, doc, callers, or callees; about to open a file just to read one function's shape</when>
       <goal>The card IS the read — signature + doc + location + callers + callees without opening the file.</goal>
-      <cmd>ctx-optimize card "&lt;exact label&gt;" --json</cmd>
-      <note>Wants the node's LABEL exactly. Unsure? `query` the short name, copy the label from the hit, then `card` it. Open a file only when a hit's `location` demands verbatim code — then read only that range.</note>
+      <cmd>ctx-optimize card "&lt;exact label&gt;" --json  [--include-content]</cmd>
+      <note>Alias: `node`. Wants the node's LABEL exactly. Unsure? `query` the short name, copy the label from the hit, then `card` it. `--include-content` returns the full verbatim body inline (read from the source file at answer time) — use it instead of opening the file.</note>
     </route>
 
     <route id="change-plan" group="answer">
@@ -46,6 +46,7 @@
       <when>what breaks if X changes, blast radius, impact, reverse dependencies, who depends on this, is it safe to change</when>
       <goal>Reverse impact — everything that transitively reaches X.</goal>
       <cmd>ctx-optimize affected "&lt;X&gt;" --depth 2 --json  [--relation R]</cmd>
+      <note>Alias: `impact`.</note>
     </route>
 
     <route id="path" group="answer">
@@ -115,10 +116,10 @@
     </route>
 
     <route id="sync" group="build">
-      <when>code changed, refresh the store, sync the graph with the code, is the graph current</when>
-      <goal>FAST re-gather of the repo you're in: code/docs/manifests/git, prunes deleted, re-emits changed — SKIPS adapter scripts (safe: their nodes stay put; prints how many were skipped). The default after code changes.</goal>
-      <cmd>ctx-optimize sync  [--jobs N] [--force]</cmd>
-      <note>Takes no path — always the repo you're in (`add &lt;path&gt;` for another repo). ≡ `add . --no-adapters`.</note>
+      <when>code changed, refresh the store, sync the graph with the code, is the graph current, resync</when>
+      <goal>THE resync verb — incremental re-gather of the repo you're in: 0-change short-circuits in ~ms (stat-signature, no engine init), a 1-file edit costs O(changed). Code/docs/manifests/git; prunes deleted, re-emits changed. Default SKIPS adapter scripts and never dials a source.</goal>
+      <cmd>ctx-optimize sync  [--adapters] [--all] [--no-wiki] [--jobs N] [--force]</cmd>
+      <note>Takes no path — always the repo you're in (`add &lt;path&gt;` for another repo). `--adapters` also re-runs adapter scripts; `--all` additionally refreshes native sources (DIALS DBs/buckets — explicit operator choice); `--no-wiki` refreshes the graph only (queries read the graph, never the wiki). Autosync: set `"autosync": "lazy"` (or true) in .ctxoptimize/config.json — a stale read then resyncs itself in a detached child, 0ms added; `"block"` resyncs inline; env override CTX_OPTIMIZE_AUTOSYNC.</note>
       <ref>references/sync.md</ref>
     </route>
 

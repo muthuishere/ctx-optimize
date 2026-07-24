@@ -1,4 +1,4 @@
-<!-- ctx-optimize:instructions:begin vv0.8.0-12-ga0ff582-dirty -->
+<!-- ctx-optimize:instructions:begin v0.9.0-1-gd041a2a-dirty -->
 # ctx-optimize — the usage card for this repo's knowledge store
 
 **ctx-optimize is a SHELL COMMAND (a CLI on PATH), not a callable tool: run
@@ -35,6 +35,8 @@ CI gate: `up && fresh`.
 | **Connection** — how are A and B related | `ctx-optimize path "A" "B" --json` |
 | **Orient** — where do I start | `ctx-optimize hubs --top 10 --json` |
 | **List / filter** — every node of a kind, edges of a relation, deps by scope ("all k8s services", "which files use react", "our dev deps") | `ctx-optimize nodes --kind K` / `edges --relation R` / `deps --scope dev [--importers]` — native, portable, **never `export \| jq`** |
+| **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — verbatim source hydrated from the file at answer time (nothing stored) |
+| **Code changed** — bring the store current | `ctx-optimize sync` — incremental resync of THIS repo (0-change ≈ ms); `--adapters` adds adapter scripts, `--all` adds native sources (dials), `--no-wiki` graph-only. Opt-in autosync: `"autosync": "lazy"` in config.json (stale reads resync themselves in the background) |
 
 Query with 2–4 terms, not sentences; `card` wants the exact label (query the
 short name first if unsure). Output is parsed fact with exact `file:line` —

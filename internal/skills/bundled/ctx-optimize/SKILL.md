@@ -108,11 +108,12 @@ Do NOT default to `query` for everything. The verb follows the intent:
 | Your intent | The ONE verb |
 |---|---|
 | **Find** something — you have words, want locations | `ctx-optimize query "<2-4 terms>" --json` |
-| **Inspect** a known symbol — signature/doc/callers, no file read | `ctx-optimize card <symbol> --json` |
+| **Inspect** a known symbol — signature/doc/callers, no file read | `ctx-optimize card <symbol> --json` (alias: `node`) |
 | **About to EDIT** a symbol — what to touch, what breaks, WHICH TESTS TO RUN | `ctx-optimize change-plan <symbol> --json` — one call replaces query+card+affected+test-grep (~90% fewer tokens, measured) |
-| **Blast radius** only — is it safe to change | `ctx-optimize affected <symbol> --depth 2 --json` |
+| **Blast radius** only — is it safe to change | `ctx-optimize affected <symbol> --depth 2 --json` (alias: `impact`) |
 | **Connection** — how are A and B related | `ctx-optimize path "A" "B" --json` |
 | **Orient** — where do I start in this repo | `ctx-optimize hubs --top 10 --json` |
+| **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — hydrates each hit's verbatim source from the file at answer time (nothing stored; default stays terse) |
 | **About to hand a citation to a human** — does this claim still hold? | `ctx-optimize verify "<label or file:L10-L20>" --json` — node exists (exact only), file exists, range in bounds, drifted-since-gather |
 
 If you ran `query` and then immediately wanted callers or tests — you picked
