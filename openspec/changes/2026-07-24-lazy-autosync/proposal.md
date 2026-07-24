@@ -1,6 +1,6 @@
 # ADR — lazy auto-sync on query + cheap incremental re-sync
 
-Status: DRAFT — 2026-07-24. For DISCUSSION before any code (repo change-flow).
+Status: SUPERSEDED by design.md (ACCEPTED) — SHIPPED in v0.9.0 (levers 1-3 + sync verb; spikes.md has the measurements).
 Motivated by a MEASURED loss, not a hunch.
 
 ## Why now — the measured gap

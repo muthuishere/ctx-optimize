@@ -1,6 +1,6 @@
 # ADR — honest cross-tool benchmark: ctx-optimize vs the field
 
-Status: DRAFT — 2026-07-24. Owner-directed: run the *whole* field for real, in an
+Status: DONE — run, audited (AUDIT.md: publish-with-fixes), fixes applied, published on site/compare.html 2026-07-24. Was owner-directed: run the *whole* field for real, in an
 isolated arena, with an adversarial auditor, and publish only what we measured.
 
 ## Why

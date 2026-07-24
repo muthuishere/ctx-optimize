@@ -1,6 +1,6 @@
 # ADR — on-demand content hydration (`--include-content`), never store bodies
 
-Status: DRAFT — 2026-07-24. For DISCUSSION + a required SPIKE before code.
+Status: SHIPPED in v0.9.0 — `--include-content` on query/card (spike proven, merged 77c84f4).
 Split out of the answer-quality ADR (F3) because it is a positioning decision on
 its own. Motivated by MEASURED evidence from the multilang benchmark.
 

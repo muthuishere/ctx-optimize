@@ -1,6 +1,6 @@
 # ADR — scale-robust gather: one bad node must not discard the index
 
-Status: DRAFT — 2026-07-24. HIGH priority (owner: "this is a bigger quality").
+Status: SHIPPED in v0.9.0 — partition-and-quarantine gather (merged 18c35c2; proven on full Linux: 0 B → 2.85M nodes, 9 quarantined).
 Spec-first; code after sign-off. Motivated by a MEASURED Linux-scale failure.
 
 ## The measured failure (repro)

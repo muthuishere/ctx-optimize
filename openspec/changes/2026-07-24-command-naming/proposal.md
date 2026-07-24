@@ -1,6 +1,6 @@
 # ADR — field-standard command aliases (discoverability)
 
-Status: DRAFT — 2026-07-24. For DISCUSSION. Motivated by the command-comparison
+Status: PARTIAL — `node`/`impact` aliases shipped in v0.9.0; the rest stays open for discussion. Motivated by the command-comparison
 (`benchmarks/multilang/command-agent-comparison.md`): our verbs do the same jobs
 as the field but use non-obvious names, raising the adoption barrier for users
 coming from CodeGraph/GitNexus/graphify.

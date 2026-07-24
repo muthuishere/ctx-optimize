@@ -18,6 +18,7 @@ func TestGoldenMultiModuleConfigRepo(t *testing.T) {
 	storeRoot := t.TempDir()
 
 	gatherWithin(t, 10*time.Second, repo, storeRoot)
+	resyncWithin(t, 3*time.Second, repo, storeRoot)
 
 	snap := snapshot(t, storeRoot)
 

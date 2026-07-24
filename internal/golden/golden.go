@@ -231,3 +231,22 @@ func mustContain(t *testing.T, snap, what, substr string) {
 		t.Errorf("landmark missing — %s: %q not found in snapshot", what, substr)
 	}
 }
+
+// resyncWithin re-runs add on an UNCHANGED tree and enforces the 0-change
+// short-circuit ceiling (ADR 2026-07-24-lazy-autosync lever 1): a no-op
+// resync must be a stat-scan, never a re-extraction. Measured ~20-40ms on
+// real repos; the ceiling leaves slow-CI headroom while still catching a
+// regression to the old full-pass behavior (~seconds). Part of the golden
+// contract: this number may only move DOWN.
+func resyncWithin(t *testing.T, ceiling time.Duration, repo, storeRoot string) {
+	t.Helper()
+	start := time.Now()
+	out := runCLI(t, "add", repo, "--path", repo, "--store", storeRoot)
+	wall := time.Since(start)
+	if !strings.Contains(out, "unchanged — source tree matches last gather") {
+		t.Errorf("0-change resync did not short-circuit:\n%s", out)
+	}
+	if wall > ceiling {
+		t.Errorf("0-change resync took %s, ceiling %s — the short-circuit regressed", wall.Round(time.Millisecond), ceiling)
+	}
+}
