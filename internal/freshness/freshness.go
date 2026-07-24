@@ -22,10 +22,11 @@ const (
 
 // Source is what add recorded about one gathered root.
 type Source struct {
-	Path      string `json:"path"`       // absolute source root
-	Head      string `json:"head"`       // git HEAD sha at add time
-	HeadUnix  int64  `json:"head_unix"`  // committer time of that HEAD
-	AddedUnix int64  `json:"added_unix"` // when add ran
+	Path      string `json:"path"`               // absolute source root
+	Head      string `json:"head"`               // git HEAD sha at add time
+	HeadUnix  int64  `json:"head_unix"`          // committer time of that HEAD
+	AddedUnix int64  `json:"added_unix"`         // when add ran
+	TreeSig   string `json:"tree_sig,omitempty"` // stat-signature of the source tree at add time (path+mtime+size hash) — the 0-change short-circuit gate (ADR 2026-07-24-lazy-autosync, lever 1)
 }
 
 // Report is the freshness verdict for one source.

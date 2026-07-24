@@ -7,8 +7,11 @@ package app
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,6 +24,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
 	"github.com/muthuishere/ctx-optimize/internal/extract/deplink"
 	"github.com/muthuishere/ctx-optimize/internal/extract/githistory"
+	"github.com/muthuishere/ctx-optimize/internal/extract/ignore"
 	"github.com/muthuishere/ctx-optimize/internal/extract/manifests"
 	"github.com/muthuishere/ctx-optimize/internal/extract/markdown"
 	"github.com/muthuishere/ctx-optimize/internal/freshness"
@@ -587,7 +591,103 @@ func repoAdapters(base string) ([]project.Adapter, error) {
 // skipAdapters is the fast lane (`sync` / `add --no-adapters`): adapter
 // scripts can be arbitrarily slow (DB dumps, doc converters), and skipping
 // them is safe because Replace is producer-scoped — their nodes stay put.
+// treeSignature is a cheap stat-only fingerprint of a module's source tree
+// (ADR 2026-07-24-lazy-autosync, lever 1): sorted "rel\0mtimeNano\0size" over
+// every non-ignored file, hashed. No content read, no parse — O(files) stat,
+// ~ms even on 12k files. mtime is a one-way liar: a `touch` can bump it with no
+// content change (→ a SAFE unnecessary rebuild), but a real edit can never
+// leave it unchanged, so a matching signature provably means "nothing changed".
+func treeSignature(base string, excludes []string) (string, error) {
+	skip := map[string]bool{}
+	for _, e := range excludes {
+		if abs, err := filepath.Abs(e); err == nil {
+			skip[abs] = true
+		}
+	}
+	ignored := ignore.New(base)
+	h := sha256.New()
+	var lines []string
+	err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if abs, aerr := filepath.Abs(path); aerr == nil && skip[abs] {
+				return filepath.SkipDir
+			}
+			// Skip VCS + build output, but KEEP .ctxoptimize/ — its packs,
+			// adapters, and config change the graph and MUST invalidate the
+			// short-circuit (a dropped routes pack is a real change).
+			if path != base && (name == ".git" || name == "node_modules" ||
+				name == "vendor" || name == "target" || name == "dist" || name == "build" ||
+				strings.HasSuffix(name, "-out")) {
+				return filepath.SkipDir
+			}
+			if ignored != nil {
+				if rel, rerr := filepath.Rel(base, path); rerr == nil && rel != "." && ignored(filepath.ToSlash(rel)) {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		rel, rerr := filepath.Rel(base, path)
+		if rerr != nil {
+			return rerr
+		}
+		rel = filepath.ToSlash(rel)
+		if ignored != nil && ignored(rel) {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return nil // vanished mid-walk — a change; the next real gather catches it
+		}
+		lines = append(lines, fmt.Sprintf("%s\x00%d\x00%d", rel, info.ModTime().UnixNano(), info.Size()))
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	sort.Strings(lines)
+	for _, l := range lines {
+		h.Write([]byte(l))
+		h.Write([]byte{'\n'})
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// recordedSource returns the provenance stored for base, if any.
+func recordedSource(s *store.Store, absBase string) (freshness.Source, bool) {
+	srcs, err := s.Sources()
+	if err != nil {
+		return freshness.Source{}, false
+	}
+	for _, src := range srcs {
+		if src.Path == absBase {
+			return src, true
+		}
+	}
+	return freshness.Source{}, false
+}
+
 func gatherInto(s *store.Store, base string, dirs, excludes []string, force, skipAdapters bool, out io.Writer) error {
+	absBase, _ := filepath.Abs(base)
+	prev, hasPrev := recordedSource(s, absBase)
+	curHead, curHeadUnix, _ := gitHead(absBase)
+	// Lever 1 — 0-change short-circuit: if the source tree's stat-signature
+	// matches what we recorded last gather, nothing changed; skip extraction
+	// entirely (no engine init, no parse, no wiki). --force bypasses.
+	curSig, sigErr := treeSignature(base, excludes)
+	if !force && sigErr == nil && curSig != "" && hasPrev && prev.TreeSig != "" && prev.TreeSig == curSig {
+		fmt.Fprintf(out, "unchanged — source tree matches last gather; skipped (use --force to rebuild)\n")
+		return nil
+	}
+	// Incremental: co-change edges derive from `git log`, so they can only
+	// change when HEAD moves. Same HEAD as last gather → skip the git-history
+	// lane and keep its existing edges untouched (byte-identical result).
+	gitHistoryUnchanged := !force && hasPrev && curHead != "" && curHead == prev.Head
+
 	var batches []*schema.Batch
 	b, err := gatherMerged(base, dirs, excludes, markdown.ExtractExcluding)
 	if err != nil {
@@ -628,14 +728,20 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	}
 	// Co-change lane: edges only, best-effort (non-repo → empty batch).
 	// Always Replace, same reasoning as the code batch — an empty history
-	// must prune previously-stored pairs, not keep them silently.
-	gh, err := gatherMerged(base, dirs, excludes, githistory.ExtractExcluding)
-	if err != nil {
-		return err
-	}
-	batches = append(batches, gh)
-	if len(gh.Edges) > 0 {
-		fmt.Fprintf(out, "git-history: %d co-change edges\n", len(gh.Edges))
+	// must prune previously-stored pairs, not keep them silently. SKIPPED when
+	// HEAD is unchanged (edges can't have moved) — not even added to batches,
+	// so its producer isn't Replaced and its edges survive intact.
+	if gitHistoryUnchanged {
+		fmt.Fprintf(out, "git-history: unchanged (HEAD same), skipped\n")
+	} else {
+		gh, err := gatherMerged(base, dirs, excludes, githistory.ExtractExcluding)
+		if err != nil {
+			return err
+		}
+		batches = append(batches, gh)
+		if len(gh.Edges) > 0 {
+			fmt.Fprintf(out, "git-history: %d co-change edges\n", len(gh.Edges))
+		}
 	}
 	// Adapters run from base (a multi-path module has no single dir — its
 	// adapters live with the root config).
@@ -666,32 +772,43 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 		totalN += n
 		totalPruned += pruned
 	}
-	pages, err := wiki.Generate(s)
-	if err != nil {
-		return err
+	// Incremental: the wiki is a pure function of the graph. If Replace changed
+	// nothing (0 added, 0 pruned) and a wiki already exists, it is byte-
+	// identical — skip regeneration (the 464-page write is a real cost).
+	graphChanged := totalN != 0 || totalPruned != 0
+	wikiExists := false
+	if _, serr := os.Stat(filepath.Join(s.Dir, "wiki", "index.md")); serr == nil {
+		wikiExists = true
+	}
+	pages := 0
+	if force || graphChanged || !wikiExists {
+		var werr error
+		if pages, werr = wiki.Generate(s); werr != nil {
+			return werr
+		}
 	}
 	if _, err := s.UpdateManifest(); err != nil {
 		return err
 	}
-	// Record source provenance so freshness can later tell whether this
-	// store still reflects the repo. Best-effort: a non-git dir records
-	// nothing. Every gather path (single, module, fan-out worker) runs
-	// through here, so module stores carry their own provenance.
-	if abs, aerr := filepath.Abs(base); aerr == nil {
-		if head, headUnix, ok := gitHead(abs); ok {
-			if err := s.RecordSource(freshness.Source{
-				Path: abs, Head: head, HeadUnix: headUnix, AddedUnix: time.Now().Unix(),
-			}); err != nil {
-				return err
-			}
-		}
+	// Record source provenance so freshness can later tell whether this store
+	// still reflects the repo. Always recorded (incl. non-git) so TreeSig +
+	// HEAD drive the next short-circuit / git-history skip.
+	if err := s.RecordSource(freshness.Source{
+		Path: absBase, Head: curHead, HeadUnix: curHeadUnix, AddedUnix: time.Now().Unix(),
+		TreeSig: curSig,
+	}); err != nil {
+		return err
 	}
 	fmt.Fprintf(out, "added %d nodes", totalN)
 	if totalPruned > 0 {
 		fmt.Fprintf(out, ", pruned %d stale", totalPruned)
 	}
 	fmt.Fprintf(out, " → %s\n", s.Dir)
-	fmt.Fprintf(out, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
+	if pages > 0 {
+		fmt.Fprintf(out, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
+	} else {
+		fmt.Fprintf(out, "wiki: unchanged, skipped\n")
+	}
 	return nil
 }
 

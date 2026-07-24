@@ -9,6 +9,9 @@ import (
 	_ "embed"
 	"encoding/binary"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 	"sync/atomic"
 
 	"github.com/tetratelabs/wazero"
@@ -42,10 +45,57 @@ func NewEngine(ctx context.Context) (*Engine, error) {
 	return NewEngineFromBytes(ctx, wasmModule)
 }
 
+// compilationCache is a process-wide, disk-backed wazero compilation cache
+// (ADR 2026-07-24-lazy-autosync, lever 2): compiling the 32MB tree-sitter
+// module is ~225ms and dominated every gather/re-sync. wazero keys the cache
+// by its own version + module content and persists compiled machine code, so
+// the compile is paid ONCE per machine per binary version, not per process /
+// per monorepo module. One shared cache across all engines/instances.
+var (
+	cacheOnce   sync.Once
+	sharedCache wazero.CompilationCache
+)
+
+// CompilationCacheDir returns a MACHINE-LOCAL cache location — compiled wasm
+// machine code is arch-specific and must NEVER land inside a git-shared store
+// or be counted in freshness/manifest. Uses the OS user cache dir (override
+// CTX_OPTIMIZE_CACHE_DIR for tests/CI). Empty → in-memory only, still correct.
+func CompilationCacheDir() string {
+	if d := os.Getenv("CTX_OPTIMIZE_CACHE_DIR"); d != "" {
+		return filepath.Join(d, "wazero")
+	}
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(base, "ctx-optimize", "wazero")
+}
+
+func compilationCache() wazero.CompilationCache {
+	cacheOnce.Do(func() {
+		dir := CompilationCacheDir()
+		if dir == "" {
+			return
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return // best-effort: fall back to no cache, never fail a gather
+		}
+		if c, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
+			sharedCache = c
+		}
+	})
+	return sharedCache
+}
+
 // NewEngineFromBytes hosts any module built against the shim ABI — the
-// embedded bundle or a single-grammar pack.
+// embedded bundle or a single-grammar pack. Uses the shared disk-backed
+// compilation cache so CompileModule is a fast cache hit after the first run.
 func NewEngineFromBytes(ctx context.Context, module []byte) (*Engine, error) {
-	rt := wazero.NewRuntime(ctx)
+	cfg := wazero.NewRuntimeConfig()
+	if c := compilationCache(); c != nil {
+		cfg = cfg.WithCompilationCache(c)
+	}
+	rt := wazero.NewRuntimeWithConfig(ctx, cfg)
 	wasi_snapshot_preview1.MustInstantiate(ctx, rt)
 	compiled, err := rt.CompileModule(ctx, module)
 	if err != nil {

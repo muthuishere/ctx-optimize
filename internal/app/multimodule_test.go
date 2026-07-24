@@ -208,6 +208,13 @@ func TestFanOutDeterministicAcrossJobs(t *testing.T) {
 				return err
 			}
 			rel, _ := filepath.Rel(root, path)
+			// Machine-local provenance is non-deterministic by design
+			// (source.json carries wall-clock added_unix) — the manifest
+			// excludes it for the same reason; the graph is what must match.
+			switch base := filepath.Base(path); base {
+			case "source.json", "sources.json", "manifest.json", "config.json":
+				return nil
+			}
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return err

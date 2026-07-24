@@ -25,8 +25,13 @@ separate follow-up, tracked but out of scope here.
   stale vs git HEAD); `cmdStatus` reports per-module freshness.
 - **Content-hash manifest**: `Store.UpdateManifest` / `hashFile` already stamp
   `{mtime, size, hash}` per file — the *detect* half of incremental is here.
-- **A sync lane**: `up` already branches "stale vs HEAD → re-gather / fresh →
-  no-op" (app.go:257). It just re-gathers EVERYTHING.
+- **A `sync` verb that is a MISNOMER**: `sync` (app.go:73) is literally
+  "`add .` minus adapter scripts" — a **full re-extract**, not incremental. And
+  `up` branches "stale vs HEAD → re-gather / fresh → no-op" (app.go:257) — the
+  fresh path is a cheap no-op, but the stale path re-gathers EVERYTHING. So
+  today: 0-change is fast (no-op), but a 1-file edit costs a full rebuild.
+  **This change makes `sync`/`up`'s stale path genuinely incremental** — the verb
+  finally does what its name says.
 - **A full incremental DESIGN, unimplemented**:
   `openspec/changes/2026-07-11-graphify-gaps/design.md` specs content-hash
   invalidation, a versioned `cache/ast/{filehash}.json`, evict-and-reconcile,
