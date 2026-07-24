@@ -1,0 +1,90 @@
+{
+  "corpus": "linux/block (torvalds/linux, shallow clone 2026-07-12) — 98 C files / ~73k lines; the S1d hostile-terrain corpus",
+  "protocol": "S1-series A/B: same harness, same model, same question; arm A = grep/read only, arm B = ctx-optimize store first (query/card/wiki/path/affected), reads allowed when the store is not enough. Tokens compared within a harness only.",
+  "questions": [
+    {
+      "id": "q1",
+      "class": "locate",
+      "prompt": "In this repo, which function makes the mq-deadline I/O scheduler's dispatch decision (picks the next request to hand to the driver), and what is the priority/direction order it tries? Give function name, file, and the selection order.",
+      "key_must": ["dd_dispatch_request", "mq-deadline.c", "__dd_dispatch_request"],
+      "key_credit": ["iterates prio classes RT then BE then IDLE (per_prio)", "aged/starved requests checked first (dd_dispatch_prio_aged_requests)", "reads preferred over writes with write starvation limit"]
+    },
+    {
+      "id": "q2",
+      "class": "mechanism",
+      "prompt": "What kinds of bios does bio_split() refuse to split, and what does it actually do to the original bio when it succeeds? Function is somewhere in this repo.",
+      "key_must": ["zone append (REQ_OP_ZONE_APPEND) refused", "atomic writes (REQ_ATOMIC) refused", "bio.c"],
+      "key_credit": ["returns ERR_PTR on refusal", "clones via bio_alloc_clone; split gets first `sectors`", "original advanced via bio_advance to represent the remainder", "integrity trimmed on the split (bio_integrity_trim)"]
+    },
+    {
+      "id": "q3",
+      "class": "mechanism",
+      "prompt": "How does the block layer decide whether an incoming read/write bio must be split before submission, and which function performs the split? Name the deciding check and the splitting function with files.",
+      "key_must": ["bio_may_need_split", "bio_split_rw", "blk.h", "blk-merge.c"],
+      "key_credit": ["__bio_split_to_limits is the entry", "checks queue_limits: max_sectors/segments/gap alignment", "bio_split_rw_at finds the split point"]
+    },
+    {
+      "id": "q4",
+      "class": "impact",
+      "prompt": "If I change the signature of bio_split() in this repo, which call sites inside block/ must be updated? List every caller (function + file).",
+      "key_must": ["exactly one caller in block/", "blk-merge.c", "bio_submit_split_bioset"],
+      "key_credit": ["line ~122", "notes that other users live outside block/ (drivers/fs) so tree-wide change is bigger"]
+    },
+    {
+      "id": "q5",
+      "class": "locate",
+      "prompt": "Which function implements merging a new bio into the back of an existing request, and what gatekeeper function decides the merge is allowed? Names and files.",
+      "key_must": ["bio_attempt_back_merge", "ll_back_merge_fn", "blk-merge.c"],
+      "key_credit": ["ll_back_merge_fn enforces segment/size limits", "blk_attempt_plug_merge / blk_mq_sched_try_merge path reaches it"]
+    },
+    {
+      "id": "q6",
+      "class": "mechanism",
+      "prompt": "In BFQ, what is the budget timeout, which function checks it, and what happens to the in-service queue when it fires?",
+      "key_must": ["bfq_bfqq_budget_timeout", "bfq-iosched.c", "queue is expired (bfq_bfqq_expire) with reason BFQQE_BUDGET_TIMEOUT"],
+      "key_credit": ["budget = service allotment; timeout prevents a slow queue holding the device", "checked in bfq_bfqq_must_idle / dispatch path (bfq_select_queue)"]
+    },
+    {
+      "id": "q7",
+      "class": "locate",
+      "prompt": "Where does partition-table detection happen when a disk is scanned? Name the function that tries each partition parser and the function that adds the discovered partitions, with files.",
+      "key_must": ["check_partition", "blk_add_partitions", "partitions/core.c"],
+      "key_credit": ["iterates check_part[] parser array", "bdev_disk_changed is the entry point"]
+    },
+    {
+      "id": "q8",
+      "class": "impact",
+      "prompt": "Which files in this repo contain calls to blk_mq_run_hw_queue()? List the files (not every line).",
+      "key_must": ["blk-mq.c", "blk-mq-sched.c", "blk-mq-tag.c", "kyber-iosched.c"],
+      "key_credit": ["mq-deadline.c mentions it in a comment only (L445) — claiming a real call there is an error"]
+    },
+    {
+      "id": "q9",
+      "class": "mechanism",
+      "prompt": "What does the block plugging mechanism (blk_start_plug/blk_finish_plug) actually buffer, and when is the plug flushed early (before blk_finish_plug)? Function names and file for the flush.",
+      "key_must": ["buffers requests (plug->mq_list) and cached bios/callbacks", "blk-core.c", "__blk_flush_plug"],
+      "key_credit": ["flushed early when queued I/O exceeds plug limit (BLK_MAX_REQUEST_COUNT ~32) or on schedule()/sleep", "blk_finish_plug calls __blk_flush_plug when current->plug matches"]
+    },
+    {
+      "id": "q10",
+      "class": "mechanism",
+      "prompt": "How does writeback throttling decide to make a writer wait, and via which hook does a bio reach that code? Name the wbt wait function, the rq_qos hook, and the files.",
+      "key_must": ["wbt_wait", "blk-wbt.c", "rq_qos_throttle (blk-rq-qos.h) → __rq_qos_throttle"],
+      "key_credit": ["inflight limit vs current window (rq_wait / wbt_inflight_cb)", "only WRITE-class bios counted (wbt_should_throttle)", "rq_qos_wait sleeps on waitqueue"]
+    },
+    {
+      "id": "q11",
+      "class": "conceptual",
+      "prompt": "Give me an onboarding overview: trace the lifecycle of a normal read/write bio through this layer from submission to the driver — the major stages (limits/split, plug, merge, scheduler, dispatch) and the key function at each stage.",
+      "key_must": ["submit path (blk_mq_submit_bio)", "split-to-limits stage (__bio_split_to_limits / bio_split_rw)", "plug stage (blk_add_rq_to_plug / blk_plug)", "merge attempt (blk_attempt_plug_merge or bio_attempt_back_merge)", "scheduler insert/dispatch then blk_mq_run_hw_queue / __blk_mq_sched_dispatch_requests"],
+      "key_credit": ["rq_qos throttle stage (wbt)", "correct ordering of the stages", "driver handoff via queue_rq"]
+    },
+    {
+      "id": "q12",
+      "class": "conceptual",
+      "prompt": "What I/O schedulers exist in this repo, what is each one's scheduling philosophy in a sentence, and what is each one's dispatch entry point function?",
+      "key_must": ["mq-deadline: deadline/FIFO with priority classes, dd_dispatch_request", "bfq: budget-based proportional-share fairness, bfq_dispatch_request", "kyber: latency-target token/domain based, kyber_dispatch_request"],
+      "key_credit": ["notes 'none' is also an option (no elevator)", "files named for each"]
+    }
+  ]
+}

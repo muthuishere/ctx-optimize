@@ -1,0 +1,108 @@
+{
+  "machine": "Apple M5 Pro, 18 cores, 48 GB",
+  "corpora": {
+    "corpus-flask": {
+      "files": 265,
+      "ctx": {
+        "cold_s": 0.79,
+        "warm_s": 0.4,
+        "nodes": 1978,
+        "edges": 3309,
+        "store_bytes": 1284604,
+        "note": "add includes prune + full wiki regeneration"
+      },
+      "graphify": {
+        "cold_s": 1.06,
+        "warm_s": 0.86,
+        "nodes": 1473,
+        "edges": 2801,
+        "out_bytes": 4193871,
+        "error": null,
+        "note": "update --no-cluster = extraction only, no clustering/LLM (its fastest path)"
+      }
+    },
+    "corpus-gin": {
+      "files": 159,
+      "ctx": {
+        "cold_s": 0.41,
+        "warm_s": 0.44,
+        "nodes": 1922,
+        "edges": 4170,
+        "store_bytes": 1418143,
+        "note": "add includes prune + full wiki regeneration"
+      },
+      "graphify": {
+        "cold_s": 0.9,
+        "warm_s": 0.85,
+        "nodes": 1975,
+        "edges": 4866,
+        "out_bytes": 6167949,
+        "error": null,
+        "note": "update --no-cluster = extraction only, no clustering/LLM (its fastest path)"
+      }
+    },
+    "corpus-ctx-src": {
+      "files": 75,
+      "ctx": {
+        "cold_s": 0.37,
+        "warm_s": 0.38,
+        "nodes": 572,
+        "edges": 1150,
+        "store_bytes": 449809,
+        "note": "add includes prune + full wiki regeneration"
+      },
+      "graphify": {
+        "cold_s": 0.51,
+        "warm_s": 0.4,
+        "nodes": 599,
+        "edges": 1503,
+        "out_bytes": 2181482,
+        "error": null,
+        "note": "update --no-cluster = extraction only, no clustering/LLM (its fastest path)"
+      }
+    },
+    "corpus-graphify-src": {
+      "files": 12484,
+      "ctx": {
+        "cold_s": 0.67,
+        "warm_s": 0.74,
+        "nodes": 11056,
+        "edges": 18776,
+        "store_bytes": 8276653,
+        "note": "add includes prune + full wiki regeneration"
+      },
+      "graphify": {
+        "cold_s": 8.88,
+        "warm_s": 5.85,
+        "nodes": 10996,
+        "edges": 20121,
+        "out_bytes": 30145871,
+        "error": null,
+        "note": "update --no-cluster = extraction only, no clustering/LLM (its fastest path)"
+      }
+    }
+  },
+  "ctx_version": "ctx-optimize 0.0.0-dev (none, unknown)",
+  "graphify_version": "graphify 0.9.12",
+  "query_latency": {
+    "corpus": "corpus-graphify-src",
+    "median_of": 5,
+    "runs": [
+      {
+        "q": "how does clustering work",
+        "ctx_ms": 89,
+        "graphify_ms": 367
+      },
+      {
+        "q": "remote push pull hooks",
+        "ctx_ms": 96,
+        "graphify_ms": 364
+      },
+      {
+        "q": "community labeling",
+        "ctx_ms": 96,
+        "graphify_ms": 370
+      }
+    ]
+  }
+}

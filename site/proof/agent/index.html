@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Headless benchmark — shell vs ctx-optimize vs graphify</title>
+<style>
+:root{--bg:#0b0e13;--bg2:#11151d;--border:#1e2632;--text:#dbe2ec;--muted:#9aa7b8;--dim:#64748b;--accent:#4ade80;--red:#f87171;--mono:ui-monospace,'SF Mono',Menlo,monospace;--disp:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--disp);line-height:1.65;font-size:16px}
+.wrap{max-width:860px;margin:0 auto;padding:60px 24px 100px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.kicker{font-family:var(--mono);font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+h1{font-size:2rem;line-height:1.25;margin-bottom:18px;font-weight:650}
+h2{font-size:1.3rem;margin:48px 0 14px;font-weight:600}
+p{margin:12px 0;color:var(--muted)}
+p b,li b{color:var(--text);font-weight:600}
+em{color:var(--text)}
+code{font-family:var(--mono);font-size:.85em;background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--text)}
+pre{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:16px 0;overflow-x:auto;font-family:var(--mono);font-size:.82rem;line-height:1.7;color:var(--text)}
+pre .c{color:var(--dim)}
+.tbl{overflow-x:auto;margin:20px 0}
+table{border-collapse:collapse;width:100%;font-size:.85rem;font-family:var(--mono)}
+th{color:var(--dim);font-weight:500;text-align:left;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em}
+th,td{padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{color:var(--muted)}
+td.r,th.r{text-align:right}
+.win{color:var(--accent);font-weight:600}
+.loss{color:var(--red);font-weight:600}
+ol,ul{margin:12px 0 12px 24px;color:var(--muted)}
+li{margin:8px 0}
+.note{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;padding:16px 20px;margin:20px 0;font-size:.92rem}
+.files{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+.files a{font-family:var(--mono);font-size:.82rem;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px}
+.back{font-family:var(--mono);font-size:.85rem}
+.foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--border);font-family:var(--mono);font-size:.8rem;color:var(--dim)}
+</style>
+</head>
+<body><div class="wrap">
+<p class="back"><a href="../../#proof">← ctx-optimize</a></p>
+<div class="kicker" style="margin-top:34px">headless benchmark · three-way · run it yourself</div>
+<h1>Same model, same questions, one repo — answered three ways.</h1>
+
+<p>Don't trust our numbers — run them. This harness clones a small repo, builds both knowledge stores <em>offline</em> (no LLM), and lets the <em>same</em> model answer a set of questions three ways over <a href="https://openrouter.ai">OpenRouter</a>. Tokens and dollars are OpenRouter's own accounting (<code>usage.include=true</code>), not our estimate.</p>
+
+<div class="tbl">
+<table>
+<tr><th>arm</th><th>tools the model gets</th><th>store built with</th></tr>
+<tr><td><b>a · shell</b></td><td><code>run_shell</code> (grep/rg/find/sed/cat)</td><td>—</td></tr>
+<tr><td><b>b · ctx-optimize</b></td><td><code>query</code>/<code>card</code>/<code>affected</code>/<code>path</code>/<code>explain</code> + shell for gaps</td><td><code>ctx-optimize add .</code></td></tr>
+<tr><td><b>c · graphify</b></td><td><code>query</code>/<code>explain</code>/<code>affected</code>/<code>path</code> + shell for gaps</td><td><code>graphify update . --no-cluster</code></td></tr>
+</table>
+</div>
+
+<h2>Last CI run — <code>gorilla/mux</code>, <code>openai/gpt-4o-mini</code></h2>
+<p>gorilla/mux is a small, well-named repo — plain grep's <em>best</em> case, i.e. the hardest terrain for a graph to win on. Deltas are vs arm a (shell).</p>
+<div class="tbl">
+<table>
+<tr><th>metric</th><th class="r">a shell</th><th class="r">b ctx-optimize</th><th class="r">c graphify</th><th class="r">b vs a</th><th class="r">c vs a</th></tr>
+<tr><td>tokens</td><td class="r">15,078</td><td class="r">9,659</td><td class="r">18,352</td><td class="r win">−36%</td><td class="r loss">+22%</td></tr>
+<tr><td>cost</td><td class="r">$0.0024</td><td class="r">$0.0016</td><td class="r">$0.0025</td><td class="r win">−31%</td><td class="r loss">+7%</td></tr>
+<tr><td>tool calls</td><td class="r">11</td><td class="r">4</td><td class="r">8</td><td class="r win">−64%</td><td class="r win">−27%</td></tr>
+<tr><td>wall time</td><td class="r">16.5s</td><td class="r">11.8s</td><td class="r">18.7s</td><td class="r win">−29%</td><td class="r loss">+13%</td></tr>
+</table>
+</div>
+
+<div class="note"><b>Read it honestly.</b> ctx-optimize beats plain shell on every axis and answers most questions in a <em>single</em> <code>query</code>/<code>card</code> call. graphify cuts tool calls too — but its <code>query</code> returns a raw BFS dump of 100+ nodes, so the model burns more tokens wading through it, landing graphify <em>above</em> plain grep on tokens and cost. Head-to-head, ctx-optimize uses <b>about half</b> graphify's tokens, cost, and steps. Both arms answered correctly with <code>file:line</code> citations — a cheaper wrong answer would be a loss, not a saving.</div>
+
+<h2>The actual run — raw records, nothing massaged</h2>
+<p>This table wasn't typed by hand — a GitHub Actions job produced it, headless, on a clean runner. <b>Open the run and read every log line yourself:</b></p>
+<p style="margin:16px 0"><a href="https://github.com/muthuishere/ctx-optimize-site/actions/runs/29193645340" style="display:inline-block;font-family:var(--mono);font-size:.9rem;font-weight:600;background:var(--bg2);border:1px solid var(--accent);border-radius:10px;padding:12px 20px">▶ Watch this run on GitHub Actions →</a></p>
+<p>The workflow lives in this <em>public</em> repo, so the run is fully viewable and forkable — no private access needed. Below are the exact raw records it wrote, straight from the job's artifact: each file is the model's full transcript for one arm × one question — the tools it called, OpenRouter's token/cost accounting, and the final answer.</p>
+<div class="tbl">
+<table>
+<tr><th>field</th><th>value</th></tr>
+<tr><td>workflow</td><td><a href="https://github.com/muthuishere/ctx-optimize-site/blob/main/.github/workflows/benchmark.yml">benchmark.yml</a> · public, forkable</td></tr>
+<tr><td>run</td><td><a href="https://github.com/muthuishere/ctx-optimize-site/actions/runs/29193645340">#29193645340</a> · commit <code>9529e8e</code></td></tr>
+<tr><td>date</td><td>2026-07-12 · conclusion <span class="win">success</span> · headless</td></tr>
+<tr><td>model</td><td><code>openai/gpt-4o-mini</code> via OpenRouter</td></tr>
+</table>
+</div>
+<p><b>The 12 raw records</b> (arm × question) + the generated summary — open any one:</p>
+<div class="files">
+<a href="results/SUMMARY-gorilla-mux.md">SUMMARY.md</a>
+<a href="results/gorilla-mux-a-q1.json">a·shell q1</a>
+<a href="results/gorilla-mux-a-q2.json">a·shell q2</a>
+<a href="results/gorilla-mux-a-q3.json">a·shell q3</a>
+<a href="results/gorilla-mux-a-q4.json">a·shell q4</a>
+<a href="results/gorilla-mux-b-q1.json">b·ctx q1</a>
+<a href="results/gorilla-mux-b-q2.json">b·ctx q2</a>
+<a href="results/gorilla-mux-b-q3.json">b·ctx q3</a>
+<a href="results/gorilla-mux-b-q4.json">b·ctx q4</a>
+<a href="results/gorilla-mux-c-q1.json">c·graphify q1</a>
+<a href="results/gorilla-mux-c-q2.json">c·graphify q2</a>
+<a href="results/gorilla-mux-c-q3.json">c·graphify q3</a>
+<a href="results/gorilla-mux-c-q4.json">c·graphify q4</a>
+</div>
+
+<h2>Reproduce it — no source needed</h2>
+<p>The harness runs on the published CLI. Both stores build offline; only the model calls cost anything (cents on a cheap model).</p>
+<pre>npm i -g @muthuishere/ctx-optimize   <span class="c"># the store CLI</span>
+pipx install graphifyy               <span class="c"># the competitor (arm c; optional)</span>
+export OPENROUTER_API_KEY=sk-or-...  <span class="c"># read from env only, never logged</span>
+
+<span class="c"># grab the harness (the five files below) into proof/agent/, then:</span>
+bash proof/agent/run-bench.sh        <span class="c"># defaults: gorilla/mux, openai/gpt-4o-mini</span>
+<span class="c"># options: --model &lt;slug&gt;  --repo &lt;url&gt; --name &lt;short&gt;  --questions &lt;file&gt;</span></pre>
+<p>It prints a per-question table, the totals above, and writes one raw JSON record per run (inspect the <code>answer</code> field and judge quality for yourself). arm c is skipped automatically if <code>graphify</code> isn't installed.</p>
+
+<h2>The harness</h2>
+<p>Every file, plain and readable — nothing hidden:</p>
+<div class="files">
+<a href="agent.mjs">agent.mjs</a>
+<a href="run-bench.sh">run-bench.sh</a>
+<a href="summarize.mjs">summarize.mjs</a>
+<a href="questions.json">questions.json</a>
+<a href="benchmark.yml">benchmark.yml <span style="color:var(--dim)">(the CI workflow)</span></a>
+<a href="README.md">README.md</a>
+</div>
+<p>We run <code>benchmark.yml</code> on every push; it produces this exact table in the job summary and uploads the raw records as an artifact.</p>
+
+<div class="foot">ctx-optimize · headless benchmark · numbers are OpenRouter's own usage accounting</div>
+</div></body>
+</html>
