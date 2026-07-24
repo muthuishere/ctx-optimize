@@ -922,7 +922,7 @@ func cmdAdapters(args []string, stdout io.Writer) error {
 func cmdQuery(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) == 0 {
-		return fmt.Errorf("usage: ctx-optimize query \"<question>\" [--budget N] [--json] [--modules all|a,b] [--root]")
+		return fmt.Errorf("usage: ctx-optimize query \"<question>\" [--budget N] [--json] [--modules all|a,b] [--root] [--include-content]")
 	}
 	sc, err := resolveScope(f)
 	if err != nil {
@@ -941,8 +941,9 @@ func cmdQuery(args []string, stdout io.Writer) error {
 	q := strings.Join(f.args, " ")
 	t0 := time.Now()
 	cw := &countingWriter{w: stdout}
+	includeContent := f.bools["include-content"]
 
-	// Single scope: today's behavior, byte-identical.
+	// Single scope: today's behavior, byte-identical unless --include-content.
 	if sc.kind == scopeSingle {
 		s, err := store.Open(storeRoot, sc.storeKey)
 		if err != nil {
@@ -962,6 +963,9 @@ func cmdQuery(args []string, stdout io.Writer) error {
 			return qperr
 		}
 		res := query.Run(nodes, edges, q, budget)
+		if includeContent {
+			hydrateHits(res.Hits, bodyRootFor(sc))
+		}
 		defer func() { served(s, "query", q, len(res.Hits), cw, t0) }()
 		if f.bools["json"] {
 			return emit(cw, res)
@@ -992,6 +996,9 @@ func cmdQuery(args []string, stdout io.Writer) error {
 		}
 		res := query.Run(nodes, edges, q, budget)
 		if len(res.Hits) > 0 {
+			if includeContent {
+				hydrateHits(res.Hits, bodyRootFor(sc))
+			}
 			defer func() { served(s, "query", q, len(res.Hits), cw, t0) }()
 			if f.bools["json"] {
 				return emit(cw, map[string]any{"scope": sc.moduleName, "result": res})
@@ -1047,6 +1054,9 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 		return qperr
 	}
 	res := query.Run(nodes, edges, q, budget)
+	if f.bools["include-content"] {
+		hydrateHits(res.Hits, bodyRootFor(sc))
+	}
 	if rs, err := store.Open(storeRoot, sc.rootKey); err == nil {
 		defer func() { served(rs, "query", q, len(res.Hits), cw, t0) }()
 	}
@@ -1456,7 +1466,19 @@ func cmdCard(args []string, stdout io.Writer) error {
 	if cerr != nil {
 		return cerr
 	}
-	c.Body = bodyHead(bodyRoot, c.Node)
+	if f.bools["include-content"] {
+		// SPIKE (openspec/changes/2026-07-24-content-hydration): verbatim,
+		// untruncated body on demand, in place of bodyHead's default 30-line
+		// preview. Default (no flag) stays byte-identical to today.
+		if body, berr := readSourceBody(bodyRoot, c.Node); berr == nil {
+			c.Body = body
+		} else {
+			c.Body = bodyHead(bodyRoot, c.Node)
+			c.ContentError = berr.Error()
+		}
+	} else {
+		c.Body = bodyHead(bodyRoot, c.Node)
+	}
 	st, _ := openStore(f) // path resolution only — cheap; nil is fine
 	defer func() { served(st, "card", f.args[0], 1, cw, t0) }()
 	if f.bools["json"] {
@@ -1467,6 +1489,42 @@ func cmdCard(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprint(cw, analyze.RenderCard(c))
 	return nil
+}
+
+// bodyRootFor resolves the directory a scope's node.Source paths are
+// relative to — the same rule cmdCard's bodyRoot switch already applies
+// (module sources are module-relative, federated/root and single-scope
+// sources are repo-relative). Shared by `query --include-content`.
+func bodyRootFor(sc *scope) string {
+	if sc == nil {
+		return ""
+	}
+	if sc.kind == scopeModule {
+		return filepath.Join(sc.rootDir, filepath.FromSlash(sc.modulePath))
+	}
+	return sc.rootDir // scopeSingle, scopeRoot
+}
+
+// hydrateHits fills Content/ContentError on each hit in place — the
+// content-hydration spike (openspec/changes/2026-07-24-content-hydration):
+// query.Run stays pure (no file I/O); this is the ONLY place a hit's
+// verbatim source body is read, and only when --include-content asked for
+// it. A hit with a missing file or no location degrades to ContentError,
+// never fails the whole query.
+//
+// Freshness caveat: reads the file AS-IS at answer time; if it drifted since
+// the store was gathered, the sliced range may no longer match what was
+// indexed (run `ctx-optimize verify` to check drift before trusting a
+// citation to a human).
+func hydrateHits(hits []query.Hit, root string) {
+	for i := range hits {
+		body, err := readSourceBody(root, hits[i].Node)
+		if err != nil {
+			hits[i].ContentError = err.Error()
+			continue
+		}
+		hits[i].Content = body
+	}
 }
 
 // bodyHead returns the first lines of the node's source span, read from the

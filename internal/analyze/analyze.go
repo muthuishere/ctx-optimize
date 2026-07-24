@@ -445,6 +445,11 @@ type CardData struct {
 	Signature string              `json:"signature,omitempty"`
 	Doc       string              `json:"doc,omitempty"`
 	Body      string              `json:"body,omitempty"`      // first lines of the actual source span, filled by the caller when the file is reachable
+	// ContentError is set instead of an expanded Body by the caller's
+	// `--include-content` hydration (content-hydration spike,
+	// openspec/changes/2026-07-24-content-hydration) when the full source
+	// couldn't be read — never fails the card.
+	ContentError string `json:"content_error,omitempty"`
 	Parent    string              `json:"parent,omitempty"`    // what contains it
 	Contains  []string            `json:"contains,omitempty"`  // what it contains
 	Calls     []string            `json:"calls,omitempty"`     // outgoing calls

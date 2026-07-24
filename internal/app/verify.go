@@ -205,6 +205,66 @@ func verifyClaim(claim string, nodes []schema.Node, repoDir, gatherHead string) 
 	return r
 }
 
+// readSourceBody hydrates a node's VERBATIM source text on demand — the
+// content-hydration spike (openspec/changes/2026-07-24-content-hydration):
+// the store keeps only pointers (file:line), so `query`/`card
+// --include-content` read the slice from the working tree at answer time
+// instead of ever storing bodies. Same location parsing (locRe) and file-open
+// discipline as checkLocation above — reused, not reinvented.
+//
+// Freshness caveat: the file is read AS-IS now; if it drifted since the store
+// was gathered, the cited range may no longer line up with the node it was
+// extracted from (see `verify` for drift detection — not run here, this is
+// the fast path).
+func readSourceBody(root string, n schema.Node) (string, error) {
+	if n.Source == "" || strings.Contains(n.Source, "://") {
+		return "", fmt.Errorf("no file source (adapter/non-file node)")
+	}
+	m := locRe.FindStringSubmatch(n.Location)
+	if m == nil {
+		return "", fmt.Errorf("no line location on this node")
+	}
+	if root == "" {
+		root = "."
+	}
+	p := filepath.Join(root, filepath.FromSlash(n.Source))
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("source file not found: %s", n.Source)
+		}
+		return "", fmt.Errorf("cannot read %s: %w", n.Source, err)
+	}
+	lines := strings.Split(string(data), "\n")
+	start, err := strconv.Atoi(m[1])
+	if err != nil {
+		return "", fmt.Errorf("bad location %q", n.Location)
+	}
+	end := start
+	if m[2] != "" {
+		if e, err := strconv.Atoi(m[2]); err == nil {
+			end = e
+		}
+	}
+	if start < 1 || start > len(lines) {
+		return "", fmt.Errorf("start line %d out of range (%s has %d lines)", start, n.Source, len(lines))
+	}
+	if end > len(lines) {
+		end = len(lines)
+	}
+	if end < start {
+		end = start
+	}
+	body := strings.Join(lines[start-1:end], "\n")
+	// An empty/whitespace-only slice must surface as an explicit error, not a
+	// silent empty `content` field (omitempty would drop it, leaving the hit
+	// with neither content nor a reason — the "empty and not there" case).
+	if strings.TrimSpace(body) == "" {
+		return "", fmt.Errorf("empty source range at %s %s", n.Source, n.Location)
+	}
+	return body, nil
+}
+
 // checkLocation fills verdict+drift for a file (+ optional line range).
 func checkLocation(r *verifyResult, repoDir, gatherHead, rel, start, end string) {
 	p := filepath.Join(repoDir, filepath.FromSlash(rel))

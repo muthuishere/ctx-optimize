@@ -25,6 +25,16 @@ type Hit struct {
 	Node      schema.Node `json:"node"`
 	Score     float64     `json:"score"`
 	Neighbors []Neighbor  `json:"neighbors,omitempty"`
+
+	// Content/ContentError are populated by the CALLER (internal/app), not
+	// Run — the content-hydration spike (openspec/changes/2026-07-24-
+	// content-hydration): opt-in `--include-content` reads each hit's
+	// verbatim source body from the file at answer time, keeping this
+	// engine pure (no file I/O) and the default pointer-only output
+	// byte-identical. ContentError is set instead of Content when the file
+	// can't be read or the node has no location — never fails the query.
+	Content      string `json:"content,omitempty"`
+	ContentError string `json:"content_error,omitempty"`
 }
 
 type Neighbor struct {
@@ -258,6 +268,14 @@ func Render(r *Result) string {
 				arrow = "←"
 			}
 			fmt.Fprintf(&sb, "    %s %s %s\n", arrow, nb.Relation, nb.ID)
+		}
+		if h.Content != "" {
+			sb.WriteString("    content:\n")
+			for _, line := range strings.Split(h.Content, "\n") {
+				fmt.Fprintf(&sb, "      %s\n", line)
+			}
+		} else if h.ContentError != "" {
+			fmt.Fprintf(&sb, "    content: <unavailable — %s>\n", h.ContentError)
 		}
 	}
 	return sb.String()
