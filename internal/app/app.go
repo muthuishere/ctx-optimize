@@ -32,6 +32,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/feedback"
 	"github.com/muthuishere/ctx-optimize/internal/freshness"
 	"github.com/muthuishere/ctx-optimize/internal/grammar"
+	"github.com/muthuishere/ctx-optimize/internal/graphfilter"
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/query"
 	"github.com/muthuishere/ctx-optimize/internal/scan"
@@ -107,6 +108,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdWiki(rest, stdout)
 	case "merge":
 		err = cmdMerge(rest, stdout)
+	case "nodes":
+		err = cmdNodes(rest, stdout)
+	case "edges":
+		err = cmdEdges(rest, stdout)
+	case "deps":
+		err = cmdDeps(rest, stdout)
 	case "export":
 		err = cmdExport(rest, stdout)
 	case "serve", "dashboard":
@@ -949,6 +956,11 @@ func cmdQuery(args []string, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
+		var qperr error
+		nodes, edges, qperr = narrowQuery(f, nodes, edges)
+		if qperr != nil {
+			return qperr
+		}
 		res := query.Run(nodes, edges, q, budget)
 		defer func() { served(s, "query", q, len(res.Hits), cw, t0) }()
 		if f.bools["json"] {
@@ -972,6 +984,11 @@ func cmdQuery(args []string, stdout io.Writer) error {
 		edges, err := s.Edges()
 		if err != nil {
 			return err
+		}
+		var qperr error
+		nodes, edges, qperr = narrowQuery(f, nodes, edges)
+		if qperr != nil {
+			return qperr
 		}
 		res := query.Run(nodes, edges, q, budget)
 		if len(res.Hits) > 0 {
@@ -1023,6 +1040,11 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 	nodes, edges, err := loadFederated(sc, storeRoot, mods)
 	if err != nil {
 		return err
+	}
+	var qperr error
+	nodes, edges, qperr = narrowQuery(f, nodes, edges)
+	if qperr != nil {
+		return qperr
 	}
 	res := query.Run(nodes, edges, q, budget)
 	if rs, err := store.Open(storeRoot, sc.rootKey); err == nil {
@@ -1775,10 +1797,42 @@ func cmdExport(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// Native filter flags (ADR 2026-07-24): narrow both streams through the
+	// shared core before any format is written — no jq needed. Bare `export`
+	// with no filter flags is byte-identical to before (non-breaking).
+	pred, perr := graphfilter.ParsePred(f.strs)
+	if perr != nil {
+		return perr
+	}
+	nodes, edges = graphfilter.Apply(nodes, edges, pred)
 	out := f.strs["out"]
 	format := f.strs["format"]
 	if format == "" {
 		format = "json"
+	}
+	// --ndjson: one record per line (nodes then edges), OS-native filterable.
+	if f.bools["ndjson"] {
+		var w io.Writer = stdout
+		if out != "" {
+			file, ferr := os.Create(out)
+			if ferr != nil {
+				return ferr
+			}
+			defer file.Close()
+			w = file
+		}
+		enc := json.NewEncoder(w)
+		for _, n := range nodes {
+			if err := enc.Encode(n); err != nil {
+				return err
+			}
+		}
+		for _, e := range edges {
+			if err := enc.Encode(e); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	switch format {
 	case "json", "dot", "graphml":
@@ -2664,8 +2718,22 @@ commands:
                               reflections/LESSONS.md  [--half-life-days N]
                               [--min-corroboration N] [--json]
   merge <module>... --into N  combine module stores into one merged view
-  export [--format json|dot|graphml|csv|obsidian|all]
-                              dump the graph  [--out FILE|DIR]
+  nodes [--kind K] [--file-type FT] [--id-prefix P] [--label S] [--scope S]
+        [--where k=v,k~v] [--select f1,f2] [--json|--ndjson]
+                              list/filter graph NODES natively — no jq. Table
+                              by default; federates across all modules at root.
+                              e.g. nodes --kind service --where namespace=prod
+  edges [--relation R] [--confidence C] [--from ID] [--to ID] [--id-prefix P]
+        [--where k=v] [--select f1,f2] [--json|--ndjson]
+                              list/filter graph EDGES natively — no jq.
+                              e.g. edges --relation resolves_to
+  deps [--scope runtime|dev|peer|...] [--importers] [--json|--ndjson]
+                              dependencies with scope; --importers adds the
+                              files that import each (one command, no jq join)
+  export [--format json|dot|graphml|csv|obsidian|all] [--ndjson]
+         [--kind K] [--relation R] [--where k=v]
+                              dump the graph  [--out FILE|DIR]; filter flags
+                              narrow both streams (bare export unchanged)
                               csv: --out DIR → nodes.csv + edges.csv (stdout
                               sections without); obsidian + all REQUIRE --out DIR
                               (all → graph.{json,dot,graphml} + csvs + obsidian/)

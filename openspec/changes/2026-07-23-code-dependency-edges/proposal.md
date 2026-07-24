@@ -11,6 +11,26 @@ Open question 5 (workspace-internal imports) deferred as agreed.
 Trigger: issue #5 (elan-chels, 2026-07-23) — external-usage analysis for a
 "solution architecture drift" consumer over `export --format json`.
 
+## Follow-ups (from #5 verification, 2026-07-24) — NOT yet done
+
+Reporter verified v0.7.0 on their real graph (arus-proof): 11 resolves_to
+edges, `affected dep:` crosses the boundary, scope-filtering removed their
+hardcoded ignore-list. Two requests, both owner-pending:
+
+- **F1 — promote `scopes` to a top-level `node.scope`** (keep
+  `metadata.scopes` for back-compat). Both the reporter AND the v0.7.0
+  verifier reached for `node.scope` first, found it `null` (schema.Node has
+  no such field), and nearly concluded the feature didn't land. For a
+  programmatic consumer, the obvious field is the empty one. Small but touches
+  `internal/schema` (the load-bearing contract) → needs its own sign-off.
+  Note the value is an aggregate ("dev,runtime"), so `scope` singular is the
+  same comma-joined string, not a single scope.
+- **F2 — workspace-internal drift signal** (was open question 5): resolve
+  imported-but-undeclared `@workspace/*` against the npm-workspace member set
+  (the `depends_on` workspace edges already exist). Reporter confirmed this is
+  their "undeclared integration" drift signal and volunteered as a test bed.
+  "Valuable, no rush."
+
 ## Context — what the issue asks, and what already exists
 
 The issue reports two gaps on 0.3.7:
