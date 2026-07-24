@@ -1,0 +1,61 @@
+{
+  "_doc": "BIG real-repo multi-language corpora — the point is to test whether ctx-optimize's speed/footprint edge HOLDS AT SCALE across languages, and whether rival tools choke. Clone --depth 1 at ref into the arena (NOT the repo tree). Re-count actual files per run and print next to every number. If a (tool,corpus) cell exceeds ~10 min or OOMs, record a TIMEOUT/FAIL cell (that is itself a scale finding) and move on — never fake.",
+  "corpora": [
+    {
+      "id": "c-postgres",
+      "lang": "c",
+      "repo": "https://github.com/postgres/postgres",
+      "ref": "REL_16_3",
+      "subdir": "src",
+      "approx_files": 6000,
+      "note": "Big, clean C codebase (backend + libs)."
+    },
+    {
+      "id": "py-django",
+      "lang": "python",
+      "repo": "https://github.com/django/django",
+      "ref": "5.0.6",
+      "subdir": "django",
+      "approx_files": 2800,
+      "note": "Big real Python framework."
+    },
+    {
+      "id": "go-kubernetes",
+      "lang": "go",
+      "repo": "https://github.com/kubernetes/kubernetes",
+      "ref": "v1.30.2",
+      "subdir": "pkg",
+      "approx_files": 9000,
+      "note": "The canonical BIG Go repo. Use pkg/ (still huge, ~9k files); full repo is ~15k+ and vendored. If a tool cannot finish pkg/ in 10 min, record timeout — that is a scale finding.",
+      "scale_variant": {"id": "go-kubernetes-full", "subdir": "", "warning": "~15k+ files incl vendor — opt-in extreme test only"}
+    },
+    {
+      "id": "java-spring",
+      "lang": "java",
+      "repo": "https://github.com/spring-projects/spring-framework",
+      "ref": "v6.1.10",
+      "subdir": "",
+      "approx_files": 8000,
+      "note": "The canonical BIG Java repo (all modules)."
+    },
+    {
+      "id": "csharp-efcore",
+      "lang": "csharp",
+      "repo": "https://github.com/dotnet/efcore",
+      "ref": "v8.0.6",
+      "subdir": "src",
+      "approx_files": 3500,
+      "note": "Big real C# codebase (Entity Framework Core)."
+    },
+    {
+      "id": "ts-typescript",
+      "lang": "typescript",
+      "repo": "https://github.com/microsoft/TypeScript",
+      "ref": "v5.5.3",
+      "subdir": "src",
+      "approx_files": 1600,
+      "note": "The TypeScript compiler itself — big TS with very large files."
+    }
+  ],
+  "_optional_small_controls": "flask/gin/gson/hono/Newtonsoft.Json from the prior small manifest can be re-added as fast sanity controls, but the primary bench is the big repos above."
+}
