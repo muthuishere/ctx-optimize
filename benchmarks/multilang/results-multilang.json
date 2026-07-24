@@ -1,0 +1,569 @@
+{
+  "run_date": "2026-07-24",
+  "machine": "Apple M5 Pro, 18 cores, 48 GB",
+  "versions": {
+    "ctx-optimize": "ctx-optimize v0.8.0-4-g3fa2649 (3fa2649, 2026-07-24T05:53:10Z)",
+    "codegraph": "1.5.0",
+    "gitnexus": "1.6.9",
+    "graphify": "graphify 0.9.12",
+    "ast-grep": "ast-grep 0.45.0"
+  },
+  "primary_pass": "BIG real-world repos (postgres/django/kubernetes/spring/efcore/typescript) -- the scale test requested by the owner. cell_timeout_s=600",
+  "methodology_note": "BIG-repo pass: single cold run (not best-of-3), 1 warm run, each capped at cell_timeout_s. See RUN-NOTES.md.",
+  "corpora_big": {
+    "c-postgres": {
+      "lang": "c",
+      "dir": "/Users/muthuishere/ctx-bench-arena/multilang/corpora/c-postgres/src",
+      "files": 5245,
+      "ctx-optimize": {
+        "cold_s": 4.531,
+        "cold_timeout": false,
+        "warm_s": 4.943,
+        "warm_timeout": false,
+        "nodes": 41758,
+        "edges": 131893,
+        "store_bytes": 43938724,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM); SINGLE cold run (see methodology_note)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 8.737,
+        "cold_timeout": false,
+        "warm_s": 0.206,
+        "warm_timeout": false,
+        "nodes": 61509,
+        "edges": 227402,
+        "store_bytes": 183435264,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite, no embeddings/LLM); SINGLE cold run",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 44.74,
+        "cold_timeout": false,
+        "warm_s": 38.218,
+        "warm_timeout": false,
+        "nodes": 64353,
+        "edges": 152077,
+        "store_bytes": 1030884605,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM); SINGLE cold run",
+        "runtime_deps": "none (local LadybugDB)",
+        "warm_is_forced_full_rebuild": true,
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 26.352,
+        "cold_timeout": false,
+        "warm_s": 28.292,
+        "warm_timeout": false,
+        "nodes": 36370,
+        "edges": 160845,
+        "store_bytes": 165738458,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM); SINGLE cold run",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "query": {
+        "question": "heap tuple insertion and buffer management",
+        "ctx-optimize_ms": 83,
+        "ctx-optimize_query_timeout": false,
+        "gitnexus_ms": 649,
+        "gitnexus_query_timeout": false,
+        "codegraph_ms": 67,
+        "codegraph_query_term": "heap",
+        "codegraph_query_timeout": false,
+        "graphify_ms": 1026,
+        "graphify_query_timeout": false,
+        "ast-grep_ms": 330,
+        "ast-grep_pattern": "$RET $NAME($$$) { $$$ }",
+        "ast-grep_lang": "c",
+        "ast-grep_rc": 0,
+        "ast-grep_nonempty": true
+      },
+      "warm_verb_fix": {
+        "ctx-optimize_warm_up_s": 0.047,
+        "ctx-optimize_warm_up_note": "up: store ready \u2014 up to date with git HEAD\n",
+        "resync_1file_s": {
+          "ctx-optimize_s": 5.345,
+          "ctx-optimize_note": "up verb; store re-extracts fully on any staleness (no incremental path today)",
+          "codegraph_s": 0.294,
+          "gitnexus_s": 37.737,
+          "graphify_s": 32.198
+        }
+      }
+    },
+    "py-django": {
+      "lang": "python",
+      "dir": "/Users/muthuishere/ctx-bench-arena/multilang/corpora/py-django/django",
+      "files": 3647,
+      "ctx-optimize": {
+        "cold_s": 1.385,
+        "cold_timeout": false,
+        "warm_s": 1.389,
+        "warm_timeout": false,
+        "nodes": 13013,
+        "edges": 25133,
+        "store_bytes": 9103415,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM); SINGLE cold run (see methodology_note)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 1.808,
+        "cold_timeout": false,
+        "warm_s": 0.21,
+        "warm_timeout": false,
+        "nodes": 17830,
+        "edges": 42433,
+        "store_bytes": 38850560,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite, no embeddings/LLM); SINGLE cold run",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 13.27,
+        "cold_timeout": false,
+        "warm_s": 10.13,
+        "warm_timeout": false,
+        "nodes": 22222,
+        "edges": 40971,
+        "store_bytes": 281592953,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM); SINGLE cold run",
+        "runtime_deps": "none (local LadybugDB)",
+        "warm_is_forced_full_rebuild": false,
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 9.909,
+        "cold_timeout": false,
+        "warm_s": 11.393,
+        "warm_timeout": false,
+        "nodes": 15809,
+        "edges": 33071,
+        "store_bytes": 33781049,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM); SINGLE cold run",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "query": {
+        "question": "queryset filter and evaluation",
+        "ctx-optimize_ms": 32,
+        "ctx-optimize_query_timeout": false,
+        "gitnexus_ms": 698,
+        "gitnexus_query_timeout": false,
+        "codegraph_ms": 76,
+        "codegraph_query_term": "queryset",
+        "codegraph_query_timeout": false,
+        "graphify_ms": 463,
+        "graphify_query_timeout": false,
+        "ast-grep_ms": 84,
+        "ast-grep_pattern": "def $NAME($$$):$$$BODY",
+        "ast-grep_lang": "python",
+        "ast-grep_rc": 0,
+        "ast-grep_nonempty": true
+      },
+      "warm_verb_fix": {
+        "ctx-optimize_warm_up_s": 0.03,
+        "ctx-optimize_warm_up_note": "up: store ready \u2014 up to date with git HEAD\n",
+        "resync_1file_s": {
+          "ctx-optimize_s": 1.418,
+          "ctx-optimize_note": "up verb; store re-extracts fully on any staleness (no incremental path today)",
+          "codegraph_s": 0.745,
+          "gitnexus_s": 13.282,
+          "graphify_s": 10.743
+        }
+      }
+    },
+    "go-kubernetes": {
+      "lang": "go",
+      "dir": "/Users/muthuishere/ctx-bench-arena/multilang/corpora/go-kubernetes/pkg",
+      "files": 3125,
+      "ctx-optimize": {
+        "cold_s": 4.528,
+        "cold_timeout": false,
+        "warm_s": 4.932,
+        "warm_timeout": false,
+        "nodes": 34874,
+        "edges": 95050,
+        "store_bytes": 39692093,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM); SINGLE cold run (see methodology_note)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 8.381,
+        "cold_timeout": false,
+        "warm_s": 0.29,
+        "warm_timeout": false,
+        "nodes": 60439,
+        "edges": 205898,
+        "store_bytes": 222793728,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite, no embeddings/LLM); SINGLE cold run",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 44.358,
+        "cold_timeout": false,
+        "warm_s": 38.621,
+        "warm_timeout": false,
+        "nodes": 56771,
+        "edges": 262336,
+        "store_bytes": 898440435,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM); SINGLE cold run",
+        "runtime_deps": "none (local LadybugDB)",
+        "warm_is_forced_full_rebuild": false,
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 27.098,
+        "cold_timeout": false,
+        "warm_s": 30.085,
+        "warm_timeout": false,
+        "nodes": 46275,
+        "edges": 138423,
+        "store_bytes": 165471756,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM); SINGLE cold run",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "query": {
+        "question": "pod scheduling and controller reconciliation",
+        "ctx-optimize_ms": 66,
+        "ctx-optimize_query_timeout": false,
+        "gitnexus_ms": 618,
+        "gitnexus_query_timeout": false,
+        "codegraph_ms": 65,
+        "codegraph_query_term": "scheduler",
+        "codegraph_query_timeout": false,
+        "graphify_ms": 1519,
+        "graphify_query_timeout": false,
+        "ast-grep_ms": 359,
+        "ast-grep_pattern": "func $NAME($$$) { $$$ }",
+        "ast-grep_lang": "go",
+        "ast-grep_rc": 0,
+        "ast-grep_nonempty": true
+      },
+      "warm_verb_fix": {
+        "ctx-optimize_warm_up_s": 0.039,
+        "ctx-optimize_warm_up_note": "up: store ready \u2014 up to date with git HEAD\n",
+        "resync_1file_s": {
+          "ctx-optimize_s": 4.575,
+          "ctx-optimize_note": "up verb; store re-extracts fully on any staleness (no incremental path today)",
+          "codegraph_s": 0.709,
+          "gitnexus_s": 43.068,
+          "graphify_s": 29.548
+        }
+      }
+    },
+    "java-spring": {
+      "lang": "java",
+      "dir": "/Users/muthuishere/ctx-bench-arena/multilang/corpora/java-spring",
+      "files": 10142,
+      "ctx-optimize": {
+        "cold_s": 10.14,
+        "cold_timeout": false,
+        "warm_s": 11.742,
+        "warm_timeout": false,
+        "nodes": 107779,
+        "edges": 217132,
+        "store_bytes": 141804585,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM); SINGLE cold run (see methodology_note)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 19.192,
+        "cold_timeout": false,
+        "warm_s": 0.373,
+        "warm_timeout": false,
+        "nodes": 223166,
+        "edges": 658416,
+        "store_bytes": 719712256,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite, no embeddings/LLM); SINGLE cold run",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 234.456,
+        "cold_timeout": false,
+        "warm_s": 221.482,
+        "warm_timeout": false,
+        "nodes": 140205,
+        "edges": 523842,
+        "store_bytes": 1747114720,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM); SINGLE cold run",
+        "runtime_deps": "none (local LadybugDB)",
+        "warm_is_forced_full_rebuild": false,
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 160.192,
+        "cold_timeout": false,
+        "warm_s": 173.664,
+        "warm_timeout": false,
+        "nodes": 120395,
+        "edges": 499407,
+        "store_bytes": 725839455,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM); SINGLE cold run",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "query": {
+        "question": "bean definition and dependency injection",
+        "ctx-optimize_ms": 221,
+        "ctx-optimize_query_timeout": false,
+        "gitnexus_ms": 634,
+        "gitnexus_query_timeout": false,
+        "codegraph_ms": 71,
+        "codegraph_query_term": "bean",
+        "codegraph_query_timeout": false,
+        "graphify_ms": 5767,
+        "graphify_query_timeout": false,
+        "ast-grep_ms": 297,
+        "ast-grep_pattern": "public class $NAME {$$$BODY}",
+        "ast-grep_lang": "java",
+        "ast-grep_rc": 0,
+        "ast-grep_nonempty": true
+      },
+      "warm_verb_fix": {
+        "ctx-optimize_warm_up_s": 0.096,
+        "ctx-optimize_warm_up_note": "up: store ready \u2014 up to date with git HEAD\n",
+        "resync_1file_s": {
+          "ctx-optimize_s": 11.757,
+          "ctx-optimize_note": "up verb; store re-extracts fully on any staleness (no incremental path today)",
+          "codegraph_s": 2.311,
+          "gitnexus_s": 238.711,
+          "graphify_s": 170.861
+        }
+      }
+    },
+    "csharp-efcore": {
+      "lang": "csharp",
+      "dir": "/Users/muthuishere/ctx-bench-arena/multilang/corpora/csharp-efcore/src",
+      "files": 2677,
+      "ctx-optimize": {
+        "cold_s": 2.029,
+        "cold_timeout": false,
+        "warm_s": 2.232,
+        "warm_timeout": false,
+        "nodes": 20813,
+        "edges": 31637,
+        "store_bytes": 25528906,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM); SINGLE cold run (see methodology_note)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 6.178,
+        "cold_timeout": false,
+        "warm_s": 0.191,
+        "warm_timeout": false,
+        "nodes": 40532,
+        "edges": 142025,
+        "store_bytes": 145039360,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite, no embeddings/LLM); SINGLE cold run",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 19.691,
+        "cold_timeout": false,
+        "warm_s": 16.193,
+        "warm_timeout": false,
+        "nodes": 35213,
+        "edges": 99478,
+        "store_bytes": 522486060,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM); SINGLE cold run",
+        "runtime_deps": "none (local LadybugDB)",
+        "warm_is_forced_full_rebuild": false,
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 29.02,
+        "cold_timeout": false,
+        "warm_s": 29.928,
+        "warm_timeout": false,
+        "nodes": 29846,
+        "edges": 67794,
+        "store_bytes": 128559075,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM); SINGLE cold run",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "query": {
+        "question": "change tracking and entity state management",
+        "ctx-optimize_ms": 48,
+        "ctx-optimize_query_timeout": false,
+        "gitnexus_ms": 648,
+        "gitnexus_query_timeout": false,
+        "codegraph_ms": 69,
+        "codegraph_query_term": "tracker",
+        "codegraph_query_timeout": false,
+        "graphify_ms": 1106,
+        "graphify_query_timeout": false,
+        "ast-grep_ms": 173,
+        "ast-grep_pattern": "public class $NAME {$$$BODY}",
+        "ast-grep_lang": "csharp",
+        "ast-grep_rc": 0,
+        "ast-grep_nonempty": true
+      },
+      "warm_verb_fix": {
+        "ctx-optimize_warm_up_s": 0.039,
+        "ctx-optimize_warm_up_note": "up: store ready \u2014 up to date with git HEAD\n",
+        "resync_1file_s": {
+          "ctx-optimize_s": 2.363,
+          "ctx-optimize_note": "up verb; store re-extracts fully on any staleness (no incremental path today)",
+          "codegraph_s": 0.953,
+          "gitnexus_s": 19.93,
+          "graphify_s": 31.104
+        }
+      }
+    },
+    "ts-typescript": {
+      "lang": "typescript",
+      "dir": "/Users/muthuishere/ctx-bench-arena/multilang/corpora/ts-typescript/src",
+      "files": 723,
+      "ctx-optimize": {
+        "cold_s": 1.769,
+        "cold_timeout": false,
+        "warm_s": 1.959,
+        "warm_timeout": false,
+        "nodes": 18429,
+        "edges": 53866,
+        "store_bytes": 19434373,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM); SINGLE cold run (see methodology_note)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 3.6,
+        "cold_timeout": false,
+        "warm_s": 0.23,
+        "warm_timeout": false,
+        "nodes": 22596,
+        "edges": 141030,
+        "store_bytes": 90685440,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite, no embeddings/LLM); SINGLE cold run",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 17.778,
+        "cold_timeout": false,
+        "warm_s": 12.905,
+        "warm_timeout": false,
+        "nodes": 21941,
+        "edges": 103060,
+        "store_bytes": 351054954,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM); SINGLE cold run",
+        "runtime_deps": "none (local LadybugDB)",
+        "warm_is_forced_full_rebuild": false,
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 21.021,
+        "cold_timeout": false,
+        "warm_s": 22.205,
+        "warm_timeout": false,
+        "nodes": 20422,
+        "edges": 80604,
+        "store_bytes": 32043748,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM); SINGLE cold run",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "query": {
+        "question": "type checker and symbol resolution",
+        "ctx-optimize_ms": 42,
+        "ctx-optimize_query_timeout": false,
+        "gitnexus_ms": 634,
+        "gitnexus_query_timeout": false,
+        "codegraph_ms": 65,
+        "codegraph_query_term": "checker",
+        "codegraph_query_timeout": false,
+        "graphify_ms": 771,
+        "graphify_query_timeout": false,
+        "ast-grep_ms": 239,
+        "ast-grep_pattern": "function $NAME($$$) { $$$ }",
+        "ast-grep_lang": "typescript",
+        "ast-grep_rc": 0,
+        "ast-grep_nonempty": true
+      },
+      "warm_verb_fix": {
+        "ctx-optimize_warm_up_s": 0.035,
+        "ctx-optimize_warm_up_note": "up: store ready \u2014 up to date with git HEAD\n",
+        "resync_1file_s": {
+          "ctx-optimize_s": 1.991,
+          "ctx-optimize_note": "up verb; store re-extracts fully on any staleness (no incremental path today)",
+          "codegraph_s": 0.294,
+          "gitnexus_s": 13.168,
+          "graphify_s": 22.232
+        }
+      }
+    }
+  },
+  "small_control_pass_NOTE": "Original 6-language SMALL-bounded-subdir manifest (c-linux/block, py-flask/src, py-django/django, go-gin, java-gson, csharp-newtonsoft, ts-hono) was superseded mid-run by an owner-directed pivot to BIG flagship repos before it finished -- only c-linux/py-flask/go-kubernetes... actually only c-linux, py-flask, py-django(partial small variant) ran before the pivot. Kept here as a small-scale cross-check, NOT the primary result.",
+  "corpora_small_control_partial": {
+    "c-linux": {
+      "lang": "c",
+      "dir": "/Users/muthuishere/ctx-bench-arena/multilang/corpora/c-linux/block",
+      "files": 101,
+      "ctx-optimize": {
+        "cold_s": 0.715,
+        "warm_s": 0.768,
+        "nodes": 8161,
+        "edges": 12007,
+        "store_bytes": 4588452,
+        "path_note": "add <path> (extraction + graph + prune + wiki regen; no LLM)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "codegraph": {
+        "cold_s": 0.919,
+        "warm_s": 0.182,
+        "nodes": 3928,
+        "edges": 10082,
+        "store_bytes": 10080256,
+        "path_note": "init <path> cold, sync <path> warm (node-sqlite backend, no embeddings/LLM)",
+        "runtime_deps": "none (local node-sqlite; telemetry disabled via CODEGRAPH_TELEMETRY=0)",
+        "error": null
+      },
+      "gitnexus": {
+        "cold_s": 10.631,
+        "warm_s": 6.63,
+        "nodes": 6098,
+        "edges": 13471,
+        "store_bytes": 122394364,
+        "path_note": "analyze --skip-git --index-only (no --embeddings/--skills/--pdg; no LLM)",
+        "runtime_deps": "none (local LadybugDB)",
+        "warm_is_forced_full_rebuild": true,
+        "error": null
+      },
+      "graphify": {
+        "cold_s": 1.181,
+        "warm_s": 1.172,
+        "nodes": 2698,
+        "edges": 7050,
+        "store_bytes": 7270366,
+        "path_note": "update --no-cluster (extraction+graph only, no clustering/LLM)",
+        "runtime_deps": "none",
+        "error": null
+      },
+      "query": {
+        "question": "block device request queue handling",
+        "ctx-optimize_ms": 19,
+        "gitnexus_ms": 626,
+        "codegraph_ms": 101,
+        "codegraph_query_term": "queue",
+        "graphify_ms": 127,
+        "ast-grep_ms": 31,
+        "ast-grep_pattern": "$RET $NAME($$$) { $$$ }",
+        "ast-grep_lang": "c",
+        "ast-grep_rc": 0,
+        "ast-grep_nonempty": true
+      }
+    }
+  }
+}
