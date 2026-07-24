@@ -10,8 +10,16 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-07-24
+
 ### Added
 
+- **Fast incremental re-sync** (ADR `openspec/changes/2026-07-24-lazy-autosync/`,
+  levers 1+2). A 0-change re-sync short-circuits on a stat-only tree signature
+  BEFORE engine init (~0.73s → **~0.03s**); the 32 MB wasm engine compiles once
+  into a disk-backed wazero cache (cold gather ~0.91s → **~0.57s**); git-history
+  and wiki regen skip when provably unchanged. Byte-identical to a `--force`
+  rebuild — pinned by six scenario tests (edit/add/delete/folder/ignored/module).
 - **Lazy autosync on query + `sync` = the resync verb** (ADR
   `openspec/changes/2026-07-24-lazy-autosync/design.md`, lever 3). A read verb on
   a stale store can now bring itself current — config-gated, **code-only**, off by
@@ -31,6 +39,19 @@ embeddings, no MCP, no network except your configured remote.**
 - **`sync` is now the first-class resync verb**: code + local producers by
   default (no dial), incremental via levers 1+2. `sync --adapters` also re-runs
   adapter scripts; `sync --all` also refreshes native sources (dials).
+- **Resync skips the wiki** (ADR `openspec/changes/2026-07-24-wiki-scale/`).
+  Query/card/affected read the graph, never the wiki, so autosync (lazy child +
+  block inline) refreshes the graph only; `--no-wiki` on `add`/`sync` is the
+  explicit escape hatch. At Linux scale wiki regen was ~98% of a 24.7-min gather
+  — a resync no longer pays it. Explicit `add`/`sync` still build the full wiki.
+- **`--include-content` on `query`/`card`**: opt-in on-demand source hydration —
+  the cited `file:line` range is read from disk at answer time and returned
+  inline (`content_error` when unreadable, never a silent empty body). Nothing
+  is stored; the pointer-only store stays 3–10× smaller than body-storing rivals.
+- **Partition-and-quarantine gather**: one invalid node no longer discards the
+  whole index — bad items are quarantined and reported, the rest commit. Proven
+  on full Linux: 0 B before → 2.85M nodes / 4.6M edges, 9 items quarantined.
+- **Field-standard aliases**: `node` (= `card`), `impact` (= `affected`).
 
 ## [0.8.0] — 2026-07-24
 
