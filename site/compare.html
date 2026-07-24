@@ -165,15 +165,37 @@ footer a{color:var(--muted)}
     <tr><td>Cold start → first answer</td><td class="win">seconds</td><td>seconds</td><td>seconds</td><td class="mid">index + model</td><td class="lose">DB bring-up</td><td class="mid">LSP warmup</td></tr>
   </table></div>
 
-  <h3 class="sub">2. Measured head-to-head — graphify (the one we've fully run)</h3>
-  <p class="body">The cross-tool harness (<code>proof/compare/</code>) that runs CodeGraph, GitNexus, potpie and Serena on the same repos is still being built — so for a real, apples-to-apples number today we only claim graphify, on the deterministic core both tools share (M5 Pro, cold shell, <a href="bench/results.json">raw data</a>):</p>
+  <h3 class="sub">2. Measured head-to-head — CodeGraph, GitNexus, graphify, ast-grep (2026-07-24 run)</h3>
+  <p class="body">Four public corpora, pinned SHAs, same machine (M5 Pro), every tool on its fastest deterministic path — no embeddings, no LLM, no clustering. ctx-optimize cells re-measured on the incremental-sync build (<code>011f50d</code>); versions: CodeGraph&nbsp;1.5.0 · GitNexus&nbsp;1.6.9 · graphify&nbsp;0.9.12 · ast-grep&nbsp;0.45.0. Raw data: <a href="bench/results-multi.json">results-multi.json</a>. <b>Note:</b> “graphify src” below is a <i>754-file</i> bounded corpus from this run — a different, smaller corpus than the 12,484-file full-tree run quoted above and on the front page; don’t mix the two.</p>
   <div class="tablewrap"><table>
-    <tr><th>operation</th><th>corpus</th><th>ctx-optimize vs graphify</th><th>note</th></tr>
-    <tr><td>Cold gather</td><td>graphify source, 12,484 files</td><td class="win">13.3× faster</td><td>store 8.3 MB vs 30.1 MB — 3.6× smaller; nodes within 1%</td></tr>
-    <tr><td>Cold gather</td><td>gin, 159 files</td><td class="win">2.2× faster</td><td>graphify finds slightly more nodes here — shown as-is</td></tr>
-    <tr><td>Query latency</td><td>12k-file corpus, median of 5</td><td class="win">~4× faster</td><td>3.8–4.1× across three questions, 2,000-token budget</td></tr>
+    <tr><th>Cold gather (s)</th><th>ctx-optimize</th><th>CodeGraph</th><th>GitNexus</th><th>graphify</th></tr>
+    <tr><td>flask (265 files)</td><td class="mid">0.65</td><td class="win">0.46</td><td>6.5</td><td>0.86</td></tr>
+    <tr><td>gin (159)</td><td class="win">0.37</td><td>0.62</td><td>7.9</td><td>0.78</td></tr>
+    <tr><td>ctx-optimize src (207)</td><td class="win">0.37</td><td>0.80</td><td>13.4</td><td>1.33</td></tr>
+    <tr><td>graphify src (754)</td><td class="win">0.81</td><td>1.90</td><td>18.5</td><td>5.43</td></tr>
   </table></div>
-  <p class="body">Honest caveats, same as on the <a href="index.html#numbers">benchmarks page</a>: graphify was timed on its fastest deterministic path (no clustering, no LLM); on gin and its own source it finds a few more nodes than we do, shown as-is; and it does things we deliberately don't (LLM community labeling). This is the shared core, not a claim we win at everything.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Warm re-sync, 0 changes (s)</th><th>ctx-optimize</th><th>CodeGraph</th><th>GitNexus</th><th>graphify</th></tr>
+    <tr><td>flask</td><td class="win">0.040</td><td>0.143</td><td>5.3</td><td>0.77</td></tr>
+    <tr><td>gin</td><td class="win">0.039</td><td>0.147</td><td>5.3</td><td>0.75</td></tr>
+    <tr><td>ctx-optimize src</td><td class="win">0.028</td><td>0.131</td><td>9.2&nbsp;†</td><td>1.34</td></tr>
+    <tr><td>graphify src</td><td class="win">0.030</td><td>0.200</td><td>27.9&nbsp;†</td><td>8.61</td></tr>
+  </table></div>
+  <div class="tablewrap"><table>
+    <tr><th>Query, median of 5 (ms)</th><th>ctx-optimize</th><th>ast-grep&nbsp;‡</th><th>CodeGraph</th><th>GitNexus</th><th>graphify</th></tr>
+    <tr><td>flask</td><td class="win">12</td><td>22</td><td>416</td><td>3778</td><td>307</td></tr>
+    <tr><td>gin</td><td class="win">12</td><td>52</td><td>368</td><td>3457</td><td>345</td></tr>
+    <tr><td>ctx-optimize src</td><td class="win">13</td><td>49</td><td>464</td><td>3124</td><td>341</td></tr>
+    <tr><td>graphify src</td><td class="win">30</td><td>77</td><td>182</td><td>1912</td><td>1091</td></tr>
+  </table></div>
+  <div class="tablewrap"><table>
+    <tr><th>Store on disk</th><th>ctx-optimize</th><th>CodeGraph</th><th>GitNexus</th><th>graphify</th></tr>
+    <tr><td>flask</td><td class="win">1.4&nbsp;MB</td><td>5.0&nbsp;MB</td><td>60&nbsp;MB</td><td>3.2&nbsp;MB</td></tr>
+    <tr><td>gin</td><td class="win">1.4&nbsp;MB</td><td>7.7&nbsp;MB</td><td>73&nbsp;MB</td><td>4.7&nbsp;MB</td></tr>
+    <tr><td>ctx-optimize src</td><td class="win">1.6&nbsp;MB</td><td>11.4&nbsp;MB</td><td>137&nbsp;MB</td><td>6.4&nbsp;MB</td></tr>
+    <tr><td>graphify src</td><td class="win">9.0&nbsp;MB</td><td>25.1&nbsp;MB</td><td>192&nbsp;MB</td><td>25.6&nbsp;MB</td></tr>
+  </table></div>
+  <p class="body">Where we lose, shown as-is: <b>CodeGraph wins cold gather on flask</b> (0.46&nbsp;s vs our 0.65&nbsp;s). Honest footnotes: ctx-optimize’s cold gather <i>includes</i> the full markdown wiki; its warm number is the tree-signature short-circuit that shipped in this build — earlier releases re-extracted fully and were <i>slower</i> warm than CodeGraph, which is why this row was our loss until 011f50d. † GitNexus’s warm cells on those two corpora were a forced full rebuild (schema-version bump mid-run), not a true incremental re-sync — read them as worst-case, not typical. ‡ ast-grep is grep-style structural search with no index — no gather/store rows apply; its two Python query cells were re-run with a corrected pattern after the original matched zero results (our authoring error, not the tool’s). Each tool builds a different graph (node counts differ up to ~1.6×); disk and query numbers compare each tool’s own artifact, not identical outputs.</p>
 
   <h3 class="sub">3. Our absolute numbers + their published claims</h3>
   <div class="tablewrap"><table>
@@ -182,7 +204,7 @@ footer a{color:var(--muted)}
     <tr><td>Query, 1.49M-node Chromium store</td><td class="win">&lt; 1 s</td><td>GitNexus / graphify: <i>large token savings</i></td></tr>
     <tr><td>Federated query, 188K-node monorepo</td><td class="win">≈ 0.6 s</td><td>(measured their way, not ours)</td></tr>
   </table></div>
-  <p class="body">When the full harness lands, every rival gets a measured row here — including the ones where we lose. Until then we won't fake a head-to-head we haven't run. Raw data behind ours: <a href="proof/agent/">proof/agent</a> · <a href="bench/results.json">bench/results.json</a>.</p>
+  <p class="body">potpie and Serena still have no measured row — different architectures (Neo4j + LLM-in-loop; LSP server) that need their own harness, and we won't fake a head-to-head we haven't run. Raw data behind ours: <a href="proof/agent/">proof/agent</a> · <a href="bench/results.json">bench/results.json</a> · <a href="bench/results-multi.json">bench/results-multi.json</a>.</p>
 </div></section>
 
 <section class="doc" id="each"><div class="wrap">
