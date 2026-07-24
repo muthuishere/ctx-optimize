@@ -10,6 +10,28 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Added
+
+- **Lazy autosync on query + `sync` = the resync verb** (ADR
+  `openspec/changes/2026-07-24-lazy-autosync/design.md`, lever 3). A read verb on
+  a stale store can now bring itself current — config-gated, **code-only**, off by
+  default:
+  - `.ctxoptimize/config.json` `"autosync"`: `"off"` (default) | `"lazy"` |
+    `"block"`; accepts a bool too (`true`→lazy, `false`→off). Global default in
+    `~/ctxoptimize/config.json`; env override `CTX_OPTIMIZE_AUTOSYNC`.
+  - **lazy** — a stale read spawns a detached child `sync` and answers NOW from
+    the current store (0 ms added latency); the next read sees the refresh. One
+    sync in flight, guarded by a PID lockfile in the store (no stampede). Detach
+    is per-GOOS (`Setsid` on Unix, `DETACHED_PROCESS|NEW_PROCESS_GROUP` on
+    Windows).
+  - **block** — a stale read resyncs inline first, then answers (always fresh).
+  - Staleness is lever 1's tree-signature, so it catches **uncommitted** edits
+    (git-HEAD freshness would miss them). Scope is LOCKED to code: auto-sync never
+    runs adapter scripts and never dials a native source.
+- **`sync` is now the first-class resync verb**: code + local producers by
+  default (no dial), incremental via levers 1+2. `sync --adapters` also re-runs
+  adapter scripts; `sync --all` also refreshes native sources (dials).
+
 ## [0.8.0] — 2026-07-24
 
 ### Added

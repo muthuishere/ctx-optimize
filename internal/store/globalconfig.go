@@ -22,6 +22,12 @@ type GlobalConfig struct {
 	// CLAUDE, AGENTS (codex+copilot), ALL (default), or NONE. Devin needs no
 	// hook file — it reads the Claude hook and AGENTS.md natively.
 	Hooks string `json:"hooks,omitempty"`
+	// Autosync is the machine-wide default for lazy code re-sync on a read verb
+	// (ADR 2026-07-24-lazy-autosync, lever 3): off (default) | lazy | block
+	// (accepts a bool too — see AutosyncMode). A repo's committed
+	// .ctxoptimize/config.json overrides this; CTX_OPTIMIZE_AUTOSYNC overrides
+	// both.
+	Autosync AutosyncMode `json:"autosync,omitempty"`
 
 	// Legacy v0.2.6 shape ({"agents":{"type":...}}) — read-only alias,
 	// never written back.

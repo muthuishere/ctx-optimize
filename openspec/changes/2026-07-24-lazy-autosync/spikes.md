@@ -94,3 +94,12 @@ synced stores (fixed: machine-local cache dir).
 
 Still pending: **lazy autosync on query** (detached child + `autosync` config +
 per-GOOS SysProcAttr) — the 0ms-latency "auto" layer on top of this fast sync.
+
+## 5. DONE (2026-07-24) — lever 3 shipped
+
+Built per `design.md` (owner-accepted): `autosync` config (off|lazy|block,
+bool-tolerant) + env override, tree-sig staleness gate (catches uncommitted
+edits), PID-lockfile guard, per-GOOS detached child (`internal/app/autosync*.go`),
+and `sync` re-cast as the resync verb with `--adapters`/`--all`. `off` default is
+byte-identical to before. `task ci` + `task golden` green; end-to-end verified
+(lazy spawns a real child that syncs the edit; block is fresh in one query).

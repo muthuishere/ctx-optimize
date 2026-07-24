@@ -25,6 +25,7 @@ import (
 
 	"github.com/muthuishere/ctx-optimize/internal/scan"
 	"github.com/muthuishere/ctx-optimize/internal/sources"
+	"github.com/muthuishere/ctx-optimize/internal/store"
 )
 
 const (
@@ -163,6 +164,18 @@ type Config struct {
 	Instructions string `json:"instructions,omitempty"` // CLAUDE|AGENTS|ALL|NONE
 	Skills       string `json:"skills,omitempty"`       // CLAUDE|AGENTS|ALL
 	Hooks        string `json:"hooks,omitempty"`        // CLAUDE|AGENTS|ALL|NONE
+
+	// Autosync gates lazy code re-sync on a read verb (ADR
+	// 2026-07-24-lazy-autosync, lever 3): "off" (default) | "lazy" | "block"
+	// (accepts a bool too: true→lazy, false→off — see store.AutosyncMode).
+	//   lazy  — a stale read spawns a detached child `sync` and answers NOW from
+	//           the current store; the next read sees the refreshed store (0ms
+	//           added latency, one sync in flight via a store lockfile).
+	//   block — a stale read runs the incremental code sync inline, then answers.
+	// CODE ONLY: adapters and native sources are NEVER auto-synced on a read (no
+	// dial / no credential use on a query). Env override:
+	// CTX_OPTIMIZE_AUTOSYNC=off|lazy|block. Committable — a team opts a repo in.
+	Autosync store.AutosyncMode `json:"autosync,omitempty"`
 }
 
 func path(repo string) string { return filepath.Join(repo, filepath.FromSlash(FileName)) }
