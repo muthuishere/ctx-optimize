@@ -1,6 +1,8 @@
 # ADR — wiki regen is the scale bottleneck (fix it)
 
-Status: **SUPERSEDED BY `spikes.md`** — 2026-07-24. The spike measured
+Status: **SUPERSEDED BY `design.md`** (accepted decision) + `spikes.md` (numbers)
+— 2026-07-24. Decision: KEEP the per-file wiki; make only the RESYNC path skip
+it (query is graph-only). The options below are history. The spike measured
 `wiki.Generate` at true drivers scale at **~9 s, not 735 s** — the premise below
 ("wiki dominates at scale") is FALSE as measured. Read `spikes.md` for the
 corrected plan (M1: autosync skips wiki; M0: re-measure the real 735 s; M2:
