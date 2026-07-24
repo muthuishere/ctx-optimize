@@ -135,6 +135,11 @@ ctx-optimize query "where is the refund flow" --json
 # blast radius + WHICH TESTS TO RUN + co-change history
 ctx-optimize change-plan "RefundService"
 
+# list / filter natively — NO jq, NO python, works on Windows, all modules
+ctx-optimize nodes --kind service --where namespace=prod   # every prod k8s service
+ctx-optimize edges --relation resolves_to                  # code→dependency links
+ctx-optimize deps --scope dev --importers                  # dev deps + who imports each
+
 # fast lane / slow lane: re-gather code without running adapter scripts;
 # run adapters (DB dumps, doc converters) on demand — all, or one by name
 ctx-optimize sync
