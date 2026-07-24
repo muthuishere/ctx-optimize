@@ -12,6 +12,7 @@ package query
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -144,6 +145,7 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 		idx   int
 		score float64
 	}
+	wantsTests, wantsImports := testIntent(qTokens), importIntent(qTokens)
 	shardCand := make([][]scored, workers)
 	for w := 0; w < workers; w++ {
 		lo := w * chunk
@@ -162,6 +164,7 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 			for i := lo; i < hi; i++ {
 				s := scoreNode(nodes, nodeTokens, qTokens, df, total, memo, i)
 				if s > 0 {
+					s = intentAdjust(&nodes[i], s, wantsImports, wantsTests)
 					local = append(local, scored{i, s})
 				}
 			}
@@ -249,6 +252,73 @@ func scoreNode(nodes []schema.Node, nodeTokens []map[string]bool, qTokens []stri
 		s *= 0.2
 	}
 	return s
+}
+
+// Intent-aware downranks (ADR 2026-07-24-answer-quality F1/F2), applied after
+// scoreNode so the shard loop stays a pure token pass:
+//   - module:// import stubs carry no signature/body/file:line — they must
+//     never outrank the definition (measured: `card url_for` returned the stub,
+//     judge 0.66). Downranked UNLESS the question is about imports/modules.
+//   - test files out-token the definition ("url_for" appears more in test
+//     names than in helpers.py) — demoted UNLESS the question mentions tests.
+func intentAdjust(n *schema.Node, s float64, wantsImports, wantsTests bool) float64 {
+	if !wantsImports && strings.HasPrefix(n.ID, "module://") {
+		s *= 0.25
+	}
+	if !wantsTests && isTestSource(n.Source) {
+		s *= 0.5
+	}
+	return s
+}
+
+// isTestSource marks nodes whose source file is test-only, across the six
+// bench languages: tests/ dirs, test_*.py, *_test.go, *.spec.ts, *.test.ts,
+// *Test.java / *Tests.cs.
+func isTestSource(src string) bool {
+	if src == "" {
+		return false
+	}
+	s := strings.ToLower(filepath.ToSlash(src))
+	if strings.HasPrefix(s, "tests/") || strings.Contains(s, "/tests/") ||
+		strings.HasPrefix(s, "test/") || strings.Contains(s, "/test/") {
+		return true
+	}
+	base := s[strings.LastIndexByte(s, '/')+1:]
+	if strings.HasPrefix(base, "test_") || strings.Contains(base, ".spec.") || strings.Contains(base, ".test.") {
+		return true
+	}
+	if strings.HasSuffix(strings.TrimSuffix(base, filepath.Ext(base)), "_test") {
+		return true
+	}
+	// Java/C# convention is a CamelCase class ending in Test/Tests
+	// (FooTest.java) — match on the ORIGINAL case so "attest.cs" stays clean.
+	orig := filepath.ToSlash(src)
+	origBase := orig[strings.LastIndexByte(orig, '/')+1:]
+	origStem := strings.TrimSuffix(origBase, filepath.Ext(origBase))
+	if strings.HasSuffix(base, ".java") || strings.HasSuffix(base, ".cs") {
+		return strings.HasSuffix(origStem, "Test") || strings.HasSuffix(origStem, "Tests")
+	}
+	return false
+}
+
+// testIntent / importIntent: does the question itself ask about tests or
+// imports? Then the demote must not fire (Q2/Q3 decisions).
+func testIntent(qTokens []string) bool {
+	for _, t := range qTokens {
+		if t == "test" || t == "tests" || t == "testing" || t == "spec" {
+			return true
+		}
+	}
+	return false
+}
+
+func importIntent(qTokens []string) bool {
+	for _, t := range qTokens {
+		if t == "import" || t == "imports" || t == "imported" || t == "module" {
+			return true
+		}
+	}
+	return false
 }
 
 // Render is the human-readable form; --json callers marshal Result directly.

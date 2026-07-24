@@ -67,7 +67,14 @@ func ResolveVia(nodes []schema.Node, name string) (*schema.Node, string, error) 
 		var hit *schema.Node
 		for i := range nodes {
 			if strings.EqualFold(nodes[i].Label, want) {
-				if hit == nil || nodes[i].ID < hit.ID {
+				// A real declaration beats a synthetic module:// import stub
+				// on any label tie (ADR 2026-07-24-answer-quality F1): the
+				// stub has no signature, no body, no file:line — it must
+				// never be THE answer when the definition exists. Among
+				// equals, smallest ID keeps determinism.
+				if hit == nil || (isImportStub(hit) && !isImportStub(&nodes[i])) {
+					hit = &nodes[i]
+				} else if isImportStub(hit) == isImportStub(&nodes[i]) && nodes[i].ID < hit.ID {
 					hit = &nodes[i]
 				}
 			}
@@ -99,7 +106,9 @@ func ResolveVia(nodes []schema.Node, name string) (*schema.Node, string, error) 
 				scores[i]++
 			}
 		}
-		if scores[i] > bestScore || (scores[i] == bestScore && scores[i] > 0 && best >= 0 && nodes[i].ID < nodes[best].ID) {
+		if scores[i] > bestScore ||
+			(scores[i] == bestScore && scores[i] > 0 && best >= 0 && isImportStub(&nodes[best]) && !isImportStub(&nodes[i])) ||
+			(scores[i] == bestScore && scores[i] > 0 && best >= 0 && isImportStub(&nodes[best]) == isImportStub(&nodes[i]) && nodes[i].ID < nodes[best].ID) {
 			best, bestScore = i, scores[i]
 		}
 	}
@@ -113,10 +122,20 @@ func ResolveVia(nodes []schema.Node, name string) (*schema.Node, string, error) 
 	// A tie at the top is ambiguity — refuse with candidates rather than
 	// answer about a coin-flip winner (distinct labels only: same-label
 	// twins resolve deterministically by id and are not a wrong-symbol risk).
+	// Import stubs never contribute to ambiguity when a real node also tops
+	// the score (F1): a decl tied with its own import stub is one answer,
+	// not a coin flip.
+	declTops := false
+	for i := range nodes {
+		if scores[i] == bestScore && !isImportStub(&nodes[i]) {
+			declTops = true
+			break
+		}
+	}
 	var tied []Candidate
 	seen := map[string]bool{}
 	for i := range nodes {
-		if scores[i] == bestScore && !seen[nodes[i].Label] {
+		if scores[i] == bestScore && !seen[nodes[i].Label] && !(declTops && isImportStub(&nodes[i])) {
 			seen[nodes[i].Label] = true
 			tied = append(tied, Candidate{ID: nodes[i].ID, Label: nodes[i].Label, Kind: nodes[i].Kind, Score: scores[i]})
 		}
@@ -129,6 +148,13 @@ func ResolveVia(nodes []schema.Node, name string) (*schema.Node, string, error) 
 		return nil, "", &AmbiguousError{Name: name, Candidates: tied}
 	}
 	return &nodes[best], "fuzzy", nil
+}
+
+// isImportStub reports a synthetic import-target node (module://<name>) —
+// a pointer to a name being imported, with no signature, body, or file:line.
+// Real declarations outrank these everywhere (ADR 2026-07-24-answer-quality).
+func isImportStub(n *schema.Node) bool {
+	return strings.HasPrefix(n.ID, "module://")
 }
 
 // lastSegment strips the qualifier prefixes agents invent: path, `::` chain,

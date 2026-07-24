@@ -223,3 +223,28 @@ func TestResolveViaAmbiguityAndHonesty(t *testing.T) {
 		t.Fatalf("via = %q, want last-segment", via)
 	}
 }
+
+// ADR 2026-07-24-answer-quality F1: a real declaration beats a module://
+// import stub on any label tie — the measured `card url_for` failure (judge
+// 0.66) returned the stub because it sorted first by ID.
+func TestResolveDeclBeatsImportStub(t *testing.T) {
+	nodes := []schema.Node{
+		{ID: "module://url_for", Label: "url_for", Kind: "module"},
+		{ID: "src/flask/helpers.py::url_for", Label: "url_for", Kind: "function",
+			Source: "src/flask/helpers.py", Location: "L200-L251"},
+	}
+	n, via, err := ResolveVia(nodes, "url_for")
+	if err != nil || n.ID != "src/flask/helpers.py::url_for" {
+		t.Fatalf("decl must beat stub on label tie: got %v via %s err %v", n, via, err)
+	}
+	// Fuzzy tier: same preference (query tokens tie both).
+	n, _, err = ResolveVia(nodes, "url for helpers")
+	if err != nil || strings.HasPrefix(n.ID, "module://") {
+		t.Fatalf("fuzzy must not return the stub when a decl ties: got %v err %v", n, err)
+	}
+	// Stub-only store: the stub is still resolvable (never orphaned).
+	only := nodes[:1]
+	if n, _, err := ResolveVia(only, "url_for"); err != nil || n.ID != "module://url_for" {
+		t.Fatalf("stub-only resolve broke: %v %v", n, err)
+	}
+}

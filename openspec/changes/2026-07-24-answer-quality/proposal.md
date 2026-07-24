@@ -1,7 +1,14 @@
 # ADR — answer quality: definitions must win over import stubs & tests
 
-Status: DRAFT — 2026-07-24. Owner: fix quality FIRST. Spec-first per change-flow;
-code after sign-off. Motivated by MEASURED judge scores + raw captures, not a hunch.
+Status: **ACCEPTED** — 2026-07-24 (owner: "will work on it first"). Decisions:
+F1+F2 build now; **F3 already SHIPPED in v0.9.0** as `--include-content` on
+query/card (on-demand hydration, nothing stored — resolves Q1); **F4 verified
+complete** on the flask corpus (`src/flask/helpers.py::url_for [function]
+L200-L251` is a first-class decl node — no extraction bug, purely resolve/rank);
+Q2 = demote tests for symbol queries unless the query itself mentions tests;
+Q3 = import stubs never the primary answer, kept as secondary context.
+Both failures re-reproduced on v0.9.0 before coding (card → module://url_for
+stub; query ranks test + 2 stubs above the app.py:1102 definition).
 
 ## Evidence (the small-model quality judge, 2026-07-24)
 

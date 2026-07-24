@@ -86,3 +86,51 @@ func TestTokenizeAcronyms(t *testing.T) {
 		}
 	}
 }
+
+// ADR 2026-07-24-answer-quality F1/F2: for a plain symbol question the
+// DEFINITION outranks import stubs and test functions (measured flask failure:
+// tests + module://url_for sat above app.py:1102). Intent flips the guards off.
+func TestDefinitionOutranksStubsAndTests(t *testing.T) {
+	nodes := []schema.Node{
+		{ID: "module://url_for", Label: "url_for", Kind: "module"},
+		{ID: "src/flask/helpers.py::url_for", Label: "url_for", Kind: "function", Source: "src/flask/helpers.py"},
+		{ID: "tests/test_basic.py::test_url_for_defaults", Label: "test_url_for_defaults", Kind: "function", Source: "tests/test_basic.py"},
+	}
+	r := Run(nodes, nil, "where is url_for defined", 2000)
+	if len(r.Hits) == 0 || r.Hits[0].Node.ID != "src/flask/helpers.py::url_for" {
+		t.Fatalf("definition must be the top hit, got %+v", r.Hits)
+	}
+	// Import intent: the stub is a legitimate answer again.
+	r = Run(nodes, nil, "which files import url_for", 2000)
+	found := false
+	for _, h := range r.Hits[:min(2, len(r.Hits))] {
+		if h.Node.ID == "module://url_for" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("import-intent query must keep the stub near the top: %+v", r.Hits)
+	}
+	// Test intent: test nodes are not demoted.
+	r = Run(nodes, nil, "url_for tests", 2000)
+	if len(r.Hits) == 0 || !strings.Contains(r.Hits[0].Node.Source, "tests/") {
+		t.Fatalf("test-intent query must keep tests on top: %+v", r.Hits)
+	}
+}
+
+func TestIsTestSource(t *testing.T) {
+	yes := []string{"tests/test_basic.py", "pkg/store/store_test.go", "src/a.spec.ts",
+		"src/a.test.tsx", "src/test/java/FooTest.java", "test/EFCoreTests.cs", "a/tests/b.c"}
+	no := []string{"src/flask/helpers.py", "internal/store/store.go", "docs/testing.md",
+		"src/contest.go", "attest.cs"}
+	for _, s := range yes {
+		if !isTestSource(s) {
+			t.Errorf("isTestSource(%q) = false, want true", s)
+		}
+	}
+	for _, s := range no {
+		if isTestSource(s) {
+			t.Errorf("isTestSource(%q) = true, want false", s)
+		}
+	}
+}
