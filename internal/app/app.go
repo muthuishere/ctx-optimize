@@ -58,6 +58,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	// the companion's own build) always win over the bridge.
 	sources.ArmExecBridge()
 	cmd, rest := args[0], args[1:]
+	// Lever 3 — lazy autosync (ADR 2026-07-24-lazy-autosync): a read verb on a
+	// stale store either resyncs inline (block) or spawns a detached child and
+	// answers now (lazy). Config-gated, default off — a no-op unless opted in.
+	maybeAutosync(cmd, rest, stderr)
 	var err error
 	switch cmd {
 	case "version", "--version", "-v":
@@ -70,12 +74,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdAdd(rest, stdout, os.Stdin)
 	case "up":
 		err = cmdUp(rest, stdout)
-	case "sync": // fast lane: `add .` minus adapter scripts — always the repo you're in
-		if f := parseFlags(rest); len(f.args) > 0 {
-			err = fmt.Errorf("sync takes no path — it always syncs the repo you're in (use `add <path>` for another repo)")
-		} else {
-			err = cmdAdd(append(rest, ".", "--no-adapters"), stdout, os.Stdin)
-		}
+	case "sync": // resync THIS repo, incremental (levers 1+2). Code+local by
+		// default (no dial); --adapters also re-runs adapter scripts; --all also
+		// refreshes native sources (dials). ADR 2026-07-24-lazy-autosync D1/D2.
+		err = cmdSync(rest, stdout)
 	case "capture": // one source connector → Batch JSON on stdout, no store write
 		err = cmdCapture(rest, stdout)
 	case "adapters":
@@ -94,11 +96,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdPath(rest, stdout)
 	case "explain":
 		err = cmdExplain(rest, stdout)
-	case "card":
+	case "card", "node":
 		err = cmdCard(rest, stdout)
 	case "verify":
 		err = cmdVerify(rest, stdout)
-	case "affected":
+	case "affected", "impact":
 		err = cmdAffected(rest, stdout)
 	case "change-plan", "plan":
 		err = cmdChangePlan(rest, stdout)
@@ -138,6 +140,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdUpdate(rest, stdout)
 	case "uninstall":
 		err = cmdUninstall(rest, stdout)
+	case "__autosync": // hidden: the detached child spawned by lazy autosync
+		err = cmdAutosyncChild(rest)
 	case "help", "-h", "--help":
 		usage(stdout)
 	default:
@@ -794,6 +798,44 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	}
 	if sc.kind == scopeModule {
 		if err := refreshNavigatorEntry(sc, storeRoot); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cmdSync is the resync verb (ADR 2026-07-24-lazy-autosync, D1): bring THIS
+// repo's store current with its code, incrementally (rides levers 1+2 — a
+// 0-change resync short-circuits in ~ms). It takes NO path — `add <path>` is the
+// verb for another repo. Scope of the refresh:
+//
+//	sync              code + local producers (markdown/manifests/git/deplink) — NO dial
+//	sync --adapters   the above + re-run the repo's adapter scripts
+//	sync --all        the above + refresh native sources (DIALS DB/bucket/queue schemas)
+//
+// The default never runs a script or touches the network; --adapters/--all are
+// explicit operator choices. (Lever-3 auto-sync always uses the plain, code-only
+// path — never --adapters/--all.)
+func cmdSync(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	if len(f.args) > 0 {
+		return fmt.Errorf("sync takes no path — it always resyncs the repo you're in (use `add <path>` for another repo)")
+	}
+	all := f.bools["all"]
+	// Prepend "." so a trailing bool flag (e.g. `sync --adapters`) can't swallow
+	// it as a value; forward the caller's flags (--path/--store/--force) as-is.
+	addArgs := append([]string{"."}, args...)
+	if !all && !f.bools["adapters"] {
+		addArgs = append(addArgs, "--no-adapters")
+	}
+	if err := cmdAdd(addArgs, stdout, os.Stdin); err != nil {
+		return err
+	}
+	if all {
+		// Full refresh: dial native sources too (the same lane `up` runs),
+		// forced past the 24h TTL since --all is an explicit ask.
+		srcArgs := append([]string{"--sources", "always"}, args...)
+		if err := upSources(srcArgs, stdout); err != nil {
 			return err
 		}
 	}
