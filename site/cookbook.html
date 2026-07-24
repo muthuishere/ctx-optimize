@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ctx-optimize cookbook — real agent questions, exact commands</title>
+<meta name="description" content="16 real questions an agent or engineer asks a codebase, mapped to the exact ctx-optimize command and what the output looks like. Every command verified against the CLI reference.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0c10; --bg2:#0f1319; --panel:#141a22; --border:#1f2833; --border2:#2b3644;
+  --text:#e8edf4; --muted:#94a3b8; --dim:#64748b;
+  --accent:#4ade80; --accent-dim:#166534; --contrast:#f87171;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;
+  --disp:"Space Grotesk","Inter",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;font-size:16px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 40px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:.92em;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.1em .4em}
+::selection{background:var(--accent-dim);color:#fff}
+
+nav{position:sticky;top:0;z-index:50;background:rgba(10,12,16,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
+.logo{font-family:var(--disp);font-weight:700;font-size:1.1rem;color:var(--text)}
+.logo em{color:var(--accent);font-style:normal}
+nav ul{display:flex;gap:26px;list-style:none}
+nav ul a{color:var(--muted);font-size:.88rem;font-weight:500}
+nav ul a:hover{color:var(--text);text-decoration:none}
+
+.hero{padding:64px 0 24px;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;background:radial-gradient(900px 420px at 70% -10%,rgba(74,222,128,.09),transparent 60%);pointer-events:none}
+.kicker{font-family:var(--mono);font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px}
+h1{font-family:var(--disp);font-weight:700;font-size:clamp(2rem,4.6vw,3.1rem);line-height:1.08;letter-spacing:-.025em;max-width:820px}
+h1 .ghost{color:var(--dim)}
+.lede{margin-top:22px;font-size:1.12rem;color:var(--muted);max-width:700px}
+.lede b{color:var(--text);font-weight:600}
+
+.sec-kicker{font-family:var(--mono);font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+h2.sec{font-family:var(--disp);font-size:clamp(1.4rem,2.8vw,1.9rem);font-weight:700;letter-spacing:-.02em;line-height:1.15;max-width:760px}
+.sec-sub{margin-top:14px;color:var(--muted);font-size:1rem;max-width:720px}
+.sec-sub b{color:var(--text)}
+section.doc{padding:48px 0;border-top:1px solid var(--border)}
+section.doc:first-of-type{border-top:none}
+
+.toc{margin:44px 0 24px;display:flex;flex-wrap:wrap;gap:10px}
+.toc a{font-family:var(--mono);font-size:.8rem;color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:6px 14px}
+.toc a:hover{color:var(--text);border-color:var(--border2);text-decoration:none}
+
+pre.block{margin-top:16px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 24px;font-family:var(--mono);font-size:.83rem;line-height:1.85;overflow-x:auto;color:var(--muted)}
+pre.block .c{color:var(--dim)}
+pre.block .g{color:var(--accent)}
+pre.block .k{color:#93c5fd}
+pre.block .r{color:var(--contrast)}
+
+.note{margin-top:22px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;padding:18px 24px;font-size:.92rem;color:var(--muted);background:var(--bg2)}
+.note b{color:var(--text)}
+
+.recipes{margin-top:34px;display:grid;gap:20px}
+.recipe{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:26px 28px}
+.recipe .rn{font-family:var(--mono);font-size:.72rem;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
+.recipe h3{font-family:var(--disp);font-size:1.15rem;font-weight:700;margin-top:8px;letter-spacing:-.01em}
+.recipe .q{color:var(--muted);font-size:.92rem;margin-top:6px;font-style:italic}
+.recipe .out{margin-top:14px;font-size:.88rem;color:var(--muted)}
+.recipe .out b{color:var(--text)}
+.recipe .tag{display:inline-block;font-family:var(--mono);font-size:.7rem;color:var(--accent);background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);border-radius:20px;padding:3px 10px;margin-top:12px}
+
+.groupband{font-family:var(--mono);font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:44px 0 4px}
+.groupband:first-child{margin-top:0}
+
+footer{border-top:1px solid var(--border);padding:44px 0;color:var(--dim);font-size:.86rem;margin-top:56px}
+footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+footer a{color:var(--muted)}
+
+@media (max-width:800px){
+  .wrap{padding:0 22px}
+  nav ul{display:none}
+}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <div class="logo"><a href="index.html" style="color:inherit;text-decoration:none">ctx-<em>optimize</em></a></div>
+  <ul>
+    <li><a href="index.html#getstart">Get started</a></li>
+    <li><a href="concepts.html">Concepts</a></li>
+    <li><a href="cookbook.html">Cookbook</a></li>
+    <li><a href="use-cases.html">Use cases</a></li>
+    <li><a href="docs.html">Docs</a></li>
+    <li><a href="compare.html">Compare</a></li>
+    <li><a href="https://github.com/muthuishere/ctx-optimize">GitHub</a></li>
+  </ul>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <div class="kicker">cookbook</div>
+  <h1>The question you'd ask a teammate<br><span class="ghost">→ the exact command.</span></h1>
+  <p class="lede">16 real questions, grouped by situation. Every command is copy-pasteable and matches the <a href="docs.html#cli">CLI reference</a> exactly — nothing here is aspirational. Output shapes are excerpts of the real thing; your numbers and file paths will differ.</p>
+  <div class="toc">
+    <a href="#daily">Daily questions</a>
+    <a href="#editing">Before you edit</a>
+    <a href="#trust">Trust &amp; freshness</a>
+    <a href="#external">Beyond code</a>
+    <a href="#monorepo">Monorepos</a>
+    <a href="#team">Team &amp; onboarding</a>
+  </div>
+</div></header>
+
+<section class="doc" id="daily"><div class="wrap">
+  <div class="sec-kicker">daily questions</div>
+  <h2 class="sec">"Where is this, who calls that."</h2>
+  <div class="recipes">
+
+    <div class="recipe">
+      <div class="rn">01</div>
+      <h3>Find something from a few words</h3>
+      <div class="q">"Where's the refund flow?"</div>
+      <pre class="block">ctx-optimize query "refund flow"</pre>
+      <div class="out"><b>Get:</b> ranked, complete hits under a token budget — kind, file, line range, signature:</div>
+      <pre class="block">Refund flow  [section]  README.md L3-L6
+ProcessRefund  [function]  pay.go L3-L3</pre>
+      <span class="tag">query</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">02</div>
+      <h3>Who calls this function?</h3>
+      <div class="q">"If I touch <code>Store.Merge</code>, who's depending on it?"</div>
+      <pre class="block">ctx-optimize card "Store.Merge"</pre>
+      <div class="out"><b>Get:</b> signature, doc comment, exact location, callers and callees — <b>no file read needed</b>:</div>
+      <pre class="block">Store.Merge  [method]  internal/store/store.go L200-L273
+  sig: func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error)
+  doc: Merge upserts a validated batch into the graph...
+  called by (12): cmdAdd, cmdSync, cmdMerge, ...
+  calls (6): Batch.Validate, writeNDJSON, ...</pre>
+      <span class="tag">card</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">03</div>
+      <h3>Orient yourself in a repo you've never seen</h3>
+      <div class="q">"What are the load-bearing pieces of this codebase?"</div>
+      <pre class="block">ctx-optimize hubs --top 10
+<span class="c"># or browse the generated map:</span>
+open ~/ctxoptimize/&lt;repo&gt;/wiki/</pre>
+      <div class="out"><b>Get:</b> the most-connected nodes in the graph — usually the real entry points and core types, ranked by fan-in/fan-out — plus a full navigable markdown wiki regenerated on every gather.</div>
+      <span class="tag">hubs</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">04</div>
+      <h3>Connect two symbols you know are related, but not how</h3>
+      <div class="q">"How does the CLI's <code>add</code> command reach the store's merge logic?"</div>
+      <pre class="block">ctx-optimize path "cmdAdd" "Store.Merge"</pre>
+      <div class="out"><b>Get:</b> the shortest path through the graph between the two nodes — the call/import chain that connects them, with each hop's file:line.</div>
+      <span class="tag">path</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">05</div>
+      <h3>Get a plain-language read on an unfamiliar node</h3>
+      <div class="q">"What is this thing and what's around it?"</div>
+      <pre class="block">ctx-optimize explain "PaymentService"</pre>
+      <div class="out"><b>Get:</b> the node plus its immediate neighborhood in prose — what it is, what touches it — before you decide whether it's worth a full <code>card</code> or <code>change-plan</code>.</div>
+      <span class="tag">explain</span>
+    </div>
+
+  </div>
+</div></section>
+
+<section class="doc" id="editing"><div class="wrap">
+  <div class="sec-kicker">before you edit</div>
+  <h2 class="sec">"What breaks if I change this."</h2>
+  <div class="recipes">
+
+    <div class="recipe">
+      <div class="rn">06</div>
+      <h3>About to change a function — the composed answer</h3>
+      <div class="q">"I'm about to edit <code>validateRefund</code> — what do I need to know before I touch it?"</div>
+      <pre class="block">ctx-optimize change-plan validateRefund</pre>
+      <div class="out"><b>Get:</b> ONE call replacing a query+card+affected+grep chain — signature, callers, blast radius, <b>which tests to run</b>, historical co-change, and a confidence footer separating extracted fact from inferred guesses:</div>
+      <pre class="block">callers (1):
+  pay.go::ProcessRefund
+blast radius (depth 2, 2 shown): ...
+tests to run: pay_test.go::TestProcessRefund
+confidence: 4 EXTRACTED, 1 INFERRED</pre>
+      <div class="out">Measured on this repo's own source: <b>~90% fewer answer tokens</b> than the chain it replaces. Alias: <code>plan</code>.</div>
+      <span class="tag">change-plan</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">07</div>
+      <h3>Just the blast radius, nothing else</h3>
+      <div class="q">"What breaks if I change this type's shape?"</div>
+      <pre class="block">ctx-optimize affected PaymentService --depth 2</pre>
+      <div class="out"><b>Get:</b> the reverse-impact walk — every node that reaches this one, to the depth you ask for — without the callers/tests framing <code>change-plan</code> adds.</div>
+      <span class="tag">affected</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">08</div>
+      <h3>Trust but verify a citation before acting on it</h3>
+      <div class="q">"That line range — does it actually still hold?"</div>
+      <pre class="block">ctx-optimize verify "pay.go:L1-L5"; echo $?
+<span class="c"># 0 — node exists, file exists, range in bounds, no drift vs gather-time HEAD</span>
+ctx-optimize verify "pay.go:L900-L950"; echo $?
+<span class="c"># 1 — out of bounds, refused</span></pre>
+      <div class="out"><b>Get:</b> a hard yes/no on whether a claimed <code>file:line</code> still holds — exit 0 only when every claim in the citation checks out. Use it before a human acts on an agent's answer.</div>
+      <span class="tag">verify</span>
+    </div>
+
+  </div>
+</div></section>
+
+<section class="doc" id="trust"><div class="wrap">
+  <div class="sec-kicker">trust &amp; freshness</div>
+  <h2 class="sec">"Can I believe what this store just told me."</h2>
+  <div class="recipes">
+
+    <div class="recipe">
+      <div class="rn">09</div>
+      <h3>Is the store even current?</h3>
+      <div class="q">"Did the code move since this graph was built?"</div>
+      <pre class="block">ctx-optimize status
+<span class="c"># fresh:  ✗ STALE — store at 8a5057b, repo now at 03d0f49; run: ctx-optimize add .</span>
+ctx-optimize fresh; echo $?   <span class="c"># 0 fresh / 1 stale / 2 unknown (no git HEAD)</span></pre>
+      <div class="out"><b>Get:</b> node/edge counts, remote, and a freshness verdict against git HEAD. Wire <code>fresh</code> into a pre-commit hook or CI step so nothing answers from a stale snapshot.</div>
+      <span class="tag">status · fresh</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">10</div>
+      <h3>Refresh after the store went stale</h3>
+      <div class="q">"I just committed — bring the graph up to date."</div>
+      <pre class="block">ctx-optimize up</pre>
+      <div class="out"><b>Get:</b> the one verb that always does the right thing — fast re-gather when stale, no-op when fresh, bootstrap when missing, pull when the team declared a remote. Idempotent; run it whenever.</div>
+      <span class="tag">up</span>
+    </div>
+
+  </div>
+</div></section>
+
+<section class="doc" id="external"><div class="wrap">
+  <div class="sec-kicker">beyond code</div>
+  <h2 class="sec">"The answer isn't in the repo — it's in prod."</h2>
+  <div class="recipes">
+
+    <div class="recipe">
+      <div class="rn">11</div>
+      <h3>Get a live database schema into the graph</h3>
+      <div class="q">"What tables does the billing service actually have?"</div>
+      <pre class="block">ctx-optimize adapters help postgres          <span class="c"># the setup card: value format, credential params</span>
+export BILLING_DB_URL='postgres://reader:$PG_PASS@db.internal:5432/billing'
+ctx-optimize add BILLING_DB_URL              <span class="c"># dial, capture the logical shape, merge, record</span></pre>
+      <div class="out"><b>Get:</b> tables, columns, and foreign keys as graph nodes — queryable alongside the code that reads them. Secrets stay as the env-var <b>name</b>, never a literal value, in config or output. Refreshes on every <code>up</code> under a 24h TTL.</div>
+      <span class="tag">add &lt;ENV_NAME&gt;</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">12</div>
+      <h3>Debug a source without touching the store</h3>
+      <div class="q">"Is this connection string even reaching the right database?"</div>
+      <pre class="block">ctx-optimize capture BILLING_DB_URL
+<span class="c"># {"producer":"source:BILLING_DB_URL", "nodes":[...], ...} — printed, nothing written</span></pre>
+      <div class="out"><b>Get:</b> one dial, the raw Batch JSON on stdout, no store mutation — a safe way to sanity-check a source before it's part of the graph.</div>
+      <span class="tag">capture</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">13</div>
+      <h3>Where do our prod Kubernetes services live?</h3>
+      <div class="q">"What's actually deployed, per the manifests we commit?"</div>
+      <pre class="block">ctx-optimize query "prod namespace service ingress"</pre>
+      <div class="out"><b>Get:</b> k8s Deployments/Services/Ingress/ConfigMaps parsed straight from committed YAML — real cluster topology as graph nodes, ranked by the terms you gave it. (This is lexical retrieval, not a structured field filter — phrase your query with the labels/namespaces you expect to see.)</div>
+      <span class="tag">query</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">14</div>
+      <h3>Feed in something with no native connector</h3>
+      <div class="q">"Our ticketing system isn't Postgres or Kafka — can it be in the graph anyway?"</div>
+      <pre class="block">cat > .ctxoptimize/adapters/tickets.sh &lt;&lt;'EOF'
+#!/bin/sh
+echo '{"producer":"tickets","nodes":[{"id":"t:1","label":"TCK-1 checkout bug","kind":"ticket","file_type":"external","source":"tickets"}]}'
+EOF
+ctx-optimize add .        <span class="c"># "adapter tickets: 1 nodes, 0 edges"</span>
+ctx-optimize query "TCK-1"</pre>
+      <div class="out"><b>Get:</b> a permanent, drop-in producer — the file existing IS the registration, no config entry needed. Works for anything you can express as nodes and edges: PDFs converted to markdown, proprietary tools, log shapes, or the strict <code>--json</code> door (<code>my-exporter | ctx-optimize add --json -</code>) for one-off feeds.</div>
+      <span class="tag">adapters</span>
+    </div>
+
+  </div>
+</div></section>
+
+<section class="doc" id="monorepo"><div class="wrap">
+  <div class="sec-kicker">monorepos</div>
+  <h2 class="sec">"This repo has forty services in it."</h2>
+  <div class="recipes">
+
+    <div class="recipe">
+      <div class="rn">15</div>
+      <h3>Ask a question scoped to just the module you're in</h3>
+      <div class="q">"What's the dev-only dependency surface for the service I'm sitting in?"</div>
+      <pre class="block">cd services/billing
+ctx-optimize query "dev dependency"</pre>
+      <div class="out"><b>Get:</b> results scoped to <code>services/billing</code>'s own store — not ranked against every other module's noise — including <code>dep:</code> nodes for anything it imports, federated across whatever build tool declared it. A miss escalates repo-wide automatically and labels which module actually answered.</div>
+      <span class="tag">query (scoped)</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">16</div>
+      <h3>Combine a few modules into one view</h3>
+      <div class="q">"I want api and worker's graphs as one thing, just this once."</div>
+      <pre class="block">ctx-optimize merge api worker --into everything</pre>
+      <div class="out"><b>Get:</b> one derived, combined store — opt-in, not the default. Re-derive it after a pull; it isn't kept in sync automatically.</div>
+      <span class="tag">merge</span>
+    </div>
+
+  </div>
+</div></section>
+
+<section class="doc" id="team"><div class="wrap">
+  <div class="sec-kicker">team &amp; onboarding</div>
+  <h2 class="sec">"New repo, new machine, new teammate."</h2>
+  <div class="recipes">
+
+    <div class="recipe">
+      <div class="rn">17</div>
+      <h3>Onboard a brand-new repo, or your own fresh clone</h3>
+      <div class="q">"Get me a store for this repo, whatever that takes."</div>
+      <pre class="block">cd my-repo && ctx-optimize up</pre>
+      <div class="out"><b>Get:</b> the same one verb whether it's a bare repo (bootstraps + gathers), a monorepo (scan-bootstraps a store per module + a navigator), or a clone where a teammate already declared a shared store (pulls it instead of re-gathering). Idempotent — safe to run again.</div>
+      <span class="tag">up</span>
+    </div>
+
+    <div class="recipe">
+      <div class="rn">18</div>
+      <h3>Share your gathered store with the team</h3>
+      <div class="q">"I don't want every teammate re-gathering the same graph."</div>
+      <pre class="block">ctx-optimize remote push    <span class="c"># runs the script YOUR team declared in .ctxoptimize/config.json</span>
+<span class="c"># teammate, on a fresh clone:</span>
+ctx-optimize up             <span class="c"># pulls the prebuilt store instead of gathering locally</span></pre>
+      <div class="out"><b>Get:</b> the binary ships no transport of its own — <code>push</code>/<code>pull</code> run the commands your team declares (a private git repo, S3, anything). <code>init</code> scaffolds a ready-to-arm git lane as inert samples.</div>
+      <span class="tag">remote push · pull</span>
+    </div>
+
+  </div>
+</div></section>
+
+<section class="doc" id="more"><div class="wrap">
+  <div class="sec-kicker">further reading</div>
+  <h2 class="sec">The mental model behind these commands, and the outcome-framed walkthroughs.</h2>
+  <p class="sec-sub">Read <a href="concepts.html">Concepts</a> for the graph model these recipes query, and <a href="use-cases.html">Use cases</a> for the narrative version of onboarding, refactoring safely, and sharing a store across a team. Every verb here is documented in full on the <a href="docs.html#cli">CLI reference</a>.</p>
+</div></section>
+
+<footer><div class="wrap">
+  <div>ctx-<em style="color:var(--accent);font-style:normal">optimize</em> — gather once, refresh cheaply, answer from the store.</div>
+  <div><a href="index.html">Home</a> · <a href="concepts.html">Concepts</a> · <a href="use-cases.html">Use cases</a> · <a href="docs.html">Docs</a> · <a href="https://github.com/muthuishere/ctx-optimize">GitHub</a> · Made by <a href="https://github.com/muthuishere">muthuishere</a></div>
+</div></footer>
+
+</body>
+</html>
