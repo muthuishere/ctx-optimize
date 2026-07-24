@@ -10,6 +10,36 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-07-24
+
+### Added
+
+- **Native, portable, jq-free filter surface** (ADR
+  `openspec/changes/2026-07-24-portable-export-consumption/`). No read verb
+  ever needs `jq`/`python` again — one shared in-process predicate engine
+  (`internal/graphfilter`), federated across all modules at a repo root.
+  - **`nodes` / `edges` / `deps` verbs** — filter by kind, file-type,
+    relation, confidence, id-prefix, label, from/to, producer, scope, and
+    `--where k=v`/`k~v`; `--select` projects fields; table by default,
+    `--json`/`--ndjson` for machines. `deps --importers` returns
+    dependency → scope → importing-files in ONE command (retires the
+    multi-line `export | jq` join). Measured ~4× faster than `export | jq`
+    with 47–64× less memory on a 220k-edge store, and the only path that runs
+    on stock Windows/Alpine.
+  - **`export`** gains the same filter flags + `--ndjson`; bare `export` is
+    byte-identical (non-breaking).
+  - **`query`** pre-rank narrowing (`--kind`/`--where`/… ranks WITHIN the
+    filter); **`affected --kind`** post-filters the blast set (e.g. tests);
+    **`hubs --kind`** ranks within a kind. All gain `--ndjson`.
+- **Top-level `scope` on dependency nodes** (issue #5 F1) — the field
+  consumers reach for first is populated (`metadata.scopes` kept for
+  back-compat).
+- **Undeclared-dependency drift signal** (issue #5 F2) — a scoped npm import
+  (`@scope/pkg`) with no declared dependency is flagged as a queryable
+  `undeclared_dependency` node + file edges (`ctx-optimize nodes --kind
+  undeclared_dependency`) — the "imported but never declared" signal for
+  architecture-drift analysis.
+
 ## [0.7.0] — 2026-07-24
 
 ### Added
