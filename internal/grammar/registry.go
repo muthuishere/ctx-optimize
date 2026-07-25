@@ -16,7 +16,13 @@ type Known struct {
 	DeclRules string
 }
 
-// clojureDeclRules: the clojure.core defining macros, matched by head symbol
+// clojureDeclRules: STOCK clojure.core only — this entry serves every Clojure
+// project, not any one dialect. Framework and project macros (Compojure's
+// defroutes, re-frame's reg-event-db, cljgo/bri's defcommand, your own
+// defjob) are added by the PROJECT in its repo-local
+// .ctxoptimize/grammars/*.json, which LoadPacks reads first.
+//
+// The clojure.core defining macros, matched by head symbol
 // with the name read from the next element. Two rules because `(in-ns 'x)`
 // wraps its name in a quote. Everything here is a literal read; a project's
 // own defining macros are added by editing head_match in the written pack.
@@ -46,7 +52,7 @@ const clojureDeclRules = `[
 
 var KnownGrammars = map[string]Known{
 	"clojure": {URL: "https://github.com/sogaiu/tree-sitter-clojure",
-		Exts:      []string{".clj", ".cljc", ".cljs", ".cljg", ".cljgo"},
+		Exts:      []string{".clj", ".cljc", ".cljs", ".cljr", ".edn", ".bb"},
 		DeclRules: clojureDeclRules},
 	"kotlin":  {URL: "https://github.com/fwcd/tree-sitter-kotlin", Exts: []string{".kt", ".kts"}},
 	"swift":   {URL: "https://github.com/alex-pinkus/tree-sitter-swift", Ref: "with-generated-files", Exts: []string{".swift"}},

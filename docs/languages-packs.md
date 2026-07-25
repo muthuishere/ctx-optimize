@@ -160,6 +160,14 @@ Measured on a 658-file Clojure codebase: 1,372 definer-headed forms, 1,362
 resolved to a literal name, **0 wrong**. The 5 forms inside syntax-quotes were
 excluded by `skip_inside`.
 
+### The registry entry is dialect-neutral
+
+`ctx-optimize languages add clojure` ships **stock `clojure.core` only** —
+`.clj`, `.cljc`, `.cljs`, `.cljr`, `.edn`, `.bb`. It is not tuned for any one
+project. Framework and dialect macros — Compojure's `defroutes`, re-frame's
+`reg-event-db`, cljgo/bri's `defcommand`, your own `defjob` — belong to the
+project, so the project carries them.
+
 ### Add your project's own defining macros
 
 Edit `head_match` in the pack — a repo-local `.ctxoptimize/grammars/*.json` is

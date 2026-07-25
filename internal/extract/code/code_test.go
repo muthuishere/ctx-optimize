@@ -297,9 +297,12 @@ func TestExtractSkipsMinifiedFile(t *testing.T) {
 // defining macro — the failure that made a naive `list_lit → function` mapping
 // emit two nodes called `defn` while `fetch-user` never appeared at all.
 func TestHomoiconicDeclRules(t *testing.T) {
+	// clojure is download-on-demand (grammars/README.md), so this test is
+	// skipped unless the pack has been built. CI builds it in a setup step.
 	wasm := filepath.Join("..", "..", "..", "grammars", "clojure.wasm")
 	if _, err := os.Stat(wasm); err != nil {
-		t.Skip("clojure pack not present")
+		t.Skip("clojure pack absent — build it with: ctx-optimize languages add clojure && " +
+			"cp ~/ctxoptimize/grammars/clojure.* grammars/")
 	}
 	root := t.TempDir()
 	gdir := filepath.Join(root, ".ctxoptimize", "grammars")

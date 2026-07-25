@@ -5,8 +5,16 @@ pair to `~/ctxoptimize/grammars/` (machine-wide) or a repo's
 `.ctxoptimize/grammars/` (travels with the repo). The next `ctx-optimize add`
 picks it up. A pack's extensions override the embedded set.
 
-Shipped here: kotlin (7.5MB), swift (5.7MB), dart (2.9MB), clojure (1.8MB) —
-kept out of the embedded bundle for size.
+Shipped here: kotlin (7.5MB), swift (5.7MB), dart (2.9MB) — kept out of the
+embedded bundle for size.
+
+`clojure` is **download-on-demand** rather than committed: one command builds
+it, and the mapping is seeded from the registry, so there is nothing to review
+by hand.
+
+```sh
+ctx-optimize languages add clojure
+```
 
 Build your own from any tree-sitter grammar:
 
