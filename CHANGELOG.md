@@ -10,6 +10,45 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Added
+
+- **`decl_rules` — declarations matched by head symbol** (ADR
+  `openspec/changes/2026-07-25-homoiconic-decl-rules/`). The pack format mapped
+  *node type → kind*, which assumes a declaration HAS a node type of its own.
+  Every Lisp breaks that: `(defn fetch-user [] …)` is an ordinary `list_lit`
+  whose head symbol carries the meaning and whose second element is the name. A
+  Clojure pack was therefore impossible by construction — mapping
+  `list_lit → function` emitted nodes all named `defn` while the real names never
+  appeared, and an empty-`decls` pack was hard-rejected at load. `decl_rules`
+  matches ON the head (`head_type` + `head_match`) and reads the name from the
+  next element (`name_type`, `name_unwrap` for `(in-ns 'app.core)`), with
+  `skip_inside` structurally excluding forms inside a quote or syntax-quote —
+  code a macro is CONSTRUCTING, not defining. A pack may use `decls`,
+  `decl_rules`, or both. Zero cost to every existing language: the branch is
+  guarded on `len(lang.DeclRules) > 0`, which is empty for all twelve embedded
+  grammars.
+  Literal-only, so every failure lands on the under-claim side: `s/def` aliases,
+  a project's own `defsomething`, and metadata in the name slot all MISS rather
+  than guess. Measured on a 658-file Clojure corpus: 1,372 definer-headed forms,
+  1,362 resolved to a literal name, 5 excluded as syntax-quoted, **0 wrong facts**.
+  `clojure` joins `KnownGrammars` (stock `clojure.core` definers only, over
+  `.clj/.cljc/.cljs/.cljr/.edn/.bb`) so `languages add clojure` yields a
+  *loadable* pack; the wasm is built on demand, not committed. Dialect and
+  framework definers (Compojure, re-frame, cljgo) belong to the project and load
+  from its repo-local `.ctxoptimize/grammars/`, which `LoadPacks` reads first.
+  Only Clojure has been measured — Fennel, Janet, Elisp and Racket are the same
+  shape and are deliberately NOT advertised until a corpus has been run.
+
+### Fixed
+
+- **`grammar build` no longer reports success for a pack that cannot load** (G4).
+  It printed *"pack ready … next `ctx-optimize add` picks it up"* for an
+  empty-`decls` pack that `add` rejects one command later. It now fails at build
+  time and names the homoiconic case.
+- **Pack extensions are no longer guessed from the grammar's name.**
+  `tree-sitter-clojure` seeded `.clojure` — an extension nobody uses, silently
+  matching nothing while looking configured.
+
 ## [0.9.2] — 2026-07-25
 
 ### Added
