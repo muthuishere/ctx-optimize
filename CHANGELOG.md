@@ -10,6 +10,8 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-07-25
+
 ### Added
 
 - **`cljgo` is addable by name** — `ctx-optimize languages add cljgo`. cljgo is a
