@@ -146,6 +146,7 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 		score float64
 	}
 	wantsTests, wantsImports := testIntent(qTokens), importIntent(qTokens)
+	wantsDocs := docIntent(qTokens)
 	shardCand := make([][]scored, workers)
 	for w := 0; w < workers; w++ {
 		lo := w * chunk
@@ -164,7 +165,7 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 			for i := lo; i < hi; i++ {
 				s := scoreNode(nodes, nodeTokens, qTokens, df, total, memo, i)
 				if s > 0 {
-					s = intentAdjust(&nodes[i], s, wantsImports, wantsTests)
+					s = intentAdjust(&nodes[i], s, wantsImports, wantsTests, wantsDocs)
 					local = append(local, scored{i, s})
 				}
 			}
@@ -261,12 +262,27 @@ func scoreNode(nodes []schema.Node, nodeTokens []map[string]bool, qTokens []stri
 //     judge 0.66). Downranked UNLESS the question is about imports/modules.
 //   - test files out-token the definition ("url_for" appears more in test
 //     names than in helpers.py) — demoted UNLESS the question mentions tests.
-func intentAdjust(n *schema.Node, s float64, wantsImports, wantsTests bool) float64 {
+// docDemote scales prose nodes when the question is not about prose. Measured,
+// not guessed — see the sweep in TestDocDemoteChosenByMeasurement.
+var docDemote = 0.5
+
+func intentAdjust(n *schema.Node, s float64, wantsImports, wantsTests, wantsDocs bool) float64 {
 	if !wantsImports && strings.HasPrefix(n.ID, "module://") {
 		s *= 0.25
 	}
 	if !wantsTests && isTestSource(n.Source) {
 		s *= 0.5
+	}
+	// Prose repeats a question's words far more often than code does, so on a
+	// docs-heavy repo lexical scoring hands "where is X implemented" the ADR
+	// ABOUT X. Measured on this repo: doc nodes are 40% of the graph (1,315
+	// section + 278 document of 3,963) and took 15 of 30 top-3 slots across 10
+	// code-intent queries, holding #1 for 5 of 10 — README.md above the
+	// function being asked about. Same shape as the test/module demotes above:
+	// a doc node still wins when it is genuinely the best answer, and asking
+	// about docs turns the demote off entirely.
+	if !wantsDocs && (n.Kind == "section" || n.Kind == "document") {
+		s *= docDemote
 	}
 	return s
 }
@@ -306,6 +322,20 @@ func isTestSource(src string) bool {
 func testIntent(qTokens []string) bool {
 	for _, t := range qTokens {
 		if t == "test" || t == "tests" || t == "testing" || t == "spec" {
+			return true
+		}
+	}
+	return false
+}
+
+// docIntent: is the question ABOUT prose — a doc, spec, ADR, changelog? Then
+// the demote must not fire, exactly as testIntent guards the test demote.
+func docIntent(qTokens []string) bool {
+	for _, t := range qTokens {
+		switch t {
+		case "doc", "docs", "documentation", "documented", "readme", "changelog",
+			"adr", "spec", "specs", "proposal", "design", "guide", "wiki",
+			"rationale", "decision", "openspec":
 			return true
 		}
 	}

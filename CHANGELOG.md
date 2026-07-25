@@ -10,6 +10,51 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-07-25
+
+### Fixed
+
+- **Prose no longer outranks code when the question is about code** (ADR
+  `openspec/changes/2026-07-25-doc-demote-ranking/`). Dogfooded on this repo's
+  own store with 10 real "where is X implemented" questions: the right symbol was
+  the top hit **5/10**, and a `.md` node held #1 **4/10** — "prune stale nodes on
+  add" and "budget query hits ranking" both answered `README.md`, and "match
+  declaration by head symbol" returned the ADR three times while never returning
+  `headDecl`. Cause measured, not guessed: doc nodes are **40% of the graph**
+  (1,315 `section` + 278 `document` of 3,963) because `openspec/` is large, and
+  prose repeats a question's words far more often than code does, so IDF-weighted
+  overlap prefers the essay to the implementation. Any repo with real design docs
+  has this shape.
+  `intentAdjust` now scales `section`/`document` by 0.5 unless the question is
+  about prose — the same mechanism that already demotes `module://` (0.25×) and
+  test sources (0.5×), with the same escape hatch: `docIntent` (doc/docs/readme/
+  changelog/adr/spec/proposal/design/guide/wiki/rationale/decision/openspec)
+  turns it off entirely. A demote, not a filter: a doc still wins when it is
+  genuinely the best answer, and `verify`/`explain`/wiki are untouched.
+  After: recall@1 **5/10 → 7/10**, prose holding #1 **4/10 → 0/10**, recall@3
+  8/10 → 9/10. 0.5 is the mildest value reaching every maximum — swept
+  1.0/0.75/0.6/0.5/0.35/0.25 and kept runnable as
+  `TestDocDemoteChosenByMeasurement`. Judged scoreboards unchanged (linux-block
+  16.5/20, newtonsoft 12.5/20) and every golden snapshot passes, `queryTop`
+  rankings included. Honest limits: recall@**3** barely moves — the failure was
+  almost entirely at rank 1 — 3 of 10 still miss there, and the question set is
+  10 questions on one repo written by the same person as the fix.
+
+- **The skill was silent on redaction and stale on the pack format.** Audited the
+  bundled skill against the whole CLI surface; every verb was covered, but since
+  0.9.2 a credential-shaped line comes back `[redacted]` from `card` and
+  `query --include-content` and the skill never said so — an agent hitting that
+  would reasonably "fix" it by opening the file with Read, re-creating the exact
+  leak the redaction closed. Now stated on the hydration row and on both the
+  `query` and `card` notes, including that it applies WITHOUT the flag and that
+  routing around it with a file read is not allowed. Separately,
+  `references/extending.md` claimed `packConfig` "has only `name/exts/decls/
+  names/calls/imports`, `langs.go:224-231`" — both halves went stale in 0.10.0
+  (`decl_rules` exists; the struct moved to `langs.go:256`). Corrected, and the
+  homoiconic case is now documented where a pack author hits it: the
+  `list_lit → function` trap, the rule shape, `name_unwrap`, why `skip_inside` is
+  structural, and that everything misses rather than guesses.
+
 ## [0.10.1] — 2026-07-25
 
 ### Added
