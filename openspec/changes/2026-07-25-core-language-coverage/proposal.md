@@ -91,6 +91,12 @@ Checked each candidate's `node-types.json` for declaration-shaped nodes:
 
 ## Gaps found alongside, each needing its own call
 
+> **Amended 2026-07-25:** G1's reasoning below ("the same wall that killed the
+> Clojure/cljgo idea") is correct about the mapping that was TRIED and wrong as
+> a general claim about the family. `decl_rules` serves Clojure correctly and is
+> now shipped — see `2026-07-25-homoiconic-decl-rules`. Dropping `elixir` still
+> stands, on the owner's separate "no need elixir" call.
+
 **G1 — `elixir` in our registry is a door to junk (honesty defect, already
 shipped).** Elixir is macro-based: `def`/`defmodule` are `call` nodes, so there
 is no declaration node type — the same wall that killed the Clojure/cljgo idea
@@ -114,7 +120,11 @@ in headers, so this is a substantive hole in two languages the owner lists as
 core. Fixing it is a mapping change (no new grammar, no size cost) but it **adds
 nodes**, so golden snapshots and the judged scoreboard must be re-measured.
 
-**G4 — `grammar build` reports success for a pack that cannot load.** When the
+**G4 — `grammar build` reports success for a pack that cannot load.** — **FIXED
+2026-07-25** (`2026-07-25-homoiconic-decl-rules`): the build now fails when the
+suggested mapping yields no declarations, and `exts` is no longer seeded from
+the grammar name.
+ When the
 auto-suggested `decls` comes out empty, it prints "pack ready … next
 `ctx-optimize add` picks it up", and `add` then hard-errors with
 `name, exts and decls are required`. Reproduced on both tree-sitter-clojure and
@@ -337,7 +347,7 @@ rejection already recorded today)**
 | `reads_config` code→config_key (P5a) | **1.9% precision** on today's flat labels |
 | spec↔code route join (P5b) | **0%** raw join rate on real repos |
 | proto grammar (P4) | destroys 126 correct `calls` edges, invents 1 |
-| homoiconic packs (Clojure/EDN/Elixir) | labels every decl after the macro; real name never appears |
+| ~~homoiconic packs (Clojure/EDN/Elixir)~~ **SUPERSEDED 2026-07-25** — see `2026-07-25-homoiconic-decl-rules` | That row describes `list_lit → function` taking the name from the HEAD. `decl_rules` matches ON the head and names from the SECOND element — measured 1,362 literal names, **0 wrong**, on a 658-file corpus. Shipped, with `clojure` in the registry. Elixir stays out for an unrelated reason. |
 | `.xml` in `configExts` (P1b) | 97.2% markup junk |
 | **Helm templated names (E3)** | `name: {{ include "orders.fullname" . }}` — the real name is NOT in the file. Emit only the literal `kind:`/chart facts; **never invent the resolved name.** |
 

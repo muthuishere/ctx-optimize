@@ -12,6 +12,22 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Added
 
+- **Docker + Compose recognizers** (ADR
+  `openspec/changes/2026-07-25-docker-compose-recognizer/`). `Dockerfile`
+  previously produced ONE `config` node and `compose.yaml` a bag of 17 flat
+  `config_key` nodes — three of them labelled `image`, with the actual image
+  refs (`ghcr.io/acme/api:1.2.3`, `postgres:16`) nowhere, and `depends_on`
+  present as a key but never as an edge. Now: a `service` node per compose
+  service, a `stage` node per Dockerfile build stage, `uses_image` edges to the
+  shared `image:<ref>` node, `depends_on` edges between services (list AND map
+  forms) and between stages (`COPY --from`), and a compose→Dockerfile edge when
+  `build:` resolves to a file that exists. Reuses the k8s lane's exact image
+  convention, so a repo with both k8s manifests and compose files converges on
+  ONE node per image with edges from both lanes (pinned by golden assertion).
+  Literal-only: `${VAR}` is never resolved, `extends`/`include`/profiles are
+  never merged, and `environment:`/`env_file` are not read at all — neither
+  keys nor values — so the credential surface is excluded by construction.
+
 - **Python and Rust dependency extraction** (ADR
   `openspec/changes/2026-07-25-structured-formats/`, S7). `deps` used to print
   `(0 dependencies)` on a repo declaring 61 of them — a verb lying by omission
@@ -36,6 +52,30 @@ embeddings, no MCP, no network except your configured remote.**
   invents ~12 phantom deps from flask's own `[tool.tox…] commands` array.
 
 ### Fixed
+
+- **SECURITY: a secret's VALUE could reach agent context through a citation.**
+  The store never held secret values — but `card` and `query --include-content`
+  re-read the cited line off disk at answer time, so a `config_key` node
+  anchored at `spring.datasource.password=…` printed the credential straight
+  into the model's context. Reproduced on the shipped binary across
+  `.properties`, `.ini`, `.toml` and compose YAML, and it needed **no**
+  `--include-content` — plain `card` was enough. This violated the hard rule
+  that a secret's value must never enter an agent's context window.
+  Hydration now redacts at both choke points (`bodyHead`, `hydrateHits`):
+  a line whose KEY names a credential (`password`/`secret`/`token`/`api_key`/
+  `private_key`/`connection_string`/…) has its value withheld, and an embedded
+  URL credential is masked to `scheme://user:***@host` — the same shape
+  `internal/sources` already reports. The key and its exact line stay visible,
+  so the citation is still useful; only the value is withheld. Over-redaction
+  is the deliberate failure mode (a leaked value cannot be pulled back out of a
+  model's context; an over-redacted one costs one file read). `verify`'s drift
+  comparison still sees the real bytes.
+- **Golden tests were not hermetic w.r.t. grammar packs.** They isolated the
+  store but discovered packs from the machine-global `~/ctxoptimize/grammars`,
+  so a developer's installed packs took part in every "hermetic" fixture
+  gather — and one malformed pack failed three unrelated golden tests with an
+  error about a language nobody was testing. The package now points
+  `CTX_OPTIMIZE_GRAMMARS` at an empty temp dir for its whole run.
 
 - **Config keys no longer depend on invisible whitespace** (S1). The
   nested-key guard in the config lane compared against a trailing-trimmed copy

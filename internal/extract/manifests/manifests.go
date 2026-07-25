@@ -204,6 +204,10 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 			extractCargo(c, rel, content)
 		case "requirements":
 			extractRequirements(c, rel, content)
+		case "compose":
+			extractCompose(c, root, rel, content)
+		case "dockerfile":
+			extractDockerfile(c, rel, content)
 		}
 		for _, pr := range packRules {
 			applyPackRule(c, pr, rel, data)
@@ -274,6 +278,17 @@ func manifestKind(name string) string {
 		return "pyproject"
 	case "cargo.toml":
 		return "cargo"
+	}
+	// Compose is recognized by the exact filename set, NEVER by a `services:`
+	// key — an arbitrary yaml with services: is not compose, and every real
+	// k8s manifest stays with the k8s lane (both lanes see .yaml).
+	if composeNames[lower] {
+		return "compose"
+	}
+	// Dockerfile / Dockerfile.<variant> / <variant>.Dockerfile.
+	if lower == "dockerfile" || strings.HasPrefix(lower, "dockerfile.") ||
+		strings.HasSuffix(lower, ".dockerfile") {
+		return "dockerfile"
 	}
 	// requirements.txt / requirements-dev.txt / requirements_test.txt — basename
 	// prefix + extension, same shape as the taskfile rule below. A file deeper

@@ -1565,7 +1565,11 @@ func hydrateHits(hits []query.Hit, root string) {
 			hits[i].ContentError = err.Error()
 			continue
 		}
-		hits[i].Content = body
+		// Same gate as bodyHead: hydration re-reads the cited line off disk,
+		// so a config_key anchored at `password=…` would print the credential
+		// into agent context. Applied here (not inside readSourceBody) so
+		// verify's drift comparison keeps seeing the real bytes.
+		hits[i].Content = redactSensitiveLines(body)
 	}
 }
 
@@ -1610,7 +1614,78 @@ func bodyHead(root string, n schema.Node) string {
 	if shown < last {
 		body += fmt.Sprintf("\n… (%d more lines to %s)", last-shown, n.Location)
 	}
-	return body
+	return redactSensitiveLines(body)
+}
+
+// sensitiveKeyRe matches the KEY half of a `key: value` / `key = value` line
+// whose name says the value is a credential. Word-ish boundaries keep it from
+// firing on innocent names (`token_count`, `passwordless`) while still
+// catching the real spellings across formats.
+var sensitiveKeyRe = regexp.MustCompile(`(?i)(^|[^a-z0-9])(password|passwd|pwd|secret|credentials?|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|connection[_-]?string|sas[_-]?token)([^a-z0-9]|$)`)
+
+// redactSensitiveLines is the LAST gate before a file's own bytes reach the
+// model. The store never holds a secret VALUE, but hydration re-reads the
+// cited line off disk — so a `config_key` node anchored at
+// `spring.datasource.password=…` printed the credential straight into agent
+// context (measured on .properties/.ini/.toml/compose; plain `card`, no
+// --include-content needed). That violates the hard rule that a secret's
+// value must never enter an agent's context window.
+//
+// Redaction is per LINE and keyed on the NAME, never on the value's shape:
+// deterministic, and it keeps the citation useful (you still learn the key
+// exists, at that exact line) while the value stays on disk. Over-redaction is
+// the correct failure mode here — the reverse is unrecoverable, since a leaked
+// value cannot be pulled back out of a model's context.
+func redactSensitiveLines(body string) string {
+	if body == "" {
+		return body
+	}
+	lines := strings.Split(body, "\n")
+	for i, ln := range lines {
+		if key, _, found := cutAtAssignment(ln); found && sensitiveKeyRe.MatchString(key) {
+			indent := ln[:len(ln)-len(strings.TrimLeft(ln, " \t"))]
+			lines[i] = indent + strings.TrimSpace(key) +
+				": <redacted: sensitive key — value withheld from agent context>"
+			continue
+		}
+		// A harmless-looking key can still carry an embedded credential:
+		// `DB_URL: postgres://user:pw@db/app` leaked past the key check.
+		lines[i] = maskURLCredentials(ln)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// urlCredRe matches the userinfo half of a URL that carries a password
+// (`scheme://user:pass@host`). Textual by design — never net/url.Parse, the
+// same fail-closed rule internal/sources follows, because a malformed URL must
+// still be masked rather than skipped.
+var urlCredRe = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]+):[^\s@/]+@`)
+
+// maskURLCredentials rewrites `scheme://user:pass@host` to
+// `scheme://user:***@host`, matching how internal/sources reports a dialed
+// source. Keeps the line readable and citable; drops only the credential.
+func maskURLCredentials(ln string) string {
+	if !strings.Contains(ln, "://") {
+		return ln
+	}
+	return urlCredRe.ReplaceAllString(ln, "$1:***@")
+}
+
+// cutAtAssignment splits a config line at its first `:` or `=` separator.
+// A URL-ish `http://…` colon is not an assignment, so require the separator to
+// be followed by whitespace, end of line, or (for `=`) anything.
+func cutAtAssignment(ln string) (key, val string, found bool) {
+	for i := 0; i < len(ln); i++ {
+		switch ln[i] {
+		case '=':
+			return ln[:i], ln[i+1:], true
+		case ':':
+			if i+1 == len(ln) || ln[i+1] == ' ' || ln[i+1] == '\t' {
+				return ln[:i], ln[i+1:], true
+			}
+		}
+	}
+	return "", "", false
 }
 
 // cmdHookContext is the generic agent-hook entry point: harness hooks (e.g.

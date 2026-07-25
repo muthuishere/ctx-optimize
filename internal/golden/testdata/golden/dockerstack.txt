@@ -1,0 +1,109 @@
+== store 001 (54 nodes, 54 edges)
+E Dockerfile -contains-> Dockerfile::stage:1 | EXTRACTED
+E Dockerfile -contains-> Dockerfile::stage:builder | EXTRACTED
+E Dockerfile::stage:1 -depends_on-> Dockerfile::stage:builder | EXTRACTED
+E Dockerfile::stage:1 -uses_image-> image:gcr.io/distroless/static:nonroot | EXTRACTED
+E Dockerfile::stage:builder -uses_image-> image:golang:1.24 | EXTRACTED
+E README.md -contains-> README.md::dockerstack | EXTRACTED
+E compose.yaml -contains-> compose.yaml#api | EXTRACTED
+E compose.yaml -contains-> compose.yaml#build | EXTRACTED
+E compose.yaml -contains-> compose.yaml#cache | EXTRACTED
+E compose.yaml -contains-> compose.yaml#cache-2 | EXTRACTED
+E compose.yaml -contains-> compose.yaml#condition | EXTRACTED
+E compose.yaml -contains-> compose.yaml#condition-2 | EXTRACTED
+E compose.yaml -contains-> compose.yaml#db | EXTRACTED
+E compose.yaml -contains-> compose.yaml#db-2 | EXTRACTED
+E compose.yaml -contains-> compose.yaml#depends-on | EXTRACTED
+E compose.yaml -contains-> compose.yaml#depends-on-2 | EXTRACTED
+E compose.yaml -contains-> compose.yaml#image | EXTRACTED
+E compose.yaml -contains-> compose.yaml#image-2 | EXTRACTED
+E compose.yaml -contains-> compose.yaml#image-3 | EXTRACTED
+E compose.yaml -contains-> compose.yaml#ports | EXTRACTED
+E compose.yaml -contains-> compose.yaml#ports-2 | EXTRACTED
+E compose.yaml -contains-> compose.yaml#services | EXTRACTED
+E compose.yaml -contains-> compose.yaml#worker | EXTRACTED
+E compose.yaml -contains-> compose.yaml::service:api | EXTRACTED
+E compose.yaml -contains-> compose.yaml::service:cache | EXTRACTED
+E compose.yaml -contains-> compose.yaml::service:db | EXTRACTED
+E compose.yaml -contains-> compose.yaml::service:worker | EXTRACTED
+E compose.yaml::service:api -depends_on-> compose.yaml::service:cache | EXTRACTED
+E compose.yaml::service:api -depends_on-> compose.yaml::service:db | EXTRACTED
+E compose.yaml::service:api -uses_image-> image:ghcr.io/golden/api:2.0.0 | EXTRACTED
+E compose.yaml::service:cache -uses_image-> image:redis:7 | EXTRACTED
+E compose.yaml::service:db -uses_image-> image:postgres:16 | EXTRACTED
+E compose.yaml::service:worker -depends_on-> compose.yaml::service:cache | EXTRACTED
+E compose.yaml::service:worker -depends_on-> compose.yaml::service:db | EXTRACTED
+E compose.yaml::service:worker -depends_on-> worker/Dockerfile | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#apiversion | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#app | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#app-2 | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#containers | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#image | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#kind | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#labels | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#matchlabels | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#metadata | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#metadata-2 | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#name | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#selector | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#spec | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#spec-2 | EXTRACTED
+E deploy/api.yaml -contains-> deploy/api.yaml#template | EXTRACTED
+E deploy/api.yaml -contains-> k8s://default/deployment/api | EXTRACTED
+E k8s://default/deployment/api -uses_image-> image:ghcr.io/golden/api:2.0.0 | EXTRACTED
+E worker/Dockerfile -contains-> worker/Dockerfile::stage:0 | EXTRACTED
+E worker/Dockerfile::stage:0 -uses_image-> image:python:3.12-slim | EXTRACTED
+N AGENTS.md | document | AGENTS.md | L1
+N CLAUDE.md | document | CLAUDE.md | L1
+N Dockerfile | config | Dockerfile | L1
+N Dockerfile::stage:1 | stage | Dockerfile | L6
+N Dockerfile::stage:builder | stage | Dockerfile | L1
+N README.md | document | README.md | L1
+N README.md::dockerstack | section | README.md | L1-L7
+N compose.yaml | config | compose.yaml | L1
+N compose.yaml#api | config_key | compose.yaml | L2
+N compose.yaml#build | config_key | compose.yaml | L17
+N compose.yaml#cache | config_key | compose.yaml | L9
+N compose.yaml#cache-2 | config_key | compose.yaml | L14
+N compose.yaml#condition | config_key | compose.yaml | L8
+N compose.yaml#condition-2 | config_key | compose.yaml | L10
+N compose.yaml#db | config_key | compose.yaml | L7
+N compose.yaml#db-2 | config_key | compose.yaml | L11
+N compose.yaml#depends-on | config_key | compose.yaml | L6
+N compose.yaml#depends-on-2 | config_key | compose.yaml | L18
+N compose.yaml#image | config_key | compose.yaml | L3
+N compose.yaml#image-2 | config_key | compose.yaml | L12
+N compose.yaml#image-3 | config_key | compose.yaml | L15
+N compose.yaml#ports | config_key | compose.yaml | L4
+N compose.yaml#ports-2 | config_key | compose.yaml | L13
+N compose.yaml#services | config_key | compose.yaml | L1
+N compose.yaml#worker | config_key | compose.yaml | L16
+N compose.yaml::service:api | service | compose.yaml | L2
+N compose.yaml::service:cache | service | compose.yaml | L14
+N compose.yaml::service:db | service | compose.yaml | L11
+N compose.yaml::service:worker | service | compose.yaml | L16
+N deploy/api.yaml | config | deploy/api.yaml | L1
+N deploy/api.yaml#apiversion | config_key | deploy/api.yaml | L1
+N deploy/api.yaml#app | config_key | deploy/api.yaml | L8
+N deploy/api.yaml#app-2 | config_key | deploy/api.yaml | L12
+N deploy/api.yaml#containers | config_key | deploy/api.yaml | L14
+N deploy/api.yaml#image | config_key | deploy/api.yaml | L16
+N deploy/api.yaml#kind | config_key | deploy/api.yaml | L2
+N deploy/api.yaml#labels | config_key | deploy/api.yaml | L11
+N deploy/api.yaml#matchlabels | config_key | deploy/api.yaml | L7
+N deploy/api.yaml#metadata | config_key | deploy/api.yaml | L3
+N deploy/api.yaml#metadata-2 | config_key | deploy/api.yaml | L10
+N deploy/api.yaml#name | config_key | deploy/api.yaml | L4
+N deploy/api.yaml#selector | config_key | deploy/api.yaml | L6
+N deploy/api.yaml#spec | config_key | deploy/api.yaml | L5
+N deploy/api.yaml#spec-2 | config_key | deploy/api.yaml | L13
+N deploy/api.yaml#template | config_key | deploy/api.yaml | L9
+N image:gcr.io/distroless/static:nonroot | image | image:gcr.io/distroless/static:nonroot | 
+N image:ghcr.io/golden/api:2.0.0 | image | image:ghcr.io/golden/api:2.0.0 | 
+N image:golang:1.24 | image | image:golang:1.24 | 
+N image:postgres:16 | image | image:postgres:16 | 
+N image:python:3.12-slim | image | image:python:3.12-slim | 
+N image:redis:7 | image | image:redis:7 | 
+N k8s://default/deployment/api | resource | deploy/api.yaml | L2
+N worker/Dockerfile | config | worker/Dockerfile | L1
+N worker/Dockerfile::stage:0 | stage | worker/Dockerfile | L1
