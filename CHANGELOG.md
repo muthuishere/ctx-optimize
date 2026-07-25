@@ -10,7 +10,17 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
-## [0.10.2] — 2026-07-25
+## [0.10.3] — 2026-07-25
+
+Same contents as the v0.10.2 tag, republished. `npm publish` failed on v0.10.2
+with a Sigstore `TLOG_CREATE_ENTRY_ERROR` (409, "an equivalent entry already
+exists in the transparency log"), so **no npm package was ever published at
+0.10.2** — the loop runs under `bash -e` and aborted on the first platform, which
+at least kept npm consistent at 0.10.1. Re-running was not the fix: goreleaser
+had already succeeded, so it hit `422 already_exists` re-uploading its own
+assets, and the tlog conflict is keyed to the artifact+version, so an identical
+tarball can keep colliding. A new version gets a new tarball and a fresh entry.
+The v0.10.2 GitHub Release and its binaries are valid and stay published.
 
 ### Fixed
 
