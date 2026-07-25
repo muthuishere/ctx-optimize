@@ -83,3 +83,56 @@ was almost entirely at rank 1, which is exactly the position an agent acts on.
 - 3 of 10 code-intent questions still miss at rank 1. This narrows the gap; it
   does not close it. The judged tier's own gaps (L17–L20, N17/N19/N20) are
   untouched by this change and remain the standing quality target.
+
+---
+
+## Follow-up: question grammar was scoring as signal
+
+The doc demote left 3 of 10 code-intent questions wrong at rank 1. Diagnosing
+each one — rather than tuning further — found that only ONE was a ranker defect:
+
+| question | #1 returned | verdict |
+|---|---|---|
+| "resolve call to unique name" | `wiki.go::uniqueName` | defensible — matches *both* "unique" (df=1, idf 7.59) and "name"; the expected answer was arguable |
+| "compose service depends on" | `compose.yaml#depends-on` | defensible — a config key literally named `depends-on` in a compose file answers that question |
+| "prune stale nodes on add" | `install.go::OnPath` | **defect** |
+
+`OnPath` won on the word **"on"**. IDF is computed over identifier tokens, where
+`on` has df=49 of 3,963 → **idf 4.37 — higher than `name` at 4.41**. So English
+question grammar was acting as a rare, high-signal discriminator. Same for `to`
+(df=48, idf 4.39).
+
+**Decision: drop a small stopword set from the QUERY, never from node tokens.**
+Kept deliberately narrow — only words that cannot be a search term on their own.
+`get`, `set`, `new`, `run`, `add`, `list`, `call`, `name`, `path`, `file` are
+explicitly NOT stopwords (they are real identifier prefixes; dropping them would
+break `query "get user"`), pinned by `TestStopwordsKeepIdentifierWords`. An
+all-stopword question still searches literally rather than returning nothing
+(`TestStopwordsNeverEmptyTheQuery`).
+
+### Result — the independent corpus is the evidence
+
+| | before | after |
+|---|---|---|
+| **newtonsoft judged** | 12.5 / 20 | **13.0 / 20** (floor ratcheted) |
+| linux-block judged | 16.5 / 20 | 16.5 / 20 |
+| own-repo recall@1 | 7/10 | 7/10 |
+
+N16 — "Where do JSON converters get chosen **for a** type?" — went **0.5 → 1.0**
+once `do`/`for`/`a` stopped diluting the real terms. That is a corpus nobody
+tuned against, which is worth more than the hand-written set.
+
+Own-repo recall@1 did **not** move: the remaining miss on "prune stale nodes on
+add" now returns `anyStale` (`autosync.go`) instead of `OnPath`
+(`skills/install.go`) — topically relevant instead of grammatically lucky, but
+still not the expected `store.Replace`, so the binary metric is unchanged. The
+answer improved; the score did not. Both are reported rather than picking the
+flattering one.
+
+### The remaining ceiling is recall, not ranking
+
+`store.Replace` cannot win "prune stale nodes" by any amount of reranking: only
+`Label + Source` are tokenized, and the word "prune" appears in its **doc
+comment**, which is not indexed. That is a recall ceiling. Closing it means
+indexing doc/signature text — bigger store, churn in every golden snapshot, and
+its own precision risks. NOT attempted here; recorded as the real next lever.

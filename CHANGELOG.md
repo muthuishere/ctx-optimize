@@ -10,6 +10,36 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.10.4] — 2026-07-25
+
+### Fixed
+
+- **Question grammar no longer scores as signal** (ADR
+  `openspec/changes/2026-07-25-doc-demote-ranking/`, follow-up section). After the
+  doc demote, 3 of 10 code-intent questions were still wrong at rank 1. Diagnosing
+  each instead of tuning further found only ONE was a ranker defect: "prune stale
+  nodes on add" answered `install.go::OnPath` — it won on the word **"on"**,
+  because IDF is computed over identifier tokens where `on` has df=49 of 3,963 →
+  **idf 4.37, higher than `name` at 4.41**. English question grammar was acting as
+  a rare, high-signal discriminator. (The other two misses were defensible answers
+  and arguable expectations, so they are left as-is rather than reclassified.)
+  A small stopword set is now dropped from the QUERY, never from node tokens, and
+  kept narrow on purpose: `get`, `set`, `new`, `run`, `add`, `list`, `call`,
+  `name`, `path`, `file` are explicitly NOT stopwords — they are real identifier
+  prefixes and dropping them would break `query "get user"`
+  (`TestStopwordsKeepIdentifierWords`). An all-stopword question still searches
+  literally instead of returning nothing.
+  **Measured on the independent corpus: newtonsoft judged 12.5 → 13.0**, floor
+  ratcheted; N16 "Where do JSON converters get chosen FOR A type?" went 0.5 → 1.0.
+  linux-block held at 16.5. Own-repo recall@1 did NOT move (7/10): the residual
+  miss now returns `anyStale` (topically relevant) instead of `OnPath`
+  (grammatically lucky) — the answer improved, the score did not, and both are
+  reported.
+  Remaining ceiling is **recall, not ranking**: `store.Replace` cannot win "prune
+  stale nodes" by any reranking, because only `Label + Source` are tokenized and
+  "prune" lives in its doc comment. Indexing doc/signature text is the next lever
+  and was not attempted.
+
 ## [0.10.3] — 2026-07-25
 
 Same contents as the v0.10.2 tag, republished. `npm publish` failed on v0.10.2

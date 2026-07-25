@@ -79,6 +79,47 @@ func Tokenize(s string) []string {
 	return out
 }
 
+// questionStopwords are the grammar of an English question. They must be
+// dropped from the QUERY, never from node tokens — IDF makes them actively
+// harmful here. A word like "on" is rare as an IDENTIFIER token (df=49 in a
+// 3,963-node corpus → idf 4.37, higher than "name" at 4.41), so IDF reads
+// question grammar as a strong discriminator: measured, "prune stale nodes on
+// add" answered `install.go::OnPath` — matched on the word "on" — while
+// store.Nodes sat at rank 9.
+//
+// Kept deliberately small: only words that cannot be a meaningful search term
+// on their own. "get", "set", "new", "run" and friends are NOT here — they are
+// real identifier prefixes, and dropping them would break `query "get user"`.
+var questionStopwords = map[string]bool{
+	"the": true, "and": true, "for": true, "with": true, "from": true,
+	"into": true, "onto": true, "that": true, "this": true, "these": true,
+	"those": true, "what": true, "which": true, "where": true, "when": true,
+	"how": true, "why": true, "who": true, "does": true, "did": true,
+	"can": true, "should": true, "would": true, "there": true, "here": true,
+	"about": true, "over": true, "under": true, "than": true, "then": true,
+	"its": true, "our": true, "your": true, "their": true,
+	"on": true, "in": true, "at": true, "to": true, "of": true, "by": true,
+	"is": true, "are": true, "was": true, "be": true, "do": true, "it": true,
+	"as": true, "an": true, "or": true, "if": true, "we": true, "my": true,
+	"me": true, "you": true, "all": true, "any": true, "not": true,
+}
+
+// dropStopwords removes question grammar, but never empties the query: if a
+// question is nothing BUT stopwords, the caller still deserves the literal
+// search it asked for rather than zero hits.
+func dropStopwords(qTokens []string) []string {
+	kept := make([]string, 0, len(qTokens))
+	for _, t := range qTokens {
+		if !questionStopwords[t] {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) == 0 {
+		return qTokens
+	}
+	return kept
+}
+
 // callableKind marks kinds whose dotted labels are real symbols, not child
 // declarations of a parent scope.
 var callableKind = map[string]bool{
@@ -93,7 +134,7 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 	if budget <= 0 {
 		budget = 2000
 	}
-	qTokens := Tokenize(question)
+	qTokens := dropStopwords(Tokenize(question))
 	if len(qTokens) == 0 {
 		return &Result{Query: question}
 	}

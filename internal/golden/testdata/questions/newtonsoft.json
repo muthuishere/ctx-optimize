@@ -1,6 +1,6 @@
 {
   "corpus": "newtonsoft",
-  "min_score": 12.5,
+  "min_score": 13.0,
   "questions": [
     {
       "id": "N01",
@@ -241,5 +241,5 @@
       "k": 5
     }
   ],
-  "_floor_note": "CORRECTED 2026-07-25 from 16.5 to the MEASURED 12.5. This is not a lowering of an achieved score: 16.5 was introduced in 7588bd8 by applying linux-block's number to this corpus without ever measuring it, so the floor was never met and golden.yml was RED on every run from 2026-07-20 onward. Verified 12.5 both before and after that day's work (binary built from 0de40e3 scored identically), so no change regressed it. The 7.5-point gap is the real quality target: N17/N19/N20 (usage-shaped 'how do I serialize / create a serializer / run the tests') score 0. Raise this floor by fixing those, never by editing it."
+  "_floor_note": "RATCHETED 2026-07-25 from the measured 12.5 to 13.0 after question stopwords were dropped from the query (N16 'Where do JSON converters get chosen FOR A type?' went 0.5 -> 1.0 once 'do'/'for'/'a' stopped diluting the real terms). History: 16.5 was introduced in 7588bd8 by copying linux-block's number without measuring, so this floor was never met and golden.yml was RED from 2026-07-20; it was corrected to the measured 12.5 the same day. The remaining 7-point gap is the target: N17/N19/N20 (usage-shaped 'how do I serialize / create a serializer / run the tests') plus N01/N09/N13/N14 score 0. Raise this floor by fixing those, never by editing it."
 }

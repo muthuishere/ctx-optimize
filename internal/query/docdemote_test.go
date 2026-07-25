@@ -206,3 +206,52 @@ func TestDemoteScopedToProse(t *testing.T) {
 		}
 	}
 }
+
+// Question grammar must not act as a discriminator. IDF made it one: "on" is
+// rare as an IDENTIFIER token (df=49 of 3,963 → idf 4.37, higher than "name" at
+// 4.41), so "prune stale nodes on add" answered install.go::OnPath — matched on
+// the word "on" — while the store's own node functions sat at rank 9. Dropping
+// stopwords from the QUERY (never from node tokens) also lifted the newtonsoft
+// judged score 12.5 → 13.0: N16 "Where do JSON converters get chosen FOR A
+// type?" went 0.5 → 1.0 once the grammar stopped diluting the real terms.
+func TestStopwordsDroppedFromQuery(t *testing.T) {
+	got := dropStopwords(Tokenize("prune stale nodes on add"))
+	for _, bad := range []string{"on"} {
+		for _, g := range got {
+			if g == bad {
+				t.Errorf("stopword %q survived: %v", bad, got)
+			}
+		}
+	}
+	for _, want := range []string{"prune", "stale", "nodes", "add"} {
+		found := false
+		for _, g := range got {
+			if g == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("real term %q was dropped: %v", want, got)
+		}
+	}
+}
+
+// Identifier-shaped words that merely look like filler must survive — dropping
+// them would break `query "get user"` and `query "new client"`.
+func TestStopwordsKeepIdentifierWords(t *testing.T) {
+	for _, w := range []string{"get", "set", "new", "run", "add", "list", "call", "name", "make", "read", "write", "open", "close", "test", "path", "file"} {
+		if questionStopwords[w] {
+			t.Errorf("%q is a real identifier term and must not be a stopword", w)
+		}
+	}
+}
+
+// A query that is ONLY stopwords must still search for what was typed rather
+// than silently returning nothing.
+func TestStopwordsNeverEmptyTheQuery(t *testing.T) {
+	in := Tokenize("what is it")
+	got := dropStopwords(in)
+	if len(got) != len(in) {
+		t.Errorf("all-stopword query was gutted: %v → %v", in, got)
+	}
+}
