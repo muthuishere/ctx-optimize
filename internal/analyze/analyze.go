@@ -258,6 +258,8 @@ type hop struct {
 
 // ShortestPath BFSes the undirected view from a to b.
 func ShortestPath(nodes []schema.Node, edges []schema.Edge, a, b string) ([]Step, error) {
+	// A path through a maybe is not a path.
+	edges = WithoutAmbiguous(edges)
 	from, err := Resolve(nodes, a)
 	if err != nil {
 		return nil, err
@@ -340,7 +342,28 @@ type Impact struct {
 // Affected walks edges BACKWARD (source depends on target): everything with
 // an edge INTO the blast set is impacted, up to depth hops. Optional relation
 // filter (empty = all relations).
+// WithoutAmbiguous drops AMBIGUOUS edges. Every traversal verb applies it by
+// default, and that is what makes emitting them honest at all: an AMBIGUOUS
+// `calls` edge is a SHORTLIST TO GREP, not a fact. Let one into a blast radius
+// and it becomes a wrong answer to the question the store exists to answer
+// correctly — VISION.md:284 measured the shape of that failure (god-nodes
+// polluted by `get`/`append`/`new`).
+//
+// They stay reachable on purpose, via `edges --confidence AMBIGUOUS` and
+// `--relation calls`, where the caller has asked for maybes and knows it.
+func WithoutAmbiguous(edges []schema.Edge) []schema.Edge {
+	out := make([]schema.Edge, 0, len(edges))
+	for _, e := range edges {
+		if e.Confidence != schema.Ambiguous {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func Affected(nodes []schema.Node, edges []schema.Edge, name string, depth int, relations []string) (*schema.Node, []Impact, error) {
+	// A blast radius must contain no maybes — see WithoutAmbiguous.
+	edges = WithoutAmbiguous(edges)
 	target, err := Resolve(nodes, name)
 	if err != nil {
 		return nil, nil, err
@@ -400,6 +423,7 @@ type Explanation struct {
 }
 
 func Explain(nodes []schema.Node, edges []schema.Edge, name string) (*Explanation, error) {
+	edges = WithoutAmbiguous(edges)
 	n, via, err := ResolveVia(nodes, name)
 	if err != nil {
 		return nil, err
@@ -480,6 +504,14 @@ type CardData struct {
 	Contains  []string            `json:"contains,omitempty"`  // what it contains
 	Calls     []string            `json:"calls,omitempty"`     // outgoing calls
 	CalledBy  []string            `json:"called_by,omitempty"` // incoming calls
+	// AmbiguousCallers counts call sites that name this symbol but could NOT be
+	// attributed to it, because the name is defined more than once. They are
+	// deliberately absent from CalledBy — the card cites only facts — but the
+	// COUNT is reported, because silence would let an agent read CalledBy as
+	// the complete set. This is the "say no instead of being wrong" case: we
+	// cannot say who calls it, so we say how many we could not place, and grep
+	// settles it.
+	AmbiguousCallers int `json:"ambiguous_callers,omitempty"`
 	Imports   []string            `json:"imports,omitempty"`   // file nodes only
 	Other     map[string][]string `json:"other,omitempty"`     // any remaining relations, "rel →|←" keyed
 }
@@ -490,6 +522,15 @@ func Card(nodes []schema.Node, edges []schema.Edge, name string) (*CardData, err
 		return nil, err
 	}
 	c := &CardData{Node: *n, ResolvedVia: via, Signature: n.Metadata["signature"], Doc: n.Metadata["doc"]}
+	// Count the abstentions before dropping them: callers/callees on a card are
+	// cited directly, so no maybes may enter the lists — but vanishing without
+	// a trace is what made the card read as complete.
+	for _, e := range edges {
+		if e.Confidence == schema.Ambiguous && e.Relation == "calls" && e.Target == n.ID {
+			c.AmbiguousCallers++
+		}
+	}
+	edges = WithoutAmbiguous(edges)
 	other := map[string][]string{}
 	for _, e := range edges {
 		switch {
@@ -565,6 +606,14 @@ func RenderCard(c *CardData) string {
 	// callers are never truncated — impact answers were measured to go wrong
 	// when the tail was hidden (proof S16, D2)
 	writeList("called by", c.CalledBy, 0)
+	// Say no out loud. `called by` above is exact; this line admits what could
+	// not be placed, and names the grep that settles it — an agent must never
+	// read the list as complete when it isn't.
+	if c.AmbiguousCallers > 0 {
+		fmt.Fprintf(&sb, "  unattributed callers: %d — the name is defined more than once, so these call sites were NOT guessed.\n", c.AmbiguousCallers)
+		fmt.Fprintf(&sb, "    candidates: ctx-optimize edges --relation calls --confidence AMBIGUOUS --to %s\n", c.Node.ID)
+		fmt.Fprintf(&sb, "    confirm:    grep -rn '\\b%s\\b' .\n", lastSegment(c.Node.Label))
+	}
 	writeList("imports", c.Imports, 15)
 	rels := make([]string, 0, len(c.Other))
 	for r := range c.Other {
@@ -587,6 +636,8 @@ type Hub struct {
 
 // Hubs returns the top-N nodes by total degree (ties by id).
 func Hubs(nodes []schema.Node, edges []schema.Edge, top int) []Hub {
+	// God-node ranking is exactly what guessed edges corrupt (VISION.md:284).
+	edges = WithoutAmbiguous(edges)
 	if top <= 0 {
 		top = 10
 	}

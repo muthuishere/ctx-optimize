@@ -7,8 +7,11 @@
 // labels (Class.method) and L#-L# locations, contains edges (file→decl,
 // decl→nested decl), and import edges (file→module). Call sites resolve
 // module-wide by name AFTER all files parse: a unique match becomes an
-// INFERRED call edge; ambiguous names are dropped, not guessed — the same
-// honesty graphify applies.
+// INFERRED call edge. When the name is defined more than once the call site is
+// NOT guessed: the candidates are emitted as AMBIGUOUS so the agent sees a
+// shortlist to grep, and every traversal verb filters AMBIGUOUS out by default
+// (ADR 2026-07-25-abstain-out-loud). Unknown names (stdlib, dependencies) have
+// nothing in this repo to point at and are dropped outright.
 package code
 
 import (
@@ -36,6 +39,11 @@ const maxFileBytes = 2 << 20
 // longest realistic hand-written line (embedded data, long strings) while
 // catching minified JS/CSS whose "lines" run to hundreds of KB.
 const minifiedLineBytes = 50 * 1024
+
+// ambiguousCap bounds how many candidates a single undecidable call site may
+// shortlist. Above it we shortlist nothing — see shortlist() for why refusing
+// beats 40 maybes. Sweepable so the value stays a measurement, not a guess.
+var ambiguousCap = 4
 
 // isMinified reports whether src looks machine-generated (minified) — judged by
 // its longest line. Pure shape heuristic: no extension list to keep current,
@@ -322,7 +330,8 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 
 	// Call resolution: same-FILE unique match wins (self.audit resolves in
 	// its own file even when the name repeats elsewhere), else module-wide
-	// unique. Ambiguous and unknown names are dropped, never guessed.
+	// unique. An undecidable name is never guessed: its candidates become an
+	// AMBIGUOUS shortlist (see shortlist). Unknown/external names are dropped.
 	byName := map[string][]declRef{}
 	for _, d := range decls {
 		byName[d.label] = append(byName[d.label], d)
@@ -343,10 +352,62 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 		}
 		return nil
 	}
+	// shortlist returns the candidates for a callee that pick could NOT decide
+	// between, or nil when there is nothing to shortlist. Two outcomes look
+	// identical to pick but are completely different facts:
+	//
+	//   >1 candidate  → the name IS defined in this repo, we cannot say which.
+	//                   Actionable: a grep on the name settles it.
+	//    0 candidates → stdlib or a dependency. Nothing here to point at, so
+	//                   there is no shortlist and no gap to report.
+	//
+	// Above ambiguousCap we shortlist nothing: a name like `get`/`new`/`append`
+	// has dozens of definitions, and N edges per call site would pollute the
+	// god-node ranking for no navigational gain (docs/VISION.md:284 measured
+	// exactly that failure). Refusing to shortlist is the honest answer there —
+	// grep is strictly better than 40 maybes.
+	shortlist := func(c callSite) []declRef {
+		cands := byName[c.callee]
+		var inFile []declRef
+		for _, d := range cands {
+			if d.file == c.file {
+				inFile = append(inFile, d)
+			}
+		}
+		if len(inFile) > 1 {
+			cands = inFile // ambiguous within one file: never widen to the module
+		}
+		if len(cands) < 2 || len(cands) > ambiguousCap {
+			return nil
+		}
+		return cands
+	}
 	seen := map[string]bool{}
 	for _, c := range calls {
 		t := pick(c)
-		if t == nil || t.id == c.callerID {
+		if t == nil {
+			// Undecidable. Emit the shortlist as AMBIGUOUS so the agent can see
+			// the candidates and grep, instead of the call site vanishing and
+			// the graph looking complete. Every traversal verb filters these
+			// out by default (analyze.WithoutAmbiguous) — the label is only
+			// honest if the consumers honor it.
+			for _, cand := range shortlist(c) {
+				if cand.id == c.callerID {
+					continue
+				}
+				key := c.callerID + "\x00" + cand.id
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				batch.Edges = append(batch.Edges, schema.Edge{
+					Source: c.callerID, Target: cand.id,
+					Relation: "calls", Confidence: schema.Ambiguous, Weight: 1,
+				})
+			}
+			continue
+		}
+		if t.id == c.callerID {
 			continue
 		}
 		targets := []declRef{*t}

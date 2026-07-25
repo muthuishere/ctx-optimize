@@ -286,7 +286,14 @@ polluted by name collisions (`get`/`append`/`new`). This is graphify's hidden
 weakness too. Implications for ctx-optimize:
 - We are **not** cite-or-abstain (that constraint was citenexus's), so
   **confidence-tiered edges are acceptable** — emit EXTRACTED / INFERRED /
-  AMBIGUOUS and let the agent weigh them (graphify-parity behaviour).
+  AMBIGUOUS. **Refined 2026-07-25 (ADR `2026-07-25-abstain-out-loud`), because
+  "let the agent weigh them" was too loose:** an AMBIGUOUS edge is a SHORTLIST
+  TO GREP, not a fact, so every traversal verb (`affected`, `hubs`, `path`,
+  `explain`, `card`, `change-plan`) filters it out BY DEFAULT and it is reachable
+  only through an explicit `edges --confidence AMBIGUOUS`. Unattributed callers
+  are reported as a COUNT on the card with the grep that settles them. The motto
+  governs: *say no instead of being wrong* — and saying nothing is not saying no,
+  which is why the old silent drop was the actual defect.
 - BUT **precise edges are the real differentiator.** A per-language **LSP/SCIP**
   producer gives exact references/call-hierarchy that tree-sitter name-resolution
   only guesses. tree-sitter first (broad, cheap, honest confidence tiers); LSP/SCIP

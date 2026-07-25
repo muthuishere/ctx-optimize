@@ -122,9 +122,14 @@ func cmdChangePlan(args []string, stdout io.Writer) error {
 		if e.Relation == "co_changed_with" || !seen[e.Target] || !seen[e.Source] {
 			continue
 		}
-		if e.Confidence == schema.Extracted {
+		switch e.Confidence {
+		case schema.Extracted:
 			plan.Confidence.Extracted++
-		} else {
+		case schema.Ambiguous:
+			// Never reaches the blast set (analyze.Affected filters it), so it
+			// must not be tallied as evidence either — counting it as INFERRED
+			// would report confidence for an edge the plan did not use.
+		default:
 			plan.Confidence.Inferred++
 		}
 	}
