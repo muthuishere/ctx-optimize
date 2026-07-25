@@ -88,13 +88,24 @@ FOUND muthuishere/tree-sitter-cljgo  ctxoptimize/cljgo.json@master
 1 of 38 repos ship one
 ```
 
+And that one is weaker than it looks. `ctxoptimize/cljgo.json` sits at a path
+`LoadPacks` does **not** read (it reads `<repo>/.ctxoptimize/grammars/`), and the
+repo ships no wasm beside it — so a fresh clone of tree-sitter-cljgo yields
+**zero** `.cljg` declarations, verified against an empty grammars dir. The
+directory name is one cljgo's generator invented for its own output. So the real
+adopter count at any path we would probe is **0**, and blessing `ctxoptimize/`
+would mean standardising on a name a single repo guessed. Argues for *documenting*
+the contract in `docs/languages-packs.md` first and probing only the documented
+path.
+
 So L1 is **not a discovery mechanism for the ecosystem** — it is a door we would
 be *proposing*, currently walked through by exactly one repo, the owner's. That
 does not make it wrong: it is the only rung that can ever be complete, because
 the author of a run-time-defined macro is the only party who can enumerate it.
 But it must not be sold as "auto-identify works on public grammars."
 
-Where it does apply, it works. `tree-sitter-cljgo` generates
+Where the pack is placed somewhere `LoadPacks` reads, it works.
+`tree-sitter-cljgo` generates
 `ctxoptimize/cljgo.json` from a `definers.json` the repo calls its
 "SINGLE SOURCE OF TRUTH for cljgo's defining forms", alongside its editor
 integrations. Paired with the wasm `languages add` had already built, it gathered

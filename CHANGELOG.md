@@ -10,6 +10,8 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-07-25
+
 ### Added
 
 - **`decl_rules` — declarations matched by head symbol** (ADR
