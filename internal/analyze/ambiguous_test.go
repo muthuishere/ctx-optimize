@@ -135,3 +135,46 @@ func TestCardSilentWhenNothingAmbiguous(t *testing.T) {
 		t.Error("card mentioned unattributed callers when there were none")
 	}
 }
+
+// Community detection is a traversal too — it must see facts only. When
+// AMBIGUOUS shortlisting first landed, including those edges produced 7
+// communities on this repo whose hub list repeated one label (the `Run, Run,
+// Run` artifact: a "subsystem" that is really a single over-used name) and
+// reshuffled the top six subsystems. This pins the filter so clustering cannot
+// silently start consuming maybes again.
+func TestCommunitiesIgnoreAmbiguous(t *testing.T) {
+	// Two genuine clusters, plus an AMBIGUOUS edge that would bridge them.
+	var nodes []schema.Node
+	var edges []schema.Edge
+	mk := func(id string) { nodes = append(nodes, schema.Node{ID: id, Kind: "function", Label: id, Source: id + ".go", Location: "L1-L2"}) }
+	link := func(a, b, conf string) {
+		edges = append(edges, schema.Edge{Source: a, Target: b, Relation: "calls", Confidence: conf, Weight: 1})
+	}
+	for _, g := range []string{"a", "b"} {
+		for i := '1'; i <= '8'; i++ {
+			mk(g + string(i))
+		}
+		for i := '1'; i <= '8'; i++ {
+			for j := i + 1; j <= '8'; j++ {
+				link(g+string(i), g+string(j), schema.Extracted)
+			}
+		}
+	}
+	withFacts := Communities(nodes, edges)
+	link("a1", "b1", schema.Ambiguous) // a maybe that would merge the two clusters
+	withMaybe := Communities(nodes, edges)
+
+	if len(withFacts) != len(withMaybe) {
+		t.Errorf("an AMBIGUOUS edge changed the community count: %d → %d — clustering consumed a maybe",
+			len(withFacts), len(withMaybe))
+	}
+	for i := range withFacts {
+		if i >= len(withMaybe) {
+			break
+		}
+		if len(withFacts[i].Members) != len(withMaybe[i].Members) {
+			t.Errorf("community %d membership changed (%d → %d) after adding one AMBIGUOUS edge",
+				i, len(withFacts[i].Members), len(withMaybe[i].Members))
+		}
+	}
+}

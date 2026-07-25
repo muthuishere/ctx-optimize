@@ -56,6 +56,15 @@ type wgraph struct {
 // and disconnected dust (< minCommunity members, no external edges) is
 // dropped rather than reported as fake subsystems.
 func Communities(nodes []schema.Node, edges []schema.Edge) []Community {
+	// Subsystem structure must be computed from facts only. Measured on this
+	// repo the moment AMBIGUOUS shortlisting landed (ADR
+	// 2026-07-25-abstain-out-loud): including them left 7 communities whose hub
+	// list repeated the SAME label — the `Run, Run, Run` artifact, i.e. a
+	// "subsystem" that is really one over-used name — and it reshuffled the top
+	// six subsystems outright. Filtering restores 0 such communities. This is
+	// exactly the god-node-by-name-collision failure docs/VISION.md:284
+	// measured, arriving through clustering instead of through hubs.
+	edges = WithoutAmbiguous(edges)
 	// Stable universe: ids sorted ascending, so every "smallest" tie-break
 	// below is exactly "smallest node id".
 	sorted := make([]schema.Node, len(nodes))

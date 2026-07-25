@@ -1,6 +1,7 @@
 # Community detection — cluster the graph into architecture neighborhoods
 
-Status: DRAFT — 2026-07-14
+Status: **IMPLEMENTED** — wiki Subsystems + navigator `about` shipped as specified.
+Amended 2026-07-25: clustering now filters AMBIGUOUS edges (see below).
 
 ## Context
 
@@ -77,3 +78,39 @@ everything but describe nothing.
 - Wiki: Subsystems section renders; two generations byte-identical.
 - Performance guard: 50k nodes / 100k edges must complete well under a
   second (measured ~27 ms, logged by the test).
+
+
+---
+
+## Amendment 2026-07-25 — clustering must see facts only
+
+`Communities` consumed every edge it was given. That was harmless until ADR
+`2026-07-25-abstain-out-loud` started emitting AMBIGUOUS shortlist edges, at
+which point clustering silently began building subsystems out of maybes.
+
+Measured on this repo the moment that landed (8,495 edges, 1,092 of them
+AMBIGUOUS):
+
+| | with AMBIGUOUS | facts only |
+|---|---|---|
+| communities detected | 136 | 136 |
+| **communities whose hub list repeats one label** | **7** | **0** |
+| top-6 subsystems | different | different |
+
+The 7 were the `Run, Run, Run` artifact — a "subsystem" that is really one
+over-used name, which is precisely the god-node-by-name-collision failure
+`docs/VISION.md:284` measured, arriving through clustering instead of through
+`hubs`. The top six subsystems were reshuffled outright, so this was not
+cosmetic: the wiki's architecture summary was being decided by guesses.
+
+`Communities` now applies `WithoutAmbiguous` internally, like every other
+traversal function. Pinned by `TestCommunitiesIgnoreAmbiguous` (two dense
+clusters plus one AMBIGUOUS bridge edge: membership must not change).
+
+Caught before release — the shortlisting change had not been pushed.
+
+### Still not done
+
+The dashboard does not colour its graph by community, which is graphify's most
+visible feature (their hero image). The data exists; only the UI is missing.
+Tracked separately rather than folded in here.
