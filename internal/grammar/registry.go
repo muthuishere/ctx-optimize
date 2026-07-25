@@ -19,7 +19,6 @@ var KnownGrammars = map[string]Known{
 	"ruby":    {URL: "https://github.com/tree-sitter/tree-sitter-ruby", Exts: []string{".rb", ".rake", ".gemspec"}},
 	"php":     {URL: "https://github.com/tree-sitter/tree-sitter-php", Exts: []string{".php"}},
 	"scala":   {URL: "https://github.com/tree-sitter/tree-sitter-scala", Exts: []string{".scala", ".sc"}},
-	"elixir":  {URL: "https://github.com/elixir-lang/tree-sitter-elixir", Exts: []string{".ex", ".exs"}},
 	"haskell": {URL: "https://github.com/tree-sitter/tree-sitter-haskell", Exts: []string{".hs"}},
 	"ocaml":   {URL: "https://github.com/tree-sitter/tree-sitter-ocaml", Exts: []string{".ml", ".mli"}},
 	"bash":    {URL: "https://github.com/tree-sitter/tree-sitter-bash", Exts: []string{".sh", ".bash", ".zsh"}},

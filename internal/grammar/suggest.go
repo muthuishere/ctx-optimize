@@ -73,7 +73,17 @@ func Suggest(name, srcDir string, exts []string) ([]byte, error) {
 }
 
 // exactKinds catches grammars whose decl types are bare words (ruby: method,
-// class, module; elixir: call-based, won't match — reviewed by hand).
+// class, module).
+//
+// It cannot help the HOMOIONIC family — Clojure, EDN, Elixir — where a
+// definition has no node type of its own: `defn`/`def`/`defmodule` parse as an
+// ordinary `list_lit`/`call` whose head symbol carries the meaning. Mapping
+// that head node to a decl kind labels every declaration after the MACRO and
+// loses the real name: measured on tree-sitter-cljgo, `(defn fetch-user …)`
+// emitted a function named `defn` while `fetch-user` never appeared at all.
+// So these grammars are deliberately NOT in KnownGrammars — advertising a
+// one-command add that yields wrong data is worse than no entry. Serving them
+// needs head-symbol-aware decls in the pack format, not a mapping guess.
 var exactKinds = map[string]string{
 	"class": "class", "module": "module", "method": "function",
 	"singleton_method": "function", "function": "function",

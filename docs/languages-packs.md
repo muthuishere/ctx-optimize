@@ -19,7 +19,7 @@ in `~/ctxoptimize/grammars/` (machine) or `.ctxoptimize/grammars/`
 $ ctx-optimize languages list
 embedded: go, python, javascript, typescript, tsx, java, c, cpp, csharp, rust, zig, sql
 packs:    (none)
-addable by name (`ctx-optimize languages add <name>`): bash, css, dart, elixir, haskell, html, julia, kotlin, lua, ocaml, php, ruby, scala, swift, toml, yaml
+addable by name (`ctx-optimize languages add <name>`): bash, css, dart, haskell, html, julia, kotlin, lua, ocaml, php, ruby, scala, swift, toml, yaml
 anything else: `ctx-optimize languages add <github-url-of-tree-sitter-grammar>`
 ```
 
