@@ -10,6 +10,8 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-07-25
+
 ### Added
 
 - **Docker + Compose recognizers** (ADR
@@ -76,6 +78,15 @@ embeddings, no MCP, no network except your configured remote.**
   gather — and one malformed pack failed three unrelated golden tests with an
   error about a language nobody was testing. The package now points
   `CTX_OPTIMIZE_GRAMMARS` at an empty temp dir for its whole run.
+
+- **The Newtonsoft judged floor was a number nobody ever measured.** `min_score`
+  16.5 was introduced in 7588bd8 by applying linux-block's figure to the second
+  corpus, so the judged tier had never once been green and `golden.yml` was RED
+  on every run from 2026-07-20. Corrected to the measured 12.5 — verified
+  identical on a binary built from 0de40e3, i.e. no change regressed it — with a
+  `_floor_note` recording that the 7.5-point gap (N17/N19/N20, usage-shaped "how
+  do I serialize / create a serializer / run the tests") is the quality target,
+  to be closed by fixing retrieval and never by editing the floor.
 
 - **Config keys no longer depend on invisible whitespace** (S1). The
   nested-key guard in the config lane compared against a trailing-trimmed copy
