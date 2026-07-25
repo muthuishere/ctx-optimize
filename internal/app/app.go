@@ -106,6 +106,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdChangePlan(rest, stdout)
 	case "hubs":
 		err = cmdHubs(rest, stdout)
+	case "report":
+		err = cmdReport(rest, stdout)
 	case "wiki":
 		err = cmdWiki(rest, stdout)
 	case "merge":
@@ -1860,6 +1862,36 @@ func cmdAffected(args []string, stdout io.Writer) error {
 	return nil
 }
 
+// cmdReport — one call for "explain this repo to me": subsystems, hubs, the
+// seams between subsystems, and what the graph could NOT resolve. The last
+// section is the one no comparable tool prints; see internal/analyze/report.go
+// for why we report gaps instead of graphify-style "surprising connections".
+func cmdReport(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	nodes, edges, err := loadGraph(f)
+	if err != nil {
+		return err
+	}
+	t0 := time.Now()
+	cw := &countingWriter{w: stdout}
+	stdout = cw
+	st, _ := openStore(f)
+	defer func() { served(st, "report", "", 1, cw, t0) }()
+	if pred, perr := graphfilter.ParsePred(f.strs); perr != nil {
+		return perr
+	} else if !pred.Empty() {
+		nodes, edges = graphfilter.Apply(nodes, edges, pred)
+	}
+	r := analyze.Report(nodes, edges)
+	if f.bools["json"] {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(r)
+	}
+	fmt.Fprint(stdout, analyze.RenderReport(r))
+	return nil
+}
+
 func cmdHubs(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	nodes, edges, err := loadGraph(f)
@@ -2910,6 +2942,11 @@ commands:
                               Claims: node-id | exact-label | file:L10-L20.
                               Exit 0 only when ALL claims hold  [--json]
   hubs                        most-connected nodes (god nodes)  [--top N] [--json]
+  report                      ONE artifact for "explain this repo": subsystems,
+                              hubs, the seams BETWEEN subsystems, and — uniquely —
+                              what the graph could NOT resolve (unattributed call
+                              sites, with the grep that settles them). Facts only:
+                              structure never counts an AMBIGUOUS edge  [--json]
 
   Name resolution on card/explain/affected/path/change-plan is honest by
   default: fuzzy matches announce themselves ([resolved via fuzzy → id]);
