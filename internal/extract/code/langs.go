@@ -32,6 +32,37 @@ type Lang struct {
 	// type before the name (Go methods: Store.Merge, not a nesting parent).
 	ReceiverQualify map[string]bool
 	SkipDirs        []string // extra per-language noise dirs
+	// DeclRules handle grammars where a declaration has NO node type of its
+	// own — the homoiconic family (Clojure, Fennel, Janet, Elisp). There
+	// `(defn f …)` is an ordinary list whose HEAD symbol carries the meaning
+	// and whose SECOND element is the name. Decls (node type → kind) cannot
+	// express that; these can. Empty for every embedded language.
+	DeclRules []DeclRule
+}
+
+// DeclRule matches a declaration by the text of its head child rather than by
+// its own node type, and reads the name from a sibling position. Everything it
+// emits is read LITERALLY out of the file: if the head does not match, or the
+// name slot is not a plain symbol, the form is skipped rather than guessed.
+type DeclRule struct {
+	// Node is the container node type to test (Clojure: "list_lit").
+	Node string `json:"node"`
+	// HeadType is the required node type of the first named child ("sym_lit").
+	HeadType string `json:"head_type"`
+	// HeadMatch maps that head child's literal text → the kind we emit.
+	HeadMatch map[string]string `json:"head_match"`
+	// NameType is the required node type of the name child ("sym_lit").
+	NameType string `json:"name_type"`
+	// NameUnwrap: wrapper node types to descend through before applying
+	// NameType. Clojure's `(in-ns 'bri.cli)` names the module with a QUOTED
+	// symbol, so the name child is a quoting_lit wrapping the sym_lit. The
+	// symbol text is still read literally — only one wrapper node is stepped
+	// over, nothing is inferred.
+	NameUnwrap []string `json:"name_unwrap"`
+	// SkipInside: ancestor node types that make a match a false positive —
+	// a `(defn …)` inside a syntax-quote is code being CONSTRUCTED by a
+	// macro, not a definition. Structural, so this stays a literal test.
+	SkipInside []string `json:"skip_inside"`
 }
 
 func set(ss ...string) map[string]bool {
@@ -223,12 +254,13 @@ type Pack struct {
 }
 
 type packConfig struct {
-	Name    string            `json:"name"`
-	Exts    []string          `json:"exts"`
-	Decls   map[string]string `json:"decls"`
-	Names   []string          `json:"names"`
-	Calls   []string          `json:"calls"`
-	Imports []string          `json:"imports"`
+	Name      string            `json:"name"`
+	Exts      []string          `json:"exts"`
+	Decls     map[string]string `json:"decls"`
+	DeclRules []DeclRule        `json:"decl_rules"`
+	Names     []string          `json:"names"`
+	Calls     []string          `json:"calls"`
+	Imports   []string          `json:"imports"`
 }
 
 // LoadPacks discovers grammar packs for a repo. Malformed packs fail loudly —
@@ -263,8 +295,16 @@ func LoadPacks(repo string) ([]Pack, error) {
 			if err := json.Unmarshal(data, &pc); err != nil {
 				return nil, fmt.Errorf("grammar pack %s: %w", cfgPath, err)
 			}
-			if pc.Name == "" || len(pc.Exts) == 0 || len(pc.Decls) == 0 {
-				return nil, fmt.Errorf("grammar pack %s: name, exts and decls are required", cfgPath)
+			// A pack must be able to produce declarations SOME way: either by
+			// node type (decls) or by head symbol (decl_rules). Homoiconic
+			// grammars can only do the latter.
+			if pc.Name == "" || len(pc.Exts) == 0 || (len(pc.Decls) == 0 && len(pc.DeclRules) == 0) {
+				return nil, fmt.Errorf("grammar pack %s: name, exts and one of decls / decl_rules are required", cfgPath)
+			}
+			for i, r := range pc.DeclRules {
+				if r.Node == "" || len(r.HeadMatch) == 0 {
+					return nil, fmt.Errorf("grammar pack %s: decl_rules[%d] needs node and head_match", cfgPath, i)
+				}
 			}
 			wasmPath := filepath.Join(dir, pc.Name+".wasm")
 			if _, err := os.Stat(wasmPath); err != nil {
@@ -276,7 +316,8 @@ func LoadPacks(repo string) ([]Pack, error) {
 			byName[pc.Name] = Pack{
 				Lang: Lang{
 					ID: 0, Name: pc.Name, Exts: pc.Exts, Decls: pc.Decls,
-					Names: set(pc.Names...), Calls: set(pc.Calls...), Imports: set(pc.Imports...),
+					DeclRules: pc.DeclRules,
+					Names:     set(pc.Names...), Calls: set(pc.Calls...), Imports: set(pc.Imports...),
 				},
 				WasmPath: wasmPath,
 			}

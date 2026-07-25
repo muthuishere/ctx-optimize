@@ -19,7 +19,7 @@ in `~/ctxoptimize/grammars/` (machine) or `.ctxoptimize/grammars/`
 $ ctx-optimize languages list
 embedded: go, python, javascript, typescript, tsx, java, c, cpp, csharp, rust, zig, sql
 packs:    (none)
-addable by name (`ctx-optimize languages add <name>`): bash, css, dart, haskell, html, julia, kotlin, lua, ocaml, php, ruby, scala, swift, toml, yaml
+addable by name (`ctx-optimize languages add <name>`): bash, clojure, css, dart, haskell, html, julia, kotlin, lua, ocaml, php, ruby, scala, swift, toml, yaml
 anything else: `ctx-optimize languages add <github-url-of-tree-sitter-grammar>`
 ```
 
@@ -96,3 +96,79 @@ ctx-optimize manifests list
 | URLs linked to handlers | route pack (`routes add`) |
 | deps/topology from a build file | manifest pack (`manifests add`) |
 | anything else entirely | an [adapter](adapters.md) |
+
+## Homoiconic languages — `decl_rules`
+
+Lisps break the assumption every other pack relies on: **a declaration has no
+node type of its own.** `(defn fetch-user [] …)` parses as an ordinary
+`list_lit` whose *head symbol* (`defn`) carries the meaning and whose *second
+element* (`fetch-user`) is the name.
+
+Mapping `list_lit → function` in `decls` therefore produces garbage — every
+node is named after the macro:
+
+```
+function  defn          ← should be fetch-user
+function  defn          ← should be helper
+variable  def           ← should be config
+                        ← `handler` never appears at all
+```
+
+`decl_rules` matches on the head symbol instead and reads the name from the
+next element:
+
+```json
+{
+  "name": "clojure",
+  "exts": [".clj", ".cljc", ".cljs"],
+  "decl_rules": [
+    {
+      "node": "list_lit",
+      "head_type": "sym_lit",
+      "name_type": "sym_lit",
+      "skip_inside": ["quoting_lit", "syn_quoting_lit", "dis_expr"],
+      "head_match": { "defn": "function", "def": "variable", "ns": "module" }
+    }
+  ]
+}
+```
+
+| field | meaning |
+|---|---|
+| `node` | container node type to test |
+| `head_type` | required type of the **first** named child |
+| `head_match` | that child's literal text → the kind emitted |
+| `name_type` | required type of the **second** named child (the name) |
+| `name_unwrap` | wrapper types to step over first — `(in-ns 'app.core)` quotes its name |
+| `skip_inside` | ancestor types that void a match — a `defn` inside a syntax-quote is a macro *constructing* code, not a definition |
+
+A pack may use `decls`, `decl_rules`, or both.
+
+### It is literal, and it under-claims
+
+Everything emitted is read verbatim from the file. The matcher deliberately
+**misses** rather than guesses:
+
+- `s/def`, `(:refer-clojure :rename {defn my-defn})` — head text no longer
+  matches exactly, so nothing is emitted.
+- `(defsomething x)` from a project's own macro — not in `head_match`, so
+  nothing is emitted **until you add it** (see below).
+- `(defn ^:private f …)` — metadata in the name slot, so the form is skipped
+  rather than named wrongly.
+
+Measured on a 658-file Clojure codebase: 1,372 definer-headed forms, 1,362
+resolved to a literal name, **0 wrong**. The 5 forms inside syntax-quotes were
+excluded by `skip_inside`.
+
+### Add your project's own defining macros
+
+Edit `head_match` in the pack — a repo-local `.ctxoptimize/grammars/*.json` is
+read before the machine one, so this ships **with your repo**, no release
+needed:
+
+```json
+"head_match": { "defn": "function", "defroute": "variable", "defjob": "function" }
+```
+
+This is why the mechanism is DATA and not grammar: a Lisp program creates
+defining macros at run time, so no parser can know them, but a table can.

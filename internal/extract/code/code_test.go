@@ -290,3 +290,68 @@ func TestExtractSkipsMinifiedFile(t *testing.T) {
 		t.Fatal("real file's greet() was not indexed")
 	}
 }
+
+// A homoiconic language has NO declaration node type: `(defn f …)` is an
+// ordinary list whose head symbol carries the meaning and whose second element
+// is the name. decl_rules must therefore name the THING DEFINED, never the
+// defining macro — the failure that made a naive `list_lit → function` mapping
+// emit two nodes called `defn` while `fetch-user` never appeared at all.
+func TestHomoiconicDeclRules(t *testing.T) {
+	wasm := filepath.Join("..", "..", "..", "grammars", "clojure.wasm")
+	if _, err := os.Stat(wasm); err != nil {
+		t.Skip("clojure pack not present")
+	}
+	root := t.TempDir()
+	gdir := filepath.Join(root, ".ctxoptimize", "grammars")
+	os.MkdirAll(gdir, 0o755)
+	for _, f := range []string{"clojure.wasm", "clojure.json"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "..", "grammars", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(gdir, f), data, 0o644)
+	}
+	t.Setenv("CTX_OPTIMIZE_GRAMMARS", filepath.Join(root, "nonexistent"))
+
+	src := "(ns demo.core)\n\n" +
+		"(def config {:port 8080})\n\n" +
+		"(defn fetch-user [id] (get @db id))\n\n" +
+		"(defmacro with-log [& body]\n  `(defn generated [] ~@body))\n"
+	os.WriteFile(filepath.Join(root, "a.clj"), []byte(src), 0o644)
+
+	batch, err := Extract(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]string{}
+	for _, n := range batch.Nodes {
+		byID[n.ID] = n.Kind
+	}
+	for id, want := range map[string]string{
+		"a.clj::demo.core":  "module",
+		"a.clj::config":     "variable",
+		"a.clj::fetch-user": "function",
+		"a.clj::with-log":   "macro",
+	} {
+		if byID[id] != want {
+			t.Errorf("%s: got %q, want %q (all nodes: %v)", id, byID[id], want, byID)
+		}
+	}
+	// The defining macros must never become nodes themselves...
+	for _, bad := range []string{"a.clj::defn", "a.clj::def", "a.clj::ns", "a.clj::defmacro"} {
+		if _, ok := byID[bad]; ok {
+			t.Errorf("%s emitted: decl named after the macro, not the definition", bad)
+		}
+	}
+	// ...and a form inside a syntax-quote is code being CONSTRUCTED, not defined.
+	if _, ok := byID["a.clj::generated"]; ok {
+		t.Error("syntax-quoted (defn generated …) emitted: skip_inside guard failed")
+	}
+	// Call sites are not declarations.
+	if _, ok := byID["a.clj::get"]; ok {
+		t.Error("call site `get` emitted as a declaration")
+	}
+}

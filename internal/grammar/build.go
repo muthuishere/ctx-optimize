@@ -45,6 +45,8 @@ type Options struct {
 	OutDir string   // default: DefaultGrammarsDir() ($CTX_OPTIMIZE_GRAMMARS, else ~/ctxoptimize/grammars)
 	Ref    string   // git ref for GitHub tarballs (default HEAD)
 	Exts   []string // seed extensions for the suggested mapping
+	// DeclRules seeds decl_rules for homoiconic grammars (registry-supplied).
+	DeclRules string
 }
 
 // Build produces <out>/<name>.wasm and, if absent, a suggested <name>.json.
@@ -56,6 +58,9 @@ func Build(opts Options, stdout io.Writer) (wasmPath, cfgPath string, err error)
 		}
 		if len(opts.Exts) == 0 {
 			opts.Exts = k.Exts
+		}
+		if opts.DeclRules == "" {
+			opts.DeclRules = k.DeclRules
 		}
 		opts.Source = k.URL
 	}
@@ -144,13 +149,29 @@ const TSLanguage *co_lang_by_id(int id) { return id == 0 ? tree_sitter_%s() : 0;
 	// node-types.json when absent.
 	cfgPath = filepath.Join(outDir, name+".json")
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-		cfg, serr := Suggest(name, srcDir, opts.Exts)
+		cfg, serr := SuggestWith(name, srcDir, opts.Exts, opts.DeclRules)
 		if serr != nil {
 			fmt.Fprintf(stdout, "note: could not suggest a mapping (%v) — write %s yourself\n", serr, cfgPath)
 		} else if err := os.WriteFile(cfgPath, cfg, 0o644); err != nil {
 			return "", "", err
 		} else {
 			fmt.Fprintf(stdout, "suggested mapping written: %s — REVIEW IT (decls/names/calls/imports guessed from node-types.json)\n", cfgPath)
+			// A pack with no decls is REJECTED by `add` ("name, exts and one
+			// of decls / decl_rules are required"), so reporting success here
+			// sends the user to a wall one command later. Fail at build time,
+			// where the reason is still in front of them.
+			if empty, derr := declsEmpty(cfg); derr == nil && empty {
+				return "", "", fmt.Errorf(
+					"grammar %s built, but no declaration node types could be inferred, "+
+						"so %s cannot be loaded as written.\n\n"+
+						"This is expected for HOMOIONIC languages (Clojure, Fennel, Janet, Elisp): "+
+						"a definition has no node type of its own — `(defn f …)` is an ordinary list "+
+						"whose head symbol carries the meaning. Use `decl_rules` instead of `decls` "+
+						"to match on the head symbol and take the name from the next element.\n\n"+
+						"Otherwise, fill in `decls` by hand from the grammar's node-types.json, "+
+						"then re-run `ctx-optimize add`",
+					name, cfgPath)
+			}
 		}
 	} else {
 		fmt.Fprintf(stdout, "kept existing mapping: %s\n", cfgPath)
@@ -288,4 +309,18 @@ func tail(s string, n int) string {
 		return s
 	}
 	return "…" + s[len(s)-n:]
+}
+
+// declsEmpty reports whether a suggested mapping yielded no declarations at
+// all — neither node-type decls nor head-symbol decl_rules. Such a pack is
+// hard-rejected at load, so the build must not report success for it.
+func declsEmpty(cfg []byte) (bool, error) {
+	var c struct {
+		Decls     map[string]string `json:"decls"`
+		DeclRules []struct{}        `json:"decl_rules"`
+	}
+	if err := json.Unmarshal(cfg, &c); err != nil {
+		return false, err
+	}
+	return len(c.Decls) == 0 && len(c.DeclRules) == 0, nil
 }

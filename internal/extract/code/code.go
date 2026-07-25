@@ -544,6 +544,93 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		return stack[len(stack)-1].id
 	}
 
+	// hasAncestor reports whether any ancestor of raw[i] is one of types. raw
+	// is pre-order, so successive strictly-smaller depths walking backward are
+	// exactly the ancestor chain.
+	hasAncestor := func(i int, types []string) bool {
+		if len(types) == 0 {
+			return false
+		}
+		d := raw[i].Depth
+		for j := i - 1; j >= 0 && d > 0; j-- {
+			if raw[j].Depth < d {
+				d = raw[j].Depth
+				for _, s := range types {
+					if typeOf(raw[j]) == s {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+
+	// headDecl resolves a homoiconic declaration: a container node whose FIRST
+	// named child's literal text names a defining macro, and whose SECOND named
+	// child is the name being defined. Both reads are literal; a head that does
+	// not match exactly (including any namespace-qualified `s/def`) simply
+	// misses, and a name slot that is not a plain symbol is skipped. Under-
+	// claiming is the intended failure mode.
+	headDecl := func(i int) (string, string, bool) {
+		t := typeOf(raw[i])
+		d := raw[i].Depth
+		for _, r := range lang.DeclRules {
+			if r.Node != t {
+				continue
+			}
+			var head, nm int = -1, -1
+			for j := i + 1; j < len(raw) && raw[j].Depth > d; j++ {
+				if !raw[j].Named || raw[j].Depth != d+1 {
+					continue
+				}
+				if head < 0 {
+					head = j
+				} else {
+					nm = j
+					break
+				}
+			}
+			if head < 0 || nm < 0 {
+				continue
+			}
+			if r.HeadType != "" && typeOf(raw[head]) != r.HeadType {
+				continue
+			}
+			kind, ok := r.HeadMatch[text(raw[head])]
+			if !ok {
+				continue
+			}
+			// Step over a wrapper in the name slot — `(in-ns 'bri.cli)` wraps
+			// the symbol in a quoting_lit. One level only.
+			for _, w := range r.NameUnwrap {
+				if typeOf(raw[nm]) != w {
+					continue
+				}
+				inner := -1
+				for j := nm + 1; j < len(raw) && raw[j].Depth > raw[nm].Depth; j++ {
+					if raw[j].Named {
+						inner = j
+						break
+					}
+				}
+				if inner >= 0 {
+					nm = inner
+				}
+				break
+			}
+			if r.NameType != "" && typeOf(raw[nm]) != r.NameType {
+				continue // metadata or destructuring in the name slot: skip
+			}
+			if hasAncestor(i, r.SkipInside) {
+				continue // quoted: a macro CONSTRUCTING code, not a definition
+			}
+			if name := text(raw[nm]); name != "" {
+				return kind, name, true
+			}
+		}
+		return "", "", false
+	}
+
 	for i := 0; i < len(raw); i++ {
 		n := raw[i]
 		if !n.Named {
@@ -554,8 +641,18 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		}
 		t := typeOf(n)
 
-		if kind, ok := lang.Decls[t]; ok {
-			name, found := declName(i)
+		kind, isDecl := lang.Decls[t]
+		headName := ""
+		if !isDecl && len(lang.DeclRules) > 0 {
+			if k, nm, hit := headDecl(i); hit {
+				kind, headName, isDecl = k, nm, true
+			}
+		}
+		if isDecl {
+			name, found := headName, headName != ""
+			if !found {
+				name, found = declName(i)
+			}
 			if !found || name == "" {
 				continue
 			}

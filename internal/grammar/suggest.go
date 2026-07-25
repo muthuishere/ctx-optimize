@@ -16,6 +16,12 @@ import (
 // Suggest builds a pack config draft for the grammar in srcDir. exts seeds
 // the extension list (registry-known); empty defaults to ".<name>".
 func Suggest(name, srcDir string, exts []string) ([]byte, error) {
+	return SuggestWith(name, srcDir, exts, "")
+}
+
+// SuggestWith is Suggest plus a raw decl_rules seed for homoiconic grammars
+// whose node-types.json can never yield decls (see Known.DeclRules).
+func SuggestWith(name, srcDir string, exts []string, declRules string) ([]byte, error) {
 	data, err := os.ReadFile(filepath.Join(srcDir, "src", "node-types.json"))
 	if err != nil {
 		return nil, err
@@ -53,11 +59,17 @@ func Suggest(name, srcDir string, exts []string) ([]byte, error) {
 	sort.Strings(calls)
 	sort.Strings(imports)
 
+	// Extensions are NOT guessable from the grammar name. `tree-sitter-clojure`
+	// would seed ".clojure" — a file extension nobody uses, silently matching
+	// nothing while the pack looks configured. Leave it empty and say so; the
+	// loader's "exts are required" error then names the real problem.
+	review := "DRAFT generated from node-types.json — verify decls/names/calls/imports against real code before trusting the graph"
 	if len(exts) == 0 {
-		exts = []string{"." + name}
+		exts = []string{}
+		review += ". SET exts YOURSELF — the grammar name does not imply a file extension."
 	}
 	out := map[string]any{
-		"_review": "DRAFT generated from node-types.json — verify decls/names/calls/imports against real code before trusting the graph",
+		"_review": review,
 		"name":    name,
 		"exts":    exts,
 		"decls":   decls,
@@ -69,21 +81,33 @@ func Suggest(name, srcDir string, exts []string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if declRules != "" {
+		var probe []any
+		if err := json.Unmarshal([]byte(declRules), &probe); err != nil {
+			return nil, fmt.Errorf("decl_rules seed for %s is not valid JSON: %w", name, err)
+		}
+		// Splice in as raw JSON so the seed keeps its hand-written layout.
+		b = []byte(strings.Replace(string(b), "\n  \"decls\": {},",
+			"\n  \"decls\": {},\n  \"decl_rules\": "+declRules+",", 1))
+	}
 	return append(b, '\n'), nil
 }
 
 // exactKinds catches grammars whose decl types are bare words (ruby: method,
 // class, module).
 //
-// It cannot help the HOMOIONIC family — Clojure, EDN, Elixir — where a
-// definition has no node type of its own: `defn`/`def`/`defmodule` parse as an
-// ordinary `list_lit`/`call` whose head symbol carries the meaning. Mapping
-// that head node to a decl kind labels every declaration after the MACRO and
-// loses the real name: measured on tree-sitter-cljgo, `(defn fetch-user …)`
-// emitted a function named `defn` while `fetch-user` never appeared at all.
-// So these grammars are deliberately NOT in KnownGrammars — advertising a
-// one-command add that yields wrong data is worse than no entry. Serving them
-// needs head-symbol-aware decls in the pack format, not a mapping guess.
+// It cannot help the HOMOIONIC family — Clojure, Fennel, Janet, Elisp — where
+// a definition has no node type of its own: `defn`/`def` parse as an ordinary
+// `list_lit` whose head symbol carries the meaning. Mapping that head node to
+// a decl kind labels every declaration after the MACRO and loses the real
+// name: measured on tree-sitter-cljgo, `(defn fetch-user …)` emitted a
+// function named `defn` while `fetch-user` never appeared at all.
+//
+// Those grammars are served by `decl_rules` instead — head-symbol matching
+// with the name read from the next element, seeded from Known.DeclRules for
+// registry entries (`clojure`). See docs/languages-packs.md. `elixir` remains
+// out of KnownGrammars: its `call` node lacks the `!namespace` distinction
+// `sym_lit` gives, and it was declined separately.
 var exactKinds = map[string]string{
 	"class": "class", "module": "module", "method": "function",
 	"singleton_method": "function", "function": "function",

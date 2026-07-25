@@ -48,8 +48,14 @@ func TestSuggest(t *testing.T) {
 	if err := json.Unmarshal(out, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Review == "" || cfg.Name != "mylang" || cfg.Exts[0] != ".mylang" {
+	// exts stays EMPTY when the caller seeds none: a grammar's name does not
+	// imply a file extension (tree-sitter-clojure would have yielded
+	// ".clojure", matching no file while looking configured).
+	if cfg.Review == "" || cfg.Name != "mylang" || len(cfg.Exts) != 0 {
 		t.Fatalf("header: %+v", cfg)
+	}
+	if !strings.Contains(cfg.Review, "SET exts YOURSELF") {
+		t.Fatalf("empty exts must be called out in _review: %q", cfg.Review)
 	}
 	if cfg.Decls["function_declaration"] != "function" || cfg.Decls["class_declaration"] != "class" {
 		t.Fatalf("decls: %v", cfg.Decls)
