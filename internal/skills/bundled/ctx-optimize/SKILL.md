@@ -114,7 +114,7 @@ Do NOT default to `query` for everything. The verb follows the intent:
 | **Blast radius** only — is it safe to change | `ctx-optimize affected <symbol> --depth 2 --json` (alias: `impact`) |
 | **Connection** — how are A and B related | `ctx-optimize path "A" "B" --json` |
 | **Orient** — where do I start in this repo | `ctx-optimize hubs --top 10 --json` |
-| **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — hydrates each hit's verbatim source from the file at answer time (nothing stored; default stays terse) |
+| **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — hydrates each hit's verbatim source from the file at answer time (nothing stored; default stays terse). Lines that look like credentials come back `[redacted]` — deliberate, and it applies to plain `card` too. Do NOT open the file to read around it: the point is that a secret's VALUE never enters your context. Cite the key, not the value. |
 | **About to hand a citation to a human** — does this claim still hold? | `ctx-optimize verify "<label or file:L10-L20>" --json` — node exists (exact only), file exists, range in bounds, drifted-since-gather |
 
 If you ran `query` and then immediately wanted callers or tests — you picked

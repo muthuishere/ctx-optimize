@@ -25,14 +25,14 @@
       <when>any question about the codebase, where is X, how does Y work, who uses Z, find the code that does W, search for, look up, locate</when>
       <goal>The default answer verb. Ranked, cited hits with signatures — replaces a grep-and-read chain.</goal>
       <cmd>ctx-optimize query "&lt;2-4 terms&gt;" --json  [--budget N] [--include-content] [--modules all|a,b] [--root]</cmd>
-      <note>Query with 2-4 terms, not sentences; drop paths and `::`/`.` qualifiers. Scope follows cwd: a module dir answers from that module (zero hits escalate); the repo root federates via the navigator (`--modules` widens, `--root` forces root). Need the actual code, not just the pointer? `--include-content` hydrates each hit's verbatim body from the source file at answer time (nothing stored; default stays terse).</note>
+      <note>Query with 2-4 terms, not sentences; drop paths and `::`/`.` qualifiers. Scope follows cwd: a module dir answers from that module (zero hits escalate); the repo root federates via the navigator (`--modules` widens, `--root` forces root). Need the actual code, not just the pointer? `--include-content` hydrates each hit's verbatim body from the source file at answer time (nothing stored; default stays terse). Credential-shaped lines are `[redacted]` on the way out — never open the file to recover the value; cite the key.</note>
     </route>
 
     <route id="card" group="answer">
       <when>need a symbol's signature, doc, callers, or callees; about to open a file just to read one function's shape</when>
       <goal>The card IS the read — signature + doc + location + callers + callees without opening the file.</goal>
       <cmd>ctx-optimize card "&lt;exact label&gt;" --json  [--include-content]</cmd>
-      <note>Alias: `node`. Wants the node's LABEL exactly. Unsure? `query` the short name, copy the label from the hit, then `card` it. `--include-content` returns the full verbatim body inline (read from the source file at answer time) — use it instead of opening the file.</note>
+      <note>Alias: `node`. Wants the node's LABEL exactly. Unsure? `query` the short name, copy the label from the hit, then `card` it. `--include-content` returns the full verbatim body inline (read from the source file at answer time) — use it instead of opening the file. Credential-shaped lines are `[redacted]`, including without the flag; that is the hard rule that a secret's VALUE must never reach model context, so do not route around it with a file read.</note>
     </route>
 
     <route id="change-plan" group="answer">

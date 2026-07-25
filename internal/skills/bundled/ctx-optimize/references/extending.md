@@ -25,8 +25,31 @@ ship in core.
   pack, and again after `add .`. A DROP is the pack eating edges, not the
   graph getting cleaner.
 - Qualified labels do **not** fix this. A pack cannot emit one (`packConfig`
-  has only `name/exts/decls/names/calls/imports`, `langs.go:224-231`) and it
-  would not help anyway — resolution keys on the bare name.
+  has only `name/exts/decls/decl_rules/names/calls/imports`,
+  `langs.go:256-265`) and it would not help anyway — resolution keys on the
+  bare name.
+
+**Homoiconic languages need `decl_rules`, not `decls`.** In every Lisp a
+definition has no node type of its own — `(defn f …)` is an ordinary `list_lit`
+whose HEAD symbol carries the meaning and whose SECOND element is the name. So
+`decls` (node type → kind) cannot express it, and mapping `list_lit → function`
+is the trap: every node comes out named `defn` while the real names never
+appear. Use `decl_rules` instead — it matches ON the head and reads the name
+from the next element:
+
+```json
+{"node": "list_lit", "head_type": "sym_lit", "name_type": "sym_lit",
+ "skip_inside": ["quoting_lit", "syn_quoting_lit"],
+ "head_match": {"defn": "function", "def": "variable", "ns": "module"}}
+```
+
+`name_unwrap` steps over a wrapper in the name slot (`(in-ns 'app.core)` quotes
+its symbol). `skip_inside` is structural, not a heuristic: a `defn` inside a
+syntax-quote is code a macro is CONSTRUCTING, not defining. A pack may use
+`decls`, `decl_rules`, or both. Everything misses rather than guesses — a
+namespace-qualified `s/def`, a project's own `defsomething`, or metadata in the
+name slot all emit nothing until you add them. `languages add clojure` and
+`languages add cljgo` seed this for you; anything else, write the rules.
 - Losing edges but wanting the decls? Keep the pack and say so when you
   answer: `calls` for the colliding names is INFERRED and now incomplete.
 
