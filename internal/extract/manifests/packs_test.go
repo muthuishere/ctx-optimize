@@ -104,16 +104,173 @@ func TestPackRuleExtraction(t *testing.T) {
 		t.Fatalf("pack declares metadata: %v", e.Metadata)
 	}
 
-	task := nodeByID(b, "ci.build.xml::task:compile")
+	// ID is namespace-scoped, so it agrees with the label (S4).
+	task := nodeByID(b, "ci.build.xml::task:internal:compile")
 	if task == nil {
-		t.Fatal("missing xml-derived task node")
+		t.Fatalf("missing xml-derived task node: %v", b.Nodes)
 	}
 	// namespace defaults to the pack name for task labels.
 	if task.Label != "internal:compile" {
 		t.Fatalf("task label: %s", task.Label)
 	}
-	if nodeByID(b, "ci.build.xml::task:package") == nil {
+	if task.Location != "L1" {
+		t.Fatalf("task location: %q, want L1 (single-line fixture)", task.Location)
+	}
+	if nodeByID(b, "ci.build.xml::task:internal:package") == nil {
 		t.Fatal("second target missing")
+	}
+}
+
+// S3: every pack-emitted node carries a Location — a node without file:line
+// cannot be cited or passed to verify. Covers all three formats at once.
+func TestPackNodesAlwaysCarryLocation(t *testing.T) {
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{
+		".ctxoptimize/manifests/all.json": `{"name": "all", "rules": [
+		  {"file": "*.tasks.json", "format": "json", "path": "tasks.*", "emit": "task", "namespace": "j"},
+		  {"file": "*.tasks.yaml", "format": "yaml", "path": "tasks.*", "emit": "task", "namespace": "y"},
+		  {"file": "*.build.xml", "format": "xml", "path": "project/target/@name", "emit": "task", "namespace": "x"}]}`,
+		"a.tasks.json": "{\n  \"tasks\": {\n    \"build\": \"go build\"\n  }\n}\n",
+		"a.tasks.yaml": "version: 1\ntasks:\n  lint: golangci-lint run\n  test: go test ./...\n",
+		"a.build.xml":  "<project name=\"demo\">\n  <target name=\"clean\"/>\n  <target\n      name=\"compile\"/>\n</project>\n",
+	})
+	b, err := Extract(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, n := range b.Nodes {
+		if n.Kind != "task" {
+			continue
+		}
+		seen++
+		if n.Location == "" {
+			t.Errorf("pack node %s has no Location", n.ID)
+		}
+	}
+	if seen != 5 {
+		t.Fatalf("task nodes = %d, want 5 (1 json + 2 yaml + 2 xml): %v", seen, b.Nodes)
+	}
+	// Exact lines: yaml comes from the shared walker, xml from the decoder
+	// offset of the matched START element.
+	for id, want := range map[string]string{
+		"a.tasks.yaml::task:y:lint":   "L3",
+		"a.tasks.yaml::task:y:test":   "L4",
+		"a.build.xml::task:x:clean":   "L2",
+		"a.build.xml::task:x:compile": "L3", // the element OPENS on L3
+		"a.tasks.json::task:j:build":  "L1", // json has no positions: honest L1
+	} {
+		n := nodeByID(b, id)
+		if n == nil {
+			t.Errorf("missing node %s", id)
+			continue
+		}
+		if n.Location != want {
+			t.Errorf("%s location = %q, want %q", id, n.Location, want)
+		}
+	}
+}
+
+// S4: two rules yielding the SAME name for the same file must survive as two
+// distinct nodes. Before the namespace-scoped ID they collided and one was
+// silently dropped by the collector's dedup.
+func TestPackNodeIDsAreNamespaceScoped(t *testing.T) {
+	storeRoot := t.TempDir()
+	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{
+		".ctxoptimize/manifests/logback.json": `{"name": "logback", "rules": [
+		  {"file": "logback.xml", "format": "xml", "path": "configuration/appender/@name", "emit": "task", "namespace": "appender"},
+		  {"file": "logback.xml", "format": "xml", "path": "configuration/root/appender-ref/@ref", "emit": "task", "namespace": "appender-ref"}]}`,
+		"logback.xml": "<configuration>\n  <appender name=\"STDOUT\"/>\n  <root>\n    <appender-ref ref=\"STDOUT\"/>\n  </root>\n</configuration>\n",
+	})
+	b, err := Extract(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tasks []schema.Node
+	for _, n := range b.Nodes {
+		if n.Kind == "task" {
+			tasks = append(tasks, n)
+		}
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("task nodes = %d, want 2 (same name, two namespaces): %+v", len(tasks), tasks)
+	}
+	for id, wantLoc := range map[string]string{
+		"logback.xml::task:appender:STDOUT":     "L2",
+		"logback.xml::task:appender-ref:STDOUT": "L4",
+	} {
+		n := nodeByID(b, id)
+		if n == nil {
+			t.Fatalf("missing %s: %+v", id, tasks)
+		}
+		if n.Location != wantLoc {
+			t.Errorf("%s location = %q, want %q", id, n.Location, wantLoc)
+		}
+	}
+}
+
+// S5: the package doc's example must actually work. `project/target/@name`
+// matches a real Ant build file; the old documented `target/@name` matched
+// nothing, because selectors are root-anchored and exact-depth.
+func TestDocumentedXMLExampleIsRootAnchored(t *testing.T) {
+	ant := []byte(`<project name="demo" default="dist">
+  <target name="clean"/>
+  <target name="compile" depends="clean"/>
+  <target name="dist" depends="compile"/>
+</project>`)
+	got := xmlSelect(ant, "project/target/@name")
+	var names []string
+	for _, h := range got {
+		names = append(names, h.name)
+	}
+	if strings.Join(names, ",") != "clean,compile,dist" {
+		t.Fatalf("documented selector yielded %v", names)
+	}
+	if h := xmlSelect(ant, "target/@name"); len(h) != 0 {
+		t.Fatalf("non-root-anchored selector must yield nothing, got %+v", h)
+	}
+	// `*` matches exactly one level — never zero, never many.
+	if h := xmlSelect(ant, "*/target/@name"); len(h) != 3 {
+		t.Fatalf("`*` must match exactly one level: %+v", h)
+	}
+	if h := xmlSelect(ant, "*/*/target/@name"); len(h) != 0 {
+		t.Fatalf("`*` must not match zero levels: %+v", h)
+	}
+}
+
+// Selector line reporting, at unit level.
+func TestSelectorLines(t *testing.T) {
+	y := yamlSelect("tools:\n  golangci: 1.55.0\n  gofumpt: 0.6.0\n", "tools.*")
+	if len(y) != 2 || y[0].line != 2 || y[1].line != 3 {
+		t.Fatalf("yaml lines: %+v", y)
+	}
+	// list items are located on their own lines, not the key's.
+	yl := yamlSelect("deps:\n  - alpha\n  - beta\n", "deps")
+	if len(yl) != 2 || yl[0].line != 2 || yl[1].line != 3 {
+		t.Fatalf("yaml list lines: %+v", yl)
+	}
+	// element CONTENT is located on the line the element opens on.
+	x := xmlSelect([]byte("<deps>\n  <dep>alpha</dep>\n\n  <dep>beta</dep>\n</deps>"), "deps/dep")
+	if len(x) != 2 || x[0].line != 2 || x[1].line != 4 {
+		t.Fatalf("xml content lines: %+v", x)
+	}
+	// json reports no line; locOf turns that into the honest file-level L1.
+	j := jsonSelect([]byte("{\n \"a\": \"1\"\n}"), "a")
+	if len(j) != 1 || j[0].line != 0 {
+		t.Fatalf("json lines: %+v", j)
+	}
+	if got := locOf(j[0]); got != "L1" {
+		t.Fatalf("locOf fallback = %q, want L1", got)
+	}
+	if got := locOf(pair{name: "x", line: 42}); got != "L42" {
+		t.Fatalf("locOf = %q, want L42", got)
 	}
 }
 

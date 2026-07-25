@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/muthuishere/ctx-optimize/internal/store"
 )
 
 type Lang struct {
@@ -233,10 +235,8 @@ type packConfig struct {
 // a silently skipped language reads as "covered" when it isn't.
 func LoadPacks(repo string) ([]Pack, error) {
 	var dirs []string
-	if env := os.Getenv("CTX_OPTIMIZE_GRAMMARS"); env != "" {
-		dirs = append(dirs, env)
-	} else if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, "ctxoptimize", "grammars"))
+	if dir, err := store.GrammarsDir(); err == nil {
+		dirs = append(dirs, dir)
 	}
 	dirs = append(dirs, filepath.Join(repo, ".ctxoptimize", "grammars"))
 

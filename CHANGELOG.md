@@ -10,6 +10,97 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Added
+
+- **Python and Rust dependency extraction** (ADR
+  `openspec/changes/2026-07-25-structured-formats/`, S7). `deps` used to print
+  `(0 dependencies)` on a repo declaring 61 of them — a verb lying by omission
+  about the second-largest ecosystem, while emitting 199 `config_key` nodes
+  from the very `pyproject.toml` that held the answer. Now recognized: PEP 621
+  `[project]` + `optional-dependencies`, poetry (incl. groups), PEP 735
+  `[dependency-groups]`, `[build-system] requires`, `[tool.uv]`,
+  `requirements*.txt`, and Cargo `[dependencies]`/`[dev-]`/`[build-]` including
+  inline tables, `[dependencies.<name>]` sub-tables, `[workspace.…]` and
+  `[target."cfg(…)".…]`. Namespaces `pypi` and `crates`, with PEP 503 name
+  normalization so `flit_core`/`typing_extensions` don't split into duplicate
+  nodes. New `internal/extract/tomlwalk` — a stdlib TOML **table** walker in the
+  `yamlwalk` tradition (no TOML library; the validated prototype scored
+  1,639/1,639 declarations across 103 real manifests, 100% precision and recall
+  against `tomllib`).
+- **pip-compile / uv lock output is skipped, not indexed.** 61% of pypi
+  declarations in a real sample come from `requirements*.txt` and 12 of 40 of
+  those are resolver output; emitting transitive pins as *declared* dependencies
+  would be the same dishonesty in reverse. Detected by generated-by header (in
+  the leading comment block only) or by the fully-`==`-pinned + `--hash=` shape.
+  Matching table-anchored parsing, never a version-string scan — a naive scan
+  invents ~12 phantom deps from flask's own `[tool.tox…] commands` array.
+
+### Fixed
+
+- **Config keys no longer depend on invisible whitespace** (S1). The
+  nested-key guard in the config lane compared against a trailing-trimmed copy
+  of the line, so an indented key was skipped only when it happened to carry
+  trailing whitespace — the same file produced 9 nodes trimmed and 4 with
+  trailing spaces. Keys are now indexed consistently at every depth, and the
+  doc comment that misdescribed this (and hid it) is rewritten.
+- **Config keys are no longer harvested from inside YAML block scalars** (S2).
+  A `key: |` / `key: >` body is opaque data, not config structure. On real k8s
+  manifests this removed 9 junk nodes parsed from an embedded
+  `postgresql.conf`; on Newtonsoft.Json's `azure-pipelines.yml` it removed 11
+  PowerShell lines (`$basePath`, `$keyPath`, `[System.IO.File]`, …). A `- key: |`
+  list item now measures its indent including the `- ` marker (the `yamlwalk`
+  rule) — without that, the item's sibling keys (`env`, `displayName`,
+  `condition`) looked like block content; the corpus tier caught it.
+- **Manifest-pack nodes carry a `Location`** (S3). Pack-emitted nodes had no
+  file:line, so they could not be cited or passed to `verify` — the store's core
+  contract. Real line numbers for yaml and xml; json falls back to the
+  file-level `L1` (`encoding/json` discards positions) rather than inventing one.
+- **Manifest-pack node ids are namespace-scoped** (S4). The id was
+  `<file>::task:<name>` while the label was `<ns>:<name>`, so two rules yielding
+  the same name for one file collided on id and one was silently dropped.
+  Now `<file>::task:<ns>:<name>`. **This changes existing pack node ids** (no
+  packs ship bundled, so only user packs are affected).
+- **The documented manifest-pack example now works** (S5). `"target/@name"`
+  matched nothing on a real Ant `build.xml` because selectors are root-anchored
+  and exact-depth; it is `"project/target/@name"`. The package doc now states
+  the selector's actual limits instead of implying a descendant match.
+- **`grammar build` honors `CTX_OPTIMIZE_GRAMMARS`** (S6). The pack loader
+  honored it and the builder did not, so a built pack could land where nothing
+  would ever load it. Resolution now lives once in `store.GrammarsDir()`, shared
+  by loader and builder — which also removes an inverted dependency in which the
+  extractor imported the toolchain builder. A third site (`languages remove`)
+  had the same bug.
+
+### Changed
+
+- **Docs tell the truth about sources and the extension doors** (ADR
+  `openspec/changes/2026-07-25-structured-formats/`, S8 — coverage is the
+  user's lane via adapters/packs, ours is that what we emit is honest). The
+  skill + the committed usage card now document the **query** side of a
+  captured source (the kind vocabulary `database`/`schema`/`table`/`view`/
+  `column`/`collection`/`key_prefix`/`cluster`/`topic`/`consumer_group`/
+  `server`/`stream`/`bucket`/`prefix`/`api`/`path`/`operation`/
+  `securityScheme`, relations `contains`/`references`/`uses`, worked
+  `nodes`/`edges`/`card` examples) and state plainly that **source subgraphs
+  are ISLANDS**: a connector only ever sees a URL, so there is no
+  code↔table/topic/config_key/endpoint edge and "which code writes this
+  table" is not answerable. Spec routes and code routes are disclosed as
+  separate, unjoined `route` nodes with identical labels (measured 0% join
+  rate), as is the spec-format split (openapi connector: JSON only; the
+  in-repo route lane: YAML only). `deps` ecosystem coverage is named
+  (npm · go · maven · gradle · nuget · pypi · crates), with Ruby/PHP called
+  out as an adapter case and pip-compile locks as deliberately skipped.
+- **New skill reference `references/extending.md` — the traps in the doors we
+  point users at.** A grammar pack whose declaration names duplicate existing
+  ones silently deletes working `calls` edges (measured on real Apache beam:
+  126 correct edges destroyed, 1.10% of 11,501, plus 1 invented wrong edge;
+  66.6% repo-wide name-collision rate) — count `calls` edges before and after
+  adding a pack; qualified labels do not fix it. Manifest-pack selectors are
+  root-anchored and exact-depth, `*` matches exactly one level with no
+  descendant operator, two attributes of one element cannot be paired, and
+  `emit` is only `dependency|task` — anything else belongs in an adapter
+  script.
+
 ## [0.9.1] — 2026-07-24
 
 ### Fixed

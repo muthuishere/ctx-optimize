@@ -1,0 +1,37 @@
+[project]
+name = "pydeps"
+version = "1.0.0"
+description = """
+Prose that mentions dependencies = ["phantom-from-prose"] to prove multi-line
+strings are opaque text, not structure.
+"""
+dependencies = [
+    "blinker>=1.9.0",
+    "celery[redis]==5.2.7",
+    "flask",
+    "typing_extensions",
+]
+
+[project.optional-dependencies]
+async = ["asgiref>=3.2"]
+
+[dependency-groups]
+dev = ["ruff"]
+tests = ["pytest"]
+
+[build-system]
+requires = ["flit_core>=3.11,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.poetry.group.docs.dependencies]
+sphinx = "^7"
+
+[tool.tox.env.tests-min]
+description = "the adversarial case: command strings that look like requirements"
+commands = [
+    [
+        "uv", "pip", "install",
+        "blinker==1.9.0",
+        "phantom-pkg==2.0.0",
+    ],
+]

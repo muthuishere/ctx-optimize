@@ -14,14 +14,32 @@
 //	 "rules": [
 //	   {"file": "*.deps.json", "format": "json", "path": "libraries.*",
 //	    "emit": "dependency", "namespace": "internal"},
-//	   {"file": "*.build.xml", "format": "xml", "path": "target/@name",
+//	   {"file": "*.build.xml", "format": "xml", "path": "project/target/@name",
 //	    "emit": "task"}]}
 //
 // The selector language is deliberately TINY (see design.md): dot path with
 // a `*` wildcard for json/yaml, element path with a trailing /@attr for xml.
-// If it can't express something, the answer is an adapter script (the
-// universal door), not a bigger language. Malformed packs fail the add
-// LOUDLY (grammar/route-pack precedent); malformed USER files a valid rule
+//
+// Selectors are ROOT-ANCHORED and EXACT-DEPTH. A selector must name every
+// level from the document root down to the target, and it matches only at
+// that exact depth: `project/target/@name` hits an Ant build file's targets,
+// while `target/@name` matches NOTHING because `target` is not the root
+// element. There is NO descendant operator (`//`), and `*` matches exactly
+// one level — never zero, never many. The same rule holds for the json/yaml
+// dot path.
+//
+// Two further limits, both by design:
+//
+//   - A selector yields ONE value per match, so it cannot pair two attributes
+//     of the same element (e.g. `<dep name=… version=…>`); an xml rule yields
+//     names only, with no version channel.
+//   - `emit` is only {dependency, task}. A fact that is honestly neither has
+//     no kind here.
+//
+// When a rule can't express what you need — a second attribute, a deeper or
+// varying depth, a kind outside {dependency, task} — the answer is an adapter
+// script (the universal door), not a bigger language. Malformed packs fail the
+// add LOUDLY (grammar/route-pack precedent); malformed USER files a valid rule
 // happens to match are skipped silently, same as the core recognizers.
 package manifests
 
@@ -33,6 +51,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/muthuishere/ctx-optimize/internal/extract/yamlwalk"
@@ -180,8 +199,15 @@ func matchPackRules(packs []ManifestPack, basename string) []boundRule {
 	return out
 }
 
-// pair is one selector hit: a name and an optional version spec.
-type pair struct{ name, version string }
+// pair is one selector hit: a name, an optional version spec, and the 1-based
+// line the hit was found on. line is what gives a pack node its Location, so
+// every selector must set it; 0 means "the format could not tell us", and
+// applyPackRule falls back to L1 (the file-level truth) rather than inventing
+// a number.
+type pair struct {
+	name, version string
+	line          int
+}
 
 // applyPackRule runs one bound rule against one file's content. Files the
 // rule matched but the parser can't read are skipped silently — the pack was
@@ -213,15 +239,27 @@ func applyPackRule(c *collector, br boundRule, rel string, data []byte) {
 				Confidence: schema.Extracted, Metadata: md,
 			})
 		case "task":
-			id := rel + "::task:" + h.name
+			// ID is namespace-scoped so it AGREES with the label: two rules
+			// (or two packs) yielding the same name for one file stay two
+			// nodes instead of silently deduping to one.
+			id := rel + "::task:" + br.namespace + ":" + h.name
 			c.node(schema.Node{
 				ID: id, Label: br.namespace + ":" + h.name, Kind: "task",
-				FileType: "manifest", Source: rel,
+				FileType: "manifest", Source: rel, Location: locOf(h),
 				Metadata: map[string]string{"synthesized_by": channel},
 			})
 			c.edge(schema.Edge{Source: rel, Target: id, Relation: "contains", Confidence: schema.Extracted})
 		}
 	}
+}
+
+// locOf renders a hit's line as a node Location, falling back to the honest
+// file-level "L1" when the selector could not report one.
+func locOf(h pair) string {
+	if h.line < 1 {
+		return "L1"
+	}
+	return "L" + strconv.Itoa(h.line)
 }
 
 // jsonSelect walks a dot path (`*` = every map key / array element) through
@@ -230,6 +268,11 @@ func applyPackRule(c *collector, br boundRule, rel string, data []byte) {
 //   - a string value yields itself as a name
 //   - an array of strings yields one name per element
 //   - anything else is skipped silently
+//
+// Hits carry NO line: encoding/json's Unmarshal into `any` discards input
+// positions, and inventing a number would be worse than the file-level truth,
+// so json pack nodes land on L1 (see locOf). Fixing this needs a positional
+// decoder, not a guess.
 func jsonSelect(data []byte, selector string) []pair {
 	var root any
 	if err := json.Unmarshal(data, &root); err != nil {
@@ -363,15 +406,16 @@ func yamlWalkPath(ls []yamlwalk.Line, from, to, parentIndent int, segs []string)
 		}
 		if len(rest) == 0 {
 			if seg == "*" {
-				out = append(out, pair{name: ls[i].Key, version: ls[i].Val})
+				out = append(out, pair{name: ls[i].Key, version: ls[i].Val, line: ls[i].Num})
 			} else if ls[i].Val != "" {
-				out = append(out, pair{name: ls[i].Val})
+				out = append(out, pair{name: ls[i].Val, line: ls[i].Num})
 			} else {
-				// list items under the key: `- name` scalars
+				// list items under the key: `- name` scalars, each located
+				// on its OWN line, not the key's.
 				end := yamlwalk.Span(ls, i)
 				for j := i + 1; j < end; j++ {
 					if ls[j].List && ls[j].Key == "" && ls[j].Val != "" {
-						out = append(out, pair{name: ls[j].Val})
+						out = append(out, pair{name: ls[j].Val, line: ls[j].Num})
 					}
 				}
 			}
@@ -382,10 +426,29 @@ func yamlWalkPath(ls []yamlwalk.Line, from, to, parentIndent int, segs []string)
 	return out
 }
 
+// newLineIndex returns off→1-based-line for byte offsets into data. Newline
+// offsets are collected once and searched, so a whole document costs one pass.
+func newLineIndex(data []byte) func(off int64) int {
+	var nl []int
+	for i, b := range data {
+		if b == '\n' {
+			nl = append(nl, i)
+		}
+	}
+	return func(off int64) int {
+		if off < 0 {
+			off = 0
+		}
+		return sort.SearchInts(nl, int(off)) + 1
+	}
+}
+
 // xmlSelect walks an element path (`a/b/c`, `*` = any element) with an
 // optional trailing `/@attr`. A match yields the attribute value (with
 // @attr) or the element's trimmed character content. No version channel —
-// xml rules yield names only.
+// xml rules yield names only. Each hit is located on the line the matched
+// START element opens on, taken from the decoder offset BEFORE the token is
+// read (InputOffset() after a Token() points past it).
 func xmlSelect(data []byte, selector string) []pair {
 	segs := strings.Split(selector, "/")
 	attr := ""
@@ -397,9 +460,11 @@ func xmlSelect(data []byte, selector string) []pair {
 		return nil
 	}
 	dec := xml.NewDecoder(strings.NewReader(string(data)))
+	lineAt := newLineIndex(data)
 	var stack []string
 	var out []pair
 	var textDepth int = -1
+	var textLine int
 	var text strings.Builder
 	matches := func() bool {
 		if len(stack) != len(segs) {
@@ -413,6 +478,7 @@ func xmlSelect(data []byte, selector string) []pair {
 		return true
 	}
 	for {
+		start := dec.InputOffset() // start of the token about to be read
 		tok, err := dec.Token()
 		if err != nil {
 			break // malformed or EOF — yield what parsed cleanly
@@ -421,14 +487,16 @@ func xmlSelect(data []byte, selector string) []pair {
 		case xml.StartElement:
 			stack = append(stack, t.Name.Local)
 			if matches() {
+				line := lineAt(start)
 				if attr != "" {
 					for _, a := range t.Attr {
 						if a.Name.Local == attr && a.Value != "" {
-							out = append(out, pair{name: a.Value})
+							out = append(out, pair{name: a.Value, line: line})
 						}
 					}
 				} else {
 					textDepth = len(stack)
+					textLine = line
 					text.Reset()
 				}
 			}
@@ -439,7 +507,7 @@ func xmlSelect(data []byte, selector string) []pair {
 		case xml.EndElement:
 			if textDepth == len(stack) {
 				if v := strings.TrimSpace(text.String()); v != "" {
-					out = append(out, pair{name: v})
+					out = append(out, pair{name: v, line: textLine})
 				}
 				textDepth = -1
 			}

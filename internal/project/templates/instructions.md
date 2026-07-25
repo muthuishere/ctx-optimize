@@ -99,6 +99,34 @@ ctx-optimize add BILLING_DB_URL       # resolve → dial → capture → merge �
   `.ctxoptimize/adapters/` sets the env var in its own process and calls
   `ctx-optimize capture <NAME>` back, teardown in a `finally`.
 
+**Querying a captured source** — read it from the graph, never re-`add` to
+answer a question. Kinds: `database` `schema` `table` `view` `column`
+(postgres/mssql; mysql has no `schema` node) · `collection` · `key_prefix` ·
+`cluster` `topic` `consumer_group` · `server` `stream` · `bucket` `prefix` ·
+`api` `path` `operation` `schema` `securityScheme`. Relations: `contains`
+(whole hierarchy), `references` (FK → referenced table), `uses` (operation →
+component schema).
+
+```sh
+ctx-optimize nodes --kind table --where label~public.   # labels are `schema.table`
+ctx-optimize edges --relation references                # the FK graph
+ctx-optimize card public.users                          # columns, types, indexes
+```
+
+**Source subgraphs are ISLANDS.** A connector only ever sees a URL, and the
+only cross-lane linker bridges code imports → `dep:` nodes. There is NO
+code↔table, code↔topic, code↔config_key or code↔endpoint edge: "which code
+writes this table / implements this endpoint" is NOT answerable from the
+store — say so, then grep the name. Spec routes and code routes are separate
+`route` nodes with identical `METHOD /path` labels and no edge (0% measured
+join rate). The openapi connector parses JSON specs only; the in-repo route
+lane reads YAML specs only.
+
+**`deps` ecosystems**: npm · go · maven · gradle · nuget · pypi · crates.
+Ruby/PHP are not covered (adapter door) and pip-compile locks are skipped on
+purpose (transitive pins, not declarations) — so `(0 dependencies)` means
+"nothing recognized", never "none declared".
+
 ## Sharing — remote push/pull
 
 `remote push` / `remote pull` run the commands declared in

@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/muthuishere/ctx-optimize/internal/store"
 )
 
 //go:embed assets/shim.c
@@ -28,13 +30,19 @@ var shimC []byte
 
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
 
+// DefaultGrammarsDir is store.GrammarsDir — the ONE resolution the pack loader
+// and this builder share (ADR 2026-07-25-structured-formats S6). Kept as a thin
+// alias so callers inside this package read naturally; the resolution itself
+// lives in internal/store so the EXTRACTOR never has to import the builder.
+func DefaultGrammarsDir() (string, error) { return store.GrammarsDir() }
+
 // runtimeTarball pins the tree-sitter runtime the pack is compiled against.
 const runtimeTarball = "https://codeload.github.com/tree-sitter/tree-sitter/tar.gz/refs/tags/v0.26.0"
 
 type Options struct {
 	Source string   // known name, local grammar dir, or https://github.com/<owner>/<repo>
 	Name   string   // pack name; default: grammar.json "name"
-	OutDir string   // default ~/ctxoptimize/grammars
+	OutDir string   // default: DefaultGrammarsDir() ($CTX_OPTIMIZE_GRAMMARS, else ~/ctxoptimize/grammars)
 	Ref    string   // git ref for GitHub tarballs (default HEAD)
 	Exts   []string // seed extensions for the suggested mapping
 }
@@ -84,11 +92,10 @@ func Build(opts Options, stdout io.Writer) (wasmPath, cfgPath string, err error)
 
 	outDir := opts.OutDir
 	if outDir == "" {
-		home, err := os.UserHomeDir()
+		outDir, err = DefaultGrammarsDir()
 		if err != nil {
 			return "", "", err
 		}
-		outDir = filepath.Join(home, "ctxoptimize", "grammars")
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", "", err

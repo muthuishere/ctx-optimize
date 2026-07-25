@@ -1,0 +1,5 @@
+# hand-written runtime requirements
+-r constraints-does-not-exist.txt
+flask>=2.3          # the web framework
+flit-core
+gunicorn==21.2.0

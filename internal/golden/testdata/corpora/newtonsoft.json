@@ -1,38 +1,39 @@
 {
-  "repo": "Newtonsoft.Json",
-  "ref": "13.0.3",
-  "config": {
-    "name": "newtonsoft-golden",
-    "modules": [
-      {
-        "name": "Json",
-        "paths": [
-          "Src/Newtonsoft.Json",
-          "Src/Newtonsoft.Json.Tests"
-        ]
-      }
+ "repo": "Newtonsoft.Json",
+ "ref": "13.0.3",
+ "config": {
+  "name": "newtonsoft-golden",
+  "modules": [
+   {
+    "name": "Json",
+    "paths": [
+     "Src/Newtonsoft.Json",
+     "Src/Newtonsoft.Json.Tests"
     ]
+   }
+  ]
+ },
+ "min_nodes": 10120,
+ "min_edges": 19183,
+ "must_nodes": [
+  {
+   "suffix": "JsonConvert.cs::Newtonsoft.JsonConvert",
+   "kind": "class"
   },
-  "min_nodes": 10131,
-  "min_edges": 19194,
-  "must_nodes": [
-    {
-      "suffix": "JsonConvert.cs::Newtonsoft.JsonConvert",
-      "kind": "class"
-    },
-    {
-      "suffix": "JsonSerializer.cs::Newtonsoft.JsonSerializer",
-      "kind": "class"
-    }
-  ],
-  "cross_split_calls": {
-    "from_prefix": "Src/Newtonsoft.Json.Tests/",
-    "to_prefix": "Src/Newtonsoft.Json/",
-    "min": 344
-  },
-  "max_gather_seconds": 25,
-  "probe_query": {
-    "text": "serialize object",
-    "max_ms": 1500
+  {
+   "suffix": "JsonSerializer.cs::Newtonsoft.JsonSerializer",
+   "kind": "class"
   }
+ ],
+ "cross_split_calls": {
+  "from_prefix": "Src/Newtonsoft.Json.Tests/",
+  "to_prefix": "Src/Newtonsoft.Json/",
+  "min": 344
+ },
+ "max_gather_seconds": 25,
+ "probe_query": {
+  "text": "serialize object",
+  "max_ms": 1500
+ },
+ "_floor_note": "nodes/edges lowered 10131->10120 and 19194->19183 by ADR 2026-07-25-structured-formats S2: 11 config_key nodes (+11 contains edges) that were parsed from INSIDE PowerShell `script: |` blocks in azure-pipelines.yml ($basePath, $keyPath, $version, [System.IO.File], ...) are no longer emitted. Verified node-by-node against the pre-change binary: all 11 are block-scalar body text, and ZERO legitimate YAML keys were lost. A deliberate junk removal, not lost extraction ground."
 }

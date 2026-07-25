@@ -125,6 +125,42 @@ func TestBuildIntegration(t *testing.T) {
 	}
 }
 
+// DefaultGrammarsDir must honor CTX_OPTIMIZE_GRAMMARS — this is the exact
+// resolution internal/extract/code.LoadPacks uses, and Build must land packs
+// there when no --out is given (S6: a spike escaped a built pack into the
+// real ~/ctxoptimize/grammars because the builder ignored the env var).
+func TestDefaultGrammarsDirHonorsEnv(t *testing.T) {
+	want := filepath.Join(t.TempDir(), "redirected-grammars")
+	t.Setenv("CTX_OPTIMIZE_GRAMMARS", want)
+
+	got, err := DefaultGrammarsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("DefaultGrammarsDir() = %q, want %q", got, want)
+	}
+}
+
+// Without the env var, the default falls back to ~/ctxoptimize/grammars.
+func TestDefaultGrammarsDirFallsBackToHome(t *testing.T) {
+	t.Setenv("CTX_OPTIMIZE_GRAMMARS", "")
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, "ctxoptimize", "grammars")
+
+	got, err := DefaultGrammarsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("DefaultGrammarsDir() = %q, want %q", got, want)
+	}
+}
+
 // A hostile grammar name (path traversal / C injection) is rejected.
 func TestHostileGrammarNameRejected(t *testing.T) {
 	dir := t.TempDir()

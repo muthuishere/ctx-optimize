@@ -79,6 +79,17 @@
       <cmd>ctx-optimize verify "&lt;node-id | exact-label | file:L10-L20&gt;" ...  [--json]</cmd>
     </route>
 
+    <route id="source-query" group="answer">
+      <when>what tables are in our database, what's the schema of X, list the columns of a table, what foreign keys exist, which kafka topics / nats streams exist, what consumer groups, which s3 buckets/prefixes, what endpoints does the OpenAPI spec declare, what collections does mongo have</when>
+      <goal>Read an ALREADY-CAPTURED source from the graph — never re-`add` and never dial to answer a question. Kinds: `database` `schema` `table` `view` `column` (postgres/mssql; mysql has no `schema` node) · `collection` (mongo) · `key_prefix` (redis) · `cluster` `topic` `consumer_group` (kafka) · `server` `stream` (nats) · `bucket` `prefix` (s3) · `api` `path` `operation` `schema` `securityScheme` (openapi). Relations: `contains` (whole hierarchy), `references` (FK column-holder → referenced table), `uses` (operation → component schema).</goal>
+      <cmd>ctx-optimize nodes --kind table --json          # kinds are exact — views need --kind view</cmd>
+      <cmd>ctx-optimize nodes --kind table --where label~public.   # labels are `schema.table`; there is NO `schema` metadata key</cmd>
+      <cmd>ctx-optimize edges --relation references --json  # the FK graph</cmd>
+      <cmd>ctx-optimize card "public.users" --json          # columns, types, indexes, partitions, comment</cmd>
+      <note>Source subgraphs are ISLANDS: `Connector.Capture` only ever sees a URL, and `deplink` (code imports → `dep:`) is the ONLY cross-lane linker — there is NO code↔table, code↔topic, code↔config_key or code↔endpoint edge. "Which code writes this table / publishes this topic / implements this endpoint" is NOT answerable from the store: say the edge does not exist, then grep the name. Spec routes and code routes are separate `route` nodes with identical `METHOD /path` labels and no edge (measured 0% join rate) — never treat one as evidence about the other.</note>
+      <ref>references/sources.md</ref>
+    </route>
+
     <route id="status" group="answer">
       <when>is there a store, how big is it, store facts, node/edge counts, is the graph current</when>
       <goal>Store facts + freshness vs git HEAD. Use as the pre-answer gate: nodes &gt; 0 ⇒ query, don't rebuild.</goal>
@@ -137,6 +148,7 @@
       <cmd>ctx-optimize adapters help &lt;scheme&gt;   # setup card: value format, credential params, paste-ready commands</cmd>
       <cmd>export MY_DB_URL='postgres://user:$PG_PASS@host:5432/db'   # value in env, root .env, or ~/.config/ctx-optimize/.env</cmd>
       <cmd>ctx-optimize add MY_DB_URL   # names only on argv — NEVER a raw URL with credentials</cmd>
+      <note>Spec formats, honestly: the openapi CONNECTOR parses JSON only (a YAML spec is a loud error naming the adapter lane); the in-repo route lane (`add .`) is YAML only. Route a JSON spec through the connector, a YAML one through gather, anything else through an adapter.</note>
       <note>Hard rule: argv/config carry env-var NAMES (or $VAR templates) only; a literal password in a committed entry is refused. Never read any .env yourself — the binary resolves the ladder (process env → root .env → ~/.config/ctx-optimize/.env) internally so secret values stay out of model context. Drivers ride the ctx-optimize-adapters companion installed beside the binary; an error naming it means reinstall the package, not debug the URL.</note>
       <ref>references/sources.md</ref>
     </route>
@@ -186,10 +198,12 @@
 
     <route id="manifests-pack" group="customize">
       <when>index build-tool deps, gradle/pom/csproj/go.mod, our k8s/helm/ingress, dependency graph is missing X</when>
-      <goal>Manifest recognizers (npm, maven, csproj/sln, go.mod, gradle, k8s) — core first, else a pack.</goal>
+      <goal>Manifest recognizers (npm, maven, csproj/sln, go.mod, gradle, pyproject/requirements, Cargo.toml, k8s) — core first, else a pack. `deps` ecosystems: npm · go · maven · gradle (→ maven namespace) · nuget · pypi · crates. Ruby/PHP are NOT covered (adapter door), pip-compile locks are deliberately skipped (transitive pins, not declarations), and `(0 dependencies)` means "nothing recognized", never "none declared".</goal>
       <cmd>ctx-optimize manifests list</cmd>
       <cmd>ctx-optimize manifests add &lt;name|github-url&gt;  [--global]  → ctx-optimize add .</cmd>
       <cmd>ctx-optimize manifests remove &lt;name&gt;</cmd>
+      <note>Selector limits before you author one: root-anchored and exact-depth (`target/@name` → 0 on real Ant, `project/target/@name` → 19), `*` matches exactly ONE level with no descendant operator, two attributes of one element cannot be paired, and `emit` is only dependency|task — a fact that is neither has no honest kind, so use an adapter.</note>
+      <ref>references/extending.md  (the traps)</ref>
       <ref>references/customize.md</ref>
     </route>
 
@@ -199,6 +213,8 @@
       <cmd>ctx-optimize languages list   # embedded + addable-by-name + packs</cmd>
       <cmd>ctx-optimize languages add &lt;name|github-url&gt;   → review the suggested .json mapping → ctx-optimize add .</cmd>
       <cmd>ctx-optimize languages remove &lt;name&gt;</cmd>
+      <note>TRAP, measure it: a pack's `names` yields the BARE identifier and call resolution DROPS module-wide-ambiguous names, so a pack whose decl names duplicate existing ones silently deletes working `calls` edges — measured 126 destroyed (1.10% of 11,501) + 1 invented on real Apache beam, 66.6% collision rate. Count `edges --relation calls --ndjson | wc -l` before and after `add .`. Qualified labels do not fix it (resolution keys on the bare name).</note>
+      <ref>references/extending.md  (the traps)</ref>
       <ref>references/customize.md</ref>
     </route>
 
@@ -312,6 +328,8 @@
     <rule>Things the store does NOT index — member fields/variables, build files (BUILD.gn, CMake), string literals, config values, comments — use grep directly (lane 1), and say so first.</rule>
     <rule>"Add my routes/deps/language" ⇒ check `routes|manifests|languages list` FIRST (often already core → just `add .`) before scaffolding a pack.</rule>
     <rule>A database / bucket / queue / external API ⇒ the source-add route (native connectors, env-var name = the contract); the adapters route is ONLY for docs and systems with no connector. Never paste a URL with credentials on argv or into config — env-var names only.</rule>
+    <rule>A question ABOUT an already-captured source (tables, columns, topics, buckets, spec endpoints) ⇒ the source-query route (`nodes --kind` / `edges --relation` / `card`), NEVER `add`/`capture` (that dials) and never grep. And never promise a code↔table/topic/endpoint link — no such edge exists.</rule>
+    <rule>Before shipping a grammar or manifest pack, read references/extending.md: a grammar pack can silently delete `calls` edges (measured), and manifest selectors are root-anchored, exact-depth, `emit` dependency|task only.</rule>
     <rule>Never claim a node/edge/path the CLI didn't output; report counts (added/pruned/transferred) as printed.</rule>
   </disambiguation>
 

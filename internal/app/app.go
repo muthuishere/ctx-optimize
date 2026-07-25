@@ -2365,11 +2365,10 @@ func cmdLanguages(args []string, stdout io.Writer) error {
 		}
 		dir := f.strs["out"]
 		if dir == "" {
-			home, err := os.UserHomeDir()
-			if err != nil {
+			var err error
+			if dir, err = grammar.DefaultGrammarsDir(); err != nil {
 				return err
 			}
-			dir = filepath.Join(home, "ctxoptimize", "grammars")
 		}
 		name := f.args[0]
 		removed := false

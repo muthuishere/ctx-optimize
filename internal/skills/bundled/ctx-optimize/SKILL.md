@@ -90,7 +90,8 @@ js, ts/tsx, java, c, c++, c#, rust, zig, sql; any other language via a
 drop-in grammar pack — `<name>.wasm` + `<name>.json` in
 `~/ctxoptimize/grammars/` or `.ctxoptimize/grammars/`; kotlin/swift/dart
 packs ship in the repo's `grammars/`), **markdown/txt docs**, framework
-**routes**, build-tool **dependencies** (npm/maven/gradle/go.mod/csproj),
+**routes**, build-tool **dependencies** (npm/maven/gradle/go.mod/csproj/
+pyproject+requirements/Cargo.toml),
 **Kubernetes topology**, **config** keys, **git co-change** (which files move
 together), and detected **subsystems** — plus **native sources** (postgres /
 mysql / mongodb / redis / kafka / nats / s3 / mssql / OpenAPI: an env var
@@ -170,7 +171,8 @@ grep on structure wastes the store):
 | Asking "how are A and B connected / trace A to B" | `ctx-optimize path "A" "B" --json` |
 | Asking "what's important here / where do I start" | `ctx-optimize hubs --top 10 --json` |
 | **Listing / filtering by kind, relation, or metadata** — "all k8s services", "every route", "which files use react", "all resolves_to edges" — **use these, NEVER `export ... \| jq`** (native, ~in-process, works on Windows with no jq): nodes → `ctx-optimize nodes --kind service --where namespace=prod [--json\|--ndjson]`; edges → `ctx-optimize edges --relation resolves_to`. Federates across all modules at a repo root. `--select f1,f2` projects fields; `--where k=v` exact / `k~v` contains |
-| **Dependencies** — "our dev deps", "who imports lodash", "external footprint with scope" | `ctx-optimize deps --scope dev` (or runtime/peer/…); `ctx-optimize deps --importers` gives dep→scope→importing-files in ONE command (replaces the multi-line `export \| jq` join). `scopes` is top-level in the JSON |
+| **Querying an INGESTED SOURCE** — "what tables are in our DB", "what's the schema of X", "which kafka topics exist", "what endpoints does the spec declare" | `nodes --kind` over the source kinds: `database schema table view column collection key_prefix cluster topic consumer_group server stream bucket prefix api path operation securityScheme`; `edges --relation references` = the FK graph; `card <schema.table>` = columns/indexes. Do NOT re-`add` the source to answer a question. Source subgraphs are ISLANDS — there is NO code↔table/topic/endpoint edge, so never promise "which code writes this table"; deep guide `./references/sources.md` |
+| **Dependencies** — "our dev deps", "who imports lodash", "external footprint with scope" | `ctx-optimize deps --scope dev` (or runtime/peer/…); `ctx-optimize deps --importers` gives dep→scope→importing-files in ONE command (replaces the multi-line `export \| jq` join). `scopes` is top-level in the JSON. Ecosystems: npm · go · maven · gradle · nuget · pypi · crates — Ruby/PHP are NOT covered (adapter door), and `(0 dependencies)` means "nothing recognized", not "none declared" |
 | Need arbitrary shaping of the graph JSON | prefer the filter flags above; only if truly custom, `export --format json` then shape — but reach for `nodes`/`edges`/`deps` FIRST (faster, portable, no external tool) |
 | Asking to see it visually / manage the store, packs, or config in a UI / onboard repos interactively | `ctx-optimize serve` → give the printed 127.0.0.1:4747 link; follow the skill reference dashboard.md (via this skill) |
 | Repo ALREADY has a committed `.ctxoptimize/config.json` but no local store (a fresh clone — teammate already set it up) | `ctx-optimize up` — ONE command: pulls the team's prebuilt store when `remote.pull` is declared (gather fallback), gathers otherwise, no-ops when fresh. Do NOT init (author-side only; it just redirects to `up` here). |
@@ -179,7 +181,7 @@ grep on structure wastes the store):
 | Told code changed / store looks stale | `ctx-optimize sync` — fast re-gather of the repo you're in (skips adapter scripts; safe, their nodes stay put). Full gather incl. adapters: `add .` |
 | Asked to add a DATABASE / bucket / queue / external API ("add our postgres schema", "index the kafka topics", "capture the OpenAPI spec") | follow `./references/sources.md` — `ctx-optimize adapters help <scheme>` → `export MY_URL='...'` (value in env, root `.env`, or `~/.config/ctx-optimize/.env` — never on argv) → `ctx-optimize add MY_URL`. Recorded in config; refreshed on every `up` (24h TTL). Unset var elsewhere = a clean one-line skip, not an error |
 | Asked to add docs/PDF/logs/anything non-code with NO native connector | follow `./references/adapters.md` — docs convert to markdown then `add .`; exotic systems get an adapter script, run on demand via `adapters run [name]` (dynamic creds/tunnels: the script sets the env var and calls `ctx-optimize capture <NAME>` back) |
-| Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .` |
+| Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .`. Read `./references/extending.md` BEFORE shipping a pack — the traps (a grammar pack can silently delete `calls` edges) |
 | User says share / publish / push / pull / export to team / import / load a store — or wants sharing SET UP (github repo, s3/r2 bucket, anything) | follow `./references/push-pull.md` — the remote is a script YOU AUTHOR: arm init's `push.js.sample`/`pull.js.sample` (git lane) or write one, declare `{"remote": {"push": "<cmd>", "pull": "<cmd>"}}` in config.json, commit; then `remote push`/`pull` run it |
 | Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `sync` (fast lane) / `add .` (full) / `adapters run` (slow lane); `fresh` gate |
 | Combining several repos/modules into one graph | `ctx-optimize merge <mod>... --into <name>` (opt-in, never automatic) |
@@ -272,7 +274,13 @@ model anywhere; you are the judge, the binary only tallies.
   by env-var name (URL scheme picks the connector), the env-var-only rule +
   `.env` ladder, skip semantics + staleness, `capture` as the debug
   primitive, the logical-shape promise, the `ctx-optimize-adapters`
-  companion binary
+  companion binary — PLUS how to QUERY a captured source (the kind
+  vocabulary), why source subgraphs are islands, and the spec-format limits
+- `./references/extending.md` — the TRAPS in the extension doors, read before
+  shipping a pack: a grammar pack silently deletes `calls` edges when its decl
+  names collide (measured 126 lost + 1 invented on beam); manifest selectors
+  are root-anchored, exact-depth, no descendant operator, `emit` only
+  dependency|task; `deps` ecosystem coverage (Ruby/PHP absent, locks skipped)
 - `./references/adapters.md` — everything beyond code + markdown with no
   native connector: doc conversion lane, hand-authored batch emitters (the
   escape hatch), the callback pattern for dynamic creds/tunnels, the batch

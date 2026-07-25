@@ -5,18 +5,26 @@
 // prunes independently of code/docs.
 //
 // Core recognizers (embedded, code-backed): package.json, pom.xml,
-// *.csproj/*.sln, go.mod, build.gradle(.kts) line shapes, and k8s manifests
+// *.csproj/*.sln, go.mod, build.gradle(.kts) line shapes, pyproject.toml /
+// Cargo.toml / requirements*.txt via the shared toml walker, and k8s manifests
 // via the shared yaml walker. Everything declarative beyond that is a
 // MANIFEST PACK (packs.go). Node id namespaces are disjoint from file paths
-// by construction: dep:<ns>/<name>, <file>::task:<name>, k8s://…, image:…
-// — the markdown config lane keeps its shallow document+key indexing; this
-// producer adds the semantic layer on top.
+// by construction: dep:<ns>/<name>, k8s://…, image:…, and for tasks
+// <file>::task:<name> from a core recognizer vs <file>::task:<ns>:<name> from
+// a pack — the pack form carries its rule namespace so two rules matching one
+// file can't collide on id (ADR 2026-07-25-structured-formats S4).
+// The markdown config lane indexes document + keys at EVERY nesting depth
+// (S1 — it was inconsistent before, not shallow); this producer adds the
+// semantic layer on top.
 //
 // Provenance discipline: in-the-file facts are EXTRACTED; anything matched
 // by computation (k8s selector → deployment) is INFERRED + synthesized_by.
 // Lockfiles (package-lock.json, yarn.lock, go.sum, Cargo.lock, *.lock) are
-// data, not intent — skipped. Secret-smelling filenames are refused outright,
-// same discipline as the markdown config lane.
+// data, not intent — skipped. So is pip-compile / uv output, which is a lock
+// wearing a requirements.txt name (requirements.go) — emitting transitive pins
+// as DECLARED dependencies would overstate what the repo actually asks for.
+// Secret-smelling filenames are refused outright, same discipline as the
+// markdown config lane.
 package manifests
 
 import (
@@ -190,6 +198,12 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 			extractGradle(c, rel, content)
 		case "yaml":
 			extractK8s(k8s, rel, content)
+		case "pyproject":
+			extractPyproject(c, rel, content)
+		case "cargo":
+			extractCargo(c, rel, content)
+		case "requirements":
+			extractRequirements(c, rel, content)
 		}
 		for _, pr := range packRules {
 			applyPackRule(c, pr, rel, data)
@@ -256,6 +270,17 @@ func manifestKind(name string) string {
 		return "gomod"
 	case "build.gradle", "build.gradle.kts":
 		return "gradle"
+	case "pyproject.toml":
+		return "pyproject"
+	case "cargo.toml":
+		return "cargo"
+	}
+	// requirements.txt / requirements-dev.txt / requirements_test.txt — basename
+	// prefix + extension, same shape as the taskfile rule below. A file deeper
+	// in a requirements/ dir (`requirements/prod.txt`) is deliberately NOT
+	// matched: the name is the only signal we have and it says nothing.
+	if strings.HasPrefix(lower, "requirements") && strings.HasSuffix(lower, ".txt") {
+		return "requirements"
 	}
 	if strings.HasPrefix(lower, "taskfile.") &&
 		(strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml")) {

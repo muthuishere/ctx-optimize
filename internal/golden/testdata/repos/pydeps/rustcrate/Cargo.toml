@@ -1,0 +1,17 @@
+[package]
+name = "rustcrate"
+version = "0.1.0"
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1", features = ["derive", "rc"] }
+
+[dependencies.tokio]
+version = "1.36"
+features = ["full"]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[target."cfg(windows)".dependencies]
+winapi = "0.3"

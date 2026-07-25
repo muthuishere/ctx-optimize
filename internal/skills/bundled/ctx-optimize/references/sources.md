@@ -69,6 +69,73 @@ cap that truncates is REPORTED in the summary line — silent truncation
 never reads as full coverage. Measured: a 100-table/3-schema postgres
 captures in ~31 ms including connect.
 
+## Querying what a source captured (the kinds are the vocabulary)
+
+Captured nodes are ordinary graph nodes — `query`/`card`/`nodes`/`edges`
+answer over them. The kinds, per connector (nothing else exists):
+
+| connector | node kinds |
+|---|---|
+| postgres · mssql | `database` `schema` `table` `view` `column` |
+| mysql | `database` `table` `view` `column` (a mysql database IS the schema — no `schema` node) |
+| mongodb | `database` `collection` |
+| redis | `database` `key_prefix` |
+| kafka | `cluster` `topic` `consumer_group` |
+| nats | `server` `stream` |
+| s3 | `bucket` `prefix` (a non-AWS endpoint root is kind `s3`) |
+| openapi | `api` `path` `operation` `schema` `securityScheme` |
+
+Relations: **`contains`** (the whole hierarchy: database→schema→table→column,
+cluster→topic, bucket→prefix, api→path→operation) · **`references`** (a FK,
+column-holding table → referenced table, `constraints` in the edge metadata;
+postgres/mysql/mssql) · **`uses`** (openapi operation → the component schema
+its `$ref`s name). `file_type` is `schema` for DB/API nodes, `infra` for s3.
+
+```sh
+ctx-optimize nodes --kind table                     # kinds are exact: views need --kind view
+ctx-optimize nodes --kind table --where label~public.   # one schema (labels are `schema.table`)
+ctx-optimize nodes --kind topic --json              # what topics exist
+ctx-optimize nodes --kind operation                 # what the spec declares
+ctx-optimize edges --relation references            # the FK structure, whole DB
+ctx-optimize card public.users                      # columns, indexes, comment, partitions
+ctx-optimize query "orders customer"                # lexical, same ranker as code
+```
+
+Table metadata carries `partitions` / `index_count` / `indexes` / `comment` /
+`definition` (views); column metadata `type` / `nullable` / `primary_key` /
+`default`. There is no `schema` metadata key on a table — filter on the label.
+
+## Source subgraphs are ISLANDS — never promise a code↔data link
+
+`Connector.Capture(ctx, url)` (`internal/sources/registry.go:24-29`) receives a
+URL and NOTHING ELSE — it never sees the code batch. `deplink`
+(`internal/app/multimodule.go:729`) is the only cross-lane linker and it bridges
+exactly one pair: code `module://` imports → `dep:` nodes (`resolves_to`).
+
+So there is **no** code↔table, code↔config_key, code↔topic, or code↔bucket
+edge. Answer accordingly:
+
+- **Answerable**: what tables/topics/buckets/endpoints exist, a table's columns
+  and types, the FK graph, which component schemas an operation uses, whether a
+  name exists at all.
+- **NOT answerable from the store**: "which code writes this table", "who
+  publishes to this topic", "which handler implements this endpoint". Say the
+  edge does not exist and grep the table/topic name — do not infer it.
+
+Spec routes and code routes are **separate, unjoined nodes**: an OpenAPI YAML
+spec in the repo emits `route` nodes (gather's config lane) and the code
+implementing it emits `route` nodes too, with identical `METHOD /path` labels
+and NO edge between them (measured raw-label join rate 0% — 0/63 and 0/47 on
+the only real repos with both halves; `GET /` alone appears in 20 route files
+of one repo). Never treat one as evidence about the other.
+
+Spec-format limits, stated plainly: the **openapi connector** (`add <NAME>` /
+a no-scheme spec path) parses **JSON only** — a YAML spec is a loud error
+naming the adapter lane. The in-repo route lane (plain `add .`) is the mirror
+image: **YAML only**, JSON specs are not read. 4 of 5 real specs found in a
+spike were JSON. Route a JSON spec through the connector, a YAML one through
+gather, and an unsupported pairing through an adapter script.
+
 ## `capture` — the debug/composition primitive
 
 `ctx-optimize capture <ENV_NAME>` dials ONE source and prints the Batch

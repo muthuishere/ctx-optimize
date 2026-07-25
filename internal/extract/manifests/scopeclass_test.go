@@ -19,6 +19,26 @@ func TestScopeClassVocabulary(t *testing.T) {
 		"test":               "test",
 		"package":            "runtime",
 		"weirdCustomScope":   "",
+		// ADR 2026-07-25-structured-formats S7 requirement 5.
+		"dev-dependencies":             "dev", // poetry/cargo/uv spelling
+		"build-dependencies":           "build",
+		"build-system":                 "build",
+		"requirements":                 "runtime",
+		"requirements-dev":             "dev",
+		"requirements-test":            "test",
+		"dependency-groups":            "dev",
+		"dependency-groups:dev":        "dev",
+		"dependency-groups:tests":      "test", // the fixed HasPrefix("test") hole
+		"dependency-groups:test":       "test",
+		"dependency-groups:docs":       "dev",
+		"group:docs":                   "dev",
+		"group:tests":                  "test",
+		"optional-dependencies":        "optional",
+		"optional-dependencies:async":  "optional",
+		"target-dependencies":          "runtime",
+		"target-dev-dependencies":      "dev",
+		"workspace-build-dependencies": "build",
+		"unknown-prefix:tests":         "", // unknown family stays unclassified
 	}
 	for scope, want := range cases {
 		if got := scopeClass(scope); got != want {

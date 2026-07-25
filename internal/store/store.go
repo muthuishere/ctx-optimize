@@ -49,6 +49,27 @@ func Root(flagValue string) (string, error) {
 	return filepath.Join(home, "ctxoptimize"), nil
 }
 
+// GrammarsDir resolves the machine-wide grammar-pack directory:
+// $CTX_OPTIMIZE_GRAMMARS > ~/ctxoptimize/grammars. It lives here, beside Root,
+// because BOTH the pack loader (internal/extract/code.LoadPacks) and the pack
+// BUILDER (internal/grammar.Build) must agree on it — they disagreed before
+// ADR 2026-07-25-structured-formats S6, so `grammar build` could write a pack
+// where nothing would ever load it.
+//
+// Deliberately NOT routed through Root: grammars answer to their own env var,
+// not $CTX_OPTIMIZE_STORE (unlike the manifest/route pack dirs, which do go
+// through Root). Unifying those is a behavior change, not this fix.
+func GrammarsDir() (string, error) {
+	if env := os.Getenv("CTX_OPTIMIZE_GRAMMARS"); env != "" {
+		return env, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home: %w", err)
+	}
+	return filepath.Join(home, "ctxoptimize", "grammars"), nil
+}
+
 // ModuleKey derives the store key from a module path: the repo's basename, so
 // the layout reads ~/ctxoptimize/<repo-name>/. Custom module names come from
 // ctx-optimize.json's "name" field (resolved by the caller), which also

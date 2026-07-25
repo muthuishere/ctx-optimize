@@ -36,6 +36,18 @@ var scopeClasses = map[string]string{
 	"developmentOnly":     "dev",
 	// nuget
 	"package": "runtime",
+	// pypi (pyproject + requirements) and crates — ADR 2026-07-25 S7. Note
+	// `dev-dependencies` (poetry/cargo/uv) is spelled differently from npm's
+	// `devDependencies`; both are needed.
+	"dev-dependencies":      "dev",
+	"build-dependencies":    "build",
+	"build-system":          "build",
+	"optional-dependencies": "optional",
+	"dependency-groups":     "dev",
+	"group":                 "dev",
+	"requirements":          "runtime",
+	"requirements-dev":      "dev",
+	"requirements-test":     "test",
 	// shared literals
 	"runtime":  "runtime",
 	"test":     "test",
@@ -45,6 +57,26 @@ var scopeClasses = map[string]string{
 func scopeClass(scope string) string {
 	if c, ok := scopeClasses[scope]; ok {
 		return c
+	}
+	// Qualified scopes carry the group/extra after a colon:
+	// `dependency-groups:tests`, `optional-dependencies:async`, poetry
+	// `group:docs`. The prefix decides the family; a dev family whose group is
+	// a test group is a TEST scope. Without this, `dependency-groups:tests` fell
+	// through to the HasPrefix("test") rule below — which never fires, because
+	// the prefix is "dependency" — and silently got no class at all.
+	if i := strings.IndexByte(scope, ':'); i > 0 {
+		base := scopeClass(scope[:i])
+		if base == "dev" && strings.HasPrefix(strings.ToLower(scope[i+1:]), "test") {
+			return "test"
+		}
+		return base
+	}
+	// Cargo's `[workspace.…]` / `[target."cfg(…)".…]` sections declare the same
+	// kinds of dependency as the bare section — same class, different location.
+	for _, p := range []string{"workspace-", "target-"} {
+		if strings.HasPrefix(scope, p) {
+			return scopeClass(strings.TrimPrefix(scope, p))
+		}
 	}
 	// gradle testImplementation/testRuntimeOnly/…, maven test — one family.
 	if strings.HasPrefix(strings.ToLower(scope), "test") {

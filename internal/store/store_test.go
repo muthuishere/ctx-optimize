@@ -124,6 +124,37 @@ func TestRootPrecedence(t *testing.T) {
 	}
 }
 
+// GrammarsDir is the ONE resolution the pack loader and the pack builder share
+// (ADR 2026-07-25-structured-formats S6 — they disagreed before, so a built pack
+// could land where nothing loads it). It answers to its OWN env var, NOT
+// $CTX_OPTIMIZE_STORE; that separation is deliberate and pinned here.
+func TestGrammarsDirHonorsOwnEnvOnly(t *testing.T) {
+	t.Setenv("CTX_OPTIMIZE_GRAMMARS", "/env/grammars")
+	t.Setenv("CTX_OPTIMIZE_STORE", "/env/store")
+	d, err := GrammarsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d != "/env/grammars" {
+		t.Fatalf("CTX_OPTIMIZE_GRAMMARS should win, got %q", d)
+	}
+
+	// Unset: falls back to ~/ctxoptimize/grammars, and $CTX_OPTIMIZE_STORE must
+	// NOT redirect it — a store relocation is not a grammar relocation.
+	t.Setenv("CTX_OPTIMIZE_GRAMMARS", "")
+	d, err = GrammarsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home dir")
+	}
+	if want := filepath.Join(home, "ctxoptimize", "grammars"); d != want {
+		t.Fatalf("GrammarsDir() = %q, want %q", d, want)
+	}
+}
+
 func TestLayoutHasHooksDir(t *testing.T) {
 	s := testStore(t)
 	if _, err := os.Stat(filepath.Join(s.Dir, "hooks")); err != nil {
