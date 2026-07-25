@@ -415,6 +415,7 @@ tarball, no git):
 ```sh
 ctx-optimize languages add kotlin        # known names resolve to the right repo/branch/exts
 ctx-optimize languages add clojure       # Lisps too — head-symbol decls, see docs/languages-packs.md
+ctx-optimize languages add cljgo         # a dialect entry: clojure.core + cljgo's own definers
 ctx-optimize languages add https://github.com/tree-sitter-grammars/tree-sitter-lua
 # → ~/ctxoptimize/grammars/<name>.wasm + <name>.json (mapping auto-suggested
 #   from the grammar's node-types.json — review it, then `add` just works)

@@ -50,10 +50,58 @@ const clojureDeclRules = `[
     }
   ]`
 
+// cljgoDeclRules: clojure.core PLUS the four definers cljgo itself adds
+// (defroute/defroutes from its router, defcommand/defcommands from bri's CLI
+// layer). Unlike a framework's macros, these ARE the language — cljgo ships
+// them — so they belong in a named entry rather than in each project's pack.
+//
+// Kept as its own list rather than composed from clojureDeclRules at run time:
+// a registry entry is DATA, and the whole value of a literal table is that you
+// can read what it will emit without executing anything.
+//
+// Source of truth is tree-sitter-cljgo's definers.json, which generates that
+// repo's own .ctxoptimize/grammars/cljgo.json plus its editor integrations. This
+// is a copy, so it can drift; the repo's pack wins where both are present,
+// because LoadPacks reads repo-local first.
+const cljgoDeclRules = `[
+    {
+      "node": "list_lit",
+      "head_type": "sym_lit",
+      "name_type": "sym_lit",
+      "skip_inside": ["quoting_lit", "syn_quoting_lit", "dis_expr"],
+      "head_match": {
+        "ns": "module", "def": "variable", "defonce": "variable",
+        "defn": "function", "defn-": "function", "defmacro": "macro",
+        "definline": "function", "defmulti": "function", "defmethod": "function",
+        "defprotocol": "interface", "defrecord": "class", "deftype": "class",
+        "defstruct": "class", "deftest": "test",
+        "defroute": "variable", "defroutes": "variable",
+        "defcommand": "function", "defcommands": "variable"
+      }
+    },
+    {
+      "node": "list_lit",
+      "head_type": "sym_lit",
+      "name_type": "sym_lit",
+      "name_unwrap": ["quoting_lit", "syn_quoting_lit"],
+      "skip_inside": ["dis_expr"],
+      "head_match": { "in-ns": "module", "clojure.core/in-ns": "module" }
+    }
+  ]`
+
 var KnownGrammars = map[string]Known{
 	"clojure": {URL: "https://github.com/sogaiu/tree-sitter-clojure",
 		Exts:      []string{".clj", ".cljc", ".cljs", ".cljr", ".edn", ".bb"},
 		DeclRules: clojureDeclRules},
+	// cljgo claims ONLY its own extensions. tree-sitter-cljgo's own pack also
+	// declares .clj/.cljc — correct for a project written in cljgo, wrong for a
+	// shared registry, where it would take every plain Clojure file away from
+	// the `clojure` entry (packByExt beats the embedded set AND is order-
+	// dependent between packs). A project that wants cljgo semantics for .clj
+	// copies that repo's pack into its own .ctxoptimize/grammars/, which wins.
+	"cljgo": {URL: "https://github.com/muthuishere/tree-sitter-cljgo",
+		Exts:      []string{".cljgo", ".cljg"},
+		DeclRules: cljgoDeclRules},
 	"kotlin":  {URL: "https://github.com/fwcd/tree-sitter-kotlin", Exts: []string{".kt", ".kts"}},
 	"swift":   {URL: "https://github.com/alex-pinkus/tree-sitter-swift", Ref: "with-generated-files", Exts: []string{".swift"}},
 	"dart":    {URL: "https://github.com/UserNobody14/tree-sitter-dart", Exts: []string{".dart"}},

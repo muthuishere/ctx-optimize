@@ -10,6 +10,34 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Added
+
+- **`cljgo` is addable by name** — `ctx-optimize languages add cljgo`. cljgo is a
+  Clojure dialect that ships `defroute`/`defroutes` and
+  `defcommand`/`defcommands` as part of the LANGUAGE, not as a framework a
+  project opts into, so it earns a registry entry rather than living in each
+  project's pack. The entry carries clojure.core's 14 definers plus those 4, and
+  is verified to cover core with identical kinds — a dialect must never
+  reclassify `defn`.
+  It claims **only `.cljgo`/`.cljg`**. `tree-sitter-cljgo`'s own pack also
+  declares `.clj`/`.cljc`, which is right for a project written in cljgo and
+  wrong for a shared registry: pack extensions beat the embedded set and the
+  winner between two packs is order-dependent, so claiming `.clj` here would
+  silently take every plain Clojure file from the `clojure` entry. Pinned by
+  `TestDialectDoesNotClaimParentExts`.
+  Measured: `languages add cljgo` into an empty grammars dir yields a loadable
+  pack (2 rules, 20 heads) that gathers a cljgo tree carrying NO repo-local pack
+  into 20 function, 22 variable and 7 module nodes — 0 named after a defining
+  macro, 0 call sites.
+
+### Fixed
+
+- **Registry `DeclRules` seeds are now checked for validity.** They are
+  hand-written JSON string constants spliced into a generated draft, so a stray
+  comma shipped a grammar that builds and then cannot load — precisely the
+  "pack ready / rejected one command later" failure G4 exists to prevent.
+  `TestKnownDeclRulesAreValidJSON` parses every seed in the table.
+
 ## [0.10.0] — 2026-07-25
 
 ### Added

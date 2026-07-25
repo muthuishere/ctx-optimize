@@ -179,3 +179,90 @@ func TestHostileGrammarNameRejected(t *testing.T) {
 		t.Fatalf("hostile name not rejected: %v", err)
 	}
 }
+
+// Every DeclRules seed in the registry must be JSON the pack loader accepts.
+// These are hand-written string constants spliced into a generated draft, so a
+// stray comma ships a grammar that builds and then cannot load — the exact
+// "pack ready / rejected one command later" failure G4 exists to prevent.
+func TestKnownDeclRulesAreValidJSON(t *testing.T) {
+	for name, k := range KnownGrammars {
+		if k.DeclRules == "" {
+			continue
+		}
+		var rules []struct {
+			Node      string            `json:"node"`
+			HeadMatch map[string]string `json:"head_match"`
+		}
+		if err := json.Unmarshal([]byte(k.DeclRules), &rules); err != nil {
+			t.Errorf("%s: DeclRules is not valid JSON: %v", name, err)
+			continue
+		}
+		if len(rules) == 0 {
+			t.Errorf("%s: DeclRules parsed to zero rules", name)
+		}
+		for i, r := range rules {
+			// LoadPacks rejects a rule missing either field.
+			if r.Node == "" || len(r.HeadMatch) == 0 {
+				t.Errorf("%s: rule %d needs node and head_match", name, i)
+			}
+		}
+	}
+}
+
+// cljgo is a Clojure DIALECT: it must cover clojure.core's definers plus its
+// own, or a cljgo file loses declarations plain Clojure would have kept.
+func TestCljgoCoversClojureDefiners(t *testing.T) {
+	heads := func(raw string) map[string]string {
+		t.Helper()
+		var rules []struct {
+			HeadMatch map[string]string `json:"head_match"`
+		}
+		if err := json.Unmarshal([]byte(raw), &rules); err != nil {
+			t.Fatal(err)
+		}
+		all := map[string]string{}
+		for _, r := range rules {
+			for h, k := range r.HeadMatch {
+				all[h] = k
+			}
+		}
+		return all
+	}
+	clj := heads(KnownGrammars["clojure"].DeclRules)
+	cljgo := heads(KnownGrammars["cljgo"].DeclRules)
+	for h, want := range clj {
+		got, ok := cljgo[h]
+		if !ok {
+			t.Errorf("cljgo is missing clojure.core definer %q", h)
+			continue
+		}
+		if got != want {
+			t.Errorf("cljgo maps %q to %q, clojure maps it to %q — a dialect must not reclassify core", h, got, want)
+		}
+	}
+	for _, own := range []string{"defcommand", "defroutes"} {
+		if _, ok := cljgo[own]; !ok {
+			t.Errorf("cljgo is missing its own definer %q — the reason it has an entry at all", own)
+		}
+	}
+}
+
+// A dialect entry must not claim the parent language's extensions. cljgo's own
+// repo pack declares .clj/.cljc, which is right for a project written in cljgo
+// and wrong here: pack extensions beat the embedded set and are order-dependent
+// between packs, so `languages add cljgo` would silently take every .clj file
+// in the repo away from the `clojure` entry.
+func TestDialectDoesNotClaimParentExts(t *testing.T) {
+	parent := map[string]bool{}
+	for _, e := range KnownGrammars["clojure"].Exts {
+		parent[e] = true
+	}
+	for _, e := range KnownGrammars["cljgo"].Exts {
+		if parent[e] {
+			t.Errorf("cljgo claims %q, which the clojure entry owns", e)
+		}
+	}
+	if len(KnownGrammars["cljgo"].Exts) == 0 {
+		t.Error("cljgo claims no extensions at all")
+	}
+}

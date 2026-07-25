@@ -19,7 +19,7 @@ in `~/ctxoptimize/grammars/` (machine) or `.ctxoptimize/grammars/`
 $ ctx-optimize languages list
 embedded: go, python, javascript, typescript, tsx, java, c, cpp, csharp, rust, zig, sql
 packs:    (none)
-addable by name (`ctx-optimize languages add <name>`): bash, clojure, css, dart, haskell, html, julia, kotlin, lua, ocaml, php, ruby, scala, swift, toml, yaml
+addable by name (`ctx-optimize languages add <name>`): bash, cljgo, clojure, css, dart, haskell, html, julia, kotlin, lua, ocaml, php, ruby, scala, swift, toml, yaml
 anything else: `ctx-optimize languages add <github-url-of-tree-sitter-grammar>`
 ```
 
@@ -160,13 +160,31 @@ Measured on a 658-file Clojure codebase: 1,372 definer-headed forms, 1,362
 resolved to a literal name, **0 wrong**. The 5 forms inside syntax-quotes were
 excluded by `skip_inside`.
 
-### The registry entry is dialect-neutral
+### The `clojure` entry is dialect-neutral; a dialect gets its own entry
 
 `ctx-optimize languages add clojure` ships **stock `clojure.core` only** —
 `.clj`, `.cljc`, `.cljs`, `.cljr`, `.edn`, `.bb`. It is not tuned for any one
-project. Framework and dialect macros — Compojure's `defroutes`, re-frame's
-`reg-event-db`, cljgo/bri's `defcommand`, your own `defjob` — belong to the
-project, so the project carries them.
+project. FRAMEWORK macros — Compojure's `defroutes`, re-frame's `reg-event-db`,
+your own `defjob` — belong to the project, so the project carries them.
+
+A **language** is different. cljgo ships `defroute`/`defroutes` and
+`defcommand`/`defcommands` as part of itself, so it is a named entry of its own:
+
+```sh
+ctx-optimize languages add cljgo    # clojure.core's 14 definers + cljgo's 4
+```
+
+It claims **only `.cljgo` and `.cljg`**. `tree-sitter-cljgo`'s own pack also
+declares `.clj`/`.cljc` — correct for a project written in cljgo, wrong for a
+shared registry, where it would take every plain Clojure file away from the
+`clojure` entry (pack extensions beat the embedded set, and between two packs the
+winner is order-dependent). A project that wants cljgo semantics for `.clj` copies
+that repo's `.ctxoptimize/grammars/cljgo.json` into its own, which is read first
+and wins.
+
+The registry copy can drift from `tree-sitter-cljgo`'s `definers.json`, which is
+its source of truth. Where both are present the repo-local pack wins, so drift
+resolves toward the author.
 
 ### Add your project's own defining macros
 
