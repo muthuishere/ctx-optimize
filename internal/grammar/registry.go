@@ -9,7 +9,7 @@ type Known struct {
 	URL  string
 	Ref  string // branch/tag whose tarball contains src/parser.c ("" = HEAD)
 	Exts []string
-	// DeclRules seeds a HOMOIONIC grammar's mapping. node-types.json cannot
+	// DeclRules seeds a HOMOICONIC grammar's mapping. node-types.json cannot
 	// yield decls for these — a Clojure definition is an ordinary list whose
 	// head symbol carries the meaning — so without a seed the suggested pack
 	// comes out empty and cannot load. Raw JSON, spliced into the draft.

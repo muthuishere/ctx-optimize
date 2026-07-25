@@ -164,7 +164,7 @@ const TSLanguage *co_lang_by_id(int id) { return id == 0 ? tree_sitter_%s() : 0;
 				return "", "", fmt.Errorf(
 					"grammar %s built, but no declaration node types could be inferred, "+
 						"so %s cannot be loaded as written.\n\n"+
-						"This is expected for HOMOIONIC languages (Clojure, Fennel, Janet, Elisp): "+
+						"This is expected for HOMOICONIC languages (Clojure, Fennel, Janet, Elisp): "+
 						"a definition has no node type of its own — `(defn f …)` is an ordinary list "+
 						"whose head symbol carries the meaning. Use `decl_rules` instead of `decls` "+
 						"to match on the head symbol and take the name from the next element.\n\n"+

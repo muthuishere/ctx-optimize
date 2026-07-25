@@ -96,7 +96,7 @@ func SuggestWith(name, srcDir string, exts []string, declRules string) ([]byte, 
 // exactKinds catches grammars whose decl types are bare words (ruby: method,
 // class, module).
 //
-// It cannot help the HOMOIONIC family — Clojure, Fennel, Janet, Elisp — where
+// It cannot help the HOMOICONIC family — Clojure, Fennel, Janet, Elisp — where
 // a definition has no node type of its own: `defn`/`def` parse as an ordinary
 // `list_lit` whose head symbol carries the meaning. Mapping that head node to
 // a decl kind labels every declaration after the MACRO and loses the real
