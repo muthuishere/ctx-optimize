@@ -10,6 +10,86 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-07-25
+
+### Added
+
+- **`report` — one artifact for "explain this repo"** (ADR
+  `openspec/changes/2026-07-25-report-verb/`). Store facts, subsystems, the seams
+  BETWEEN subsystems, and a section no comparable tool prints: **what the graph
+  could NOT resolve**, per symbol, with the grep that settles it. Structure is
+  computed from facts only — AMBIGUOUS edges influence the gaps section and
+  nothing else. Deterministic, including under reversed edge input order.
+  Deliberately NOT graphify's "surprising connections": their scoring weights
+  confidence `{AMBIGUOUS: 3, INFERRED: 2, EXTRACTED: 1}`, so the least reliable
+  edge ranks as the most interesting and the headline finding is the one least
+  likely to be true.
+  Four rounds of measured de-noising, each from real output: import stubs
+  excluded (every bridge was `X imports module://strings`), `contains` excluded
+  (nesting is not dependency), an **allowlist** of dependency relations so a
+  relation added later cannot silently pollute it, and one row per **subsystem
+  pair** so a single over-attracting node cannot fill the table. Hubs needed it
+  too — the first report ranked `strings` (142), `os` (111) and `fmt` (83) as this
+  repo's top hubs; filtered inside `Report` so the standalone `hubs` verb keeps
+  its shipped behaviour.
+
+- **Ambiguous callees are shortlisted instead of silently dropped** (ADR
+  `openspec/changes/2026-07-25-abstain-out-loud/`). A call site whose callee name
+  is defined more than once used to be DISCARDED SILENTLY: nothing wrong entered
+  the graph, but the graph looked COMPLETE, and an agent reading `called by` had
+  no way to learn other call sites existed. Saying nothing is not saying no.
+  Now the candidates are emitted as `AMBIGUOUS` — a **shortlist to grep**, never a
+  claim — and **every traversal verb filters them out by default**
+  (`analyze.WithoutAmbiguous`, applied INSIDE `Affected`/`Hubs`/`ShortestPath`/
+  `Explain`/`Card`/`Communities`, not at call sites, so a verb added later cannot
+  forget it). `card` reports the count it could not attribute plus the two commands
+  that settle it; `called_by` itself stays exact. Reachable on purpose via
+  `edges --relation calls --confidence AMBIGUOUS --to <id>`.
+  Three outcomes are now distinguished where `pick` conflated two: >1 candidate
+  shortlists; **0 candidates (stdlib/deps) still emits nothing**, because external
+  is not ambiguity and must never inflate it; above the cap (4) nothing is
+  shortlisted at all, since a name with 40 definitions is better served by grep
+  than by 40 maybes.
+  Measured across caps 0→100: INFERRED (2,561) and EXTRACTED (2,956) **identical at
+  every value** — purely additive, no node created, no confident edge downgraded.
+
+### Fixed
+
+- **Community detection was clustering on maybes.** `Communities()` consumed every
+  edge given to it — harmless until the shortlisting above landed, at which point
+  the wiki's architecture summary started being decided by guesses. Measured on
+  this repo (8,495 edges, 1,092 AMBIGUOUS): communities whose hub list repeats a
+  single label went **7 → 0** (the `Run, Run, Run` artifact — a "subsystem" that is
+  really one over-used name) and the top six subsystems were reshuffled outright.
+  Exactly the god-node-by-name-collision failure `docs/VISION.md:284` measured,
+  arriving through clustering rather than through `hubs`. Caught before release.
+- **The 2026-07-14 community-detection ADR is flipped to IMPLEMENTED** — the wiki
+  Subsystems section and the navigator `about` line had shipped as specified; a
+  broken grep had led me to report it as unwired.
+
+### Changed
+
+- **`docs/VISION.md` refined on ambiguous edges.** "Emit … AMBIGUOUS and let the
+  agent weigh them (graphify-parity behaviour)" was too loose: nothing stopped a
+  maybe entering a blast radius, and an agent cannot weigh what it cannot see is a
+  guess. AMBIGUOUS is now defined as a shortlist to grep, filtered from every
+  traversal verb by default.
+- **A doc-drift guard** (`internal/skills/docdrift_test.go`) pins the behaviour
+  claims that would mislead an agent if they went stale — the ambiguous contract
+  across code + docs + both agent surfaces, and the 0.9.2 redaction guidance. This
+  repo states behaviour across 13 hand-maintained surfaces plus 6 site pages and
+  40 ADRs, and had already shipped two stale claims in one day. It earned its keep
+  immediately by catching a `code.go` comment that the same change had falsified.
+
+### Known issue (not fixed)
+
+- **Bare-name method resolution is imprecise.** Call resolution keys on the
+  unqualified name, so every `err.Error()` in a repo resolves to whichever single
+  declaration is labelled `Error`. On this repo that is **85 of 2,596 INFERRED call
+  edges (3%)** pointing at `AmbiguousError.Error`, plus `Strings` (53) and `Open`
+  (49). Surfaced by the new `report` verb. Fixing it is a resolution change with
+  large golden churn and gets its own ADR.
+
 ## [0.10.4] — 2026-07-25
 
 ### Fixed
