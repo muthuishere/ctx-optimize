@@ -83,12 +83,23 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Known issue (not fixed)
 
-- **Bare-name method resolution is imprecise.** Call resolution keys on the
-  unqualified name, so every `err.Error()` in a repo resolves to whichever single
-  declaration is labelled `Error`. On this repo that is **85 of 2,596 INFERRED call
-  edges (3%)** pointing at `AmbiguousError.Error`, plus `Strings` (53) and `Open`
-  (49). Surfaced by the new `report` verb. Fixing it is a resolution change with
-  large golden churn and gets its own ADR.
+- **Bare-name method resolution is imprecise** (ADR
+  `openspec/changes/2026-07-25-method-call-resolution/`). `calleeName` returns the
+  last name node and discards the receiver, so `err.Error()` and `Error()` are
+  indistinguishable — and when exactly one declaration in the repo has the bare
+  label `Error`, every `err.Error()` resolves to it **confidently**. This is not
+  ambiguity: there is one candidate, so the AMBIGUOUS shortlist never fires. A
+  unique name is being treated as evidence that a method call targets it, when the
+  receiver's type is what decides. Root cause is a blind spot — the graph holds
+  only OUR declarations, so a bare-name method match silently assumes the receiver
+  is ours, which for `Error`/`String`/`Close` is usually false.
+  Measured here: **331 of 2,596 INFERRED call edges (12%) target a method** and are
+  only reachable by bare-name match, 215 of them cross-package. That is the suspect
+  population, not the error count — `Batch.Validate` (31) is mostly right,
+  `AmbiguousError.Error` (85) is almost all wrong. These are INFERRED, so unlike
+  AMBIGUOUS edges they DO flow into `affected`, `change-plan`, `hubs` and
+  clustering. Surfaced by the new `report` verb. Not fixed: the candidate fix
+  trades recall for precision and that must be measured on the judged tiers first.
 
 ## [0.10.4] — 2026-07-25
 
