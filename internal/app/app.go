@@ -479,8 +479,19 @@ func upCore(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "up: store present (%d nodes; freshness unknown — no git provenance). `ctx-optimize sync` to force a refresh\n", len(nodes))
 		return nil
 	}
-	fmt.Fprintf(stdout, "store is stale (%s) — fast re-gather, adapter scripts skipped:\n", freshnessLine(reports, overall))
-	if err := cmdAdd(append(pass, ".", "--no-adapters"), stdout, strings.NewReader("")); err != nil {
+	// A PARTIAL store must be retried in FULL. The fast path skips adapter
+	// scripts, and if an adapter is what failed, skipping it would make the
+	// re-gather "succeed" with the adapter's data still missing — clearing the
+	// partial marker and reporting fresh. That would be worse than the bug this
+	// state exists to expose.
+	addArgs := append(pass, ".")
+	if overall == freshness.Partial {
+		fmt.Fprintf(stdout, "store is incomplete (%s) — full re-gather, adapters INCLUDED:\n", freshnessLine(reports, overall))
+	} else {
+		fmt.Fprintf(stdout, "store is stale (%s) — fast re-gather, adapter scripts skipped:\n", freshnessLine(reports, overall))
+		addArgs = append(addArgs, "--no-adapters")
+	}
+	if err := cmdAdd(addArgs, stdout, strings.NewReader("")); err != nil {
 		return err
 	}
 	fmt.Fprintln(stdout, "up: store refreshed")
@@ -1403,6 +1414,16 @@ func freshnessLine(reports []freshness.Report, overall freshness.State) string {
 	switch overall {
 	case freshness.Fresh:
 		return "✓ up to date with git HEAD"
+	case freshness.Partial:
+		// Name the lanes. "Incomplete" without saying WHICH part is missing
+		// leaves the reader unable to judge whether their question is affected.
+		for _, r := range reports {
+			if len(r.Partial) > 0 {
+				return fmt.Sprintf("✗ PARTIAL — the last gather failed %d lane(s): %s; the store is INCOMPLETE. Re-run: ctx-optimize add .",
+					len(r.Partial), strings.Join(r.Partial, "; "))
+			}
+		}
+		return "✗ PARTIAL — the last gather did not complete; the store is INCOMPLETE"
 	case freshness.Unknown:
 		if len(reports) == 0 {
 			return "(unknown — no git provenance; run `add` in a git repo to enable)"
@@ -3215,7 +3236,10 @@ commands:
                               (committed config, not a cache) — re-gather with
                               'add .', it takes seconds. Audited
   fresh                       is the store current with git HEAD? one-line
-                              verdict; exit 0 fresh / 1 stale / 2 unknown
+                              verdict; exit 0 fresh / 1 stale / 2 unknown /
+                              3 PARTIAL (the last gather had producer lanes fail,
+                              so the store is INCOMPLETE — a different fix from
+                              stale: look at why, don't just re-gather)
                               (agent/hook gate before trusting an answer)  [--json]
   save-result --question Q    record how a store answer worked out
                               [--answer A] [--type query|path|explain|affected]

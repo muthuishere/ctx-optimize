@@ -12,6 +12,30 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Added
 
+- **`fresh` exit code 3 = PARTIAL — a store missing a producer no longer reports
+  fresh** (#13). Lane containment RECORDED which lanes failed but nothing READ
+  the record, so `fresh` exited **0** for a store whose code lane had failed —
+  defeating the one job it exists for, gating an agent or hook before it trusts
+  an answer. A head-matching partial store reported `fresh` outright.
+
+  `partial` is a distinct state, not a reuse of `stale`, because the two need
+  different responses: stale means "old but complete", partial means "a producer
+  is missing from this graph". It outranks every other state in the aggregate, so
+  a sibling's staleness cannot mask it. `status`, the verdict line and
+  `fresh --json` all name **which** lanes failed — "incomplete" alone leaves the
+  reader unable to judge whether their question is affected. A hook gating on
+  `!= 0` keeps working unchanged.
+
+  Two holes found while wiring it:
+  - **`up` on a partial store took the adapter-skipping fast path.** If an
+    adapter was what failed, skipping it made the re-gather "succeed" with the
+    adapter's data still missing — *clearing* the marker. `up` now retries a
+    partial store in full, adapters included.
+  - **A gather that skips a lane cleared that lane's prior failure.**
+    `sync --no-adapters` reported complete after never retrying the adapter that
+    broke. Untried lane failures are now carried forward, marked
+    `(not retried: adapters skipped)`.
+
 - **`"wiki"` key in `.ctxoptimize/config.json`** (#9). Onboarding chromium wrote
   **434,597 wiki pages / 1.7 GB** into a single directory — and `wiki.Generate`'s
   stale-page cleanup re-reads that directory at the end of **every** later

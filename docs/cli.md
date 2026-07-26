@@ -147,8 +147,20 @@ not be resolved.
 ### `status` / `fresh`
 
 **When**: "can I trust this store right now?" `status` prints store facts +
-freshness vs git HEAD; `fresh` is the scriptable gate (exit 0 fresh / 1
-stale / 2 unknown) — wire it into hooks/CI before trusting answers.
+freshness vs git HEAD; `fresh` is the scriptable gate — wire it into hooks/CI
+before trusting answers.
+
+| exit | state | what it means | the fix |
+|---:|---|---|---|
+| 0 | fresh | store matches git HEAD | — |
+| 1 | stale | the code moved on | re-gather (`add .`) |
+| 2 | unknown | no git provenance | nothing is wrong; freshness just cannot be determined |
+| 3 | **partial** | the last gather had producer **lanes fail**, so the store is **incomplete** | look at *why* — re-gathering may not fix it, and `up` retries a partial store in full (adapters included) rather than taking the fast path |
+
+`partial` is a distinct code, not a reuse of `stale`, because the two need
+different responses: stale means "old but complete", partial means "a producer
+is missing from this graph". `status` and `fresh --json` name the failed lanes.
+A hook that gates on `!= 0` keeps working unchanged.
 
 ---
 

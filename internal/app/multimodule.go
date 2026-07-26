@@ -894,11 +894,24 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 			fmt.Fprintln(out, "      prune with `ctx-optimize add . --force` (a complete run), or `store delete --yes && add .` to rebuild.")
 		}
 	}
+	// Carry forward failures for lanes this run did NOT retry. `sync
+	// --no-adapters` must not clear an adapter failure it never attempted —
+	// laneErrs only knows about lanes that ran, so an untried lane would silently
+	// drop out of the record and the store would report complete while the data
+	// is still missing.
+	partial := laneErrs
+	if skipAdapters && hasPrev {
+		for _, prior := range prev.Partial {
+			if strings.HasPrefix(prior, "adapter") {
+				partial = append(partial, prior+" (not retried: adapters skipped)")
+			}
+		}
+	}
 	rec := freshness.Source{
 		Path: absBase, Head: curHead, HeadUnix: curHeadUnix, AddedUnix: time.Now().Unix(),
-		TreeSig: curSig, Partial: laneErrs,
+		TreeSig: curSig, Partial: partial,
 	}
-	if len(laneErrs) > 0 {
+	if len(partial) > 0 {
 		// A partial gather must not be short-circuited on the NEXT run as
 		// "unchanged" — that would freeze the gap in place until something
 		// else touched the tree. Clearing the signature forces a real retry.

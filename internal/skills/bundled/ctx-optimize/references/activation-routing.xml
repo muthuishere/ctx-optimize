@@ -99,7 +99,8 @@
 
     <route id="fresh" group="answer">
       <when>is the graph up to date, is the store stale, should I re-gather before trusting this</when>
-      <goal>One-line freshness verdict; exit 0 fresh / 1 stale / 2 unknown — the agent/hook gate before trusting an answer.</goal>
+      <goal>One-line freshness verdict; exit 0 fresh / 1 stale / 2 unknown / 3 PARTIAL — the agent/hook gate before trusting an answer.</goal>
+      <note>Exit 3 = PARTIAL: the last gather had producer LANES FAIL, so the store is INCOMPLETE — a producer (code, docs, manifests, an adapter) is missing from the graph, not merely out of date. Never answer from a partial store without saying so; the verdict and `--json` name which lanes failed. Different fix from stale: re-gathering may not help if the lane is still broken.</note>
       <cmd>ctx-optimize fresh --json</cmd>
     </route>
 
