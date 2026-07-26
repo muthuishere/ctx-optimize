@@ -189,6 +189,19 @@ func parseFlags(args []string) *flags {
 	return f
 }
 
+// ambOpts turns --include-ambiguous into the analyze option. Traversal verbs
+// exclude AMBIGUOUS edges by default (ADR 2026-07-25-abstain-out-loud); this
+// is the door for a caller who has read the abstention and wants the shortlist
+// anyway — e.g. a method whose receiver could not be typed
+// (ADR 2026-07-25-method-call-resolution), where the fact-only answer is a
+// FLOOR. Every verb that honors it marks the widened rows.
+func ambOpts(f *flags) []analyze.Option {
+	if f.bools["include-ambiguous"] {
+		return []analyze.Option{analyze.IncludeAmbiguous()}
+	}
+	return nil
+}
+
 // resolvePath resolves --path (default cwd) — the module directory that both
 // the store key and the repo-level ctx-optimize.json hang off.
 func resolvePath(f *flags) (string, error) {
@@ -1383,12 +1396,12 @@ func cmdPath(args []string, stdout io.Writer) error {
 	stdout = cw
 	st, _ := openStore(f)
 	defer func() { served(st, "path", strings.Join(f.args, " → "), 1, cw, t0) }()
-	steps, perr := analyze.ShortestPath(nodes, edges, f.args[0], f.args[1])
+	steps, perr := analyze.ShortestPath(nodes, edges, f.args[0], f.args[1], ambOpts(f)...)
 	scopeNote := ""
 	// Module-scope miss (an endpoint isn't local): retry repo-wide, labeled.
 	if perr != nil && sc != nil && sc.kind == scopeModule {
 		if fn, fe, ferr := federatedAll(sc, storeRoot); ferr == nil {
-			if s2, err2 := analyze.ShortestPath(fn, fe, f.args[0], f.args[1]); err2 == nil {
+			if s2, err2 := analyze.ShortestPath(fn, fe, f.args[0], f.args[1], ambOpts(f)...); err2 == nil {
 				scopeNote = fmt.Sprintf("[not in %s — answered repo-wide]", sc.moduleName)
 				steps, perr = s2, nil
 				sc = nil // repo-wide now: the boundary note no longer applies
@@ -1421,8 +1434,17 @@ func cmdPath(args []string, stdout io.Writer) error {
 		return nil
 	}
 	fmt.Fprintln(stdout, steps[0].From)
+	weakest := ""
 	for _, st := range steps {
-		fmt.Fprintf(stdout, "  %s %s %s\n", st.Dir, st.Relation, st.To)
+		hop := ""
+		if st.Confidence == schema.Ambiguous {
+			hop = "  ? AMBIGUOUS"
+			weakest = st.Relation
+		}
+		fmt.Fprintf(stdout, "  %s %s %s%s\n", st.Dir, st.Relation, st.To, hop)
+	}
+	if weakest != "" {
+		fmt.Fprintln(stdout, "? this path crosses an AMBIGUOUS edge (--include-ambiguous): it is a candidate route, not a fact.")
 	}
 	if note != "" {
 		fmt.Fprintln(stdout, note)
@@ -1444,9 +1466,9 @@ func cmdExplain(args []string, stdout io.Writer) error {
 	stdout = cw
 	st, _ := openStore(f)
 	defer func() { served(st, "explain", f.args[0], 1, cw, t0) }()
-	ex, err := analyze.Explain(nodes, edges, f.args[0])
+	ex, err := analyze.Explain(nodes, edges, f.args[0], ambOpts(f)...)
 	if id, ok := fuzzyPick(err, f); ok {
-		if ex, err = analyze.Explain(nodes, edges, id); err == nil {
+		if ex, err = analyze.Explain(nodes, edges, id, ambOpts(f)...); err == nil {
 			ex.ResolvedVia = "fuzzy" // --fuzzy took a candidate: stay labeled
 		}
 	}
@@ -1474,9 +1496,9 @@ func cmdCard(args []string, stdout io.Writer) error {
 	}
 	t0 := time.Now()
 	cw := &countingWriter{w: stdout}
-	c, cerr := analyze.Card(nodes, edges, f.args[0])
+	c, cerr := analyze.Card(nodes, edges, f.args[0], ambOpts(f)...)
 	if id, ok := fuzzyPick(cerr, f); ok {
-		if c, cerr = analyze.Card(nodes, edges, id); cerr == nil {
+		if c, cerr = analyze.Card(nodes, edges, id, ambOpts(f)...); cerr == nil {
 			c.ResolvedVia = "fuzzy" // --fuzzy took a candidate: stay labeled
 		}
 	}
@@ -1499,7 +1521,7 @@ func cmdCard(args []string, stdout io.Writer) error {
 		}
 		fn, fe, ferr := loadFederated(sc, storeRoot, nil)
 		if ferr == nil {
-			if fc, ferr2 := analyze.Card(fn, fe, f.args[0]); ferr2 == nil {
+			if fc, ferr2 := analyze.Card(fn, fe, f.args[0], ambOpts(f)...); ferr2 == nil {
 				owner := moduleOwnerOf(sc, fc.Node.Source)
 				fmt.Fprintf(cw, "[not in %s — found in %s]\n", sc.moduleName, owner)
 				c, cerr = fc, nil
@@ -1794,16 +1816,16 @@ func cmdAffected(args []string, stdout io.Writer) error {
 	if r, ok := f.strs["relation"]; ok {
 		relations = append(relations, r)
 	}
-	target, impacts, aerr := analyze.Affected(nodes, edges, f.args[0], depth, relations)
+	target, impacts, aerr := analyze.Affected(nodes, edges, f.args[0], depth, relations, ambOpts(f)...)
 	if id, ok := fuzzyPick(aerr, f); ok {
-		target, impacts, aerr = analyze.Affected(nodes, edges, id, depth, relations)
+		target, impacts, aerr = analyze.Affected(nodes, edges, id, depth, relations, ambOpts(f)...)
 	}
 	scopeNote := ""
 	// Module-scope miss: the symbol likely lives in a sibling module —
 	// answer repo-wide and say where it was (mirrors cmdCard).
 	if aerr != nil && sc != nil && sc.kind == scopeModule {
 		if fn, fe, ferr := federatedAll(sc, storeRoot); ferr == nil {
-			if t2, i2, err2 := analyze.Affected(fn, fe, f.args[0], depth, relations); err2 == nil {
+			if t2, i2, err2 := analyze.Affected(fn, fe, f.args[0], depth, relations, ambOpts(f)...); err2 == nil {
 				scopeNote = fmt.Sprintf("[not in %s — found in %s]", sc.moduleName, moduleOwnerOf(sc, t2.Source))
 				target, impacts, aerr = t2, i2, nil
 				sc = nil // repo-wide now: the boundary note no longer applies
@@ -1853,8 +1875,19 @@ func cmdAffected(args []string, stdout io.Writer) error {
 		fmt.Fprintln(stdout, scopeNote)
 	}
 	fmt.Fprintf(stdout, "changing %s impacts %d nodes (depth %d):\n", target.Label, len(impacts), depth)
+	maybes := 0
 	for _, im := range impacts {
-		fmt.Fprintf(stdout, "  d%d %s  [%s]  via %s on %s\n", im.Depth, im.Node.Label, im.Node.Kind, im.Via, im.DependsOn)
+		// A widened row must never look like a fact. The marker rides on the
+		// row itself, not just a footer, because rows get copied one at a time.
+		mark := " "
+		if im.Confidence == schema.Ambiguous {
+			mark = "?"
+			maybes++
+		}
+		fmt.Fprintf(stdout, " %sd%d %s  [%s]  via %s on %s\n", mark, im.Depth, im.Node.Label, im.Node.Kind, im.Via, im.DependsOn)
+	}
+	if maybes > 0 {
+		fmt.Fprintf(stdout, "? %d of these arrived on an AMBIGUOUS edge (--include-ambiguous): candidates, NOT facts. Verify before acting.\n", maybes)
 	}
 	if note != "" {
 		fmt.Fprintln(stdout, note)
@@ -1916,7 +1949,7 @@ func cmdHubs(args []string, stdout io.Writer) error {
 	} else if !pred.Empty() {
 		nodes, edges = graphfilter.Apply(nodes, edges, pred)
 	}
-	hubs := analyze.Hubs(nodes, edges, top)
+	hubs := analyze.Hubs(nodes, edges, top, ambOpts(f)...)
 	if f.bools["ndjson"] {
 		enc := json.NewEncoder(stdout)
 		for _, h := range hubs {
@@ -2952,6 +2985,17 @@ commands:
   default: fuzzy matches announce themselves ([resolved via fuzzy → id]);
   a fuzzy TIE refuses with ranked candidates instead of guessing (--fuzzy
   takes the top candidate anyway).
+
+  --include-ambiguous  on card/explain/affected/path/hubs/change-plan: also
+  walk AMBIGUOUS edges — the call sites the store REFUSED to attribute
+  (a name defined more than once, or a method whose receiver type it could
+  not establish). Off by default, so those verbs answer with facts only; a
+  method's blast radius is therefore a FLOOR. Turn it on to see the
+  shortlist: every widened row is marked '?' and the maybes are listed
+  under their own MAYBE heading — they are candidates to verify, never
+  facts. edges --relation calls --confidence AMBIGUOUS --to/--from <id>
+  lists the same shortlist on its own. (report stays facts-only by
+  design: it has a dedicated section for what could not be resolved.)
   wiki                        regenerate the markdown wiki in the store's wiki/
                               dir (deterministic, from nodes+edges only; every
                               add already regenerates it)

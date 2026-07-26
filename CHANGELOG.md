@@ -10,6 +10,31 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Added
+
+- **`--include-ambiguous` — a door out of the abstention** (ADR
+  `openspec/changes/2026-07-26-include-ambiguous/`). Abstaining made the
+  traversal verbs answer with facts only, which means a method's blast radius
+  is a **FLOOR** — and there was no command to ask for the rest. Now
+  `card`, `explain`, `affected`, `path`, `hubs` and `change-plan` all take
+  `--include-ambiguous`.
+
+  Off by default; no existing answer moves. When on, **every widened result is
+  marked**: `affected` prefixes the row with `?` plus a footer count (the marker
+  rides on the row because rows get copied one at a time), `card` and `explain`
+  put the shortlist under its own `MAYBE …(AMBIGUOUS — verify before acting)`
+  heading, `path` labels the hop. Two properties are pinned by tests: the
+  default filter is what you get for FREE (verbs call `forTraversal`, so it
+  cannot be lost by forgetting), and the fact fields — `called_by`, `incoming`
+  — stay facts-only whatever flags are passed, so a consumer that never heard of
+  the flag reads exactly what it read before.
+
+  `report` is deliberately excluded: its structure is facts-only by design and
+  it already has a dedicated section for what could not be resolved.
+
+  On this repo: `affected Batch.Validate --depth 1` → 10 nodes,
+  `--include-ambiguous` → 32, of which 22 marked `?`.
+
 ### Fixed
 
 - **A unique method name is no longer treated as evidence about the receiver**

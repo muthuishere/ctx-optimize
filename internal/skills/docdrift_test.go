@@ -86,6 +86,25 @@ func TestUnresolvedReceiverExplainedToAgents(t *testing.T) {
 	}
 }
 
+// ADR 2026-07-26-include-ambiguous. An agent that knows the answer is a FLOOR
+// but not that a flag exists will either under-report or fall straight back to
+// grep. Both agent surfaces must name the flag AND the marking, because a
+// widened row presented as a caller is the failure the flag is designed around.
+func TestIncludeAmbiguousDocumentedForAgents(t *testing.T) {
+	for _, rel := range []string{
+		"internal/skills/bundled/ctx-optimize/SKILL.md",
+		"internal/skills/bundled/ctx-optimize/references/activation-routing.xml",
+	} {
+		body := repoFile(t, rel)
+		if !strings.Contains(body, "--include-ambiguous") {
+			t.Errorf("%s never mentions --include-ambiguous — the agent cannot get past the abstention without leaving the tool", rel)
+		}
+		if !strings.Contains(body, "MAYBE") {
+			t.Errorf("%s names the flag without the marking convention — a widened row could be reported as a caller", rel)
+		}
+	}
+}
+
 // Redaction (0.9.2) is the other claim whose absence is a security problem: an
 // agent that meets `[redacted]` and does not know why will open the file, which
 // re-creates the leak the redaction closed.
