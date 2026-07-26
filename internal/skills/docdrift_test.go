@@ -105,6 +105,44 @@ func TestIncludeAmbiguousDocumentedForAgents(t *testing.T) {
 	}
 }
 
+// Verbs and config keys shipped 2026-07-26. Each is here because an agent that
+// does not know it exists behaves WORSE than one that does — it will re-derive a
+// settled abstention every session, or fail to warn about an incomplete store, or
+// hand the user a `rm -rf` because it thinks there is no delete verb.
+//
+// A doc audit that day found five things shipped with ZERO agent-surface
+// coverage. This is the guard that makes that a test failure instead of a
+// discovery months later.
+func TestNewSurfacesReachTheAgent(t *testing.T) {
+	skill := repoFile(t, "internal/skills/bundled/ctx-optimize/SKILL.md")
+	routing := repoFile(t, "internal/skills/bundled/ctx-optimize/references/activation-routing.xml")
+	card := repoFile(t, "internal/project/templates/instructions.md")
+
+	for _, c := range []struct {
+		what, needle, why string
+		in                []string
+	}{
+		{"store delete", "store delete",
+			"without it an agent reaches for `rm -rf ~/ctxoptimize/...`, aimed at a root holding every repo's store",
+			[]string{skill, routing}},
+		{"add --rebuild", "--rebuild",
+			"a retired producer's nodes survive every incremental gather; an agent with no --rebuild will keep re-running `add` and keep seeing them",
+			[]string{skill, routing, card}},
+		{"declared resolutions", "external_methods",
+			"otherwise every session re-derives the same abstention the repo already settled",
+			[]string{skill, routing, card}},
+		{"partial store (fresh exit 3)", "PARTIAL",
+			"an agent that does not know exit 3 exists will answer from a store with a producer missing and call it fresh",
+			[]string{skill, routing, card}},
+	} {
+		for i, body := range c.in {
+			if !strings.Contains(body, c.needle) {
+				t.Errorf("%s missing from agent surface #%d — %s", c.what, i, c.why)
+			}
+		}
+	}
+}
+
 // Redaction (0.9.2) is the other claim whose absence is a security problem: an
 // agent that meets `[redacted]` and does not know why will open the file, which
 // re-creates the leak the redaction closed.

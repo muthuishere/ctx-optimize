@@ -1,4 +1,4 @@
-<!-- ctx-optimize:instructions:begin v0.11.0-3-g68910de-dirty -->
+<!-- ctx-optimize:instructions:begin v0.11.0-16-g9593bc0-dirty -->
 # ctx-optimize — the usage card for this repo's knowledge store
 
 **ctx-optimize is a SHELL COMMAND (a CLI on PATH), not a callable tool: run
@@ -73,6 +73,48 @@ candidates to verify, never callers. Flat list: `edges --relation calls
 --confidence AMBIGUOUS --to <id>`.
 
 Never present `called by` as the complete caller set while that line is printed.
+
+## Settling an abstention for good
+
+If the same method keeps coming back as `unattributed callers` and you know the
+name belongs to a type this repo does NOT own (`Error`, `String`, `Close` on
+stdlib or dependency types), write it down instead of re-deriving it —
+`.ctxoptimize/resolutions.json`, committed, inherited by everyone's agents:
+
+```json
+{ "external_methods": ["Error", "String", "Close"] }
+```
+
+It only ever RETIRES a shortlist: it never creates a call edge and never deletes
+a resolved one, so a wrong entry costs recall and cannot make the graph wrong. A
+declared name matching no call site is reported on every gather. Malformed is a
+hard error — a silently ignored declaration is worse than none.
+
+## Rebuilding and deleting (both permanent)
+
+```sh
+ctx-optimize add . --rebuild   # drop the store(s), gather into an empty one
+ctx-optimize store delete      # delete this repo's stores; asks [y/N]
+```
+
+`--rebuild` exists because a **retired** producer's nodes survive incremental
+gathers: `Replace` is producer-scoped, so deleting an adapter script leaves its
+nodes in the graph. A normal `add` reports those; `--rebuild` is the certain fix.
+
+`store delete` takes the root store **and** every module store — always the whole
+repo, whichever directory you run it from. `.ctxoptimize/` is never touched; it is
+committed config, not a cache. Re-gather with `add .`.
+
+## Is the store trustworthy right now?
+
+```sh
+ctx-optimize fresh   # exit 0 fresh / 1 stale / 2 unknown / 3 PARTIAL
+```
+
+**Exit 3 is the one to notice**: the last gather had producer lanes FAIL, so a
+producer (code, docs, manifests, an adapter) is *missing* from the graph — not
+merely out of date. `status` and `fresh --json` name which lanes failed. Never
+answer from a partial store without saying so.
 
 ## Tool choice — store vs grep (two-sided; wrong in either direction is the failure)
 

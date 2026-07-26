@@ -28,15 +28,51 @@ ctx-optimize init --scan --yes    # write the FULL found list to config.json
 ctx-optimize add .                # fan-out gather: one worker per module
 ```
 
-While a fan-out runs, progress ticks stream to stderr as each module
+### What `scan` refuses to call a module
+
+Generated and vendored trees are never descended into, because a `package.json`
+in one of them is noise rather than a project: `.git`, `node_modules`, `vendor`,
+`dist`, `build`, `target`, `.venv`, `.next`, `__pycache__`, `.gradle`, `.idea`,
+plus **`third_party`** and **`out`** — matched by directory *name* at any depth,
+so a nested `net/third_party/…` is pruned like a top-level one.
+
+`third_party` and `out` were added after onboarding chromium reported **241
+modules, 217 of them (90%) under `third_party/`** and one being `out/Default`,
+the GN build output. With them pruned: **21**.
+
+This is scan-only — the code producer still walks those trees, so nothing stops
+being indexed. What changes is that a vendored subtree no longer gets its own
+store and its own line in the module list. (Whether vendored code should be
+*indexed* at all is a separate open question: chromium's residual is 3.6M nodes.)
+
+Add your own via `scan.markers` / `scan.exclude` in `config.json`, and remember
+the module list is hand-editable after `init --scan` — six Cargo fixture dirs
+survive the prune on chromium, and deleting them from `config.json` is the
+intended fix rather than a cleverer heuristic.
+
+### Progress while a fan-out runs
+
+Ticks stream to stderr — a line when each module **starts**, and one when it
 finishes:
 
 ```
 gathering 17 modules (jobs=8)…
+  → infra/postgresbackup
+  → tests/api-e2e
 [1/17] infra/postgresbackup
 [2/17] tests/api-e2e
 ...
 ```
+
+If a task outlives 15 seconds a heartbeat names what is still going, so a large
+module (or the root residual) is never silent:
+
+```
+  … still running (16/17 done): . (2m14s)
+```
+
+Detailed per-module results stay ordered on stdout, so `--jobs` never changes
+what stdout looks like.
 
 The detailed per-module results print to stdout in a deterministic order
 once all workers finish — so piping stdout to a file stays clean.

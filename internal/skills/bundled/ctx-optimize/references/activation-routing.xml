@@ -68,9 +68,30 @@
       <cmd>ctx-optimize hubs --top 10 --json</cmd>
     </route>
 
+    <route id="store-delete" group="manage">
+      <when>delete the store, remove the graph, wipe the index for this repo, start over completely</when>
+      <goal>Delete THIS repo's stores — root store AND every module store, at any depth. DESTRUCTIVE: ask the user before running it.</goal>
+      <cmd>ctx-optimize store delete   [--yes] [--path DIR]</cmd>
+      <note>Always the whole repo, whichever directory you run it from; a sibling repo is never in scope (the key resolves like add/status, there is no path argument). Dry-run by default: it prints the full blast radius then asks [y/N]. Off a terminal nothing is asked and nothing is deleted — `--yes` is the only non-interactive path. `.ctxoptimize/` is NEVER touched: that is committed config, not a cache. Audited. Re-gather with `add .` — it takes seconds. NEVER run this on a user's behalf without asking; prefer `sync` / `add .` if the store merely looks stale.</note>
+    </route>
+
+    <route id="rebuild" group="build">
+      <when>resync properly, rebuild from scratch, the store looks wrong, stale nodes that will not go away, I deleted an adapter but its nodes are still there</when>
+      <goal>Drop the store(s) this add writes, then gather into an empty one — the guaranteed clean slate.</goal>
+      <cmd>ctx-optimize add . --rebuild</cmd>
+      <note>Needed because Replace is producer-SCOPED: a producer that stops running is never replaced, so a RETIRED producer's nodes (deleted adapter script, removed grammar pack) survive every incremental gather — even under --force. A normal `add` now REPORTS them (`retired producer(s) still in the graph`), and a complete `--force` run prunes them; --rebuild is the certain path. Uses the same task plan as the gather so it cannot drop a key the gather will not rewrite; nested module stores are kept (each is rebuilt by its own task); audited. Destructive — ask first.</note>
+    </route>
+
+    <route id="resolutions" group="customize">
+      <when>the store keeps abstaining on the same method, err.Error() shows as unattributed every time, settle an ambiguity permanently, stop re-deriving the same answer</when>
+      <goal>Write a confirmed resolution into the repo so it is inherited by the whole team instead of re-derived every session.</goal>
+      <cmd>.ctxoptimize/resolutions.json → {"external_methods": ["Error", "String", "Close"]}</cmd>
+      <note>Bare METHOD names whose receivers are never types the repo owns. The store holds only the repo's own declarations, so it cannot tell `err.Error()` from a call to their own `Error` — it abstains and shows a shortlist; listing the name retires it. The ONE key that cannot make the graph wrong: consulted only on the abstention path, so it never deletes a resolved edge and there is no path from a declaration to an emitted edge. Receiver-qualified calls only. Malformed = HARD ERROR (bad JSON, unknown key, qualified name, parens, empty entry) because a silently ignored declaration is worse than none. A declared name matching nothing is reported every gather. PROPOSE it, do not write it unasked — it is an assertion about the user's code and only they know whether that method is theirs. `init` scaffolds resolutions.json.sample.</note>
+    </route>
+
     <route id="wiki" group="answer">
       <when>readable map of the module, architecture overview doc, human-readable summary of the graph</when>
-      <goal>Open the store's generated wiki (regenerated on every `add`).</goal>
+      <goal>Open (or rebuild) the store's generated wiki. Regenerated on every `add` UNLESS the repo sets `"wiki": false` in .ctxoptimize/config.json — this verb always builds a COMPLETE one, so "off" never means "unavailable".</goal>
       <cmd>open ~/ctxoptimize/&lt;name&gt;/wiki/index.md   # force regen: ctx-optimize wiki</cmd>
     </route>
 
