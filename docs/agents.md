@@ -100,6 +100,20 @@ edit: callers + blast radius + which tests) · `affected` (impact) · `path` ·
 `verify` (check a citation before a human acts on it) · `fresh` (exit-code
 gate: 0 fresh / 1 stale / 2 unknown). Everything `--json`.
 
+## When the store abstains
+
+`card` printing `unattributed callers: N` means `called by` is **incomplete by
+design**: the store refused to guess. The line names which refusal it was —
+a name defined more than once (grep the bare name), or a **method** whose
+receiver type was never established (grep `\.<Method>(` and check each
+receiver). Since the traversal verbs exclude those edges, **a method's blast
+radius is a floor**. `--include-ambiguous` walks the shortlist with every
+widened row marked; `edges --relation calls --confidence AMBIGUOUS --to <id>`
+lists it flat.
+
+An agent must never present `called by` as the complete caller set while that
+line is present, and must never quote a widened row as a caller.
+
 ## What agents must never do
 
 - Call a tool named `ctx_optimize` — no such tool exists; it's a shell

@@ -1,4 +1,4 @@
-<!-- ctx-optimize:instructions:begin v0.9.0-1-gd041a2a-dirty -->
+<!-- ctx-optimize:instructions:begin v0.11.0-3-g68910de-dirty -->
 # ctx-optimize — the usage card for this repo's knowledge store
 
 **ctx-optimize is a SHELL COMMAND (a CLI on PATH), not a callable tool: run
@@ -36,6 +36,7 @@ CI gate: `up && fresh`.
 | **Orient** — where do I start | `ctx-optimize hubs --top 10 --json` |
 | **List / filter** — every node of a kind, edges of a relation, deps by scope ("all k8s services", "which files use react", "our dev deps") | `ctx-optimize nodes --kind K` / `edges --relation R` / `deps --scope dev [--importers]` — native, portable, **never `export \| jq`** |
 | **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — verbatim source hydrated from the file at answer time (nothing stored) |
+| **The answer looks short — where are the rest of the callers?** | add `--include-ambiguous` to `card`/`explain`/`affected`/`path`/`hubs`/`change-plan`. These verbs answer with FACTS ONLY by default, so a **method's blast radius is a floor**: call sites the store refused to attribute are held back as a shortlist. The flag walks them, and marks every widened row (`?`, or a `MAYBE` heading) — candidates to verify, never callers |
 | **Code changed** — bring the store current | `ctx-optimize sync` — incremental resync of THIS repo (0-change ≈ ms); `--adapters` adds adapter scripts, `--all` adds native sources (dials), `--no-wiki` graph-only. Opt-in autosync: `"autosync": "lazy"` in config.json (stale reads resync themselves in the background) |
 
 Query with 2–4 terms, not sentences; `card` wants the exact label (query the
@@ -51,6 +52,27 @@ claims hold. A failed verify means re-query or `ctx-optimize sync` — NEVER
 rephrase the claim. Fuzzy resolution announces itself (`resolved_via`) and
 refuses ties with ranked candidates — pick one, don't pass `--fuzzy` on a
 user's behalf.
+
+## When the store says "I don't know"
+
+`card` may print `unattributed callers: N`. That means `called by` is
+**incomplete by design** — the store refused to guess, and the line says which
+kind of refusal it was:
+
+- *"the name is defined more than once"* — several declarations share the name.
+  Settle it with `grep -rn '\b<Name>\b' .`
+- *"on a receiver whose type this store never established"* — a **method**. The
+  store holds only this repo's declarations, so it can never tell `err.Error()`
+  from a call to your own `Error`. Settle it with `grep -rn '\.<Method>(' .`
+  and check each receiver's type.
+
+Consequence: for a method, `affected` / `change-plan` give a **floor**, not the
+full set. To see the held-back shortlist without leaving the tool, re-run the
+same verb with `--include-ambiguous`; widened rows are marked and are
+candidates to verify, never callers. Flat list: `edges --relation calls
+--confidence AMBIGUOUS --to <id>`.
+
+Never present `called by` as the complete caller set while that line is printed.
 
 ## Tool choice — store vs grep (two-sided; wrong in either direction is the failure)
 
@@ -99,6 +121,34 @@ ctx-optimize add BILLING_DB_URL       # resolve → dial → capture → merge �
 - Exotic sources (vault-minted certs, tunnels): a script in
   `.ctxoptimize/adapters/` sets the env var in its own process and calls
   `ctx-optimize capture <NAME>` back, teardown in a `finally`.
+
+**Querying a captured source** — read it from the graph, never re-`add` to
+answer a question. Kinds: `database` `schema` `table` `view` `column`
+(postgres/mssql; mysql has no `schema` node) · `collection` · `key_prefix` ·
+`cluster` `topic` `consumer_group` · `server` `stream` · `bucket` `prefix` ·
+`api` `path` `operation` `schema` `securityScheme`. Relations: `contains`
+(whole hierarchy), `references` (FK → referenced table), `uses` (operation →
+component schema).
+
+```sh
+ctx-optimize nodes --kind table --where label~public.   # labels are `schema.table`
+ctx-optimize edges --relation references                # the FK graph
+ctx-optimize card public.users                          # columns, types, indexes
+```
+
+**Source subgraphs are ISLANDS.** A connector only ever sees a URL, and the
+only cross-lane linker bridges code imports → `dep:` nodes. There is NO
+code↔table, code↔topic, code↔config_key or code↔endpoint edge: "which code
+writes this table / implements this endpoint" is NOT answerable from the
+store — say so, then grep the name. Spec routes and code routes are separate
+`route` nodes with identical `METHOD /path` labels and no edge (0% measured
+join rate). The openapi connector parses JSON specs only; the in-repo route
+lane reads YAML specs only.
+
+**`deps` ecosystems**: npm · go · maven · gradle · nuget · pypi · crates.
+Ruby/PHP are not covered (adapter door) and pip-compile locks are skipped on
+purpose (transitive pins, not declarations) — so `(0 dependencies)` means
+"nothing recognized", never "none declared".
 
 ## Sharing — remote push/pull
 

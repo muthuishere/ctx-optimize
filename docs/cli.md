@@ -123,6 +123,27 @@ escalate repo-wide); at a monorepo root, queries federate via the navigator
 (`--modules all|a,b`, `--root`). Name resolution is honest: fuzzy matches
 announce themselves, fuzzy ties refuse with candidates (`--fuzzy` overrides).
 
+### These verbs answer with facts only — and say when that isn't everything
+
+Call sites the extractor could not attribute are held back as an AMBIGUOUS
+shortlist rather than guessed at, and `card`/`explain`/`affected`/`path`/
+`hubs`/`change-plan` exclude them. Two things get held back:
+
+- a callee **name defined more than once** in the repo;
+- a **method** reached through a receiver whose type was never established —
+  the store holds only *your* declarations, so it cannot tell `err.Error()`
+  from a call to your own `Error`.
+
+So **a method's blast radius is a floor, not the full set**, and `card` prints
+`unattributed callers: N` with the grep that settles it. To walk the shortlist
+anyway, add **`--include-ambiguous`** to any of those verbs: widened rows are
+marked (`?` on `affected`, a `MAYBE …` heading on `card`/`explain`) and are
+candidates to verify, never callers. For a flat list instead:
+`edges --relation calls --confidence AMBIGUOUS --to <id>`.
+
+`report` stays facts-only by design — it has its own section for what could
+not be resolved.
+
 ### `status` / `fresh`
 
 **When**: "can I trust this store right now?" `status` prints store facts +

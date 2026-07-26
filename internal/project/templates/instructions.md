@@ -35,6 +35,7 @@ CI gate: `up && fresh`.
 | **Orient** — where do I start | `ctx-optimize hubs --top 10 --json` |
 | **List / filter** — every node of a kind, edges of a relation, deps by scope ("all k8s services", "which files use react", "our dev deps") | `ctx-optimize nodes --kind K` / `edges --relation R` / `deps --scope dev [--importers]` — native, portable, **never `export \| jq`** |
 | **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — verbatim source hydrated from the file at answer time (nothing stored) |
+| **The answer looks short — where are the rest of the callers?** | add `--include-ambiguous` to `card`/`explain`/`affected`/`path`/`hubs`/`change-plan`. These verbs answer with FACTS ONLY by default, so a **method's blast radius is a floor**: call sites the store refused to attribute are held back as a shortlist. The flag walks them, and marks every widened row (`?`, or a `MAYBE` heading) — candidates to verify, never callers |
 | **Code changed** — bring the store current | `ctx-optimize sync` — incremental resync of THIS repo (0-change ≈ ms); `--adapters` adds adapter scripts, `--all` adds native sources (dials), `--no-wiki` graph-only. Opt-in autosync: `"autosync": "lazy"` in config.json (stale reads resync themselves in the background) |
 
 Query with 2–4 terms, not sentences; `card` wants the exact label (query the
@@ -50,6 +51,27 @@ claims hold. A failed verify means re-query or `ctx-optimize sync` — NEVER
 rephrase the claim. Fuzzy resolution announces itself (`resolved_via`) and
 refuses ties with ranked candidates — pick one, don't pass `--fuzzy` on a
 user's behalf.
+
+## When the store says "I don't know"
+
+`card` may print `unattributed callers: N`. That means `called by` is
+**incomplete by design** — the store refused to guess, and the line says which
+kind of refusal it was:
+
+- *"the name is defined more than once"* — several declarations share the name.
+  Settle it with `grep -rn '\b<Name>\b' .`
+- *"on a receiver whose type this store never established"* — a **method**. The
+  store holds only this repo's declarations, so it can never tell `err.Error()`
+  from a call to your own `Error`. Settle it with `grep -rn '\.<Method>(' .`
+  and check each receiver's type.
+
+Consequence: for a method, `affected` / `change-plan` give a **floor**, not the
+full set. To see the held-back shortlist without leaving the tool, re-run the
+same verb with `--include-ambiguous`; widened rows are marked and are
+candidates to verify, never callers. Flat list: `edges --relation calls
+--confidence AMBIGUOUS --to <id>`.
+
+Never present `called by` as the complete caller set while that line is printed.
 
 ## Tool choice — store vs grep (two-sided; wrong in either direction is the failure)
 
