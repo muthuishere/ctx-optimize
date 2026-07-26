@@ -104,3 +104,39 @@ func TestScanWorksWithoutGit(t *testing.T) {
 		t.Errorf("modules = %v, want both (no git ⇒ no gitignore filtering)", got)
 	}
 }
+
+// The escape hatch that makes honouring .gitignore safe: an explicitly declared
+// include wins over every automatic exclusion. Include is applied AFTER the
+// walk, so this works by construction today — the test exists so that a later
+// "optimisation" folding Include into the walk cannot silently remove it.
+func TestIncludeOverridesGitignore(t *testing.T) {
+	root := t.TempDir()
+	mkModule(t, root, "out/service")
+	gitInit(t, root, "/out/\n")
+
+	if got := modulePaths(t, root); len(got) != 0 {
+		t.Fatalf("precondition: gitignored, so not discovered; got %v", got)
+	}
+	res, err := Scan(root, Options{Include: []string{"out/service"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Modules) != 1 || res.Modules[0].Path != "out/service" {
+		t.Errorf("modules = %+v, want [out/service] — an explicit include must beat .gitignore", res.Modules)
+	}
+}
+
+// A marker file the repo does not track is not a declaration. Some repos
+// generate package.json / Cargo.toml and gitignore it; calling that directory a
+// module is the same disagreement the directory rule fixes, one level down.
+func TestGitignoredMarkerFileIsNotEvidence(t *testing.T) {
+	root := t.TempDir()
+	mkModule(t, root, "generated")  // package.json will be gitignored
+	mkModule(t, root, "tools/real") // tracked
+	gitInit(t, root, "generated/package.json\n")
+
+	got := modulePaths(t, root)
+	if len(got) != 1 || got[0] != "tools/real" {
+		t.Errorf("modules = %v, want only [tools/real] — an untracked marker is not a declared project", got)
+	}
+}

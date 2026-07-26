@@ -212,6 +212,14 @@ func Scan(root string, o Options) (*Result, error) {
 			return nil // the root is the root, not a module
 		}
 		if markers[d.Name()] {
+			// The MARKER must be tracked too, not just its directory. A repo
+			// that GENERATES and gitignores its package.json / Cargo.toml is
+			// not declaring a project there — and calling it a module on
+			// evidence git does not track is the same disagreement the
+			// directory rule above fixes, one level down.
+			if gitIgnored != nil && gitIgnored(rel) {
+				return nil
+			}
 			if _, ok := found[dir]; !ok {
 				found[dir] = d.Name()
 			}
@@ -222,6 +230,12 @@ func Scan(root string, o Options) (*Result, error) {
 		return nil, err
 	}
 
+	// Include is applied AFTER the walk, so an explicitly declared directory
+	// wins over every automatic exclusion above — .gitignore, the vendored-name
+	// list, and the depth bound. That ordering is the escape hatch that makes
+	// honouring .gitignore safe: if the repo ignores a tree but you want it as a
+	// module anyway, say so and you get it. Pinned by
+	// TestIncludeOverridesGitignore.
 	for _, g := range o.Include {
 		matches, _ := filepath.Glob(filepath.Join(absRoot, filepath.FromSlash(g)))
 		for _, m := range matches {

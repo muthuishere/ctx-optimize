@@ -182,10 +182,16 @@ embeddings, no MCP, no network except your configured remote.**
   principle instead of by coincidence.
 
   Precedence is now explicit, and the repo decides at every level: `.gitignore` →
-  `scan.exclude`/`scan.markers` → the hand-editable `modules` list in
-  `config.json` → and only then a short built-in list for trees that are
-  **vendored yet checked in**, where `.gitignore` cannot help (`vendor`,
-  `node_modules`, `third_party`, …).
+  `scan.exclude`/`scan.markers` → **`scan.include`, which beats every automatic
+  exclusion including `.gitignore`** (the escape hatch that makes honouring it
+  safe) → the hand-editable `modules` list in `config.json` → and only then a
+  short built-in list for trees that are **vendored yet checked in**, where
+  `.gitignore` cannot help (`vendor`, `node_modules`, `third_party`, …).
+
+  Also finished: a **marker file** must be tracked too, not just its directory. A
+  repo that generates and gitignores its `package.json` / `Cargo.toml` is not
+  declaring a project there — calling that directory a module was the same
+  disagreement, one level down.
 
   Vendored code is still **indexed** — that is deliberate, so you can query into
   a dependency. What the prune decides is only whether a subtree gets its own

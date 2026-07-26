@@ -40,11 +40,15 @@ ctx-optimize add .                # fan-out gather: one worker per module
    what is even in the repo.
 2. **`scan.exclude` / `scan.markers`** in `config.json` — your globs and your
    marker files, extending the built-ins.
-3. **`config.json`'s `modules` list itself**, which is hand-editable after
+3. **`scan.include`** — an explicit include **beats every automatic exclusion**,
+   including `.gitignore`. That ordering is the escape hatch that makes honouring
+   `.gitignore` safe: if the repo ignores a tree but you want it as a module
+   anyway, say so and you get it.
+4. **`config.json`'s `modules` list itself**, which is hand-editable after
    `init --scan` and is the real source of truth. Six Cargo fixture dirs survive
    everything above on chromium; deleting them from the config is the intended
    fix, not a cleverer heuristic.
-4. Only then a short built-in name list, for trees that are **vendored yet
+5. Only then a short built-in name list, for trees that are **vendored yet
    checked in**, where `.gitignore` cannot help: `.git`, `node_modules`,
    `vendor`, `dist`, `build`, `target`, `.venv`, `.next`, `__pycache__`,
    `.gradle`, `.idea`, `third_party` — matched by *name* at any depth, so a
@@ -56,6 +60,10 @@ Note what is deliberately **not** on that name list: **`out`**. It is gitignored
 in chromium, so rule 1 removes it — and hard-coding a name that generic would
 break a repo that legitimately keeps source in `out/`. Fixing the cause was right
 for every repo, not just Google-shaped ones.
+
+A **marker file** must be tracked too, not just its directory: a repo that
+generates and gitignores its `package.json` / `Cargo.toml` is not declaring a
+project there, so that directory is not a module.
 
 This is all scan-only. The code producer still walks these trees, so nothing
 stops being **indexed** — vendored code stays queryable on purpose. What changes
