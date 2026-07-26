@@ -1,7 +1,8 @@
 # ADR — declared resolutions: let the repo settle what the extractor can't
 
-Status: **DRAFT** — not implemented. Needs the owner's call on the declaration
-shape (see Open questions) before any code.
+Status: **IMPLEMENTED (first cut)** — 2026-07-26. Owner chose
+`external_methods` only, hand-written. `receiver_types` / `scoped` / a
+`resolve` verb are NOT built — see Deferred.
 
 ## First, a correction
 
@@ -39,7 +40,7 @@ is short. A file of a few dozen declarations covers essentially all of it, which
 is what makes this worth doing by hand at all — the same reason grammar and
 route packs are hand-written JSON.
 
-## Proposed shape (my recommendation)
+## Proposed shape (as drafted — only the first key shipped)
 
 One committed file, `.ctxoptimize/resolutions.json`, discovered like the other
 packs, validated at gather time, failing **loudly** on a malformed entry:
@@ -77,36 +78,88 @@ is a guess about strangers' code, whereas declared by the repo owner it is an
 assertion about their own. That distinction is the whole ADR: we do not guess;
 we accept declarations, and we record who declared them.
 
-## The honest cost, stated up front
+## The honest cost — and why it does not apply to what shipped
 
-**This is user-supplied ground truth, and a wrong declaration produces a
-confidently wrong edge** — precisely what the receiver gate was built to stop.
-The binary cannot type-check a type claim. So:
+For the RESOLVING keys (`receiver_types`, `scoped`): this is user-supplied
+ground truth, and a wrong declaration produces a confidently wrong edge —
+precisely what the receiver gate was built to stop. The binary cannot
+type-check a type claim. Guards those keys would need:
 
 1. Config-resolved edges carry provenance (`metadata.resolved_by: "declared"`),
    so every one is auditable and `nodes/edges --where` can list them.
 2. They must NOT be indistinguishable from parsed facts. Minimum:
    `INFERRED` confidence, never `EXTRACTED`.
+
+**This cost is exactly why the owner scoped the first cut to
+`external_methods`**, which resolves nothing and therefore needs neither guard.
+Guard 3 below applies to every key and did ship:
+
 3. A declaration that matches **nothing** is reported, not ignored — a rotted
    entry (renamed type) must be visible, or the file decays into lies.
 
-## Open questions for the owner
+## What shipped
 
-1. **Which of the three keys ship first?** `external_methods` is trivial and
-   only ever *removes* maybes, so it cannot introduce a wrong edge — the safe
-   first cut. `receiver_types` is where the value is and where the risk is.
-2. **New confidence tier, or INFERRED with provenance?** A `DECLARED` tier is
-   more honest but the schema is a public door and widening it is permanent.
-   I lean to INFERRED + `resolved_by`.
-3. **Should `verify` check declarations?** It could confirm the declared type
-   exists as a node; it can never confirm the receiver really has that type.
-4. **Who writes the file?** Hand-written, or a `ctx-optimize resolve` verb that
-   proposes entries from the current shortlist for a human to approve? The
-   second is friendlier and is also how a wrong declaration gets in fastest.
+`.ctxoptimize/resolutions.json`, one key:
+
+```json
+{ "external_methods": ["Error", "String", "Close"] }
+```
+
+Semantics, chosen so the safety claim is structural rather than a promise:
+
+- Checked **only on the abstention path** — after `pick` has already declined.
+  So it retires a shortlist and can never delete a resolved edge:
+  `MyErr.Error()`, which names its own receiver, still resolves
+  (`TestDeclarationNeverRemovesAResolvedEdge`).
+- It **never creates an edge**. There is no code path from a declaration to an
+  emitted edge at all (`TestExternalMethodRetiresTheShortlist` asserts the
+  INFERRED absence, not just the AMBIGUOUS one).
+- Applies only to **receiver-qualified** calls. An unqualified `Error()` is a
+  plain function call and may well be yours
+  (`TestDeclarationDoesNotTouchUnqualifiedCalls`).
+- **Malformed is a hard error, never a warning** — bad JSON, an unknown key, a
+  qualified name, parens, an empty entry. A silently ignored declaration is the
+  worst outcome, because the author believes it is in force. The unknown-key
+  error names the keys that ARE supported, so a future `receiver_types` line
+  fails loudly today instead of doing nothing.
+- A declared name matching **no** call site is reported on every gather. A file
+  nobody prunes decays into confident-looking claims about code that moved on.
+
+### Measured on this repo, same commit, one declared line (`"Error"`)
+
+| | no declaration | declared |
+|---|---:|---:|
+| INFERRED `calls` | 2,455 | **2,455** |
+| AMBIGUOUS `unresolved-receiver` | 239 | **141** |
+| AMBIGUOUS `name-collision` | 1,202 | 1,202 |
+
+98 maybes retired, nothing created, nothing else touched. `.ctxoptimize/resolutions.json`
+is committed here — `Error` is genuinely external in this repo, since
+`AmbiguousError.Error` is reached by interface dispatch (`%v`, `err.Error()`),
+never by an explicit call on our type.
+
+`init`/`up` scaffold an inert `resolutions.json.sample` (renamed to activate),
+because nobody uses a declaration file they never learn exists.
+
+## Deferred, deliberately
+
+`receiver_types` and `scoped` — the keys that *resolve* rather than retire — are
+where the value is and where the risk is: the binary cannot type-check a type
+claim, so a wrong line becomes a confidently wrong edge, which is exactly what
+`2026-07-25-method-call-resolution` was built to prevent. Shipping the harmless
+key first means the file, the loader, the validation and the staleness report
+all exist and are proven before that trade is taken. Reopen with its own ADR.
+
+A `resolve` verb that proposes entries from the current shortlist was also
+declined: approving a proposal is one keystroke, which makes it the fastest path
+to a wrong declaration.
 
 ## Not claimed
 
-- No spike. The numbers above are shortlist sizes, not evidence that
-  declarations are easy to get right.
-- No claim that a repo will maintain this file. An unmaintained resolutions file
-  is worse than none, and question 3 exists because of that.
+- The numbers above are shortlist sizes and one line's effect. No claim that
+  declarations are generally easy to get right — only that THIS key cannot be
+  wrong in a way that corrupts the graph.
+- No claim that a repo will maintain this file. The staleness report exists
+  because it probably won't.
+- Nothing here improves resolution. It removes noise the extractor was honest
+  about; the 1,202 name-collisions are untouched.

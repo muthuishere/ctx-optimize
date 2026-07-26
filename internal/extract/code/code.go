@@ -226,6 +226,13 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 		return nil, err
 	}
 	packRules := compileRoutePacks(routePacks)
+	// Declared resolutions (resolutions.go): the repo's own answers to what the
+	// extractor refuses to decide. Malformed = hard error, like the packs.
+	decl, err := LoadResolutions(base)
+	if err != nil {
+		return nil, err
+	}
+	external := newExternalSet(decl)
 	// A pack extension beats the embedded set — users can override built-ins.
 	packByExt := map[string]*Pack{}
 	for i := range packs {
@@ -508,6 +515,13 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 	for _, c := range calls {
 		t := pick(c, true)
 		if t == nil {
+			// Declared external: the repo says this method name belongs to a
+			// type it does not own, so there is nothing here to shortlist.
+			// Checked only on the abstention path — a declaration can retire a
+			// maybe, never a resolved edge.
+			if external.suppress(c) {
+				continue
+			}
 			// Undecidable. Emit the shortlist as AMBIGUOUS so the agent can see
 			// the candidates and grep, instead of the call site vanishing and
 			// the graph looking complete. Every traversal verb filters these
@@ -580,6 +594,12 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 			Confidence: "INFERRED", Weight: 1,
 			Metadata: map[string]string{"synthesized_by": r.channel},
 		})
+	}
+	// A declared name that matched nothing is reported, not ignored: the author
+	// believes the line is in force, and a stale one is a lie waiting to be read.
+	if stale := external.unused(); len(stale) > 0 {
+		fmt.Fprintf(os.Stderr, "ctx-optimize: %s: external_methods matched no call site: %s\n",
+			ResolutionsFile(base), strings.Join(stale, ", "))
 	}
 	sortBatch(batch)
 	return batch, nil

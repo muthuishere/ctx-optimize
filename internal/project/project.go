@@ -250,6 +250,14 @@ var pushSample string
 //go:embed templates/pull.js.sample
 var pullSample string
 
+// resolutionsSample → .ctxoptimize/resolutions.json.sample, inert until
+// renamed (ADR 2026-07-26-declared-resolutions). Scaffolded because nobody
+// uses a declaration file they never learn exists — the same reason
+// instructions.md is written out.
+//
+//go:embed templates/resolutions.json.sample
+var resolutionsSample string
+
 // Scaffold creates the .ctxoptimize/ layout in the repo: config.json (with
 // the module name), adapters/ seeded with an inert template, the inert
 // git-lane transport samples, and remote.example.md (transport authoring
@@ -273,6 +281,7 @@ func EnsureSamples(repo, name string) ([]string, error) {
 		{Dir + "/push.js.sample", pushSample},
 		{Dir + "/pull.js.sample", pullSample},
 		{Dir + "/remote.example.md", strings.ReplaceAll(remoteTemplate, "${NAME}", name)},
+		{Dir + "/resolutions.json.sample", resolutionsSample},
 		// No .gitignore is scaffolded: nothing secret lives in .ctxoptimize/
 		// — source credentials resolve from the process env, the repo-root
 		// .env (the user's own, warned loudly if tracked), or the

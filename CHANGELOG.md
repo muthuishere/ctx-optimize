@@ -12,6 +12,46 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Added
 
+- **Declared resolutions: `.ctxoptimize/resolutions.json`** (ADR
+  `openspec/changes/2026-07-26-declared-resolutions/`). The store abstains on
+  call sites it cannot justify, which is correct and leaves the same question to
+  be re-derived by every agent forever. Now a repo can write the answer down and
+  commit it. First cut is one key, deliberately the one that **cannot make the
+  graph wrong**:
+
+  ```json
+  { "external_methods": ["Error", "String", "Close"] }
+  ```
+
+  Bare method names whose receivers are never types you own. The store holds
+  only YOUR declarations, so it can never tell `err.Error()` from a call to your
+  own `Error` — it abstains and shows a shortlist. Listing the name retires that
+  shortlist.
+
+  The safety claim is structural, not a promise: the declaration is consulted
+  **only on the abstention path**, so it can never delete a resolved edge
+  (`MyErr.Error()`, which names its own receiver, still resolves) and there is no
+  code path from a declaration to an emitted edge at all. It applies only to
+  receiver-qualified calls — an unqualified `Error()` is a plain function call
+  and may well be yours.
+
+  Malformed is a **hard error, never a warning**: bad JSON, unknown key,
+  qualified name, parens, empty entry. A silently ignored declaration is the
+  worst outcome because the author believes it is in force; the unknown-key
+  error names the keys that ARE supported, so a `receiver_types` line fails
+  loudly today instead of doing nothing. A declared name matching no call site
+  is reported on every gather — a file nobody prunes decays into
+  confident-looking claims about code that moved on.
+
+  Measured on this repo, same commit, one declared line: AMBIGUOUS
+  `unresolved-receiver` **239 → 141** (98 maybes retired), INFERRED unchanged at
+  2,455, `name-collision` untouched. `init`/`up` scaffold an inert
+  `resolutions.json.sample`.
+
+  **Not shipped:** `receiver_types` / `scoped` — the keys that *resolve* rather
+  than retire. The binary cannot type-check a type claim, so a wrong line there
+  becomes a confidently wrong edge; that trade gets its own ADR.
+
 - **`--include-ambiguous` — a door out of the abstention** (ADR
   `openspec/changes/2026-07-26-include-ambiguous/`). Abstaining made the
   traversal verbs answer with facts only, which means a method's blast radius
