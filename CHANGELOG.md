@@ -169,6 +169,28 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Changed
 
+- **`scan` now honours `.gitignore`, and stopped hard-coding `out`** (#10). The
+  code producer already respected `.gitignore` with git's own semantics; `scan`
+  did not — so the two disagreed about what is even in the repo. Chromium's
+  **`out/Default`** was proposed as a module while extraction correctly skipped it
+  as gitignored build output (`chromium/.gitignore:252: /out*/`).
+
+  `out` was briefly added to the built-in prune list, which patched the symptom
+  with a name generic enough to break any repo that legitimately keeps source in
+  `out/`. Removed. `.gitignore` handles it, correctly, for every repo rather than
+  just Google-shaped ones — chromium still resolves to **21 modules**, now by
+  principle instead of by coincidence.
+
+  Precedence is now explicit, and the repo decides at every level: `.gitignore` →
+  `scan.exclude`/`scan.markers` → the hand-editable `modules` list in
+  `config.json` → and only then a short built-in list for trees that are
+  **vendored yet checked in**, where `.gitignore` cannot help (`vendor`,
+  `node_modules`, `third_party`, …).
+
+  Vendored code is still **indexed** — that is deliberate, so you can query into
+  a dependency. What the prune decides is only whether a subtree gets its own
+  store and its own line in the module list.
+
 - **A `.txt` is plain text: `#` is a comment, not a heading** (#14, ADR
   `openspec/changes/2026-07-26-hash-is-a-comment-not-a-heading/`). The doc
   producer claimed both `.md` and `.txt`, so a shell-comment licence header —

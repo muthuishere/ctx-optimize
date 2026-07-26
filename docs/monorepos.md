@@ -30,25 +30,37 @@ ctx-optimize add .                # fan-out gather: one worker per module
 
 ### What `scan` refuses to call a module
 
-Generated and vendored trees are never descended into, because a `package.json`
-in one of them is noise rather than a project: `.git`, `node_modules`, `vendor`,
-`dist`, `build`, `target`, `.venv`, `.next`, `__pycache__`, `.gradle`, `.idea`,
-plus **`third_party`** and **`out`** — matched by directory *name* at any depth,
-so a nested `net/third_party/…` is pruned like a top-level one.
+**Your repo decides, in this order:**
 
-`third_party` and `out` were added after onboarding chromium reported **241
-modules, 217 of them (90%) under `third_party/`** and one being `out/Default`,
-the GN build output. With them pruned: **21**.
+1. **`.gitignore`** — with git's own semantics (nested files, negations, global
+   excludes). If the repo says a tree is not source, `scan` believes it. This is
+   the same rule the code producer already used; `scan` did not, which is why
+   chromium's **`out/Default`** — gitignored build output — was once proposed as a
+   module while extraction correctly skipped it. Two subsystems disagreeing about
+   what is even in the repo.
+2. **`scan.exclude` / `scan.markers`** in `config.json` — your globs and your
+   marker files, extending the built-ins.
+3. **`config.json`'s `modules` list itself**, which is hand-editable after
+   `init --scan` and is the real source of truth. Six Cargo fixture dirs survive
+   everything above on chromium; deleting them from the config is the intended
+   fix, not a cleverer heuristic.
+4. Only then a short built-in name list, for trees that are **vendored yet
+   checked in**, where `.gitignore` cannot help: `.git`, `node_modules`,
+   `vendor`, `dist`, `build`, `target`, `.venv`, `.next`, `__pycache__`,
+   `.gradle`, `.idea`, `third_party` — matched by *name* at any depth, so a
+   nested `net/third_party/…` prunes like a top-level one.
 
-This is scan-only — the code producer still walks those trees, so nothing stops
-being indexed. What changes is that a vendored subtree no longer gets its own
-store and its own line in the module list. (Whether vendored code should be
-*indexed* at all is a separate open question: chromium's residual is 3.6M nodes.)
+Chromium: **241 modules → 21**, 217 of the removed ones under `third_party/`.
 
-Add your own via `scan.markers` / `scan.exclude` in `config.json`, and remember
-the module list is hand-editable after `init --scan` — six Cargo fixture dirs
-survive the prune on chromium, and deleting them from `config.json` is the
-intended fix rather than a cleverer heuristic.
+Note what is deliberately **not** on that name list: **`out`**. It is gitignored
+in chromium, so rule 1 removes it — and hard-coding a name that generic would
+break a repo that legitimately keeps source in `out/`. Fixing the cause was right
+for every repo, not just Google-shaped ones.
+
+This is all scan-only. The code producer still walks these trees, so nothing
+stops being **indexed** — vendored code stays queryable on purpose. What changes
+is that a vendored subtree does not get its own store and its own line in the
+module list.
 
 ### Progress while a fan-out runs
 
