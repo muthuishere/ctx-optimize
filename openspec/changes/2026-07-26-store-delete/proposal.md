@@ -61,12 +61,25 @@ CLI shape:
 - **Dry-run by default.** It prints what would go, names the nested stores that
   would survive, and says `.ctxoptimize/` is untouched. `--yes` performs it. A
   confirmation that does not state the blast radius is theatre.
-- **Nested module stores go WITH the root store.** They are the same repo's
-  derived data; `--keep-nested` is the opt-out. The first version kept them by
-  default and chromium exposed why that is wrong: it printed
-  `deleted store "chromium"` and left **33 chromium module stores** on disk.
-  Reporting one deletion while 33 survive is a lie by omission. What stays
-  impossible is reaching a store the caller never named.
+- **The target is always the whole REPO**, resolved from the scope's root key
+  whichever directory you run it from: the root store plus every module store,
+  at any depth. There is no per-module delete — module stores are the same
+  repo's derived data and re-gathering takes seconds, so the option was surface
+  with no use case (owner-directed).
+
+  The first version kept nested stores by default and chromium exposed why that
+  is wrong: it printed `deleted store "chromium"` and left **33 chromium module
+  stores** on disk. Reporting one deletion while 33 survive is a lie by
+  omission. What stays impossible is reaching a store the caller never named.
+
+  Two bugs fell out of testing this rather than reading it. The per-module path
+  resolved its key with `ModuleKey`, yielding `svcB` where the store lives at
+  `dtest/svcB` — so a delete from inside a module always missed; it is gone with
+  the module path. And `nestedStores` stopped at the first store it found
+  (`SkipDir`), so a repo declaring both `svcB` and `svcB/inner` reported 2
+  stores where there were 3. The delete was correct either way, but a prompt
+  that UNDER-states its blast radius is the one error direction that is never
+  acceptable.
 - **It ASKS.** `[y/N]` at a terminal, after printing the blast radius —
   requiring a second full invocation of the command added no safety, only
   typing. Off a terminal nothing is asked and nothing is deleted: a missing

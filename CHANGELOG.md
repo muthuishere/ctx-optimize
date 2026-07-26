@@ -97,11 +97,21 @@ embeddings, no MCP, no network except your configured remote.**
   `os.RemoveAll` therefore **destroyed stores it never reported**. Deletion now
   goes through one guarded primitive that reports exactly what it touched.
 
-  Those nested stores are the SAME repo's data, so they go with the root store
-  by default (`--keep-nested` leaves them): measured on chromium, the first
+  **It is always the whole repo**, whichever directory you run it from: the root
+  store plus every module store, at any depth. Measured on chromium, the first
   version reported `deleted store "chromium"` and left **33 chromium module
-  stores** on disk — a lie by omission. What stays impossible is reaching a
-  store the caller never named; a sibling repo is never in scope.
+  stores** on disk — a lie by omission. There is no per-module delete: module
+  stores are the same repo's derived data and re-gathering takes seconds, so the
+  flag was surface with no use case. What stays impossible is reaching a store
+  the caller never named; a sibling repo is never in scope.
+
+  Two bugs closed on the way there. The per-module path resolved its key with
+  `ModuleKey`, producing `svcB` where the store actually lives at `dtest/svcB`,
+  so `store delete` inside a module always missed — gone with the module path
+  itself. And the nested-store scan stopped at the first store it found, so a
+  repo declaring both `svcB` and `svcB/inner` reported **2 stores where there
+  were 3**: the delete was right, but a confirmation prompt that under-states
+  its blast radius is the one direction that must never happen.
 
   Also closed: `SanitizeKeyPath` drops a `..` segment, so the key `repo/..` was
   rewritten to `repo` — no traversal escape, but a delete of a store the caller

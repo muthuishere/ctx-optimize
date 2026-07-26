@@ -1184,7 +1184,7 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 // hand at a root that holds every repo's store plus the audit log.
 func cmdStore(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ctx-optimize store delete [--path DIR] [--yes] [--keep-nested]")
+		return fmt.Errorf("usage: ctx-optimize store delete [--path DIR] [--yes]")
 	}
 	switch args[0] {
 	case "delete", "rm", "remove":
@@ -1200,62 +1200,41 @@ func cmdStore(args []string, stdout io.Writer) error {
 // at an arbitrary directory.
 //
 // Deletion is permanent and derived-data-only: `.ctxoptimize/` stays (that is
-// committed config, not a cache), sibling stores stay, and NESTED module stores
-// go with it (they are the same repo's data) unless --keep-nested says
-// otherwise. Re-gather with `add .`.
+// committed config, not a cache) and a sibling repo's store is never in scope.
+// Re-gather with `add .`.
 func cmdStoreDelete(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) > 0 {
 		return fmt.Errorf("store delete takes no positional argument — it deletes the store for the module you are in (use --path DIR to point elsewhere)")
 	}
-	repoPath, err := resolvePath(f)
-	if err != nil {
-		return err
-	}
 	storeRoot, err := store.Root(f.strs["store"])
 	if err != nil {
 		return err
 	}
-	pc, err := project.Load(repoPath)
+	// ALWAYS the whole repo. The scope's ROOT key is the target even when cwd is
+	// a module dir, because a repo's module stores are that same repo's derived
+	// data and re-gathering is seconds — a per-module delete is surface with no
+	// use case (owner-directed 2026-07-26).
+	//
+	// This also removes a bug: the per-module path resolved the key with
+	// ModuleKey, producing `svcB` where the store actually lives at
+	// `dtest/svcB`, so `store delete` inside a module always missed.
+	sc, err := resolveScope(f)
 	if err != nil {
 		return err
 	}
-	key := store.SanitizeKey(pc.Name)
-	if key == "" {
-		if key, err = store.ModuleKey(repoPath); err != nil {
-			return err
-		}
-	}
+	key := sc.rootKey
 	dir := filepath.Join(storeRoot, filepath.FromSlash(key))
-	// A multi-module repo's module stores are nested INSIDE its root store, and
-	// they are that same repo's derived data — chromium/third_party/node is
-	// chromium's, not a stranger's. So "delete this repo's store" takes them:
-	// reporting `deleted store "chromium"` while leaving 33 chromium stores on
-	// disk is a lie by omission. --keep-nested is the opt-out, and the
-	// confirmation states the count either way, so the blast radius is known
-	// BEFORE the answer. What is still impossible is deleting a store you did
-	// not name: siblings are never in scope (store.Delete resolves one key).
-	keepNested := f.bools["keep-nested"]
-	nestedCount := 0
+	nested := []string{}
 	if n, nerr := store.PreviewDelete(storeRoot, key); nerr == nil {
-		nestedCount = len(n)
+		nested = n
 	}
 	if !f.bools["yes"] {
-		// Say exactly what would go, and what would survive, BEFORE asking.
-		// A confirmation that does not name the blast radius is theatre.
-		nested, nerr := store.PreviewDelete(storeRoot, key)
-		if nerr != nil {
-			return nerr
-		}
-		fmt.Fprintf(stdout, "would delete store %q at %s\n", key, dir)
+		// Say exactly what goes BEFORE asking. A confirmation that does not
+		// name the blast radius is theatre — and it must never UNDER-state it.
+		fmt.Fprintf(stdout, "would delete %d store(s) for repo %q under %s\n", len(nested)+1, key, dir)
 		if len(nested) > 0 {
-			if keepNested {
-				fmt.Fprintf(stdout, "  KEEPING %d nested module store(s)%s\n", len(nested), summarizeList(nested, 5))
-				fmt.Fprintln(stdout, "  (they belong to this same repo — drop --keep-nested to remove them too)")
-			} else {
-				fmt.Fprintf(stdout, "  including %d nested module store(s) of this repo%s\n", len(nested), summarizeList(nested, 5))
-				fmt.Fprintln(stdout, "  (--keep-nested leaves those in place)")
-			}
+			fmt.Fprintf(stdout, "  the root store + %d module store(s)%s\n", len(nested), summarizeList(nested, 5))
 		}
 		fmt.Fprintln(stdout, "  .ctxoptimize/ in the repo is NOT touched; re-gather with `add .`")
 
@@ -1276,7 +1255,7 @@ func cmdStoreDelete(args []string, stdout io.Writer) error {
 			return nil
 		}
 	}
-	deleted, kept, err := store.Delete(storeRoot, key, !keepNested)
+	deleted, _, err := store.Delete(storeRoot, key, true)
 	if err != nil {
 		return err
 	}
@@ -1285,14 +1264,9 @@ func cmdStoreDelete(args []string, stdout io.Writer) error {
 	}); aerr != nil {
 		fmt.Fprintf(stdout, "warning: store deleted but audit log not written: %v\n", aerr)
 	}
-	fmt.Fprintf(stdout, "deleted store %q → %s\n", deleted, dir)
-	if len(kept) > 0 {
-		// A count plus a sample: chromium has 33 of these, and 33 lines of
-		// confirmation bury the one line that matters.
-		fmt.Fprintf(stdout, "kept %d nested module store(s)%s\n", len(kept), summarizeList(kept, 3))
-	} else if nestedCount > 0 {
-		fmt.Fprintf(stdout, "…including %d nested module store(s) of this repo\n", nestedCount)
-	}
+	// One line, with the count. chromium has 33 module stores, and 33 lines of
+	// confirmation bury the one line that matters.
+	fmt.Fprintf(stdout, "deleted %d store(s) for repo %q → %s\n", len(nested)+1, deleted, dir)
 	fmt.Fprintln(stdout, "re-gather with `ctx-optimize add .`")
 	return nil
 }
@@ -3213,17 +3187,15 @@ commands:
                               dir (deterministic, from nodes+edges only; every
                               add already regenerates it)
   status                      store facts + freshness vs git HEAD  [--json]
-  store delete                delete THIS repo's store (the derived graph) — key
-                              resolved like add/status, never from a path
-                              argument, so a sibling store is never in scope.
-                              A multi-module repo's module stores nest inside its
-                              root store and are the SAME repo's data, so they go
-                              too (--keep-nested leaves them). Prints the full
-                              blast radius, then ASKS [y/N]; off a terminal
-                              (pipe, CI) nothing is asked and nothing is deleted —
-                              pass --yes to opt in explicitly.
-                              .ctxoptimize/ is never touched (committed config,
-                              not a cache) — re-gather with 'add .'. Audited
+  store delete                delete THIS REPO's stores (the derived graph) — the
+                              root store AND every module store, always the whole
+                              repo, whichever dir you run it from. A sibling repo
+                              is never in scope. Prints the full blast radius,
+                              then ASKS [y/N]; off a terminal (pipe, CI) nothing
+                              is asked and nothing is deleted — pass --yes to opt
+                              in explicitly. .ctxoptimize/ is never touched
+                              (committed config, not a cache) — re-gather with
+                              'add .', it takes seconds. Audited
   fresh                       is the store current with git HEAD? one-line
                               verdict; exit 0 fresh / 1 stale / 2 unknown
                               (agent/hook gate before trusting an answer)  [--json]

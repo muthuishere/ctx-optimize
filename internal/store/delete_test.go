@@ -35,6 +35,7 @@ func TestDeleteTakesTheReposOwnModuleStoresButNeverASibling(t *testing.T) {
 	root := t.TempDir()
 	mkStore(t, root, "chromium")
 	mkStore(t, root, "chromium/third_party/node")
+	mkStore(t, root, "chromium/third_party/node/deps") // nested TWO deep
 	mkStore(t, root, "chromium/tools/grit")
 	sibling := mkStore(t, root, "other-repo")
 
@@ -139,17 +140,28 @@ func TestDeleteRefusesNonStoreDirs(t *testing.T) {
 	}
 }
 
-func TestPreviewDeleteTouchesNothing(t *testing.T) {
+// The preview feeds a confirmation prompt, so under-counting is the one
+// direction that must never happen. It used to SkipDir at the first store found,
+// reporting 2 stores for a repo that had 3 (a module nested inside a module).
+func TestPreviewDeleteCountsStoresAtEveryDepth(t *testing.T) {
 	root := t.TempDir()
 	mkStore(t, root, "reqsume")
 	mkStore(t, root, "reqsume/e2e")
+	mkStore(t, root, "reqsume/e2e/fixtures") // two deep — was invisible
+	mkStore(t, root, "other-repo")           // never in scope
 
 	got, err := PreviewDelete(root, "reqsume")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0] != "reqsume/e2e" {
-		t.Errorf("PreviewDelete = %v, want [reqsume/e2e]", got)
+	want := []string{"reqsume/e2e", "reqsume/e2e/fixtures"}
+	if len(got) != len(want) {
+		t.Fatalf("PreviewDelete = %v, want %v — a prompt must never under-state the blast radius", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 	if _, err := os.Stat(filepath.Join(root, "reqsume", "graph")); err != nil {
 		t.Error("preview must not delete anything")

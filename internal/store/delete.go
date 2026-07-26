@@ -67,6 +67,8 @@ func Delete(root, key string, withNested bool) (deleted string, keptNested []str
 	}
 
 	// Keep every path on the way down to a nested store; remove the rest.
+	// nested now includes deeply-nested stores, which is what we want here too:
+	// keeping the chain to the deepest one keeps its parents by construction.
 	keep := map[string]bool{}
 	for _, n := range nested {
 		for p := n; p != dir; p = filepath.Dir(p) {
@@ -98,9 +100,13 @@ func Delete(root, key string, withNested bool) (deleted string, keptNested []str
 	return clean, keptNested, nil
 }
 
-// nestedStores returns the OUTERMOST store dirs strictly inside dir (a store
-// inside a store is not descended into further — deleting the parent of a
-// nested store keeps the whole nested subtree, not a hollowed-out version).
+// nestedStores returns EVERY store dir strictly inside dir, at any depth.
+//
+// It used to SkipDir at the first store it found, which made the count wrong
+// whenever modules nest (a repo declaring both `svcB` and `svcB/inner` reported
+// 2 stores where there were 3). The delete was still correct — RemoveAll takes
+// the whole subtree — but a confirmation prompt that UNDER-states the blast
+// radius is the one direction that must never happen.
 func nestedStores(dir string) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
@@ -112,8 +118,7 @@ func nestedStores(dir string) ([]string, error) {
 			return filepath.SkipDir // this store's own artifacts, never a module
 		}
 		if _, serr := os.Stat(filepath.Join(p, "graph")); serr == nil {
-			out = append(out, p)
-			return filepath.SkipDir
+			out = append(out, p) // and KEEP walking: stores nest arbitrarily deep
 		}
 		return nil
 	})
