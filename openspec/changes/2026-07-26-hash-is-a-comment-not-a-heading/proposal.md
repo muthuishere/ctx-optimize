@@ -1,7 +1,9 @@
 # ADR — `#` is a comment far more often than it is a heading
 
-Status: **DRAFT** — measured, huddle-reviewed, needs the owner's call. Supersedes
-the "drop `.txt` section parsing" proposal in issue #14, which was wrong.
+Status: **IMPLEMENTED** — 2026-07-26. Owner chose the simple rule over the
+measured threshold rule, and elevated it to a **core promise**. Supersedes the
+first "drop `.txt`" framing in issue #14, whose *reasoning* was wrong even though
+its conclusion was close.
 
 ## The proposal that was wrong, and why
 
@@ -61,7 +63,47 @@ The mechanism is symmetric: whatever `.txt` section parsing yields takes ~25–3
 of top-k on content queries. Junk in chromium/linux/ghostty/vscode; **the right
 answer** in opencode. So the axis to split on is not the extension.
 
-## Decision (proposed)
+## Decision (as shipped): a `.txt` yields the document node and nothing else
+
+**Owner's call, and it overrules the recommendation below.** The threshold rule
+needed two invented numbers (4 consecutive lines, 20% density), and this project
+had already refused a wiki page cap that same day for exactly that reason — a
+number nobody can justify. 95% junk means the extraction is not worth having, not
+that it needs tuning. "If it's not value, don't do it, instead of all bad."
+
+Shipped:
+- `.md` → document node + heading sections + link edges, unchanged.
+- `.txt` → **document node only** (`internal/extract/markdown/markdown.go`,
+  `extractFile(..., markdown bool)` with one early return).
+- `internal/navigator/navigator.go` — the SECOND copy of the same
+  `#`-is-a-heading rule, applied to `README.txt` — now treats `#` as a heading
+  only in a `.md`. Two subsystems must not disagree about the same file.
+- `internal/extract/markdown/crlf_test.go` — the assertion that
+  `# LICENCE / TRWYDDED` is "a real CRLF heading" is **inverted**, with the
+  reversal explained in the test. The CR-stripping and empty-heading cases move
+  to a `.md` fixture, where headings actually live.
+- `internal/golden/testdata/golden/pydeps.txt` — 4 section nodes + 4 `contains`
+  edges removed (60→56 nodes, 55→51 edges). Every removed node is a pip-compile
+  comment line. `requirements.txt | document` and its three `declares` edges
+  survive, which was the load-bearing requirement.
+
+Verified: corpus counts unchanged (linux 8163/12258, Newtonsoft 10120/24130 —
+consistent with `.txt` contributing zero sections there), judged tiers unmoved
+(16.5 / 13.0), `task ci` green.
+
+### Elevated to a core promise
+
+Documented in `docs/cli.md` ("The core promise: we do not invent structure that
+isn't there") and on the agent surface in `SKILL.md`, because every abstention in
+the tool is the same rule wearing different clothes — ambiguous callees,
+unresolved receivers, fuzzy ties, redaction, partial gathers, and now `#` in a
+`.txt`. **If it cannot be parsed honestly, it is not indexed, and you are told to
+grep.** `TestCorePromiseIsOnTheAgentSurface` pins it, including the requirement
+that the doc carry the measurement — an unmeasured promise is a slogan.
+
+## Rejected: ask whether `#` is a comment character in THIS FILE
+
+*(kept as the record of what was designed and why it lost)*
 
 **Ask whether `#` is a comment character in THIS FILE**, and apply it to `.md`
 as well as `.txt` — a `.md` file with the same shape leaks identically today, and
@@ -102,7 +144,24 @@ It is still a rule with a threshold, and the thresholds (4, 20%) are the part
 that must stay honest: they were derived from the measurement above, and the ADR
 records them as such rather than as intuition.
 
-## Prerequisite — this must be made measurable first
+## The measurability gate, and why it did not block this
+
+The huddle's strongest objection was that the change could not be proven by this
+repo's instrument: `min_nodes`/`min_edges` are floors it can only push *down*,
+`min_score` can only move *up* and cannot rise on two corpora where `.txt`
+contributes ~nothing, and chromium is not pinned. That objection was aimed at a
+**heuristic**, where a false positive would silently delete real content and only
+a judged question could catch it.
+
+It does not apply to a scope decision. "We do not parse `.txt` as markdown" has
+no false-positive mode to detect: the behaviour is total, visible in one golden
+diff, and the cost is stated up front rather than discovered. What the objection
+correctly demanded — *a measurement of what `.txt` extraction is worth* — was
+supplied: 95.1% junk over 30,289 files, zero judged questions depending on it.
+
+Still worth doing, and now unblocked rather than blocking:
+
+## (Superseded) Prerequisite — this must be made measurable first
 
 The change cannot currently be proven by this repo's own instrument, and that is
 the strongest argument the huddle raised. `min_nodes`/`min_edges` are **floors**

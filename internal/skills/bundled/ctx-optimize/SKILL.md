@@ -279,6 +279,27 @@ matches nothing is reported on every gather.
 **Propose it, do not write it unasked**: it is an assertion about the user's code,
 and they are the one who knows whether that method is theirs.
 
+## The core promise — we do not invent structure that isn't there
+
+**If it cannot be parsed honestly, it is not in the store — and the store says
+so.** Every abstention you will meet is this one rule:
+
+- a name defined more than once → AMBIGUOUS shortlist, not a guess
+- a method whose receiver was never typed → `unattributed callers: N`, not a caller list
+- a fuzzy tie → ranked candidates and a refusal, not `matches[0]`
+- a credential-shaped value → `[redacted]`, on every path
+- a failed producer lane → `fresh` exit 3, not "fresh"
+- **`#` at the start of a line in a `.txt` → a comment, not a heading.** A `.txt`
+  yields ONE node: the file. No sections. Measured over 30,289 real `.txt` files:
+  95.1% of the "headings" markdown parsing found there were comment lines or
+  prose fragments, and they ranked FIRST — 26–30% of top-10 slots.
+
+**So when a question is about the CONTENT of a `.txt`, grep it and say so.** The
+store deliberately holds only the filename. Same for `LICENSE.txt`,
+`requirements.txt` comments, `CMakeLists.txt`, Unicode data files, `*-expected.txt`
+baselines. This is not a gap to work around silently — it is the promise, and
+routing to grep is the correct behaviour, not a fallback you should apologise for.
+
 ## Honesty rules
 
 - Never claim a node/edge/path the CLI didn't output.

@@ -207,12 +207,20 @@ func hubLabels(nodes []schema.Node, edges []schema.Edge) []string {
 // readmeSummary pulls the first markdown heading of the module's README (or
 // the first plain line when there is none) — the one-line "about". License
 // boilerplate and comment blocks are skipped, not summarized.
+//
+// `#` counts as a heading only in a .md. In a README.txt it is a comment
+// character, so a licence-header README.txt used to yield a fragment like
+// "Copyright (C) 2004-2011, Prifysgol Bangor" as the module's summary. Same
+// rule the doc producer applies (internal/extract/markdown: a .txt gets a
+// document node and no sections) — this is the SECOND code path that had to
+// learn it, and the two must not disagree about the same file.
 func readmeSummary(dir string) string {
 	for _, name := range []string{"README.md", "readme.md", "README.txt"} {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			continue
 		}
+		markdown := strings.HasSuffix(strings.ToLower(name), ".md")
 		lines := strings.Split(string(data), "\n")
 		fallback := ""
 		inComment := false
@@ -227,10 +235,12 @@ func readmeSummary(dir string) string {
 				continue
 			}
 			if strings.HasPrefix(line, "#") {
-				if h := strings.TrimSpace(strings.TrimLeft(line, "#")); h != "" {
-					return clip(h)
+				if markdown {
+					if h := strings.TrimSpace(strings.TrimLeft(line, "#")); h != "" {
+						return clip(h)
+					}
 				}
-				continue
+				continue // in a .txt this is a comment: never the summary
 			}
 			if fallback == "" && line != "" && !strings.HasPrefix(line, "[!") &&
 				!strings.HasPrefix(line, "Licensed to") && !strings.HasPrefix(line, "license") {

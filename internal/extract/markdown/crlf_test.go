@@ -46,15 +46,53 @@ func TestCRLFHeadingsDoNotEmitEmptyLabels(t *testing.T) {
 			t.Errorf("node %q carries a CR into its label: %q", n.ID, n.Label)
 		}
 	}
-	// Real headings still land, without the CR.
+	// A .txt is plain text: `#` is a comment character, not a heading. So this
+	// file yields ONE node — the document pointer — and no sections.
+	// (This assertion is the reverse of what it said when written. It asserted
+	// that `# LICENCE / TRWYDDED` was "a real CRLF heading"; measuring 30,289
+	// real .txt files showed 95.1% of such "headings" are comment lines, so the
+	// judgement was wrong, not the test.)
+	for _, n := range b.Nodes {
+		if n.Kind == "section" {
+			t.Errorf("a .txt must not produce section nodes; got %q", n.Label)
+		}
+	}
+	if len(b.Nodes) != 1 || b.Nodes[0].Kind != "document" {
+		t.Errorf("want exactly one document node, got %d: %+v", len(b.Nodes), b.Nodes)
+	}
+}
+
+// The CR-stripping and empty-heading fixes still matter — they just belong to
+// markdown, which is where headings live. Same content, .md extension.
+func TestCRLFHeadingsInMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.Join([]string{
+		"# LICENCE / TRWYDDED",
+		"# (English text below).",
+		"# ",
+		"# AFF File:",
+	}, "\r\n") + "\r\n"
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Extract(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var found bool
 	for _, n := range b.Nodes {
+		if strings.TrimSpace(n.Label) == "" || strings.HasSuffix(n.ID, "::") {
+			t.Errorf("empty heading emitted: %q", n.ID)
+		}
+		if strings.Contains(n.Label, "\r") {
+			t.Errorf("node %q carries a CR into its label: %q", n.ID, n.Label)
+		}
 		if n.Label == "LICENCE / TRWYDDED" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("a real CRLF heading must still be extracted, with the CR stripped")
+		t.Error("a real CRLF heading in MARKDOWN must still be extracted, with the CR stripped")
 	}
 }
 

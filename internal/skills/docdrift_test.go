@@ -143,6 +143,43 @@ func TestNewSurfacesReachTheAgent(t *testing.T) {
 	}
 }
 
+// The CORE PROMISE (owner-directed 2026-07-26): "we do not invent structure that
+// isn't there — if it cannot be parsed honestly it is not indexed, and you are
+// told to grep."
+//
+// This is the sentence every abstention in the tool is an instance of, so it is
+// the highest-value thing on the agent surface and the easiest to lose in an
+// edit. An agent that does not know `.txt` holds only a filename will either
+// report "not found" for content that is right there in the file, or quietly
+// grep without saying why the store could not answer — and the second is worse,
+// because it hides a deliberate design decision behind what looks like a miss.
+func TestCorePromiseIsOnTheAgentSurface(t *testing.T) {
+	skill := repoFile(t, "internal/skills/bundled/ctx-optimize/SKILL.md")
+	for _, want := range []string{
+		"do not invent structure",
+		"grep it and say so",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("SKILL.md lost %q — the promise is what makes every abstention legible", want)
+		}
+	}
+	// The .txt rule specifically: an agent must know the store holds ONLY the
+	// filename, or it will read a miss as absence.
+	if !strings.Contains(skill, ".txt") {
+		t.Error("SKILL.md does not tell the agent that a .txt yields no sections — it will report content as not-found")
+	}
+
+	// And the promise must survive in the human doc too, with its measurement:
+	// an unmeasured promise is a slogan.
+	cli := repoFile(t, "docs/cli.md")
+	if !strings.Contains(cli, "do not invent structure") {
+		t.Error("docs/cli.md lost the core promise")
+	}
+	if !strings.Contains(cli, "30,289") {
+		t.Error("docs/cli.md states the promise without the measurement behind it — that makes it a slogan")
+	}
+}
+
 // Redaction (0.9.2) is the other claim whose absence is a security problem: an
 // agent that meets `[redacted]` and does not know why will open the file, which
 // re-creates the leak the redaction closed.

@@ -273,3 +273,38 @@ credentials at rest**. Network happens only when you ask: your remote
 scripts, `update`, `grammar build`'s one-time zig download, and source
 capture at your explicit `add`. The only intelligence in the system is the
 agent (or human) running the verbs.
+
+### The core promise: we do not invent structure that isn't there
+
+**If it cannot be parsed honestly, it is not indexed — and you are told to
+grep.** Every abstention in this tool is one rule wearing different clothes:
+
+| where | what we refuse to invent | what you get instead |
+|---|---|---|
+| a callee name defined more than once | which one this call site meant | an AMBIGUOUS shortlist + the grep that settles it |
+| a method reached through a receiver we never typed | that it targets *our* method | the same, plus `unattributed callers: N` on the card |
+| `#` at the start of a line in a `.txt` | that it is a heading | the file as a `document` node, and nothing else |
+| a fuzzy name lookup that ties | a winner | ranked candidates and a refusal |
+| a credential-shaped value | that it is safe to show | `[redacted]`, on every path |
+| a gather whose producer lanes failed | that the store is complete | `fresh` exit 3, naming the lanes |
+
+The measured case for the `.txt` rule: across **30,289 real `.txt` files in 22
+repositories**, markdown parsing produced 6,902 `section` nodes of which
+**95.1% were comment lines or mid-sentence prose fragments** — `#` is a comment
+character in shell, python, conf, `requirements.txt`, `CMakeLists.txt`,
+`robots.txt` and licence headers. Linux's 1,695 `.txt` files yielded **zero**
+genuine headings. And they were not harmless: they ranked **first**, taking
+26–30% of top-10 slots wherever they existed.
+
+A threshold rule ("is `#` a comment character in *this* file?") was designed,
+measured, and **rejected** — it needed two invented numbers, and a number nobody
+can justify is exactly what this project refuses elsewhere. 95% junk means the
+extraction is not worth having, not that it needs tuning.
+
+The cost is stated rather than hidden: a `.txt` that genuinely *is* markdown
+(`llms.txt`, prompts kept as `.txt`, a manuscript) is reachable by filename
+instead of by content. Rename it `.md`, or grep it — which is what the
+[tool-choice ladder](agents.md) already tells you to do for literal text.
+
+**A smaller, predictable loss beats a heuristic that misfires in ways nobody can
+enumerate.** That is the whole promise.

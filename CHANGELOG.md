@@ -167,6 +167,59 @@ embeddings, no MCP, no network except your configured remote.**
   convenience or a correctness fix depends on whether a retired *adapter* leaves
   nodes in the store forever, which is unmeasured. That check comes first.
 
+### Changed
+
+- **A `.txt` is plain text: `#` is a comment, not a heading** (#14, ADR
+  `openspec/changes/2026-07-26-hash-is-a-comment-not-a-heading/`). The doc
+  producer claimed both `.md` and `.txt`, so a shell-comment licence header —
+  every line starting with `#` — became a wall of `section` nodes whose labels
+  were mid-sentence prose.
+
+  Measured across **30,289 real `.txt` files in 22 repositories**: 6,902 section
+  nodes, **95.1% of them comment lines or prose fragments**. Linux's 1,695 `.txt`
+  files yielded **zero** genuine headings. And they were not harmless — they
+  ranked **first**, taking **26–30% of top-10 query slots** wherever they existed;
+  one repo's 35 `.txt` files produced **16.1% of its entire store**.
+
+  A `.txt` now yields exactly one node: the file, as a `document`. `.md` is
+  unchanged. `internal/navigator` — a **second** code path applying the same
+  `#`-is-a-heading rule to `README.txt` — was fixed with it, so the two
+  subsystems cannot disagree about the same file.
+
+  A threshold rule ("is `#` a comment character in *this* file?" — ≥4 consecutive
+  `#` lines or >20% density) was designed, measured against all 30,289 files, and
+  **rejected**: it needed two invented numbers, and a number nobody can justify is
+  exactly what this project refuses elsewhere. 95% junk means the extraction is
+  not worth having, not that it needs tuning.
+
+  **Cost, stated rather than hidden:** a `.txt` that genuinely is markdown
+  (`llms.txt`, LLM prompts kept as `.txt`, a manuscript) becomes reachable by
+  filename instead of by content. Rename it `.md`, or grep it. A smaller,
+  predictable loss beats a heuristic that misfires in ways nobody can enumerate.
+
+  The per-file `document` node is kept **unconditionally**:
+  `internal/extract/manifests` anchors `declares` edges on the file path and emits
+  no node of its own, so it is the only node backing every python dependency edge
+  — and `PartitionValidate` does not quarantine absent endpoints, so dropping it
+  would dangle silently.
+
+  Golden diff: `pydeps.txt` loses 4 section nodes + 4 edges (60→56 nodes), all
+  pip-compile comment lines. `crlf_test.go`'s assertion that
+  `# LICENCE / TRWYDDED` is "a real CRLF heading" is **inverted**, with the
+  reversal explained in the test; the CR-stripping and empty-heading cases move to
+  a `.md` fixture. Corpus counts and judged tiers unmoved (16.5 / 13.0).
+
+- **The core promise is now written down**: *we do not invent structure that isn't
+  there — if it cannot be parsed honestly, it is not indexed, and you are told to
+  grep.* Every abstention in the tool is that one rule wearing different clothes:
+  ambiguous callees, unresolved receivers, fuzzy ties, `[redacted]` values,
+  partial gathers, and now `#` in a `.txt`. Stated in `docs/cli.md` with its
+  measurement, and on the agent surface in `SKILL.md` — where routing a
+  `.txt`-content question to grep is described as **the correct behaviour, not a
+  fallback to apologise for**. Pinned by `TestCorePromiseIsOnTheAgentSurface`,
+  including the requirement that the doc carry the measurement: an unmeasured
+  promise is a slogan.
+
 ### Fixed
 
 - **A single long task no longer looks hung** (#12). Progress ticks fired only on
