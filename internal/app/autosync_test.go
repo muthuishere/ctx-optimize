@@ -198,8 +198,11 @@ func TestSyncNoWikiRefreshesGraphNotWiki(t *testing.T) {
 	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
 	out, _ := runCLI(t, 0, "sync", "--no-wiki")
 
-	if !strings.Contains(out, "wiki: skipped (resync") {
-		t.Fatalf("--no-wiki must report the wiki was skipped: %s", out)
+	// Assert the BEHAVIOUR (a skip is reported, and the verb that rebuilds is
+	// named), not the exact sentence — the wording changed when `"wiki": false`
+	// gave the same message a second cause (#9).
+	if !strings.Contains(out, "wiki: skipped") || !strings.Contains(out, "ctx-optimize wiki") {
+		t.Fatalf("--no-wiki must report the skip and name the verb that rebuilds: %s", out)
 	}
 	if !strings.Contains(graphOf(t, storeRoot, key), "::Beta") {
 		t.Fatal("--no-wiki must still refresh the GRAPH (query source)")

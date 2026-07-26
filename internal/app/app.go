@@ -205,6 +205,24 @@ func ambOpts(f *flags) []analyze.Option {
 	return nil
 }
 
+// noWiki resolves whether this gather should skip wiki generation: the
+// --no-wiki flag, OR the repo's committed `"wiki": false` (#9). The config is
+// the ROOT's — a module dir almost never has its own — so one setting governs
+// the whole repo, which is what "this repo does not want a per-file wiki" means.
+func noWiki(f *flags, sc *scope) bool {
+	if f.bools["no-wiki"] {
+		return true
+	}
+	cfg := sc.cfg
+	if cfg == nil {
+		var err error
+		if cfg, err = project.Load(sc.rootDir); err != nil {
+			return false // unreadable config is not a reason to drop the wiki
+		}
+	}
+	return !cfg.WikiEnabled()
+}
+
 // resolvePath resolves --path (default cwd) — the module directory that both
 // the store key and the repo-level ctx-optimize.json hang off.
 func resolvePath(f *flags) (string, error) {
@@ -411,7 +429,7 @@ func upCore(args []string, stdout io.Writer) error {
 					return err
 				}
 				fmt.Fprintf(stdout, "== %s\n", t.label)
-				if err := gatherInto(ts, t.base, t.dirs, t.excludes, f.bools["force"] || t.residual, f.bools["no-adapters"], f.bools["no-wiki"], stdout); err != nil {
+				if err := gatherInto(ts, t.base, t.dirs, t.excludes, f.bools["force"] || t.residual, f.bools["no-adapters"], noWiki(f, sc), stdout); err != nil {
 					return err
 				}
 			}
@@ -861,7 +879,7 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	if err != nil {
 		return err
 	}
-	if err := gatherInto(s, base, dirs, nil, f.bools["force"], f.bools["no-adapters"], f.bools["no-wiki"], stdout); err != nil {
+	if err := gatherInto(s, base, dirs, nil, f.bools["force"], f.bools["no-adapters"], noWiki(f, sc), stdout); err != nil {
 		return err
 	}
 	if sc.kind == scopeModule {
@@ -3271,10 +3289,13 @@ flags:  --path DIR   module the store is keyed by (default: cwd)
 The store lives at ~/ctxoptimize/<repo-name>/ ("name" in config.json overrides).
 
 .ctxoptimize/ (in the repo, commit it):
-  config.json    {"name": "my-module",
+  config.json    {"name": "my-module", "wiki": true,
                   "remote": {"push": "node .ctxoptimize/push.js",
                              "pull": "node .ctxoptimize/pull.js"}}
                  push/pull are ANY shell line (js, py, sh, or inline)
+                 "wiki": false skips wiki generation on add/up (the graph is
+                 the query source); the 'wiki' verb still builds a complete one
+                 on demand. Absent = true
   push.js/…      your transport scripts (init writes inert *.sample pair +
                  remote.example.md with git/s3/custom recipes)
   adapters/      drop scripts here — every .js/.py/.sh runs on add and must

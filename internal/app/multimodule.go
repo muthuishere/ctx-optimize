@@ -915,7 +915,11 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	if pages > 0 {
 		fmt.Fprintf(out, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
 	} else if skipWiki {
-		fmt.Fprintf(out, "wiki: skipped (resync — graph is the query source; refresh with `sync` / `add`)\n")
+		// One message, two causes, and the difference matters: a resync skip is
+		// temporary, a config skip is the repo's standing choice. Either way
+		// name the verb that produces a COMPLETE wiki, so "off" never means
+		// "unavailable".
+		fmt.Fprintf(out, "wiki: skipped — the graph is the query source; build it any time with `ctx-optimize wiki`\n")
 	} else {
 		fmt.Fprintf(out, "wiki: unchanged, skipped\n")
 	}
@@ -948,6 +952,10 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 		jobs = j
 	}
 	force := f.bools["force"]
+	// Resolved ONCE outside the fan-out: every module of a repo honors the
+	// repo's `"wiki"` setting, and loading the config per worker would be both
+	// wasteful and racy.
+	skipWikiAll := noWiki(f, sc)
 
 	type result struct {
 		out bytes.Buffer
@@ -988,7 +996,7 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 			// comparison there refuses correct gathers (volentis 206717→3018),
 			// so the residual always replaces. Module stores keep the guard:
 			// their scope is stable, a >50% drop there still means a broken run.
-			results[i].err = gatherInto(s, t.base, t.dirs, t.excludes, force || t.residual, f.bools["no-adapters"], f.bools["no-wiki"], &results[i].out)
+			results[i].err = gatherInto(s, t.base, t.dirs, t.excludes, force || t.residual, f.bools["no-adapters"], skipWikiAll, &results[i].out)
 		}(i)
 	}
 	wg.Wait()

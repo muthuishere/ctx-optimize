@@ -176,6 +176,30 @@ type Config struct {
 	// dial / no credential use on a query). Env override:
 	// CTX_OPTIMIZE_AUTOSYNC=off|lazy|block. Committable — a team opts a repo in.
 	Autosync store.AutosyncMode `json:"autosync,omitempty"`
+
+	// Wiki gates markdown wiki generation during `add` / `up`. A POINTER so
+	// absent ≠ false: an existing repo with no key keeps today's behaviour.
+	//   true / absent — generate on every gather (the default)
+	//   false         — skip it; `ctx-optimize wiki` still builds a COMPLETE
+	//                   wiki on demand, so nothing is lost, it just moves off
+	//                   the hot path.
+	//
+	// It exists because the cost is unbounded and paid forever: onboarding
+	// chromium wrote 434,597 pages / 1.7 GB into one directory, and Generate's
+	// stale-page cleanup re-reads that directory on EVERY later gather (8s just
+	// to list it). A page cap was rejected — any cap is a number nobody can
+	// justify, and it yields a wiki that is both incomplete and still large.
+	// Whether a per-file wiki is wanted is the repo's call, not ours (#9).
+	Wiki *bool `json:"wiki,omitempty"`
+}
+
+// WikiEnabled reports whether a gather should generate the wiki. Absent means
+// enabled, so adding this key never silently turns it off for anyone.
+func (c *Config) WikiEnabled() bool {
+	if c == nil || c.Wiki == nil {
+		return true
+	}
+	return *c.Wiki
 }
 
 func path(repo string) string { return filepath.Join(repo, filepath.FromSlash(FileName)) }
@@ -305,7 +329,12 @@ func Scaffold(repo, name string) error {
 		return err
 	}
 	if _, err := os.Stat(path(repo)); os.IsNotExist(err) {
-		if err := Save(repo, &Config{Name: name}); err != nil {
+		// `wiki: true` is scaffolded EXPLICITLY even though absent means the
+		// same thing: a knob nobody can see is a knob nobody uses, and the
+		// whole point of #9 is that whether to build a per-file wiki is the
+		// repo's call.
+		wiki := true
+		if err := Save(repo, &Config{Name: name, Wiki: &wiki}); err != nil {
 			return err
 		}
 	}

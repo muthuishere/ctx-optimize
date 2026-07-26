@@ -12,6 +12,27 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Added
 
+- **`"wiki"` key in `.ctxoptimize/config.json`** (#9). Onboarding chromium wrote
+  **434,597 wiki pages / 1.7 GB** into a single directory — and `wiki.Generate`'s
+  stale-page cleanup re-reads that directory at the end of **every** later
+  gather (8 seconds just to list it), so the cost is paid forever for pages
+  nobody opens.
+
+  ```json
+  { "name": "my-repo", "wiki": false }
+  ```
+
+  `false` skips generation during `add`/`up`; **`ctx-optimize wiki` still builds
+  a COMPLETE wiki on demand**, so "off" never means "unavailable" — it just moves
+  off the hot path. `init` scaffolds the key explicitly (a knob nobody can see is
+  a knob nobody uses), and **absent means enabled**, so no existing repo silently
+  loses its wiki.
+
+  A page cap was prototyped and **rejected**: any cap is a number nobody can
+  justify — 2,000 no better than 200 or 20,000 — and it yields a wiki that is
+  both incomplete *and* still large. Whether a per-file wiki is wanted is the
+  repo's call, not ours.
+
 - **Declared resolutions: `.ctxoptimize/resolutions.json`** (ADR
   `openspec/changes/2026-07-26-declared-resolutions/`). The store abstains on
   call sites it cannot justify, which is correct and leaves the same question to
