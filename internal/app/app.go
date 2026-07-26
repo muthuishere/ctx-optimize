@@ -86,6 +86,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdQuery(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
+	case "store":
+		err = cmdStore(rest, stdout)
 	case "fresh":
 		return cmdFresh(rest, stdout, stderr)
 	case "save-result":
@@ -1122,6 +1124,87 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 	}
 	fmt.Fprintf(cw, "[%s]\n", scopeLabel)
 	fmt.Fprint(cw, query.Render(res))
+	return nil
+}
+
+// cmdStore is the store-management group. Today: `store delete`, the CLI
+// counterpart of the dashboard's delete, which until now had no CLI equivalent
+// at all — leaving `rm -rf ~/ctxoptimize/<name>` as the only answer, aimed by
+// hand at a root that holds every repo's store plus the audit log.
+func cmdStore(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: ctx-optimize store delete [--path DIR] [--yes] [--with-nested]")
+	}
+	switch args[0] {
+	case "delete", "rm", "remove":
+		return cmdStoreDelete(args[1:], stdout)
+	default:
+		return fmt.Errorf("unknown store subcommand %q — only: delete", args[0])
+	}
+}
+
+// cmdStoreDelete removes the store for the module you are IN, and nothing else.
+// The key is resolved exactly as `add`/`status` resolve it (config name, else
+// the module key) — never from a path argument, so there is no way to point this
+// at an arbitrary directory.
+//
+// Deletion is permanent and derived-data-only: `.ctxoptimize/` stays (that is
+// committed config, not a cache), sibling stores stay, and NESTED module stores
+// stay unless --with-nested says otherwise. Re-gather with `add .`.
+func cmdStoreDelete(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	if len(f.args) > 0 {
+		return fmt.Errorf("store delete takes no positional argument — it deletes the store for the module you are in (use --path DIR to point elsewhere)")
+	}
+	repoPath, err := resolvePath(f)
+	if err != nil {
+		return err
+	}
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	pc, err := project.Load(repoPath)
+	if err != nil {
+		return err
+	}
+	key := store.SanitizeKey(pc.Name)
+	if key == "" {
+		if key, err = store.ModuleKey(repoPath); err != nil {
+			return err
+		}
+	}
+	dir := filepath.Join(storeRoot, filepath.FromSlash(key))
+	if !f.bools["yes"] {
+		// Say exactly what would go, and what would survive, BEFORE asking.
+		// A confirmation that does not name the blast radius is theatre.
+		nested, nerr := store.PreviewDelete(storeRoot, key)
+		if nerr != nil {
+			return nerr
+		}
+		fmt.Fprintf(stdout, "would delete store %q at %s\n", key, dir)
+		if len(nested) > 0 && !f.bools["with-nested"] {
+			fmt.Fprintf(stdout, "  keeping %d nested module store(s): %s\n", len(nested), strings.Join(nested, ", "))
+			fmt.Fprintln(stdout, "  (--with-nested removes those too)")
+		}
+		fmt.Fprintln(stdout, "  .ctxoptimize/ in the repo is NOT touched; re-gather with `add .`")
+		fmt.Fprintln(stdout, "pass --yes to do it")
+		return nil
+	}
+	deleted, kept, err := store.Delete(storeRoot, key, f.bools["with-nested"])
+	if err != nil {
+		return err
+	}
+	if aerr := audit.Append(storeRoot, audit.Line{
+		Actor: "cli", Action: "store.delete", Target: deleted,
+	}); aerr != nil {
+		fmt.Fprintf(stdout, "warning: store deleted but audit log not written: %v\n", aerr)
+	}
+	fmt.Fprintf(stdout, "deleted store %q → %s\n", deleted, dir)
+	for _, k := range kept {
+		fmt.Fprintf(stdout, "kept nested module store: %s\n", k)
+	}
+	fmt.Fprintln(stdout, "re-gather with `ctx-optimize add .`")
 	return nil
 }
 
@@ -3000,6 +3083,14 @@ commands:
                               dir (deterministic, from nodes+edges only; every
                               add already regenerates it)
   status                      store facts + freshness vs git HEAD  [--json]
+  store delete                delete THIS module's store (the derived graph) and
+                              nothing else — key resolved like add/status, never
+                              from a path argument. Dry-run by default: prints
+                              what would go and what would survive; --yes does it.
+                              A multi-module ROOT store contains its module
+                              stores, so those are KEPT unless --with-nested.
+                              .ctxoptimize/ is never touched (committed config,
+                              not a cache) — re-gather with 'add .'. Audited
   fresh                       is the store current with git HEAD? one-line
                               verdict; exit 0 fresh / 1 stale / 2 unknown
                               (agent/hook gate before trusting an answer)  [--json]

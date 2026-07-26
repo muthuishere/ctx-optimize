@@ -75,6 +75,34 @@ embeddings, no MCP, no network except your configured remote.**
   On this repo: `affected Batch.Validate --depth 1` → 10 nodes,
   `--include-ambiguous` → 32, of which 22 marked `?`.
 
+- **`store delete` — remove ONE store, from the CLI, safely** (ADR
+  `openspec/changes/2026-07-26-store-delete/`). There was no CLI way to delete a
+  store: `uninstall` explicitly leaves them, so the practical answer was
+  `rm -rf ~/ctxoptimize/<name>` — aimed by hand at a root holding **every**
+  repo's store plus `audit.ndjson`, unconfirmed and unaudited.
+
+  `ctx-optimize store delete` resolves the key from cwd exactly as `add`/`status`
+  do (no positional argument, so it cannot be aimed at an arbitrary directory),
+  is **dry-run by default** (prints what goes, what survives, and that
+  `.ctxoptimize/` is untouched), performs on `--yes`, and is audited.
+
+  **Fixed a live bug while building it:** a store dir is not a leaf — a
+  multi-module repo nests its module stores INSIDE the root store
+  (`~/ctxoptimize/reqsume/` contains `reqsume/e2e/` and
+  `reqsume/regressiontest/`). The dashboard's `os.RemoveAll` therefore
+  **destroyed three stores while reporting one**. Nested stores are now kept
+  unless `--with-nested` says otherwise, and the dashboard routes through the
+  same guarded primitive.
+
+  Also closed: `SanitizeKeyPath` drops a `..` segment, so the key `repo/..` was
+  rewritten to `repo` — no traversal escape, but a delete of a store the caller
+  never named. A destructive verb now requires the key to survive cleaning
+  unchanged. Found by a test, not by reading.
+
+  **Not shipped:** the delete-and-rebuild "resync". Whether a rebuild is a
+  convenience or a correctness fix depends on whether a retired *adapter* leaves
+  nodes in the store forever, which is unmeasured. That check comes first.
+
 ### Fixed
 
 - **Onboarding chromium: three defects, found by running it** (ADR

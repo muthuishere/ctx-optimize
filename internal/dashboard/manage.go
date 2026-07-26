@@ -651,17 +651,22 @@ func (s *server) handleStoreDelete(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "confirm:true required — deletion is permanent")
 		return
 	}
+	// Keep the 404 contract for "no such store" before handing off.
 	dir := filepath.Join(s.root, filepath.FromSlash(key))
 	if _, err := os.Stat(filepath.Join(dir, "graph")); err != nil {
 		jsonError(w, http.StatusNotFound, "no store "+key)
 		return
 	}
-	if err := os.RemoveAll(dir); err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+	// store.Delete, not RemoveAll: a multi-module root store CONTAINS its
+	// module stores, so RemoveAll destroyed three stores while reporting one.
+	// It also refuses the store root and any key that would be rewritten.
+	deleted, kept, err := store.Delete(s.root, key, false)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.record("store.delete", key, "", "")
-	jsonOK(w, map[string]string{"deleted": key})
+	s.record("store.delete", deleted, "", "")
+	jsonOK(w, map[string]any{"deleted": deleted, "kept_nested": kept})
 }
 
 // handleRemote triggers push/pull for a repo path — `remote push|pull`,
