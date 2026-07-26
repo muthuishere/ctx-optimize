@@ -720,6 +720,41 @@ func cmdConfig(args []string, stdout io.Writer) error {
 // cmdAdd is both the built-in producer runner (`add <path>`) and the
 // universal door (`add --json -` / `add --json file`): every adapter in the
 // world enters here, strictly validated.
+// rebuildDrop deletes the store(s) this add is about to write, so the gather
+// starts from nothing. Multi-module: every planned module store plus the root
+// residual, because a retired producer can be in any of them.
+//
+// Missing stores are not an error — "rebuild" on a fresh checkout is just
+// "gather". Anything that IS deleted is audited, exactly like `store delete`.
+func rebuildDrop(f *flags, storeRoot string, sc *scope, stdout io.Writer) error {
+	// Reuse the SAME plan the gather will use, so rebuild can never drop a key
+	// the gather won't rewrite (or miss one it will).
+	keys := []string{sc.storeKey, sc.rootKey}
+	if tasks, terr := planTasks(sc.rootDir, sc.rootKey, sc.modules, map[string]bool{}); terr == nil {
+		for _, t := range tasks {
+			keys = append(keys, t.storeKey)
+		}
+	}
+	seen := map[string]bool{}
+	for _, key := range keys {
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		deleted, kept, err := store.Delete(storeRoot, key, false)
+		if err != nil {
+			// No store yet (or not a store): nothing to rebuild from.
+			continue
+		}
+		_ = audit.Append(storeRoot, audit.Line{Actor: "cli", Action: "store.rebuild", Target: deleted})
+		fmt.Fprintf(stdout, "rebuild: dropped store %q\n", deleted)
+		for _, k := range kept {
+			fmt.Fprintf(stdout, "rebuild: kept nested module store %s (rebuilt by its own task)\n", k)
+		}
+	}
+	return nil
+}
+
 func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	f := parseFlags(args)
 	// Source lane (ADR 2026-07-17, H2): a var-name-shaped positional
@@ -741,6 +776,21 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	storeRoot, err := store.Root(f.strs["store"])
 	if err != nil {
 		return err
+	}
+	// --rebuild: drop the store first, then gather into an empty one. The
+	// blunt instrument for "resync from scratch". It exists because Replace is
+	// producer-scoped, so a RETIRED producer's nodes survive every incremental
+	// gather; the reconcile in gatherInto reports those and prunes them on a
+	// complete --force run, and this is the guaranteed version for when you
+	// would rather not reason about it.
+	//
+	// Nested module stores are KEPT (store.Delete's default) — rebuilding a
+	// monorepo root must not silently destroy its modules' stores; each module
+	// is rebuilt by its own task in the same run.
+	if f.bools["rebuild"] {
+		if err := rebuildDrop(f, storeRoot, sc, stdout); err != nil {
+			return err
+		}
 	}
 
 	// The --json door UPSERTS (a one-off pipe may be partial); the gather
@@ -3020,12 +3070,21 @@ commands:
                               merges, and records
                               the name in config sources (refreshed on up).
                               Names only on argv — never a raw URL
-  add [<path>] [--json -|F]   gather built-ins + every adapter script in
+  add [<path>] [--rebuild]    gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
                               (--force to allow >50%% shrink); --no-adapters skips
                               scripts; --json door upserts
                               multi-module root: fans out one worker per module
                               [--jobs N] + refreshes the navigator (no auto-merge)
+                              --rebuild drops the store(s) first and gathers into
+                              an empty one: the guaranteed resync. Needed because
+                              Replace is producer-SCOPED, so a RETIRED producer
+                              (deleted adapter, removed grammar pack) is never
+                              replaced and its nodes survive every incremental
+                              gather. A normal add now REPORTS those; a complete
+                              --force run prunes them; --rebuild is the certain
+                              path. Nested module stores are kept (each module is
+                              rebuilt by its own task). Audited
   sync                        fast re-gather of the repo you're in: "add ." minus
                               adapter scripts (code/docs/manifests/git only)
   capture <ENV_NAME>          one source connector → Batch JSON on stdout, no

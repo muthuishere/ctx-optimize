@@ -32,6 +32,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/project"
 	"github.com/muthuishere/ctx-optimize/internal/scan"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
+	"github.com/muthuishere/ctx-optimize/internal/sources"
 	"github.com/muthuishere/ctx-optimize/internal/store"
 	"github.com/muthuishere/ctx-optimize/internal/wiki"
 )
@@ -676,6 +677,48 @@ func recordedSource(s *store.Store, absBase string) (freshness.Source, bool) {
 // wiki, so a resync only needs the graph fresh; regenerating the per-file wiki
 // (O(files×degree) — ~98% of a Linux gather) is pure waste on that path. The
 // wiki refreshes on an explicit add / sync without --no-wiki.
+// reconcileProducers finds producers whose nodes are in the store but which did
+// NOT contribute a batch this gather — retired adapters, a removed grammar
+// pack's language, a producer renamed. Replace is producer-scoped, so nothing
+// else prunes them.
+//
+// prune is deliberately hard to earn (see the call site): absence means either
+// "retired" or "did not run this time", and the two are indistinguishable from
+// here. Reporting is always safe; deleting is not.
+func reconcileProducers(s *store.Store, ran map[string]bool, prune bool) (orphans []string, pruned int, err error) {
+	nodes, err := s.Nodes()
+	if err != nil {
+		return nil, 0, err
+	}
+	counts := map[string]int{}
+	for _, n := range nodes {
+		p := n.Metadata["producer"]
+		if p == "" || ran[p] {
+			continue
+		}
+		// Source producers have their own reconcile (sources.Reconcile), keyed
+		// off declared config entries rather than off what ran.
+		if strings.HasPrefix(p, sources.ProducerPrefix) {
+			continue
+		}
+		counts[p]++
+	}
+	for p := range counts {
+		orphans = append(orphans, p)
+	}
+	sort.Strings(orphans)
+	if !prune {
+		return orphans, 0, nil
+	}
+	for _, p := range orphans {
+		if _, _, rerr := s.Replace(&schema.Batch{Producer: p}, true); rerr != nil {
+			return orphans, pruned, rerr
+		}
+		pruned += counts[p]
+	}
+	return orphans, pruned, nil
+}
+
 func gatherInto(s *store.Store, base string, dirs, excludes []string, force, skipAdapters, skipWiki bool, out io.Writer) error {
 	absBase, _ := filepath.Abs(base)
 	prev, hasPrev := recordedSource(s, absBase)
@@ -693,35 +736,56 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	// lane and keep its existing edges untouched (byte-identical result).
 	gitHistoryUnchanged := !force && hasPrev && curHead != "" && curHead == prev.Head
 
+	// Lane containment: a producer that fails must not take the others down
+	// with it. This used to be seven early returns, and the worst shape was
+	// the adapter lane — it returned AFTER code/markdown/manifests had already
+	// been extracted but BEFORE the commit loop, so one broken adapter script
+	// discarded a whole successful gather. Now every lane runs, everything
+	// that worked is committed, and the failures are reported together and
+	// returned as one error at the end. A partial gather is recorded as
+	// partial (see recordSource) so nothing downstream reads it as complete.
+	var laneErrs []string
+	lane := func(name string, err error) bool {
+		if err == nil {
+			return true
+		}
+		fmt.Fprintf(out, "LANE FAILED %s: %v\n", name, err)
+		laneErrs = append(laneErrs, fmt.Sprintf("%s: %v", name, err))
+		return false
+	}
+
 	var batches []*schema.Batch
 	b, err := gatherMerged(base, dirs, excludes, markdown.ExtractExcluding)
-	if err != nil {
-		return err
+	if lane("docs", err) {
+		batches = append(batches, b)
 	}
-	batches = append(batches, b)
 	// Code: ONE pass across all dirs (base-relative IDs) so calls resolve
 	// across a multi-path module's scattered folders (test→source).
-	cb, err := code.ExtractPaths(base, dirs, excludes)
-	if err != nil {
-		return err
+	cb, cerr := code.ExtractPaths(base, dirs, excludes)
+	if cb == nil {
+		cb = &schema.Batch{Producer: code.ProducerName}
 	}
 	// Always Replace, even when empty: an empty batch against an empty
 	// producer is a no-op, but against previous code nodes it must hit the
 	// shrink guard — skipping it here silently kept deleted code in the graph.
-	batches = append(batches, cb)
-	if len(cb.Nodes) > 0 {
-		fmt.Fprintf(out, "code: %d nodes, %d edges\n", len(cb.Nodes), len(cb.Edges))
+	if lane("code", cerr) {
+		batches = append(batches, cb)
+		if len(cb.Nodes) > 0 {
+			fmt.Fprintf(out, "code: %d nodes, %d edges\n", len(cb.Nodes), len(cb.Edges))
+		}
 	}
 	// Manifest lane: build-tool deps/tasks + k8s topology. Always Replace,
 	// same emptied-module reasoning — removing a dependency from
 	// package.json must prune its declares edge, never keep it silently.
-	mb, err := gatherMerged(base, dirs, excludes, manifests.ExtractExcluding)
-	if err != nil {
-		return err
+	mb, merr := gatherMerged(base, dirs, excludes, manifests.ExtractExcluding)
+	if mb == nil {
+		mb = &schema.Batch{}
 	}
-	batches = append(batches, mb)
-	if len(mb.Nodes) > 0 || len(mb.Edges) > 0 {
-		fmt.Fprintf(out, "manifests: %d nodes, %d edges\n", len(mb.Nodes), len(mb.Edges))
+	if lane("manifests", merr) {
+		batches = append(batches, mb)
+		if len(mb.Nodes) > 0 || len(mb.Edges) > 0 {
+			fmt.Fprintf(out, "manifests: %d nodes, %d edges\n", len(mb.Nodes), len(mb.Edges))
+		}
 	}
 	// Deplink lane: module:// → dep: bridges from this gather's own two
 	// batches. Always Replace, same reasoning — a dropped dependency must
@@ -739,20 +803,19 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	if gitHistoryUnchanged {
 		fmt.Fprintf(out, "git-history: unchanged (HEAD same), skipped\n")
 	} else {
-		gh, err := gatherMerged(base, dirs, excludes, githistory.ExtractExcluding)
-		if err != nil {
-			return err
-		}
-		batches = append(batches, gh)
-		if len(gh.Edges) > 0 {
-			fmt.Fprintf(out, "git-history: %d co-change edges\n", len(gh.Edges))
+		gh, gerr := gatherMerged(base, dirs, excludes, githistory.ExtractExcluding)
+		if lane("git-history", gerr) {
+			batches = append(batches, gh)
+			if len(gh.Edges) > 0 {
+				fmt.Fprintf(out, "git-history: %d co-change edges\n", len(gh.Edges))
+			}
 		}
 	}
 	// Adapters run from base (a multi-path module has no single dir — its
 	// adapters live with the root config).
-	adapters, err := repoAdapters(base)
-	if err != nil {
-		return err
+	adapters, aerr := repoAdapters(base)
+	if aerr != nil {
+		lane("adapters", aerr)
 	}
 	if skipAdapters {
 		if len(adapters) > 0 {
@@ -760,9 +823,12 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 		}
 	} else {
 		for _, a := range adapters {
-			ab, err := runAdapter(base, a)
-			if err != nil {
-				return fmt.Errorf("adapter %s: %w", a.Name, err)
+			ab, rerr := runAdapter(base, a)
+			// One broken adapter script used to discard the ENTIRE gather —
+			// code, docs and manifests were already extracted but never
+			// committed. Now it costs only its own batch.
+			if !lane("adapter "+a.Name, rerr) {
+				continue
 			}
 			batches = append(batches, ab)
 			fmt.Fprintf(out, "adapter %s: %d nodes, %d edges\n", a.Name, len(ab.Nodes), len(ab.Edges))
@@ -770,9 +836,11 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	}
 	totalN, totalPruned := 0, 0
 	for _, b := range batches {
-		n, pruned, err := s.Replace(b, force)
-		if err != nil {
-			return err
+		// Same containment at commit time: one producer tripping the shrink
+		// guard must not stop the others from landing.
+		n, pruned, rerr := s.Replace(b, force)
+		if !lane("commit "+b.Producer, rerr) {
+			continue
 		}
 		totalN += n
 		totalPruned += pruned
@@ -798,10 +866,45 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	// Record source provenance so freshness can later tell whether this store
 	// still reflects the repo. Always recorded (incl. non-git) so TreeSig +
 	// HEAD drive the next short-circuit / git-history skip.
-	if err := s.RecordSource(freshness.Source{
+	// Retired-producer reconcile. Replace is producer-SCOPED, so a producer
+	// that no longer runs is never replaced and its nodes live forever: delete
+	// an adapter script and its nodes stay in the graph, even under --force.
+	// Measured 2026-07-26 — a deleted adapter's `custom://thing` node survived
+	// every subsequent gather. Same failure mode `sources.Reconcile` already
+	// handles for source producers; this covers the rest.
+	//
+	// Reported by default, pruned only on request: a producer can be absent
+	// because it was retired OR because this run skipped it (--no-adapters,
+	// an unchanged git HEAD, a failed lane), and silently deleting a lane's
+	// data because it did not run this time would be far worse than a stale
+	// node. Only a gather with NO skips and NO failures may prune.
+	ranProducers := map[string]bool{}
+	for _, b := range batches {
+		ranProducers[b.Producer] = true
+	}
+	completeRun := len(laneErrs) == 0 && !skipAdapters && !gitHistoryUnchanged
+	if orphans, npruned, rerr := reconcileProducers(s, ranProducers, force && completeRun); rerr != nil {
+		fmt.Fprintf(out, "warning: producer reconcile failed: %v\n", rerr)
+	} else if len(orphans) > 0 {
+		if npruned > 0 {
+			fmt.Fprintf(out, "retired producers: pruned %d node(s) from %s\n", npruned, strings.Join(orphans, ", "))
+			totalPruned += npruned
+		} else {
+			fmt.Fprintf(out, "note: %d retired producer(s) still in the graph: %s — they no longer run, so their nodes are stale.\n", len(orphans), strings.Join(orphans, ", "))
+			fmt.Fprintln(out, "      prune with `ctx-optimize add . --force` (a complete run), or `store delete --yes && add .` to rebuild.")
+		}
+	}
+	rec := freshness.Source{
 		Path: absBase, Head: curHead, HeadUnix: curHeadUnix, AddedUnix: time.Now().Unix(),
-		TreeSig: curSig,
-	}); err != nil {
+		TreeSig: curSig, Partial: laneErrs,
+	}
+	if len(laneErrs) > 0 {
+		// A partial gather must not be short-circuited on the NEXT run as
+		// "unchanged" — that would freeze the gap in place until something
+		// else touched the tree. Clearing the signature forces a real retry.
+		rec.TreeSig = ""
+	}
+	if err := s.RecordSource(rec); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "added %d nodes", totalN)
@@ -815,6 +918,12 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 		fmt.Fprintf(out, "wiki: skipped (resync — graph is the query source; refresh with `sync` / `add`)\n")
 	} else {
 		fmt.Fprintf(out, "wiki: unchanged, skipped\n")
+	}
+	if len(laneErrs) > 0 {
+		// Everything above IS committed. The error says what is missing, so
+		// the caller can report a partial store rather than a silent one.
+		return fmt.Errorf("%d producer lane(s) failed (partial store written): %s",
+			len(laneErrs), strings.Join(laneErrs, "; "))
 	}
 	return nil
 }
@@ -893,11 +1002,16 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 			failed = append(failed, t.label)
 		}
 	}
+	// The navigator is written even when modules failed. It is built from the
+	// FULL task plan, not from the successes (see writeNavigator), so a partial
+	// run cannot shrink it — and skipping it meant one broken module out of 48
+	// denied root-level federation over the 47 that worked. Report the failures
+	// AFTER, so the navigator error (if any) does not hide them either.
+	nerr := writeNavigator(sc, storeRoot, tasks, stdout)
 	if len(failed) > 0 {
 		return fmt.Errorf("%d of %d modules failed: %s", len(failed), len(tasks), strings.Join(failed, ", "))
 	}
-
-	return writeNavigator(sc, storeRoot, tasks, stdout)
+	return nerr
 }
 
 // writeNavigator rebuilds the root navigator from the FULL task plan and

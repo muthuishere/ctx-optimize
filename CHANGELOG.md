@@ -105,6 +105,46 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Fixed
 
+- **One break no longer stops the whole** (ADR
+  `openspec/changes/2026-07-26-failure-containment/`). Asked of the chromium run;
+  the answer was that failure was contained at one level, not at two, and at a
+  fourth level nothing was ever cleaned up at all.
+
+  - **A producer lane no longer aborts the others.** `gatherInto` had seven early
+    returns, and the worst shape was the adapter lane: it returned *after*
+    code/docs/manifests were extracted but *before* the commit loop, so one
+    broken adapter script **discarded a whole successful gather**. Every lane now
+    runs, everything that worked is committed, and the failures are reported
+    together and returned as one error. Same containment at commit time — one
+    producer tripping the shrink guard no longer stops the rest from landing.
+  - **A partial gather is recorded as partial.** Containment alone would be a
+    downgrade, so `freshness.Source` gained `partial` (which lanes failed) and a
+    partial gather **clears the tree signature**, so the next run cannot
+    short-circuit as "unchanged" and freeze the gap in place.
+  - **The navigator survives a failed module.** `if len(failed) > 0 { return }`
+    fired before `writeNavigator`, so one broken module out of 48 denied
+    root-level federation over the 47 that worked. The navigator is built from
+    the full task plan, not from the successes, so writing it was always safe —
+    the return was just in the wrong place.
+  - **A retired producer's nodes are no longer immortal.** `Replace` is
+    producer-scoped, so a producer that stops running is never replaced.
+    Measured: an adapter emitting `custom://ghost`, then deleted, kept its node
+    through `--force` and every later gather. Now reported on every gather, and
+    pruned on a run with no skips and no failures. Reported rather than
+    auto-pruned because absence means either "retired" or "did not run this time"
+    (`--no-adapters`, unchanged HEAD, a failed lane), and deleting a lane's data
+    because it did not run would be far worse than a stale node.
+
+### Added
+
+- **`add --rebuild`** — drop the store(s) this add will write, then gather into
+  nothing: the guaranteed resync, for when you would rather not reason about
+  producer scoping. Uses the same task plan as the gather, so it cannot drop a
+  key the gather won't rewrite; nested module stores are kept (each is rebuilt by
+  its own task); audited as `store.rebuild`.
+
+### Fixed
+
 - **Onboarding chromium: three defects, found by running it** (ADR
   `openspec/changes/2026-07-26-chromium-onboarding-defects/`). A full chromium
   checkout gathered without falling over (366,277 nodes in the root residual),

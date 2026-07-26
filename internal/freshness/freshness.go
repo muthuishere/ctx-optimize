@@ -27,6 +27,12 @@ type Source struct {
 	HeadUnix  int64  `json:"head_unix"`          // committer time of that HEAD
 	AddedUnix int64  `json:"added_unix"`         // when add ran
 	TreeSig   string `json:"tree_sig,omitempty"` // stat-signature of the source tree at add time (path+mtime+size hash) — the 0-change short-circuit gate (ADR 2026-07-24-lazy-autosync, lever 1)
+	// Partial names the producer lanes that FAILED in the gather that wrote
+	// this record. Lane failures are contained (one broken adapter no longer
+	// discards a whole gather), and containment is only honest if the
+	// incompleteness is recorded: a store missing its code lane must not
+	// answer as though it has one. Empty = complete.
+	Partial []string `json:"partial,omitempty"`
 }
 
 // Report is the freshness verdict for one source.
