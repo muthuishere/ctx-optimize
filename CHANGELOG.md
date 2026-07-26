@@ -10,6 +10,41 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+### Fixed
+
+- **A unique method name is no longer treated as evidence about the receiver**
+  (ADR `openspec/changes/2026-07-25-method-call-resolution/`, the 0.11.0 known
+  issue, now closed). `calleeName` returned the last name node and threw the
+  receiver away, so `err.Error()` and `Error()` were indistinguishable — and
+  when exactly one declaration in the repo bore the label `Error`, every
+  `err.Error()` resolved to it **confidently**. Not ambiguity: one candidate, so
+  the AMBIGUOUS shortlist never fired, and these edges DID flow into `affected`,
+  `change-plan`, `hubs` and clustering.
+
+  The receiver is now captured and a **method** candidate is attributed only on
+  an actual tie: the receiver names the type (`Batch.Validate()`), the call is
+  `self`/`this`/unqualified from inside the owner, or the owner type is written
+  in the SAME declaration as the call (`e := &Engine{}; e.Charge()` — this is
+  the tie that keeps "which tests cover X" answerable). Anything else is
+  **abstained on**, not dropped: it becomes an AMBIGUOUS shortlist, filtered out
+  of every traversal, reachable with `edges --confidence AMBIGUOUS`.
+
+  Measured on this repo: **225 attributions reclassified from INFERRED to
+  AMBIGUOUS, none lost** (2,626 → 2,401 INFERRED). `AmbiguousError.Error` went
+  from 89 confident callers to 89 declared abstentions. **Judged tiers
+  unchanged — linux-block 16.5/20, newtonsoft 13.0/20, byte-identical before
+  and after** (re-run against stashed changes to be sure); hermetic + corpus
+  golden green; gather time unmoved.
+
+- **The card no longer explains an abstention with the wrong reason.** There are
+  now two, they are settled by different greps, and the reason is stamped on the
+  edge (`metadata.ambiguous_reason`: `name-collision` | `unresolved-receiver`).
+  Saying "the name is defined more than once" about a name defined exactly once
+  would be a false explanation, which is worse than none. `card` prints the
+  matching line and grep; SKILL.md and `references/activation-routing.xml` carry
+  the split plus the consequence an agent must not miss — **a blast radius for a
+  method is a FLOOR, not the full set** — pinned by the doc-drift guard.
+
 ## [0.11.0] — 2026-07-25
 
 ### Added
@@ -98,8 +133,10 @@ embeddings, no MCP, no network except your configured remote.**
   population, not the error count — `Batch.Validate` (31) is mostly right,
   `AmbiguousError.Error` (85) is almost all wrong. These are INFERRED, so unlike
   AMBIGUOUS edges they DO flow into `affected`, `change-plan`, `hubs` and
-  clustering. Surfaced by the new `report` verb. Not fixed: the candidate fix
-  trades recall for precision and that must be measured on the judged tiers first.
+  clustering. Surfaced by the new `report` verb. Not fixed in 0.11.0: the
+  candidate fix trades recall for precision and that had to be measured on the
+  judged tiers first. **Fixed in [Unreleased]** — the measurement came back
+  score-neutral.
 
 ## [0.10.4] — 2026-07-25
 

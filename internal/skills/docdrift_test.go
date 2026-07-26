@@ -69,6 +69,23 @@ func TestAmbiguousContractNotDrifted(t *testing.T) {
 	}
 }
 
+// ADR 2026-07-25-method-call-resolution added a SECOND reason to abstain, and
+// the two are settled by different greps. A surface that explains only the
+// name-collision case tells an agent something false about a method whose name
+// is unique — the exact failure the ADR exists to close.
+func TestUnresolvedReceiverExplainedToAgents(t *testing.T) {
+	skill := repoFile(t, "internal/skills/bundled/ctx-optimize/SKILL.md")
+	if !strings.Contains(skill, "receiver") {
+		t.Error("SKILL.md never explains the unresolved-receiver abstention — an agent will read an empty method caller list as 'nothing calls it'")
+	}
+	routing := repoFile(t, "internal/skills/bundled/ctx-optimize/references/activation-routing.xml")
+	for _, want := range []string{"unresolved-receiver", "name-collision"} {
+		if !strings.Contains(routing, want) {
+			t.Errorf("activation-routing.xml is missing the %q reason — the agent cannot pick the grep that settles it", want)
+		}
+	}
+}
+
 // Redaction (0.9.2) is the other claim whose absence is a security problem: an
 // agent that meets `[redacted]` and does not know why will open the file, which
 // re-creates the leak the redaction closed.

@@ -512,6 +512,13 @@ type CardData struct {
 	// cannot say who calls it, so we say how many we could not place, and grep
 	// settles it.
 	AmbiguousCallers int `json:"ambiguous_callers,omitempty"`
+	// UnresolvedReceiverCallers is the subset of AmbiguousCallers abstained on
+	// for a DIFFERENT reason: the name is unique, but the call went through a
+	// receiver whose type we never established. Split out because the two
+	// abstentions are settled by different greps — saying "defined more than
+	// once" about a name that is defined exactly once would be a false
+	// explanation, which is worse than no explanation.
+	UnresolvedReceiverCallers int `json:"unresolved_receiver_callers,omitempty"`
 	Imports   []string            `json:"imports,omitempty"`   // file nodes only
 	Other     map[string][]string `json:"other,omitempty"`     // any remaining relations, "rel →|←" keyed
 }
@@ -528,6 +535,9 @@ func Card(nodes []schema.Node, edges []schema.Edge, name string) (*CardData, err
 	for _, e := range edges {
 		if e.Confidence == schema.Ambiguous && e.Relation == "calls" && e.Target == n.ID {
 			c.AmbiguousCallers++
+			if e.Metadata["ambiguous_reason"] == schema.AmbiguousUnresolvedReceiver {
+				c.UnresolvedReceiverCallers++
+			}
 		}
 	}
 	edges = WithoutAmbiguous(edges)
@@ -609,10 +619,15 @@ func RenderCard(c *CardData) string {
 	// Say no out loud. `called by` above is exact; this line admits what could
 	// not be placed, and names the grep that settles it — an agent must never
 	// read the list as complete when it isn't.
-	if c.AmbiguousCallers > 0 {
-		fmt.Fprintf(&sb, "  unattributed callers: %d — the name is defined more than once, so these call sites were NOT guessed.\n", c.AmbiguousCallers)
+	if n := c.AmbiguousCallers - c.UnresolvedReceiverCallers; n > 0 {
+		fmt.Fprintf(&sb, "  unattributed callers: %d — the name is defined more than once, so these call sites were NOT guessed.\n", n)
 		fmt.Fprintf(&sb, "    candidates: ctx-optimize edges --relation calls --confidence AMBIGUOUS --to %s\n", c.Node.ID)
 		fmt.Fprintf(&sb, "    confirm:    grep -rn '\\b%s\\b' .\n", lastSegment(c.Node.Label))
+	}
+	if c.UnresolvedReceiverCallers > 0 {
+		fmt.Fprintf(&sb, "  unattributed callers: %d — call sites write `.%s(...)` on a receiver whose type this store never established, so they were NOT attributed here.\n", c.UnresolvedReceiverCallers, lastSegment(c.Node.Label))
+		fmt.Fprintf(&sb, "    candidates: ctx-optimize edges --relation calls --confidence AMBIGUOUS --to %s\n", c.Node.ID)
+		fmt.Fprintf(&sb, "    confirm:    grep -rn '\\.%s(' .   # then check each receiver's type\n", lastSegment(c.Node.Label))
 	}
 	writeList("imports", c.Imports, 15)
 	rels := make([]string, 0, len(c.Other))

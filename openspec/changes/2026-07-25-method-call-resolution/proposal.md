@@ -1,6 +1,6 @@
 # ADR — method calls resolve by bare name, so a unique name is a false witness
 
-Status: **DRAFT** — not implemented. Surfaced by the `report` verb (ADR
+Status: **IMPLEMENTED** — 2026-07-26. Surfaced by the `report` verb (ADR
 `2026-07-25-report-verb`).
 
 ## The defect
@@ -95,28 +95,103 @@ schema behind it. This defect is a concrete argument for that roadmap item.
 *Cost:* per-language toolchains and a build environment — the thing we currently
 do not require.
 
-My reading: **A**, with the abstention routed through the shortlist mechanism
-that already exists, and D remains the real answer for repos that want precision.
-But A trades recall for precision and that trade must be measured before it
-ships, not argued.
+## Decision — A, with an explicit list of the ties we accept
 
-## Measurement plan (before any code)
+`calleeName` now returns `(receiver, callee)` instead of throwing the receiver
+away, and a **method** candidate (`d.owner != ""`) is attributed only when the
+receiver is actually tied. `receiverTies` (`internal/extract/code/code.go`)
+accepts exactly four, and nothing else:
 
-1. Instrument `calleeName` to record whether a call site was receiver-qualified.
-   Report the split repo-wide — currently unknown and load-bearing for A's cost.
-2. Implement A behind a flag; diff the edge set against today's.
-3. Run the judged tiers. **This is the gate**: L20 ("which tests cover
-   bio_split") and N14 ("which tests exercise SerializeObject") are derived from
-   call edges, so a recall drop shows up there. If either falls, A is not free
-   and the trade needs the owner's call.
-4. Corpus tier for volume, golden snapshots for shape.
+| tie | example | why it is not a guess |
+|---|---|---|
+| callee is a free function | `Open()`, `store.Open()` | no receiver to check; gate does not apply |
+| receiver == owner | `Batch.Validate()`, a Python classmethod | the receiver names the type |
+| unqualified / `self` / `this`, inside the owner | `self.helper()` in `Engine` | the enclosing declaration IS the receiver |
+| owner type named in the SAME declaration | `e := &src.Engine{}; e.Charge()` | the type is written in the calling scope, and no other declaration repo-wide bears the method name |
+
+Everything else — `err.Error()` in a function that never names an error type of
+ours — is **abstained on**, routed through the AMBIGUOUS shortlist that already
+existed. Nothing is dropped: the edge survives as a maybe, filtered out of every
+traversal by `WithoutAmbiguous`, visible via `edges --confidence AMBIGUOUS`.
+
+**B** was rejected: it does not fix `err.Error()` at all. **C** was rejected on
+the motto — a denylist of "universal" method names is a guess about other
+people's repos. **D** (LSP/SCIP) remains the real answer and is unaffected by
+this; `docs/VISION.md:290-293` still holds.
+
+### The fourth tie is a convention, and that is stated on purpose
+
+"Owner type named in the same declaration" uses `typeShaped` (CamelCase: not
+lowercase, not SHOUTING) to decide which tokens to remember as evidence. That
+is a naming convention, and conventions are normally rejected here. It is
+admissible in this one position because of an asymmetry: the filter can only
+**withhold** evidence, never manufacture it. A type it misses (a lowercase Go
+type like `engine`) causes an abstention, never a wrong edge. Pinned by
+`TestTypeShapedAdmitsOnlyCamelCase`.
+
+The fourth tie is also load-bearing, not a nicety: without it the hermetic
+golden net went red on exactly the case the judged tiers score —
+`EngineTests.AddWorks -calls-> Engine.Add` fell to AMBIGUOUS. That is the
+"which tests cover X" answer, and it is the reason A is shipped with this tie
+rather than without it.
+
+### Two abstentions, two greps
+
+The card used to explain every abstention as *"the name is defined more than
+once"*. For this defect that sentence is **false** — the name is defined
+exactly once. So the reason is stamped on the edge
+(`Metadata["ambiguous_reason"]`: `name-collision` | `unresolved-receiver`,
+`internal/schema/schema.go`) and `card` prints the matching line and grep:
+
+```
+unattributed callers: 89 — call sites write `.Error(...)` on a receiver whose
+type this store never established, so they were NOT attributed here.
+  candidates: ctx-optimize edges --relation calls --confidence AMBIGUOUS --to …
+  confirm:    grep -rn '\.Error(' .   # then check each receiver's type
+```
+
+SKILL.md and `references/activation-routing.xml` carry the same split, plus the
+consequence an agent must not miss: **a blast radius for a method is a FLOOR,
+not the full set.** Pinned by `TestUnresolvedReceiverExplainedToAgents`.
+
+## Measured (this repo, 2026-07-26)
+
+`calls` edges, gate off → gate on:
+
+| | before | after |
+|---|---:|---:|
+| INFERRED | 2,626 | 2,401 |
+| AMBIGUOUS | 1,138 | 1,364 |
+| …of which `unresolved-receiver` | — | 226 |
+
+**225 attributions reclassified as maybes; none lost.** Before the fourth tie
+landed it was 272, so scope evidence recovers ~46 real edges. `AmbiguousError.Error`
+went from 89 confident callers to 89 declared abstentions, and no method target
+remains in the top INFERRED list.
+
+Gate results:
+
+- **Judged tiers unchanged: linux-block 16.5/20, newtonsoft 13.0/20** — byte-identical
+  before and after (verified by re-running the tier against stashed changes).
+  L20 and N14 were already 0.0; this change did not move them either way.
+- Hermetic golden green; corpus tier green; perf ceilings green (gather of this
+  repo 0.77s → 0.63s, i.e. within noise — `scopeNames` collection is free at
+  this scale because `typeShaped` rejects most tokens).
+- `receiverGate` is a package var, so the trade stays sweepable
+  (`TestGateOffRestoresBareNameMatch` pins the old behaviour).
 
 ## Not claimed
 
-- The 85/331 split is one repo's numbers. Go-heavy code with `err.Error()`
-  everywhere is close to the worst case; a Python or C# corpus may differ
-  substantially, and Newtonsoft/linux are available to check.
-- "Almost all wrong" for `AmbiguousError.Error` is a judgement from reading the
-  call sites, not an exhaustive audit.
-- No option here has been implemented or benchmarked. This ADR records a measured
-  defect and the shape of the fix, nothing more.
+- The 85/331 numbers above are one repo's. Go-heavy code with `err.Error()`
+  everywhere is close to the worst case; the C# and C corpora exercise the gate
+  differently and were checked only for regression, not for precision gain.
+- **Precision is not measured, only plausibility.** We know 225 edges are no
+  longer asserted; we do not have a ground truth saying how many of them were
+  wrong. The claim is that we stopped asserting things we could not justify,
+  not that we removed exactly the false ones.
+- The fourth tie can still be wrong: a scope may name `Engine` for an unrelated
+  reason while `e` is some other type with a same-named method — though that
+  requires the method name to be repo-unique, or the name-collision path takes
+  over first.
+- Nothing here helps a method call whose receiver type is genuinely
+  unknowable without type resolution. That is D's job, still unbuilt.

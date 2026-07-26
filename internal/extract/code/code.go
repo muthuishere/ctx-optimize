@@ -7,11 +7,18 @@
 // labels (Class.method) and L#-L# locations, contains edges (file→decl,
 // decl→nested decl), and import edges (file→module). Call sites resolve
 // module-wide by name AFTER all files parse: a unique match becomes an
-// INFERRED call edge. When the name is defined more than once the call site is
-// NOT guessed: the candidates are emitted as AMBIGUOUS so the agent sees a
-// shortlist to grep, and every traversal verb filters AMBIGUOUS out by default
-// (ADR 2026-07-25-abstain-out-loud). Unknown names (stdlib, dependencies) have
-// nothing in this repo to point at and are dropped outright.
+// INFERRED call edge. Two things are NOT guessed, and both surface as an
+// AMBIGUOUS shortlist the agent can grep rather than as silence:
+//
+//   - the name is defined more than once (ADR 2026-07-25-abstain-out-loud);
+//   - the callee is a METHOD reached through a receiver we could not tie to
+//     its owner type (ADR 2026-07-25-method-call-resolution) — the graph holds
+//     only OUR declarations, so a repo-unique method name is not evidence that
+//     `err.Error()` meant ours. See receiverTies for the ties we do accept.
+//
+// Every traversal verb filters AMBIGUOUS out by default. Unknown names
+// (stdlib, dependencies) have nothing in this repo to point at and are dropped
+// outright.
 package code
 
 import (
@@ -39,6 +46,62 @@ const maxFileBytes = 2 << 20
 // longest realistic hand-written line (embedded data, long strings) while
 // catching minified JS/CSS whose "lines" run to hundreds of KB.
 const minifiedLineBytes = 50 * 1024
+
+// receiverGate turns on receiver-aware resolution for METHOD candidates: a
+// bare name is not evidence that a call targets a method of ours, because the
+// graph holds only OUR declarations and can never see `error`, `io.Closer` or
+// any dependency type. Sweepable so the trade stays a measurement.
+// See receiverTies for the (exact, non-guessing) ties we accept.
+var receiverGate = true
+
+// ownerOf returns the immediate qualifier of a qualified label — Store for
+// Store.Merge, Inner for Outer.Inner.run — and "" for an unqualified one.
+func ownerOf(qual string) string {
+	idx := strings.LastIndex(qual, ".")
+	if idx < 0 {
+		return ""
+	}
+	if prev := strings.LastIndex(qual[:idx], "."); prev >= 0 {
+		return qual[prev+1 : idx]
+	}
+	return qual[:idx]
+}
+
+// receiverTies reports whether the call site gives us actual evidence that it
+// targets d. It is deliberately narrow: every accepted tie is exact, none is a
+// convention or a similarity score.
+//
+//	free function     — no receiver to check; the gate does not apply.
+//	x.M() where x==T  — a call written on the type itself (Batch.Validate,
+//	                    Python classmethods): the receiver IS the owner.
+//	M() / self.M()    — an unqualified or self call from inside T: the
+//	                    enclosing declaration is the receiver.
+//	x.M(), T in scope — the owner type is NAMED in the same declaration as
+//	                    the call (`var e = new Engine(); e.Add(1)`), and no
+//	                    other declaration in the repo bears the name M. This
+//	                    is the tie that keeps test→source edges alive; it is
+//	                    evidence, hence INFERRED, not EXTRACTED.
+//
+// Anything else — `err.Error()` in a function that never names the error type
+// — is unresolvable HERE, and gets shortlisted as AMBIGUOUS rather than
+// attributed. Fixing those properly needs a type-aware producer (LSP/SCIP),
+// which docs/VISION.md already names as the real answer.
+func receiverTies(c callSite, d declRef, scope map[string]map[string]bool) bool {
+	if d.owner == "" {
+		return true
+	}
+	if c.recv == d.owner {
+		return true
+	}
+	if c.recv == "" || selfReceivers[c.recv] {
+		qual := c.callerID
+		if idx := strings.Index(qual, "::"); idx >= 0 {
+			qual = qual[idx+2:]
+		}
+		return ownerOf(qual) == d.owner
+	}
+	return scope[c.callerID][d.owner]
+}
 
 // ambiguousCap bounds how many candidates a single undecidable call site may
 // shortlist. Above it we shortlist nothing — see shortlist() for why refusing
@@ -71,21 +134,55 @@ type fileResult struct {
 	calls  []callSite
 	decls  []declRef
 	routes []routeSite
-	err    error
-	path   string
+	// scopeNames maps a declaration id to the type-shaped names written
+	// INSIDE it — the evidence receiverTies needs to accept `e.Add(1)` after
+	// `var e = new Engine()` without ever guessing. Deliberately narrow: see
+	// typeShaped for why the filter can only cost recall, never precision.
+	scopeNames map[string]map[string]bool
+	err        error
+	path       string
+}
+
+// typeShaped reports whether a token looks like a type name in the languages
+// we parse: CamelCase (Engine, HttpClient), not lowercase (locals, C
+// identifiers) and not SHOUTING (macros, constants). It is a convention, so it
+// is used ONLY to admit evidence — a type it misses stays unresolved and the
+// call site is abstained on, never mis-attributed. That asymmetry is what
+// makes a convention acceptable here.
+func typeShaped(s string) bool {
+	if s == "" {
+		return false
+	}
+	r := rune(s[0])
+	if r < 'A' || r > 'Z' {
+		return false
+	}
+	for _, c := range s[1:] {
+		if c >= 'a' && c <= 'z' {
+			return true
+		}
+	}
+	return false
 }
 
 type callSite struct {
 	callerID string // innermost enclosing decl (or file) id
 	callee   string // callee name as written
+	recv     string // qualifier as written ("" when unqualified): s in s.Merge()
 	file     string
 }
 
 type declRef struct {
 	id    string
 	label string // unqualified name
+	owner string // qualifier of the declaration ("" for a free function): Store in Store.Merge
 	file  string
 }
+
+// selfReceivers are receiver tokens that denote the enclosing instance rather
+// than some other object, so `self.foo()` inside type T is evidence for T.foo
+// in exactly the way `x.foo()` is not.
+var selfReceivers = map[string]bool{"self": true, "this": true}
 
 // resolved routes a file to its language and the engine that parses it.
 type resolved struct {
@@ -312,6 +409,7 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 	}()
 
 	batch := &schema.Batch{Producer: ProducerName}
+	scopeNames := map[string]map[string]bool{}
 	var calls []callSite
 	var decls []declRef
 	var routes []routeSite
@@ -325,6 +423,15 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 		batch.Edges = append(batch.Edges, res.edges...)
 		calls = append(calls, res.calls...)
 		decls = append(decls, res.decls...)
+		for id, names := range res.scopeNames {
+			if scopeNames[id] == nil {
+				scopeNames[id] = names
+				continue
+			}
+			for n := range names {
+				scopeNames[id][n] = true
+			}
+		}
 		routes = append(routes, res.routes...)
 	}
 
@@ -336,7 +443,7 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 	for _, d := range decls {
 		byName[d.label] = append(byName[d.label], d)
 	}
-	pick := func(c callSite) *declRef {
+	pick := func(c callSite, gate bool) *declRef {
 		cands := byName[c.callee]
 		var inFile []*declRef
 		for k := range cands {
@@ -348,6 +455,9 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 			return inFile[0]
 		}
 		if len(inFile) == 0 && len(cands) == 1 {
+			if gate && receiverGate && !receiverTies(c, cands[0], scopeNames) {
+				return nil
+			}
 			return &cands[0]
 		}
 		return nil
@@ -366,7 +476,12 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 	// god-node ranking for no navigational gain (docs/VISION.md:284 measured
 	// exactly that failure). Refusing to shortlist is the honest answer there —
 	// grep is strictly better than 40 maybes.
-	shortlist := func(c callSite) []declRef {
+	//
+	// The two abstentions carry DIFFERENT reasons, and the reason decides
+	// which grep settles it, so it is stamped on the edge rather than left
+	// for the reader to assume (schema.AmbiguousNameCollision /
+	// schema.AmbiguousUnresolvedReceiver).
+	shortlist := func(c callSite) ([]declRef, string) {
 		cands := byName[c.callee]
 		var inFile []declRef
 		for _, d := range cands {
@@ -377,21 +492,29 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 		if len(inFile) > 1 {
 			cands = inFile // ambiguous within one file: never widen to the module
 		}
-		if len(cands) < 2 || len(cands) > ambiguousCap {
-			return nil
+		if len(cands) == 1 {
+			// Only reachable when the receiver gate refused the sole
+			// candidate. The name IS declared here — we simply never
+			// established whose method the call site meant, so the candidate
+			// is a maybe, not a miss.
+			return cands, schema.AmbiguousUnresolvedReceiver
 		}
-		return cands
+		if len(cands) < 2 || len(cands) > ambiguousCap {
+			return nil, ""
+		}
+		return cands, schema.AmbiguousNameCollision
 	}
 	seen := map[string]bool{}
 	for _, c := range calls {
-		t := pick(c)
+		t := pick(c, true)
 		if t == nil {
 			// Undecidable. Emit the shortlist as AMBIGUOUS so the agent can see
 			// the candidates and grep, instead of the call site vanishing and
 			// the graph looking complete. Every traversal verb filters these
 			// out by default (analyze.WithoutAmbiguous) — the label is only
 			// honest if the consumers honor it.
-			for _, cand := range shortlist(c) {
+			cands, reason := shortlist(c)
+			for _, cand := range cands {
 				if cand.id == c.callerID {
 					continue
 				}
@@ -403,6 +526,7 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 				batch.Edges = append(batch.Edges, schema.Edge{
 					Source: c.callerID, Target: cand.id,
 					Relation: "calls", Confidence: schema.Ambiguous, Weight: 1,
+					Metadata: map[string]string{"ambiguous_reason": reason},
 				})
 			}
 			continue
@@ -438,7 +562,9 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 			if r.handlerName == "" {
 				continue // inline anonymous handler — no decl node to point at
 			}
-			t := pick(callSite{callee: r.handlerName, file: r.file})
+			// A route handler is named, never called through a receiver, so
+			// there is no receiver to gate on.
+			t := pick(callSite{callee: r.handlerName, file: r.file}, false)
 			if t == nil {
 				continue
 			}
@@ -460,7 +586,7 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 }
 
 func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int][]string, root, path string, packRules map[string][]packRule) fileResult {
-	res := fileResult{path: path}
+	res := fileResult{path: path, scopeNames: map[string]map[string]bool{}}
 	src, err := os.ReadFile(path)
 	if err != nil {
 		res.err = err
@@ -565,25 +691,33 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		}
 	}
 
-	// calleeName resolves a call site: the LAST name-typed node of the
-	// callee expression, stopping at the arguments — `s.Merge(a)` is a call
-	// to Merge, not to s; `self.bar()` is bar, not self.
-	calleeName := func(i int) (string, bool) {
+	// calleeName resolves a call site into (receiver, callee): the LAST
+	// name-typed node of the callee expression is the callee — `s.Merge(a)`
+	// is a call to Merge, not to s; `self.bar()` is bar, not self — and the
+	// one immediately before it is the receiver ("" when the call is
+	// unqualified). The receiver used to be dropped here, which made every
+	// `err.Error()` indistinguishable from `Error()` and let a repo-unique
+	// method name absorb call sites that never targeted it (see the
+	// receiver gate in Extract).
+	calleeName := func(i int) (recv string, callee string, ok bool) {
 		d := raw[i].Depth
-		last := -1
+		last, prev := -1, -1
 		for j := i + 1; j < len(raw) && raw[j].Depth > d; j++ {
 			t := typeOf(raw[j])
 			if strings.Contains(t, "argument") {
 				break
 			}
 			if raw[j].Depth-d <= 3 && lang.Names[t] {
-				last = j
+				last, prev = j, last
 			}
 		}
-		if last >= 0 {
-			return text(raw[last]), true
+		if last < 0 {
+			return "", "", false
 		}
-		return "", false
+		if prev >= 0 {
+			recv = text(raw[prev])
+		}
+		return recv, text(raw[last]), true
 	}
 
 	// Route recognition (routes.go) rides this same visit — no second walk.
@@ -702,6 +836,22 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		}
 		t := typeOf(n)
 
+		// Record type-shaped names per enclosing declaration — the evidence
+		// receiverTies uses to accept a receiver-qualified call. Collected on
+		// the walk we already do; filtered by typeShaped so a lowercase-heavy
+		// corpus (C) costs almost nothing.
+		if lang.Names[t] {
+			if txt := text(n); typeShaped(txt) {
+				id := callerAt()
+				set := res.scopeNames[id]
+				if set == nil {
+					set = map[string]bool{}
+					res.scopeNames[id] = set
+				}
+				set[txt] = true
+			}
+		}
+
 		kind, isDecl := lang.Decls[t]
 		headName := ""
 		if !isDecl && len(lang.DeclRules) > 0 {
@@ -754,7 +904,7 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 				Source: parent, Target: id, Relation: "contains",
 				Confidence: "EXTRACTED", Weight: 1,
 			})
-			res.decls = append(res.decls, declRef{id: id, label: name, file: rel})
+			res.decls = append(res.decls, declRef{id: id, label: name, owner: ownerOf(qual), file: rel})
 
 			var ctrlBase string
 			var isCtrl bool
@@ -793,11 +943,11 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 				}
 				res.routes = append(res.routes, frontendRouterRoutes(raw, i, typeOf, text, rel, lang.Name)...)
 			}
-			if callee, ok := calleeName(i); ok && callee != "" {
+			if recv, callee, ok := calleeName(i); ok && callee != "" {
 				if rules := packRules[callee]; len(rules) > 0 {
 					res.routes = append(res.routes, packRouteSites(raw, i, typeOf, text, rel, lang.Name, rules)...)
 				}
-				res.calls = append(res.calls, callSite{callerID: callerAt(), callee: callee, file: rel})
+				res.calls = append(res.calls, callSite{callerID: callerAt(), callee: callee, recv: recv, file: rel})
 			}
 			continue
 		}
