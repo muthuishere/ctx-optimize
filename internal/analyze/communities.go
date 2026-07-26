@@ -13,6 +13,7 @@ package analyze
 // openspec/changes/2026-07-14-community-detection/.
 
 import (
+	"container/heap"
 	"fmt"
 	"path"
 	"sort"
@@ -55,6 +56,27 @@ type wgraph struct {
 // Degree-0 nodes are excluded — an isolated node is noise, not a subsystem —
 // and disconnected dust (< minCommunity members, no external edges) is
 // dropped rather than reported as fake subsystems.
+// commEntry / commHeap: a min-heap over (size, id) so the dust-merge loop can
+// take the smallest community without re-sorting every step. Entries are
+// immutable snapshots; a community whose size changed gets a NEW entry pushed
+// and its old one is discarded on pop (lazy invalidation). Ordering matches the
+// sort it replaced exactly — size ascending, ties by ascending id — which is
+// what keeps clustering deterministic.
+type commEntry struct{ id, size int }
+
+type commHeap []commEntry
+
+func (h commHeap) Len() int { return len(h) }
+func (h commHeap) Less(i, j int) bool {
+	if h[i].size != h[j].size {
+		return h[i].size < h[j].size
+	}
+	return h[i].id < h[j].id
+}
+func (h commHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+func (h *commHeap) Push(x any)   { *h = append(*h, x.(commEntry)) }
+func (h *commHeap) Pop() any     { old := *h; n := len(old); x := old[n-1]; *h = old[:n-1]; return x }
+
 func Communities(nodes []schema.Node, edges []schema.Edge) []Community {
 	// Subsystem structure must be computed from facts only. Measured on this
 	// repo the moment AMBIGUOUS shortlisting landed (ADR
@@ -136,27 +158,43 @@ func Communities(nodes []schema.Node, edges []schema.Edge) []Community {
 	label := make([]int, len(sorted))
 	copy(label, assign)
 	isolated := map[int]bool{}
+	// The loop below needs exactly one thing per iteration: the SMALLEST
+	// non-isolated community (ties by smallest id). It used to get that by
+	// rebuilding the whole list and re-sorting it EVERY iteration — O(n² log n).
+	// Measured on a 12k-node store: 12.8s inside Communities, 90% of the wiki's
+	// time, to produce ZERO communities (all dust). A heap with lazy
+	// invalidation answers the same question in O(log n) per step and picks the
+	// identical candidate, so the clustering output is unchanged.
+	h := &commHeap{}
+	for id, ms := range members {
+		*h = append(*h, commEntry{id: id, size: len(ms)})
+	}
+	heap.Init(h)
 	for len(members) > 1 {
-		type cs struct{ id, size int }
-		list := make([]cs, 0, len(members))
-		for id, ms := range members {
-			list = append(list, cs{id, len(ms)})
-		}
-		sort.Slice(list, func(a, b int) bool {
-			if list[a].size != list[b].size {
-				return list[a].size < list[b].size
-			}
-			return list[a].id < list[b].id
-		})
 		src := -1
-		for _, c := range list {
-			if isolated[c.id] {
+		for h.Len() > 0 {
+			e := heap.Pop(h).(commEntry)
+			ms, live := members[e.id]
+			// Stale entry: the community was merged away, or its size moved on
+			// since this entry was pushed. A newer entry exists (or it is gone).
+			if !live || e.size != len(ms) {
 				continue
 			}
-			if c.size < minCommunity {
-				src = c.id
+			if isolated[e.id] {
+				continue // never a candidate again; it can only be a merge TARGET
 			}
-			break // only the smallest non-isolated community is a candidate
+			if len(ms) < minCommunity {
+				src = e.id
+			}
+			// Either way this is the smallest non-isolated community, so the
+			// scan stops here exactly as the sorted version's `break` did. When
+			// it is big enough, no smaller candidate exists and the merge phase
+			// is done — but it must go BACK on the heap, since breaking out of
+			// the merge loop is not the same as consuming it.
+			if src < 0 {
+				heap.Push(h, e)
+			}
+			break
 		}
 		if src < 0 {
 			break
@@ -171,7 +209,7 @@ func Communities(nodes []schema.Node, edges []schema.Edge) []Community {
 		}
 		if len(cross) == 0 {
 			isolated[src] = true
-			continue
+			continue // popped and not re-pushed: isolated is permanent
 		}
 		dst, dstW := -1, 0.0
 		for l, w := range cross {
@@ -184,6 +222,9 @@ func Communities(nodes []schema.Node, edges []schema.Edge) []Community {
 		}
 		members[dst] = append(members[dst], members[src]...)
 		delete(members, src)
+		// dst grew: its old heap entry is now stale and will be skipped, so
+		// push the current size.
+		heap.Push(h, commEntry{id: dst, size: len(members[dst])})
 	}
 	for id := range members {
 		if isolated[id] && len(members[id]) < minCommunity {

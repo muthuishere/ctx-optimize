@@ -124,6 +124,36 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Fixed
 
+- **A big `add` was 4× slower than it needed to be: the dust-merge loop in
+  community detection was O(n² log n)** (ADR
+  `openspec/changes/2026-07-26-quadratic-dust-merge/`). Reported as "the progress
+  bar sometimes takes too long"; the display was the symptom.
+
+  The dust-merge phase needs one thing per iteration — the smallest non-isolated
+  community — and it got it by **rebuilding and re-sorting the entire community
+  list every iteration**. On a 12,000-file repo that is ~12,000 iterations of a
+  12,000-entry sort (~1.7B comparisons): **12.8 seconds, 90% of the wiki's total
+  time, to return ZERO communities**, since every component was disconnected dust
+  that gets dropped. Replaced with a min-heap over `(size, id)` with lazy
+  invalidation — same candidate, same tie-breaking, so clustering output is
+  byte-identical (verified: 10 subsystems, same members, same order).
+
+  Also: wiki file pages now render and write across `NumCPU` workers, worth 15%
+  of a large gather. Output verified page-by-page — 0 of 12,021 pages differ.
+
+  | | before | after |
+  |---|---:|---:|
+  | `add` on a 12k-file repo | 16.46s | **3.89s** (4.2×) |
+  | `Communities` on 12k dust components | ~12.8s | **16ms** |
+
+  The corpus tier is unchanged (linux 0.4s, Newtonsoft 1.0s) — this fixes graphs
+  in the bad shape and does nothing for graphs that never were. `TestCommunities50kUnderASecond`
+  passed at 29ms throughout: its graph is connected, so the dust loop barely ran.
+  `TestCommunitiesDustMergeIsNotQuadratic` adds the missing shape.
+
+  **Not fixed:** progress is still reported only on task completion, so a single
+  long task still prints nothing while it runs.
+
 - **One break no longer stops the whole** (ADR
   `openspec/changes/2026-07-26-failure-containment/`). Asked of the chromium run;
   the answer was that failure was contained at one level, not at two, and at a
