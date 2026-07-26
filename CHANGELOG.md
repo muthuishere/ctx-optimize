@@ -86,13 +86,22 @@ embeddings, no MCP, no network except your configured remote.**
   is **dry-run by default** (prints what goes, what survives, and that
   `.ctxoptimize/` is untouched), performs on `--yes`, and is audited.
 
+  It **asks** `[y/N]` at a terminal after printing the blast radius. Off a
+  terminal (pipe, CI, `< /dev/null`) nothing is asked and nothing is deleted —
+  a missing answer must never read as consent, so `--yes` is the only
+  non-interactive path.
+
   **Fixed a live bug while building it:** a store dir is not a leaf — a
   multi-module repo nests its module stores INSIDE the root store
-  (`~/ctxoptimize/reqsume/` contains `reqsume/e2e/` and
-  `reqsume/regressiontest/`). The dashboard's `os.RemoveAll` therefore
-  **destroyed three stores while reporting one**. Nested stores are now kept
-  unless `--with-nested` says otherwise, and the dashboard routes through the
-  same guarded primitive.
+  (`~/ctxoptimize/reqsume/` contains `reqsume/e2e/`). The dashboard's
+  `os.RemoveAll` therefore **destroyed stores it never reported**. Deletion now
+  goes through one guarded primitive that reports exactly what it touched.
+
+  Those nested stores are the SAME repo's data, so they go with the root store
+  by default (`--keep-nested` leaves them): measured on chromium, the first
+  version reported `deleted store "chromium"` and left **33 chromium module
+  stores** on disk — a lie by omission. What stays impossible is reaching a
+  store the caller never named; a sibling repo is never in scope.
 
   Also closed: `SanitizeKeyPath` drops a `..` segment, so the key `repo/..` was
   rewritten to `repo` — no traversal escape, but a delete of a store the caller

@@ -8,9 +8,9 @@ import (
 
 // A store dir is NOT necessarily a leaf: a multi-module repo nests its module
 // stores inside the root store (~/ctxoptimize/reqsume/ contains reqsume/e2e/
-// and reqsume/regressiontest/). So RemoveAll on a root store destroys three
-// stores while reporting one. These tests pin that Delete removes exactly the
-// store it names.
+// and reqsume/regressiontest/). These tests pin what Delete touches in both
+// directions — it must take the named repo's whole store set by default, and it
+// must never reach a store the caller did not name.
 func mkStore(t *testing.T, root, key string) string {
 	t.Helper()
 	dir := filepath.Join(root, filepath.FromSlash(key))
@@ -26,6 +26,33 @@ func mkStore(t *testing.T, root, key string) string {
 	return dir
 }
 
+// The DEFAULT for a repo's store is all of it: a multi-module repo's module
+// stores nest inside its root store and are that same repo's data. Reporting
+// `deleted store "chromium"` while leaving 33 chromium stores on disk is a lie
+// by omission — measured on a real chromium checkout. What must stay impossible
+// is touching a store the caller did not name.
+func TestDeleteTakesTheReposOwnModuleStoresButNeverASibling(t *testing.T) {
+	root := t.TempDir()
+	mkStore(t, root, "chromium")
+	mkStore(t, root, "chromium/third_party/node")
+	mkStore(t, root, "chromium/tools/grit")
+	sibling := mkStore(t, root, "other-repo")
+
+	if _, _, err := Delete(root, "chromium", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "chromium")); !os.IsNotExist(err) {
+		t.Error("the repo's whole store set must go — module stores are the same repo's data")
+	}
+	if _, err := os.Stat(filepath.Join(sibling, "graph", "nodes.ndjson")); err != nil {
+		t.Errorf("a SIBLING repo's store is never in scope: %v", err)
+	}
+}
+
+// The --keep-nested path: remove the named store's own artifacts and leave the
+// nested module stores standing. This is the shape that must NOT be the default
+// (see the test above), but it has to work exactly when asked for, since a
+// naive RemoveAll cannot express it at all.
 func TestDeleteKeepsNestedModuleStores(t *testing.T) {
 	root := t.TempDir()
 	rootStore := mkStore(t, root, "reqsume")
@@ -68,7 +95,7 @@ func TestDeleteWithNestedRemovesEverything(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "reqsume")); !os.IsNotExist(err) {
-		t.Error("--with-nested must remove the whole subtree")
+		t.Error("the default (withNested) must remove the whole subtree")
 	}
 	if _, err := os.Stat(filepath.Join(sibling, "graph")); err != nil {
 		t.Error("a sibling store is never in scope")

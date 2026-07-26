@@ -61,7 +61,19 @@ CLI shape:
 - **Dry-run by default.** It prints what would go, names the nested stores that
   would survive, and says `.ctxoptimize/` is untouched. `--yes` performs it. A
   confirmation that does not state the blast radius is theatre.
-- `--with-nested` opts into the recursive delete — always an explicit request.
+- **Nested module stores go WITH the root store.** They are the same repo's
+  derived data; `--keep-nested` is the opt-out. The first version kept them by
+  default and chromium exposed why that is wrong: it printed
+  `deleted store "chromium"` and left **33 chromium module stores** on disk.
+  Reporting one deletion while 33 survive is a lie by omission. What stays
+  impossible is reaching a store the caller never named.
+- **It ASKS.** `[y/N]` at a terminal, after printing the blast radius —
+  requiring a second full invocation of the command added no safety, only
+  typing. Off a terminal nothing is asked and nothing is deleted: a missing
+  answer must never read as consent, so `--yes` is the only non-interactive
+  path. `/dev/null` needed excluding explicitly — it is a character device, so
+  the first TTY check called it a terminal, printed a prompt, read EOF and
+  reported "cancelled": the safe outcome by luck with the wrong explanation.
 - **Audited** (`store.delete` in `audit.ndjson`), like every dashboard mutation.
 - `.ctxoptimize/` is never touched: it is committed config, not a cache.
   Deleting tracked files is a different act from dropping derived state.
@@ -100,6 +112,10 @@ than sugar for `store delete --yes && add .`. That check comes first.
 
 - The nested-store repair is verified on synthetic fixtures plus a read of the
   real store root; no destructive test was run against real data.
-- No claim that anyone wants `--with-nested`. It exists because the alternative
-  was leaving `RemoveAll` reachable, and because "drop this whole monorepo"
-  is a legitimate request that should be spelled out rather than implied.
+- No claim that anyone wants `--keep-nested`. It exists because `RemoveAll`
+  cannot express "this store but not the ones inside it" at all, and because a
+  guard is worth having even when the default goes the other way.
+- TTY detection is stdlib-only (`ModeCharDevice` minus `os.SameFile` against
+  `os.DevNull`). It has been verified against a real pty, a pipe and
+  `< /dev/null`; exotic terminals are unverified, and the failure direction is
+  "refuse and ask for --yes", never "delete".

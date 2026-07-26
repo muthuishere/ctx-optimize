@@ -8,6 +8,7 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -1183,7 +1184,7 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 // hand at a root that holds every repo's store plus the audit log.
 func cmdStore(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ctx-optimize store delete [--path DIR] [--yes] [--with-nested]")
+		return fmt.Errorf("usage: ctx-optimize store delete [--path DIR] [--yes] [--keep-nested]")
 	}
 	switch args[0] {
 	case "delete", "rm", "remove":
@@ -1200,7 +1201,8 @@ func cmdStore(args []string, stdout io.Writer) error {
 //
 // Deletion is permanent and derived-data-only: `.ctxoptimize/` stays (that is
 // committed config, not a cache), sibling stores stay, and NESTED module stores
-// stay unless --with-nested says otherwise. Re-gather with `add .`.
+// go with it (they are the same repo's data) unless --keep-nested says
+// otherwise. Re-gather with `add .`.
 func cmdStoreDelete(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) > 0 {
@@ -1225,6 +1227,19 @@ func cmdStoreDelete(args []string, stdout io.Writer) error {
 		}
 	}
 	dir := filepath.Join(storeRoot, filepath.FromSlash(key))
+	// A multi-module repo's module stores are nested INSIDE its root store, and
+	// they are that same repo's derived data — chromium/third_party/node is
+	// chromium's, not a stranger's. So "delete this repo's store" takes them:
+	// reporting `deleted store "chromium"` while leaving 33 chromium stores on
+	// disk is a lie by omission. --keep-nested is the opt-out, and the
+	// confirmation states the count either way, so the blast radius is known
+	// BEFORE the answer. What is still impossible is deleting a store you did
+	// not name: siblings are never in scope (store.Delete resolves one key).
+	keepNested := f.bools["keep-nested"]
+	nestedCount := 0
+	if n, nerr := store.PreviewDelete(storeRoot, key); nerr == nil {
+		nestedCount = len(n)
+	}
 	if !f.bools["yes"] {
 		// Say exactly what would go, and what would survive, BEFORE asking.
 		// A confirmation that does not name the blast radius is theatre.
@@ -1233,15 +1248,35 @@ func cmdStoreDelete(args []string, stdout io.Writer) error {
 			return nerr
 		}
 		fmt.Fprintf(stdout, "would delete store %q at %s\n", key, dir)
-		if len(nested) > 0 && !f.bools["with-nested"] {
-			fmt.Fprintf(stdout, "  keeping %d nested module store(s): %s\n", len(nested), strings.Join(nested, ", "))
-			fmt.Fprintln(stdout, "  (--with-nested removes those too)")
+		if len(nested) > 0 {
+			if keepNested {
+				fmt.Fprintf(stdout, "  KEEPING %d nested module store(s)%s\n", len(nested), summarizeList(nested, 5))
+				fmt.Fprintln(stdout, "  (they belong to this same repo — drop --keep-nested to remove them too)")
+			} else {
+				fmt.Fprintf(stdout, "  including %d nested module store(s) of this repo%s\n", len(nested), summarizeList(nested, 5))
+				fmt.Fprintln(stdout, "  (--keep-nested leaves those in place)")
+			}
 		}
 		fmt.Fprintln(stdout, "  .ctxoptimize/ in the repo is NOT touched; re-gather with `add .`")
-		fmt.Fprintln(stdout, "pass --yes to do it")
-		return nil
+
+		// At a terminal, ASK — printing "pass --yes" makes the user type the
+		// whole command twice for no added safety. Off a terminal (pipe, CI,
+		// the dashboard) there is nobody to answer, and a missing answer must
+		// never read as consent: refuse and say how to opt in explicitly.
+		if !stdinIsTerminal() {
+			fmt.Fprintln(stdout, "pass --yes to do it (stdin is not a terminal, so nothing was asked)")
+			return nil
+		}
+		fmt.Fprint(stdout, "delete it? [y/N] ")
+		reply, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		switch strings.ToLower(strings.TrimSpace(reply)) {
+		case "y", "yes":
+		default:
+			fmt.Fprintln(stdout, "cancelled — nothing was deleted")
+			return nil
+		}
 	}
-	deleted, kept, err := store.Delete(storeRoot, key, f.bools["with-nested"])
+	deleted, kept, err := store.Delete(storeRoot, key, !keepNested)
 	if err != nil {
 		return err
 	}
@@ -1251,11 +1286,47 @@ func cmdStoreDelete(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "warning: store deleted but audit log not written: %v\n", aerr)
 	}
 	fmt.Fprintf(stdout, "deleted store %q → %s\n", deleted, dir)
-	for _, k := range kept {
-		fmt.Fprintf(stdout, "kept nested module store: %s\n", k)
+	if len(kept) > 0 {
+		// A count plus a sample: chromium has 33 of these, and 33 lines of
+		// confirmation bury the one line that matters.
+		fmt.Fprintf(stdout, "kept %d nested module store(s)%s\n", len(kept), summarizeList(kept, 3))
+	} else if nestedCount > 0 {
+		fmt.Fprintf(stdout, "…including %d nested module store(s) of this repo\n", nestedCount)
 	}
 	fmt.Fprintln(stdout, "re-gather with `ctx-optimize add .`")
 	return nil
+}
+
+// stdinIsTerminal reports whether there is a human who can answer a prompt.
+// Pure stdlib, no x/term dependency.
+//
+// ModeCharDevice alone is NOT enough: /dev/null is a character device with
+// nobody behind it, so `store delete < /dev/null` printed a prompt, read EOF,
+// and reported "cancelled" — the safe outcome by luck, with the wrong
+// explanation. Excluded by identity, which is exact where a name comparison
+// would not be.
+func stdinIsTerminal() bool {
+	info, err := os.Stdin.Stat()
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	if devNull, derr := os.Stat(os.DevNull); derr == nil && os.SameFile(info, devNull) {
+		return false
+	}
+	return true
+}
+
+// summarizeList renders ": a, b, c … and N more" — long enough to recognise
+// what is in the set, short enough that the important line stays visible.
+// Returns "" for an empty list so callers can print a bare count.
+func summarizeList(items []string, max int) string {
+	if len(items) == 0 {
+		return ""
+	}
+	if len(items) <= max {
+		return ": " + strings.Join(items, ", ")
+	}
+	return fmt.Sprintf(": %s … and %d more", strings.Join(items[:max], ", "), len(items)-max)
 }
 
 func cmdStatus(args []string, stdout io.Writer) error {
@@ -3142,12 +3213,15 @@ commands:
                               dir (deterministic, from nodes+edges only; every
                               add already regenerates it)
   status                      store facts + freshness vs git HEAD  [--json]
-  store delete                delete THIS module's store (the derived graph) and
-                              nothing else — key resolved like add/status, never
-                              from a path argument. Dry-run by default: prints
-                              what would go and what would survive; --yes does it.
-                              A multi-module ROOT store contains its module
-                              stores, so those are KEPT unless --with-nested.
+  store delete                delete THIS repo's store (the derived graph) — key
+                              resolved like add/status, never from a path
+                              argument, so a sibling store is never in scope.
+                              A multi-module repo's module stores nest inside its
+                              root store and are the SAME repo's data, so they go
+                              too (--keep-nested leaves them). Prints the full
+                              blast radius, then ASKS [y/N]; off a terminal
+                              (pipe, CI) nothing is asked and nothing is deleted —
+                              pass --yes to opt in explicitly.
                               .ctxoptimize/ is never touched (committed config,
                               not a cache) — re-gather with 'add .'. Audited
   fresh                       is the store current with git HEAD? one-line

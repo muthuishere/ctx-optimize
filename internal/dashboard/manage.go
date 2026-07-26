@@ -657,10 +657,12 @@ func (s *server) handleStoreDelete(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "no store "+key)
 		return
 	}
-	// store.Delete, not RemoveAll: a multi-module root store CONTAINS its
-	// module stores, so RemoveAll destroyed three stores while reporting one.
-	// It also refuses the store root and any key that would be rewritten.
-	deleted, kept, err := store.Delete(s.root, key, false)
+	// store.Delete, not RemoveAll: it refuses the store root and any key that
+	// would be rewritten, and it reports what it touched instead of guessing.
+	// Nested module stores go WITH the root store — they are the same repo's
+	// derived data, and deleting a repo's store while leaving its 33 module
+	// stores on disk is a lie by omission (measured on chromium).
+	deleted, kept, err := store.Delete(s.root, key, true)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return
