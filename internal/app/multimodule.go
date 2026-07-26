@@ -425,6 +425,11 @@ type gatherTask struct {
 // may NEST (beam: a maven module under another's src/main/resources) — every
 // task excludes the other declared dirs inside its own tree, so no file is
 // ever extracted twice.
+// progressHeartbeat is how long a task must run before the heartbeat mentions
+// it. Long enough that a normal repo never prints one (every task finishes
+// first), short enough that a big residual is never silent for long.
+const progressHeartbeat = 15 * time.Second
+
 func planTasks(rootDir, rootKey string, mods []scan.Module, seen map[string]bool) ([]gatherTask, error) {
 	var tasks []gatherTask
 	var allDirs []string
@@ -982,15 +987,62 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 	// tick per finished module goes to progressOut (stderr) the moment it
 	// lands — a fan-out over many modules is otherwise silent until every
 	// worker is done. Plain lines (no \r) keep CI logs readable.
+	// Ticks fired only on COMPLETION, so a single long task printed nothing
+	// while it ran: on chromium the output went `[47/48]` then silent for
+	// minutes while the 3.6M-node residual gathered, and it read as hung
+	// (issue #12). Two additions, both stderr-only so --json and piped output
+	// are untouched, both plain lines so CI logs stay readable:
+	//   • a line when a task STARTS — you can see what is running, instead of
+	//     inferring it from what has not appeared yet;
+	//   • a heartbeat naming the in-flight tasks and how long each has been
+	//     going, so silence never means "no idea whether this is alive".
 	var doneN int
 	var progressMu sync.Mutex
+	inflight := map[string]time.Time{}
+	begin := func(label string) {
+		progressMu.Lock()
+		defer progressMu.Unlock()
+		inflight[label] = time.Now()
+		fmt.Fprintf(progressOut, "  → %s\n", label)
+	}
 	tick := func(label string) {
 		progressMu.Lock()
 		defer progressMu.Unlock()
+		delete(inflight, label)
 		doneN++
 		fmt.Fprintf(progressOut, "[%d/%d] %s\n", doneN, len(tasks), label)
 	}
 	fmt.Fprintf(progressOut, "gathering %d modules (jobs=%d)…\n", len(tasks), jobs)
+
+	// Heartbeat. Silent until a task has been running a while, so small repos
+	// (every task well under the interval) print exactly what they printed
+	// before and no test or log gains noise.
+	heartbeatDone := make(chan struct{})
+	go func() {
+		t := time.NewTicker(progressHeartbeat)
+		defer t.Stop()
+		for {
+			select {
+			case <-heartbeatDone:
+				return
+			case <-t.C:
+				progressMu.Lock()
+				var parts []string
+				for label, since := range inflight {
+					if el := time.Since(since); el >= progressHeartbeat {
+						parts = append(parts, fmt.Sprintf("%s (%s)", label, el.Round(time.Second)))
+					}
+				}
+				n := doneN
+				progressMu.Unlock()
+				if len(parts) == 0 {
+					continue
+				}
+				sort.Strings(parts) // deterministic line for a given set
+				fmt.Fprintf(progressOut, "  … still running (%d/%d done): %s\n", n, len(tasks), strings.Join(parts, ", "))
+			}
+		}
+	}()
 	for i := range tasks {
 		wg.Add(1)
 		go func(i int) {
@@ -998,6 +1050,7 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			t := tasks[i]
+			begin(t.label)
 			defer func() { tick(t.label) }()
 			s, err := store.Open(storeRoot, t.storeKey)
 			if err != nil {
@@ -1013,6 +1066,7 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 		}(i)
 	}
 	wg.Wait()
+	close(heartbeatDone)
 
 	var failed []string
 	for i, t := range tasks {

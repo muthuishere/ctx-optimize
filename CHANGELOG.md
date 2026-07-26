@@ -169,6 +169,32 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Fixed
 
+- **A single long task no longer looks hung** (#12). Progress ticks fired only on
+  task COMPLETION, so on chromium the output went `[47/48]` and then silent for
+  minutes while the 3.6M-node residual gathered. Two additions, both stderr-only
+  (so `--json` and piped output are untouched) and both plain lines (so CI logs
+  stay readable):
+
+  - a line when a task **starts** (`→ third_party/androidx`) — you can see what is
+    running instead of inferring it from what has not appeared yet;
+  - a **heartbeat** naming the in-flight tasks and how long each has been going
+    (`… still running (47/48 done): . (2m14s)`), so silence never means "no idea
+    whether this is alive".
+
+  The heartbeat stays silent until a task outlives its interval, so a normal repo
+  prints exactly what it printed before — pinned by a test in both directions.
+
+- **A failed npm publish no longer burns the tag** (#15). `run:` executes under
+  `bash -e`, so the first platform package that failed aborted the loop: four
+  good packages never attempted, wrapper step skipped. A re-run then hit
+  `already_exists` on whatever *had* published and aborted again — which is how
+  v0.10.2 was lost (a Sigstore 409 killed the run, the re-run failed on
+  `already_exists`, v0.10.3 shipped instead).
+
+  Now every platform is attempted, failures are collected and reported together,
+  and a version that is already on the registry counts as success — so a re-run
+  completes instead of aborting. That is what makes a tag retryable.
+
 - **A big `add` was 4× slower than it needed to be: the dust-merge loop in
   community detection was O(n² log n)** (ADR
   `openspec/changes/2026-07-26-quadratic-dust-merge/`). Reported as "the progress
