@@ -98,11 +98,24 @@ var builtinMarkers = map[string]bool{
 }
 
 // pruneDirs are never descended into — generated/vendored trees where a
-// package.json is noise, not a project.
+// package.json is noise, not a project. Matched by directory NAME at any
+// depth, so a nested net/third_party/… is pruned like a top-level one.
+//
+// `third_party` and `out` were added after onboarding chromium found 241
+// "modules", 217 of them (90%) under third_party/ and one being out/Default,
+// the GN build output. They are vendored/generated trees by the same
+// convention that already justifies `vendor`, `dist`, `build` and `target` —
+// just the names Google-style repos use instead.
+//
+// This is scan-only: the code producer still WALKS these trees (it has its own
+// ignore rules), so nothing stops being indexed. What changes is that a
+// vendored subtree no longer gets its own store and its own line in the module
+// list.
 var pruneDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, "dist": true,
 	"build": true, "target": true, ".venv": true, "venv": true,
 	".next": true, "__pycache__": true, ".gradle": true, ".idea": true,
+	"third_party": true, "out": true,
 }
 
 // Scan walks root to Options.Depth and returns every module directory found,

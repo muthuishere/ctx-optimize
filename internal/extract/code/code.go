@@ -23,6 +23,7 @@ package code
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -416,6 +417,7 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 	}()
 
 	batch := &schema.Batch{Producer: ProducerName}
+	dangling := 0 // broken symlinks: counted, summarized once, never per-file
 	scopeNames := map[string]map[string]bool{}
 	var calls []callSite
 	var decls []declRef
@@ -423,6 +425,16 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 	for res := range results {
 		if res.err != nil {
 			// One unparseable file must not kill the gather — skip loudly.
+			// EXCEPT a dangling symlink: the walker saw the link, the read
+			// followed it to nothing. That is the repo's state, not a problem
+			// with the file or with us, and a big tree has thousands of them
+			// (chromium's third_party/nearby vendors broken links). Reporting
+			// each one as an error trains the reader to ignore the channel that
+			// carries the real skips.
+			if errors.Is(res.err, fs.ErrNotExist) {
+				dangling++
+				continue
+			}
 			fmt.Fprintf(os.Stderr, "ctx-optimize: skip %s: %v\n", res.path, res.err)
 			continue
 		}
@@ -594,6 +606,9 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 			Confidence: "INFERRED", Weight: 1,
 			Metadata: map[string]string{"synthesized_by": r.channel},
 		})
+	}
+	if dangling > 0 {
+		fmt.Fprintf(os.Stderr, "ctx-optimize: skipped %d broken symlink(s)\n", dangling)
 	}
 	// A declared name that matched nothing is reported, not ignored: the author
 	// believes the line is in force, and a stale one is a lie waiting to be read.

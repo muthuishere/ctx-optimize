@@ -77,6 +77,40 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Fixed
 
+- **Onboarding chromium: three defects, found by running it** (ADR
+  `openspec/changes/2026-07-26-chromium-onboarding-defects/`). A full chromium
+  checkout gathered without falling over (366,277 nodes in the root residual),
+  and the output carried three real problems.
+
+  - **`scan` reported 241 "modules"; 217 (90%) were vendored.** All under
+    `third_party/`, plus `out/Default` — GN build output — and nested cases like
+    `net/third_party/quiche/src/depstool`. `pruneDirs` already refused
+    `vendor`/`dist`/`build`/`target` on exactly this reasoning and just did not
+    know the names Google-style repos use. **241 → 21 modules on chromium.**
+    Scan-only: the code producer still walks those trees, so nothing stops being
+    indexed — a vendored subtree simply no longer gets its own store.
+  - **CRLF files leaked a carriage return into every extracted value**, and a
+    bare `# ` line in one became a heading titled `"\r"` — an empty slug and an
+    empty label, which the schema correctly refused
+    (`quarantined 18 invalid item(s) … label is required`, from
+    `third_party/hunspell_dictionaries/README_*.txt`, shell-comment licence
+    headers). Lines are now split with the CR stripped, and a heading with no
+    text is skipped rather than emitted. Verified on the real file: 0 empty
+    labels, no quarantine.
+  - **Dangling symlinks were reported per-file at the same volume as real parse
+    failures** (`third_party/nearby` vendors broken links). Now counted and
+    summarized once — reporting each one trains the reader to ignore the channel
+    that carries real skips.
+
+  Investigated and **not** a defect: progress appearing to stop at `[47/48]`.
+  Every task ticks from a `defer`; `[48/48]` is the root residual, the slowest
+  task, which finishes after those messages. Recorded so nobody re-investigates.
+
+  Recorded and deliberately **not** fixed: `.txt` files are parsed as markdown,
+  so a `#`-prefixed prose line in a licence file becomes a `section` node. Valid
+  but useless. Fixing it means dropping `.txt` or guessing "this isn't
+  markdown" — own ADR.
+
 - **A unique method name is no longer treated as evidence about the receiver**
   (ADR `openspec/changes/2026-07-25-method-call-resolution/`, the 0.11.0 known
   issue, now closed). `calleeName` returned the last name node and threw the

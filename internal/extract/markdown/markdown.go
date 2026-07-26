@@ -162,7 +162,7 @@ func extractConfig(b *schema.Batch, rel, content string) {
 		FileType: "config", Source: rel, Location: "L1",
 	})
 	usedSlugs := map[string]int{}
-	lines := strings.Split(content, "\n")
+	lines := splitLines(content)
 	// S2: a `key: |` / `key: >` header (any indicator) opens a literal/folded
 	// block whose body is DATA. Skip every line indented deeper than the
 	// opening key until a non-blank line at or below that indent closes it.
@@ -281,7 +281,7 @@ func extractFile(b *schema.Batch, rel, content string) {
 		FileType: "document", Source: rel, Location: "L1",
 	})
 
-	lines := strings.Split(content, "\n")
+	lines := splitLines(content)
 	var stack []openSection
 	sectionStart := map[string]int{}
 	usedSlugs := map[string]int{} // repeated headings ("Files changed") get -2, -3…
@@ -303,7 +303,14 @@ func extractFile(b *schema.Batch, rel, content string) {
 		lineNo := i + 1
 		if m := headingRe.FindStringSubmatch(line); m != nil {
 			level := len(m[1])
-			title := m[2]
+			title := strings.TrimSpace(m[2])
+			// A heading with no text is not a section: there is no name to
+			// cite and no slug to build an id from. Emitting one produced a
+			// node with an empty label, which the schema correctly refuses —
+			// better to never emit it than to have Validate quarantine it.
+			if title == "" || slug(title) == "" {
+				continue
+			}
 			closeTo(level, lineNo-1)
 			s := slug(title)
 			usedSlugs[s]++
@@ -354,6 +361,20 @@ func currentScope(stack []openSection, docID string) string {
 		return stack[len(stack)-1].id
 	}
 	return docID
+}
+
+// splitLines splits on \n and strips a trailing \r, so a CRLF file behaves
+// exactly like an LF one. Without this the CR rides along into every value we
+// store, and a bare "# " heading in a CRLF file yields the title "\r" — which
+// slugs to nothing and emitted a node with an EMPTY label. Chromium's
+// third_party/hunspell_dictionaries/*.txt (shell-comment licence headers, CRLF)
+// quarantined 18 nodes exactly that way.
+func splitLines(content string) []string {
+	lines := strings.Split(content, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimSuffix(l, "\r")
+	}
+	return lines
 }
 
 func slug(title string) string {
