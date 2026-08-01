@@ -6,6 +6,7 @@
 [![benchmark](https://img.shields.io/badge/benchmark-run%20it%20yourself-4ade80)](proof/agent/)
 [![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Discord](https://img.shields.io/badge/AgentNexus-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/V9C2kvHC8D)
 
 **Gather a codebase — and its world — into one local knowledge store an AI agent answers from. Deterministic. No LLM API. No DB. Gather once, refresh cheaply, never go everywhere every time.**
 
@@ -457,6 +458,11 @@ project's author (graphify #1751 / #1752; git-verifiable). ctx-optimize is
 that same idea carried through the whole product: the store, the languages,
 the adapters, and the sync are all open seams by design — nothing here
 requires a fork to extend.
+
+## Community
+
+Questions, bug reports, or you built something with it? Join **[AgentNexus](https://discord.gg/V9C2kvHC8D)** —
+a Discord for people building with AI agents, with a dedicated `#ctx-optimize` channel.
 
 ## License
 
