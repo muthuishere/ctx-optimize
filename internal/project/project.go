@@ -194,10 +194,22 @@ type Config struct {
 }
 
 // WikiEnabled reports whether a gather should generate the wiki. Absent means
-// enabled, so adding this key never silently turns it off for anyone.
+// DISABLED: the wiki is an opt-in artifact built by the `wiki` verb.
+//
+// This inverted on 2026-08-04 (ADR 2026-07-27-wiki-off-by-default). Absent used
+// to mean enabled so that adding the key never silently turned it off for
+// anyone — a discoverability argument made before the cost was measured. On
+// linux v6.9 the wiki is 1,317.8s of a 1,475.4s cold gather (89.3%) for a
+// byte-identical graph, and it is not the query source for any verb. The old
+// default also could not reach the repos that needed it most: linux and
+// chromium have no .ctxoptimize/config.json at all, so a config-only lever
+// never applied to them.
+//
+// "Off" never means "unavailable" — `ctx-optimize wiki` builds a complete wiki
+// on demand, and `--wiki` forces one for a single gather.
 func (c *Config) WikiEnabled() bool {
 	if c == nil || c.Wiki == nil {
-		return true
+		return false
 	}
 	return *c.Wiki
 }
@@ -329,11 +341,14 @@ func Scaffold(repo, name string) error {
 		return err
 	}
 	if _, err := os.Stat(path(repo)); os.IsNotExist(err) {
-		// `wiki: true` is scaffolded EXPLICITLY even though absent means the
-		// same thing: a knob nobody can see is a knob nobody uses, and the
-		// whole point of #9 is that whether to build a per-file wiki is the
-		// repo's call.
-		wiki := true
+		// The key is scaffolded EXPLICITLY even though absent means the same
+		// thing: a knob nobody can see is a knob nobody uses, and the whole
+		// point of #9 is that whether to build a per-file wiki is the repo's
+		// call. What changed on 2026-08-04 is the VALUE — it was `true`, and
+		// the linux measurement (89.3% of a cold gather, ADR
+		// 2026-07-27-wiki-off-by-default) reversed the 2026-07-26 request to
+		// scaffold it on. Flip it to true here to opt this repo back in.
+		wiki := false
 		if err := Save(repo, &Config{Name: name, Wiki: &wiki}); err != nil {
 			return err
 		}
@@ -403,8 +418,8 @@ func pointerBlock(name string, modules int) string {
 		"  <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
 		"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one\n" +
 		"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·\n" +
-		"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps`. wiki at\n" +
-		"  `~/ctxoptimize/" + name + "/wiki/`. Output is parsed fact with exact file:line — cite it directly, do\n" +
+		"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps`.\n" +
+		"  Output is parsed fact with exact file:line — cite it directly, do\n" +
 		"  NOT re-verify in source; open a file only for a body the store didn't show. Exhaustive literal-string\n" +
 		"  sweeps stay grep's job.</use>\n" +
 		deepDoc +

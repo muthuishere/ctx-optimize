@@ -32,7 +32,7 @@ already run.
 > (`card X`: signature + doc + callers/callees, no file read),
 > **`change-plan`** (one composed answer for "I'm about to change X":
 > signature + callers + blast radius + which tests to run), the
-> **deterministic wiki** (regenerated on every add) with a
+> **deterministic wiki** (opt-in: `ctx-optimize wiki`, or `--wiki`) with a
 > **community-detected "Subsystems" map**, the save-result/reflect
 > learning loop, merge/export (json/dot/graphml/csv/obsidian), **scripted
 > remote push/pull**, and **multi-module monorepo support** (`scan` /
@@ -266,8 +266,8 @@ ctx-optimize scan                # markers: go.mod/go.work, package.json, gradle
 ctx-optimize init --scan --yes
 
 # gather: one worker per module, in parallel; stores mirror the repo tree
-ctx-optimize add .               # → ~/ctxoptimize/<repo>/<module-path>/, each with
-                                 #   its own graph + wiki  [--jobs N]
+ctx-optimize add .               # → ~/ctxoptimize/<repo>/<module-path>/, each
+                                 #   with its own graph  [--jobs N]
 ```
 
 Measured on `apache/beam`: **310 modules discovered at depth 8, all gathered
@@ -276,8 +276,9 @@ other modules' resource trees.
 
 The root store holds a **navigator**, not a merged giant graph:
 `modules.json` + `navigator.md` — every module's path, node/edge counts, top
-hub symbols, and README one-liner — plus a unified wiki front page linking
-into each module's own wiki. Query scope then follows your cwd:
+hub symbols, and README one-liner. (`ctx-optimize wiki` adds a unified wiki
+front page linking into each module's own wiki.) Query scope then follows
+your cwd:
 
 ```sh
 cd sdks/java/transform-service

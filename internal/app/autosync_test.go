@@ -187,6 +187,13 @@ func TestSyncNoWikiRefreshesGraphNotWiki(t *testing.T) {
 	repo, storeRoot, key := setupIncremental(t, map[string]string{
 		"go.mod": "module ex\n\ngo 1.22\n", "main.go": baseMain,
 	})
+	// A wiki has to be built explicitly now that gathers no longer make one
+	// (ADR 2026-07-27-wiki-off-by-default). That is precisely the store this
+	// test is about: pages already on disk, and a resync that must not touch
+	// them.
+	if out, code := runCLIIn(t, storeRoot, "wiki", "--path", repo); code != 0 {
+		t.Fatalf("setup: wiki build failed: %s", out)
+	}
 	wikiBefore := readFile(t, filepath.Join(storeRoot, key, "wiki"), "index.md")
 	mustWrite(t, repo, "main.go", baseMain+"func Beta() {}\n")
 

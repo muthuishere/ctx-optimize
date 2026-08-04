@@ -1,8 +1,9 @@
 # ADR — the wiki stops being a default
 
-Status: **DRAFT** — 2026-07-27. Owner-directed ("can we make default off wiki
-seems unnecessary no one uses"). No product code touched yet; this is the
-sign-off document, and the backward-compatibility question is the whole of it.
+Status: **ACCEPTED** — 2026-08-04. Owner-directed ("can we make default off wiki
+seems unnecessary no one uses"), and the §4 hazard resolved by the owner on
+2026-08-04: surface it in `status`, give it a scoped removal. Measurements
+behind that resolution are in `spikes.md`. Drafted 2026-07-27.
 
 ## Context — the measurement that forced this
 
@@ -100,27 +101,58 @@ worse than no wiki: it reads as current and cites lines that have moved.
 The motto applies directly. We can say no ("this store has no wiki") but we must
 not be wrong ("here is a wiki", built against code from three commits ago).
 
-Options, to be decided with the owner:
+Options considered: **(a) grandfather** — keep regenerating whenever `wiki/`
+exists and the config is silent; leaves linux/chromium users paying 1,317s, and
+is weakest on the measurement that motivated the change. **(c) delete it on the
+first skipping gather** — destroys user-visible content as a side effect of an
+upgrade nobody asked for. **(d) leave it silent** — precisely the
+wrong-not-absent failure this project exists to avoid. All three rejected.
 
-- **(a) Grandfather** — if `<store>/wiki/` exists and the config is silent, keep
-  regenerating. Existing users see literally no change; only new/never-wikied
-  stores get the fast default. Cost: linux/chromium users who ran `add` once
-  keep paying 1,317s until they opt out. Weakest on the measurement that
-  motivated the change.
-- **(b) Skip and say so (RECOMMENDED)** — stop regenerating, and have `add`
-  print one line whenever it skipped a wiki that exists on disk and is now
-  older than the graph: `wiki: NOT refreshed (stale since <ts>) — rebuild with
-  'ctx-optimize wiki', or set "wiki": true`. Fast default everywhere, and the
-  staleness is stated rather than discovered.
-- **(c) Delete it** — remove the stale directory on the first skipping gather.
-  Honest, no stale bytes; but it destroys generated content the user may have
-  linked to, on an upgrade they did not ask for. Deleting user-visible data as
-  an upgrade side effect is not ours to do.
-- **(d) Leave it silent** — the "just flip the bool" version. Rejected: this is
-  precisely the wrong-not-absent failure the project exists to avoid.
+**DECIDED (owner, 2026-08-04) — diagnose in `status`, remove with a scoped
+verb.** This is (b) with the missing half added, and it moves the message from
+the gather to the verb that already answers "can I trust this store".
 
-Recommendation: **(b)**. It takes the win in every population, and the only
-behaviour that changes without a message is a wiki that never existed.
+1. **`status` diagnoses.** When `<store>/wiki/index.md` exists and is older than
+   `graph/nodes.ndjson`, `status` prints one line next to the `fresh:` line it
+   already owns (`internal/app/app.go:1382`):
+
+   ```
+   fresh:  stale (7 files changed since gather)
+   wiki:   NOT refreshed since 2026-07-12 — graph is newer
+           rebuild: ctx-optimize wiki  ·  remove: ctx-optimize wiki --delete
+   ```
+
+   Printed ONLY when a stale wiki is actually on disk. A line saying "you don't
+   have a thing you never asked for" is noise on every run, and per `spikes.md`
+   S2 an empty `wiki/` is the normal state for every store — `store.New`
+   pre-creates the dir, so the predicate is the `index.md` file, never the
+   directory. Per S1 the whole check is two `os.Stat` calls on fixed paths;
+   enumerating `wiki/` would reintroduce defect #9's 8s listing tax into a verb
+   people run constantly, and is forbidden here.
+
+2. **`wiki --delete` removes.** Deletes `<store>/wiki/` and refreshes the
+   manifest. Nothing else is touched, and `ctx-optimize wiki` puts the pages
+   back from the graph (0.082s / 562 pages on this repo). Audited like every
+   other mutation.
+
+3. **`add` stays as it is.** It already prints `wiki: skipped — the graph is the
+   query source; build it any time with 'ctx-optimize wiki'` (S3). Nobody needs
+   a staleness warning on every gather about a thing `status` will tell them.
+
+Why a scoped delete rather than pointing at `store delete` (the owner's first
+instinct, and the reason this section moved): `store delete` is a whole-store
+verb — it guards on `graph/` existing and removes the store's own artifacts,
+optionally every nested module store. Using it to clean up a wiki costs the
+graph every verb reads (2.85M nodes on linux) plus a re-gather, to reclaim an
+artifact the user was not using. That is (c)'s destructiveness with collateral
+damage bolted on (S5).
+
+And removal has to exist at all, not just diagnosis, because a stale wiki is a
+recurring tax: `UpdateManifest` does not skip `wiki/`, so every future
+`--no-wiki` gather re-hashes the whole stale wiki it just refused to
+regenerate — ≈1.1s per gather at linux's 60k pages / 250MB (S4). Small beside
+the 1,317s this ADR is built on, and reported as such — but it means "leave it
+and ignore it" is not actually free.
 
 ### 5. `sync` / `up` autosync paths — ALREADY off
 
@@ -146,8 +178,11 @@ behaviour that changes without a message is a wiki that never existed.
   must state the new one and the reason the guarantee moved.
 - `internal/app/app_test.go:47` asserts `wiki/index.md` exists after a plain
   `add` — must gain an explicit `"wiki": true` or move to the `wiki` verb.
-- New: a store with an existing wiki + silent config emits the staleness line
-  (option b).
+- New: `status` on a store with a wiki OLDER than the graph emits the staleness
+  line; a store with a current wiki, an empty `wiki/`, or no `wiki/` at all
+  emits nothing (the S2 trap — an empty dir is the normal state).
+- New: `wiki --delete` removes `wiki/`, leaves `graph/` intact, drops the wiki
+  entries from the manifest, and is re-buildable by `wiki` afterwards.
 - New: `--wiki` forces generation with no config present.
 
 ## Verification
@@ -156,8 +191,13 @@ behaviour that changes without a message is a wiki that never existed.
 - `task golden` hermetic + corpus tiers; judged floors must not move
   (linux-block 16.5, newtonsoft 13.0) — the wiki is not on the query path, so a
   moved score means something else broke.
-- Re-measure `add linux` after the change; expect ~158s, i.e. the `--no-wiki`
-  number, and re-state the graphify comparison as a 3.4× win.
+- Re-measured `add linux` after the change (2026-08-04, `v0.11.0-24`, M5 Pro):
+  **132.36s / 2,849,719 nodes**. The node count matches this ADR's pre-change
+  figure to the unit — the graph is byte-identical and only the wiki left. It
+  beat the predicted ≈158s, and that gap is NOT a speedup this change
+  delivered: the corpus tier had just walked the tree, so read it as warm page
+  cache. Against graphify's 531.97s on the same tree the default is now a
+  **4.0× win** where it was a 2.8× loss.
 
 ## Not claimed
 

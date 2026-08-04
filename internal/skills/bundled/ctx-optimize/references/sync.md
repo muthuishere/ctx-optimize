@@ -11,7 +11,7 @@ lanes, split by speed:
   genuinely incremental — a 0-change resync short-circuits on a stat-only
   tree signature in ~ms (no engine init), a 1-file edit costs O(changed).
   Re-gathers the repo you're in (code, docs, manifests, git — prunes deleted
-  sources, re-emits changed ones, refreshes wiki + navigator when the graph
+  sources, re-emits changed ones, refreshes the navigator when the graph
   changed) but SKIPS adapter scripts, which can be arbitrarily slow (DB
   dumps, doc converters), and never dials a native source. Skipping is safe:
   replace is producer-scoped, so adapter nodes stay put. Takes no path — it
@@ -19,9 +19,17 @@ lanes, split by speed:
   - `sync --adapters` — also re-run the adapter scripts.
   - `sync --all` — full refresh: adapters AND native sources (DIALS the
     DB/bucket/queue — an explicit operator choice, never automatic).
-  - `sync --no-wiki` / `add --no-wiki` — graph-only refresh; queries read
-    the graph, never the wiki, so answers stay current while the (browse-
-    only) wiki waits for the next full run.
+- **The wiki is OPT-IN** (v0.12+). No gather builds one unless asked: it was
+  1,318s of a 1,475s linux gather (89%) and no verb reads it — queries read the
+  graph, never the wiki. `--no-wiki` still exists and is now a no-op on the
+  default path.
+  - `add --wiki` / `sync --wiki` — build it for this run.
+  - `"wiki": true` in `.ctxoptimize/config.json` — build it for this repo.
+  - `ctx-optimize wiki` — build it on demand, any time, complete.
+  - `ctx-optimize wiki --delete` — remove one that has gone stale. The graph is
+    untouched; use this, NOT `store delete`, which drops the whole graph.
+  - `ctx-optimize status` says so when a wiki on disk is older than the graph —
+    the only case where the browse-only artifact can mislead.
 - **Autosync (opt-in)**: `"autosync": "lazy"` (or `true`) in the committed
   `.ctxoptimize/config.json` makes a STALE read verb resync itself — a
   detached child runs the code-only sync while the query answers immediately

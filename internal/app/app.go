@@ -205,11 +205,19 @@ func ambOpts(f *flags) []analyze.Option {
 	return nil
 }
 
-// noWiki resolves whether this gather should skip wiki generation: the
-// --no-wiki flag, OR the repo's committed `"wiki": false` (#9). The config is
-// the ROOT's — a module dir almost never has its own — so one setting governs
-// the whole repo, which is what "this repo does not want a per-file wiki" means.
+// noWiki resolves whether this gather should skip wiki generation. Precedence,
+// most-specific first: --wiki > --no-wiki > the repo's committed `"wiki"` key
+// (#9) > the default, which since ADR 2026-07-27-wiki-off-by-default is OFF.
+//
+// --wiki is the per-run escape hatch that makes the new default reversible
+// without editing a config: it forces a wiki even against a committed
+// `"wiki": false`. The config is the ROOT's — a module dir almost never has its
+// own — so one setting governs the whole repo, which is what "this repo does
+// not want a per-file wiki" means.
 func noWiki(f *flags, sc *scope) bool {
+	if f.bools["wiki"] {
+		return false
+	}
 	if f.bools["no-wiki"] {
 		return true
 	}
@@ -217,7 +225,9 @@ func noWiki(f *flags, sc *scope) bool {
 	if cfg == nil {
 		var err error
 		if cfg, err = project.Load(sc.rootDir); err != nil {
-			return false // unreadable config is not a reason to drop the wiki
+			// An unreadable config cannot opt IN to the wiki; the default
+			// governs, and the default is off.
+			return true
 		}
 	}
 	return !cfg.WikiEnabled()
@@ -1372,6 +1382,12 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	if stamps, err := sources.SourceStamps(s.Dir); err == nil && len(stamps) > 0 {
 		st["sources"] = stamps // id → last-captured unix (sanitized ids only)
 	}
+	// Absent when the wiki is current or was never built — the key appearing
+	// at all IS the warning.
+	wikiStale := wikiStaleness(s.Dir)
+	if !wikiStale.IsZero() {
+		st["wiki"] = map[string]any{"stale": true, "built": wikiStale.Unix()}
+	}
 	sum, sumErr := metrics.Summarize(s.Dir)
 	if sumErr == nil && sum.Total > 0 {
 		st["served"] = sum
@@ -1381,6 +1397,10 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "store:  %s\nnodes:  %d\nedges:  %d\nremote: %s", s.Dir, len(nodes), len(edges), orNone(remoteLine))
 	fmt.Fprintf(stdout, "\nfresh:  %s\n", freshnessLine(reports, overall))
+	if !wikiStale.IsZero() {
+		fmt.Fprintf(stdout, "wiki:   NOT refreshed since %s — the graph is newer\n", wikiStale.Format("2006-01-02"))
+		fmt.Fprintf(stdout, "        rebuild: ctx-optimize wiki  ·  remove: ctx-optimize wiki --delete\n")
+	}
 	if line := sourcesStatusLine(s.Dir, time.Now()); line != "" {
 		fmt.Fprintf(stdout, "sources: %s\n", line)
 	}
@@ -1390,6 +1410,39 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "served: %d answers · ~%d tokens saved (~$%.2f)\n", sum.Total, sum.EstSaved, sum.EstUSD)
 	}
 	return nil
+}
+
+// wikiStaleness reports when a wiki is sitting on disk that gathers no longer
+// refresh (ADR 2026-07-27-wiki-off-by-default §4). Zero time means "nothing to
+// say" — no wiki, or one at least as new as the graph.
+//
+// A stale wiki is strictly worse than no wiki: it reads as current and cites
+// lines that have moved. Since the default flip, `add` stops refreshing it
+// silently, so status is where that fact has to surface.
+//
+// Two constraints, both learned the hard way:
+//
+//   - The predicate is wiki/index.md, NOT the wiki/ directory. store.New
+//     pre-creates graph/ wiki/ cards/ hooks/ unconditionally, so an EMPTY
+//     wiki/ is the normal state of every store that has only ever gathered
+//     with the wiki off — i.e. every store, by default. Keying off the dir
+//     would warn about a wiki that was never built.
+//   - Two os.Stat calls on fixed paths, never a ReadDir/WalkDir. Enumerating
+//     wiki/ is what cost 8s per gather on chromium's 434,597 pages (#9), and
+//     status is a verb people run constantly.
+func wikiStaleness(dir string) time.Time {
+	wi, err := os.Stat(filepath.Join(dir, "wiki", "index.md"))
+	if err != nil {
+		return time.Time{}
+	}
+	g, err := os.Stat(filepath.Join(dir, "graph", "nodes.ndjson"))
+	if err != nil {
+		return time.Time{}
+	}
+	if !wi.ModTime().Before(g.ModTime()) {
+		return time.Time{}
+	}
+	return wi.ModTime()
 }
 
 // freshnessReports evaluates every recorded source against its repo's CURRENT
@@ -2185,13 +2238,28 @@ func cmdHubs(args []string, stdout io.Writer) error {
 	return nil
 }
 
-// cmdWiki regenerates the deterministic markdown wiki from the graph. Every
-// successful `add` already does this; the verb rebuilds on demand.
+// cmdWiki builds the deterministic markdown wiki from the graph. Since ADR
+// 2026-07-27-wiki-off-by-default this verb IS the wiki: gathers no longer
+// generate one unless asked (`--wiki`, or `"wiki": true` in the config).
+//
+// --delete removes it. It exists because the flip leaves real pages on disk in
+// every repo that gathered before the upgrade, and those pages now go stale
+// silently. The alternative users would otherwise reach for is `store delete`,
+// which drops the whole graph — 2.85M nodes on linux — plus a re-gather, to
+// reclaim an artifact they were not using. A stale wiki also is not free: the
+// manifest walk re-hashes it on every gather (≈1.1s at linux's 60k pages), so
+// "leave it and ignore it" keeps costing something.
+//
+// Scoped by construction: wiki/ is self-contained, nothing outside it links in,
+// and this verb rebuilds it in full from the graph.
 func cmdWiki(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	s, err := openStore(f)
 	if err != nil {
 		return err
+	}
+	if f.bools["delete"] {
+		return deleteWiki(s, f.strs["store"], stdout)
 	}
 	pages, err := wiki.Generate(s)
 	if err != nil {
@@ -2201,6 +2269,40 @@ func cmdWiki(args []string, stdout io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(stdout, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
+	return nil
+}
+
+// deleteWiki removes THIS store's wiki/ and nothing else, then refreshes the
+// manifest so the pages stop being fingerprinted on every later gather.
+//
+// No confirmation prompt, unlike `store delete`. The blast radius is one
+// derived directory that `ctx-optimize wiki` reconstructs from the graph in
+// under a second — the asymmetry that makes `store delete` ask (an expensive,
+// slow re-gather) does not exist here.
+func deleteWiki(s *store.Store, storeFlag string, stdout io.Writer) error {
+	dir := filepath.Join(s.Dir, "wiki")
+	// index.md, not the directory: store.New pre-creates an empty wiki/ in
+	// every store, so its presence proves nothing (see wikiStaleness).
+	if _, err := os.Stat(filepath.Join(dir, "index.md")); err != nil {
+		fmt.Fprintf(stdout, "wiki: nothing to delete — no wiki in %s\n", s.Dir)
+		return nil
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if _, err := s.UpdateManifest(); err != nil {
+		return err
+	}
+	root, rerr := store.Root(storeFlag)
+	if rerr == nil {
+		if aerr := audit.Append(root, audit.Line{
+			Actor: "cli", Action: "wiki.delete", Target: s.Dir,
+		}); aerr != nil {
+			fmt.Fprintf(stdout, "warning: wiki deleted but audit log not written: %v\n", aerr)
+		}
+	}
+	fmt.Fprintf(stdout, "wiki: deleted → %s\n", dir)
+	fmt.Fprintln(stdout, "the graph is untouched; rebuild any time with `ctx-optimize wiki`")
 	return nil
 }
 
@@ -3222,9 +3324,14 @@ commands:
   facts. edges --relation calls --confidence AMBIGUOUS --to/--from <id>
   lists the same shortlist on its own. (report stays facts-only by
   design: it has a dedicated section for what could not be resolved.)
-  wiki                        regenerate the markdown wiki in the store's wiki/
-                              dir (deterministic, from nodes+edges only; every
-                              add already regenerates it)
+  wiki                        build the markdown wiki in the store's wiki/ dir
+                              (deterministic, from nodes+edges only). OPT-IN
+                              since v0.12: gathers skip it — it was 89% of a
+                              linux gather and no verb reads it. Turn it on per
+                              run with 'add --wiki', or per repo with
+                              "wiki": true in .ctxoptimize/config.json.
+                              --delete   remove the wiki; the graph is untouched
+                                         and this verb rebuilds it
   status                      store facts + freshness vs git HEAD  [--json]
   store delete                delete THIS REPO's stores (the derived graph) — the
                               root store AND every module store, always the whole
@@ -3317,9 +3424,10 @@ The store lives at ~/ctxoptimize/<repo-name>/ ("name" in config.json overrides).
                   "remote": {"push": "node .ctxoptimize/push.js",
                              "pull": "node .ctxoptimize/pull.js"}}
                  push/pull are ANY shell line (js, py, sh, or inline)
-                 "wiki": false skips wiki generation on add/up (the graph is
-                 the query source); the 'wiki' verb still builds a complete one
-                 on demand. Absent = true
+                 "wiki": true builds the markdown wiki on add/up. Absent =
+                 FALSE since v0.12 — the graph is the query source, and the
+                 wiki was 89% of a linux gather. The 'wiki' verb builds a
+                 complete one on demand; 'add --wiki' forces one per run
   push.js/…      your transport scripts (init writes inert *.sample pair +
                  remote.example.md with git/s3/custom recipes)
   adapters/      drop scripts here — every .js/.py/.sh runs on add and must

@@ -36,11 +36,13 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	run(0, "init", "--path", repo)
-	out, _ := run(0, "add", repo, "--path", repo)
+	out, _ := run(0, "add", repo, "--path", repo, "--wiki")
 	if !strings.Contains(out, "added") {
 		t.Fatalf("add output: %s", out)
 	}
-	// Wiki-by-default: a successful add regenerates the wiki and says so.
+	// The wiki is opt-in since ADR 2026-07-27-wiki-off-by-default, so this
+	// gather asks for one with --wiki; what is pinned here is unchanged — when
+	// a wiki IS built, the gather regenerates it and says so.
 	if !strings.Contains(out, "wiki: ") {
 		t.Fatalf("add did not report the wiki: %s", out)
 	}

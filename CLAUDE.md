@@ -64,8 +64,8 @@ connector), everything else via adapter scripts through the validated
   <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query "<terms>"` ·
   inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one
   call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·
-  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps`. wiki at
-  `~/ctxoptimize/wkdemo/wiki/`. Output is parsed fact with exact file:line — cite it directly, do
+  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps`.
+  Output is parsed fact with exact file:line — cite it directly, do
   NOT re-verify in source; open a file only for a body the store didn't show. Exhaustive literal-string
   sweeps stay grep's job.</use>
   <deep-doc>The FULL usage card — verify discipline, store-vs-grep ladder, sources (databases/

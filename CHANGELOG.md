@@ -169,6 +169,47 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Changed
 
+- **BREAKING: the wiki is off by default — `add` no longer builds one.** On
+  linux v6.9 (84,300 files) the wiki was **1,317.8s of a 1,475.4s cold gather —
+  89.3%** — for a byte-identical graph, and no verb reads it: every query
+  answers from `graph/`. Cold gather drops **1,475s → 132s** (re-measured after
+  the change: 2,849,719 nodes, matching the pre-change count to the unit), which
+  turns the graphify head-to-head (531.97s on the same tree) from a 2.8× loss
+  into a **4.0× win**.
+
+  Issue #9 made the wiki configurable and left the default alone. That was half
+  a fix: linux and chromium have no `.ctxoptimize/config.json` at all, so a
+  config-only lever never reached the repos paying the most. The cost is
+  non-linear, which is why it went unnoticed — on every published benchmark
+  corpus (≤754 files) the wiki is free.
+
+  **"Off" never means "unavailable."** `ctx-optimize wiki` still builds a
+  complete wiki on demand, and the new **`--wiki`** flag forces one for a single
+  gather (it beats a committed `"wiki": false`). `"wiki": true` in
+  `.ctxoptimize/config.json` is unchanged and still opts a repo in — repos
+  scaffolded by `init`/`up` since #9 carry that key explicitly, so **they see no
+  change at all**. `init` now scaffolds `"wiki": false`, reversing the
+  2026-07-26 request to scaffold it on, which predates the measurement.
+
+  What loses its auto-wiki: repos whose config predates the key, and repos with
+  no `.ctxoptimize/` at all. For them the wiki stops refreshing and goes
+  **stale** — which is strictly worse than no wiki, because it reads as current
+  and cites lines that have moved. So staleness is now stated, not discovered:
+
+  - **`status` says so** when a wiki on disk is older than the graph, and names
+    both remedies. Silent otherwise — including for the empty `wiki/` directory
+    that `store.New` pre-creates in every store.
+  - **`ctx-optimize wiki --delete`** removes it. The graph is untouched and the
+    verb rebuilds it. This exists so nobody reaches for `store delete`, which
+    drops the whole graph (2.85M nodes on linux) plus a re-gather to reclaim an
+    artifact they were not using. A stale wiki is not free either: the manifest
+    walk does not skip `wiki/`, so every gather re-hashes it — ≈1.1s at linux's
+    60k pages / 250MB.
+
+  ADR `openspec/changes/2026-07-27-wiki-off-by-default/`; measurements in its
+  `spikes.md`. Judged floors unmoved (linux-block 16.5, newtonsoft 13.0), as
+  they must be — the wiki was never on the query path.
+
 - **`scan` now honours `.gitignore`, and stopped hard-coding `out`** (#10). The
   code producer already respected `.gitignore` with git's own semantics; `scan`
   did not — so the two disagreed about what is even in the repo. Chromium's
