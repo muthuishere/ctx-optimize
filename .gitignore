@@ -27,3 +27,6 @@
 /bin/
 npm/platforms/*/bin/*
 /.wasm-build/
+
+# Go test binaries (a 4.9MB wiki.test rode into main in 8cb9b94)
+*.test
