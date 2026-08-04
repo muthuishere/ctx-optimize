@@ -10,6 +10,8 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-08-05
+
 ### Added
 
 - **`fresh` exit code 3 = PARTIAL — a store missing a producer no longer reports
