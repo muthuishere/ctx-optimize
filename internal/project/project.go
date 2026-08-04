@@ -176,6 +176,42 @@ type Config struct {
 	// dial / no credential use on a query). Env override:
 	// CTX_OPTIMIZE_AUTOSYNC=off|lazy|block. Committable — a team opts a repo in.
 	Autosync store.AutosyncMode `json:"autosync,omitempty"`
+
+	// Wiki gates markdown wiki generation during `add` / `up`. A POINTER so
+	// absent ≠ false: an existing repo with no key keeps today's behaviour.
+	//   true / absent — generate on every gather (the default)
+	//   false         — skip it; `ctx-optimize wiki` still builds a COMPLETE
+	//                   wiki on demand, so nothing is lost, it just moves off
+	//                   the hot path.
+	//
+	// It exists because the cost is unbounded and paid forever: onboarding
+	// chromium wrote 434,597 pages / 1.7 GB into one directory, and Generate's
+	// stale-page cleanup re-reads that directory on EVERY later gather (8s just
+	// to list it). A page cap was rejected — any cap is a number nobody can
+	// justify, and it yields a wiki that is both incomplete and still large.
+	// Whether a per-file wiki is wanted is the repo's call, not ours (#9).
+	Wiki *bool `json:"wiki,omitempty"`
+}
+
+// WikiEnabled reports whether a gather should generate the wiki. Absent means
+// DISABLED: the wiki is an opt-in artifact built by the `wiki` verb.
+//
+// This inverted on 2026-08-04 (ADR 2026-07-27-wiki-off-by-default). Absent used
+// to mean enabled so that adding the key never silently turned it off for
+// anyone — a discoverability argument made before the cost was measured. On
+// linux v6.9 the wiki is 1,317.8s of a 1,475.4s cold gather (89.3%) for a
+// byte-identical graph, and it is not the query source for any verb. The old
+// default also could not reach the repos that needed it most: linux and
+// chromium have no .ctxoptimize/config.json at all, so a config-only lever
+// never applied to them.
+//
+// "Off" never means "unavailable" — `ctx-optimize wiki` builds a complete wiki
+// on demand, and `--wiki` forces one for a single gather.
+func (c *Config) WikiEnabled() bool {
+	if c == nil || c.Wiki == nil {
+		return false
+	}
+	return *c.Wiki
 }
 
 func path(repo string) string { return filepath.Join(repo, filepath.FromSlash(FileName)) }
@@ -250,6 +286,14 @@ var pushSample string
 //go:embed templates/pull.js.sample
 var pullSample string
 
+// resolutionsSample → .ctxoptimize/resolutions.json.sample, inert until
+// renamed (ADR 2026-07-26-declared-resolutions). Scaffolded because nobody
+// uses a declaration file they never learn exists — the same reason
+// instructions.md is written out.
+//
+//go:embed templates/resolutions.json.sample
+var resolutionsSample string
+
 // Scaffold creates the .ctxoptimize/ layout in the repo: config.json (with
 // the module name), adapters/ seeded with an inert template, the inert
 // git-lane transport samples, and remote.example.md (transport authoring
@@ -273,6 +317,7 @@ func EnsureSamples(repo, name string) ([]string, error) {
 		{Dir + "/push.js.sample", pushSample},
 		{Dir + "/pull.js.sample", pullSample},
 		{Dir + "/remote.example.md", strings.ReplaceAll(remoteTemplate, "${NAME}", name)},
+		{Dir + "/resolutions.json.sample", resolutionsSample},
 		// No .gitignore is scaffolded: nothing secret lives in .ctxoptimize/
 		// — source credentials resolve from the process env, the repo-root
 		// .env (the user's own, warned loudly if tracked), or the
@@ -296,7 +341,15 @@ func Scaffold(repo, name string) error {
 		return err
 	}
 	if _, err := os.Stat(path(repo)); os.IsNotExist(err) {
-		if err := Save(repo, &Config{Name: name}); err != nil {
+		// The key is scaffolded EXPLICITLY even though absent means the same
+		// thing: a knob nobody can see is a knob nobody uses, and the whole
+		// point of #9 is that whether to build a per-file wiki is the repo's
+		// call. What changed on 2026-08-04 is the VALUE — it was `true`, and
+		// the linux measurement (89.3% of a cold gather, ADR
+		// 2026-07-27-wiki-off-by-default) reversed the 2026-07-26 request to
+		// scaffold it on. Flip it to true here to opt this repo back in.
+		wiki := false
+		if err := Save(repo, &Config{Name: name, Wiki: &wiki}); err != nil {
 			return err
 		}
 	}
@@ -365,8 +418,8 @@ func pointerBlock(name string, modules int) string {
 		"  <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
 		"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one\n" +
 		"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·\n" +
-		"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps`. wiki at\n" +
-		"  `~/ctxoptimize/" + name + "/wiki/`. Output is parsed fact with exact file:line — cite it directly, do\n" +
+		"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps`.\n" +
+		"  Output is parsed fact with exact file:line — cite it directly, do\n" +
 		"  NOT re-verify in source; open a file only for a body the store didn't show. Exhaustive literal-string\n" +
 		"  sweeps stay grep's job.</use>\n" +
 		deepDoc +

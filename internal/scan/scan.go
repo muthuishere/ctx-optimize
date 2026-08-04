@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/muthuishere/ctx-optimize/internal/extract/ignore"
 )
 
 // Module is one discovered (or declared) module root.
@@ -28,9 +30,9 @@ import (
 //     repo-root-relative so the folders can't collide and code extracts in a
 //     single pass (test→source calls resolve). `name` is REQUIRED here.
 type Module struct {
-	Path   string   `json:"path,omitempty"`  // single-path: repo-relative, slash-form
-	Paths  []string `json:"paths,omitempty"` // multi-path: the scattered dirs; when set this is a multi-path module
-	Name   string   `json:"name,omitempty"`  // store name override (single) / store key + REQUIRED (multi)
+	Path   string   `json:"path,omitempty"`   // single-path: repo-relative, slash-form
+	Paths  []string `json:"paths,omitempty"`  // multi-path: the scattered dirs; when set this is a multi-path module
+	Name   string   `json:"name,omitempty"`   // store name override (single) / store key + REQUIRED (multi)
 	Marker string   `json:"marker,omitempty"` // evidence: which marker declared it (scan output only)
 }
 
@@ -98,11 +100,31 @@ var builtinMarkers = map[string]bool{
 }
 
 // pruneDirs are never descended into — generated/vendored trees where a
-// package.json is noise, not a project.
+// package.json is noise, not a project. Matched by directory NAME at any
+// depth, so a nested net/third_party/… is pruned like a top-level one.
+//
+// `third_party` was added after onboarding chromium found 241 "modules", 217 of
+// them (90%) under third_party/ — vendored by the same convention that already
+// justifies `vendor` (also usually checked in, also not gitignored). With it
+// pruned: 21.
+//
+// `out` is deliberately NOT here even though chromium's `out/Default` was one of
+// those 241. `out` IS gitignored in chromium (`.gitignore: /out*/`), so it only
+// ever appeared because scan did not consult .gitignore — see gitignore
+// filtering in Scan. Hard-coding a name that generic would prune a repo that
+// legitimately keeps source in `out/`; fixing the cause costs nothing and is
+// right for every repo, not just Google-shaped ones.
+//
+// This list is scan-only: the code producer still WALKS these trees (it has its
+// own .gitignore-aware rules), so nothing stops being INDEXED. What changes is
+// that a vendored subtree does not get its own store and its own line in the
+// module list — and the module list is hand-editable in config.json, which is
+// the real source of truth.
 var pruneDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, "dist": true,
 	"build": true, "target": true, ".venv": true, "venv": true,
 	".next": true, "__pycache__": true, ".gradle": true, ".idea": true,
+	"third_party": true,
 }
 
 // Scan walks root to Options.Depth and returns every module directory found,
@@ -128,6 +150,14 @@ func Scan(root string, o Options) (*Result, error) {
 		}
 	}
 
+	// Honour .gitignore, with git's own semantics. The code producer already
+	// does (internal/extract/ignore, "a gather that ignores .gitignore will
+	// eventually index a build dir"); scan did NOT, so the two disagreed about
+	// what is even in the repo — chromium's `out/Default` was proposed as a
+	// module while extraction correctly skipped it as gitignored build output.
+	// nil means "git unavailable or nothing ignored": no extra filtering.
+	gitIgnored := ignore.New(absRoot)
+
 	found := map[string]string{} // rel dir → marker evidence
 	clipped := false
 	err = filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
@@ -150,6 +180,9 @@ func Scan(root string, o Options) (*Result, error) {
 			name := d.Name()
 			if pruneDirs[name] || strings.HasPrefix(name, ".") {
 				return filepath.SkipDir
+			}
+			if gitIgnored != nil && gitIgnored(rel) {
+				return filepath.SkipDir // the repo already said this is not source
 			}
 			for _, g := range o.Exclude {
 				if ok, _ := filepath.Match(g, rel); ok {
@@ -179,6 +212,14 @@ func Scan(root string, o Options) (*Result, error) {
 			return nil // the root is the root, not a module
 		}
 		if markers[d.Name()] {
+			// The MARKER must be tracked too, not just its directory. A repo
+			// that GENERATES and gitignores its package.json / Cargo.toml is
+			// not declaring a project there — and calling it a module on
+			// evidence git does not track is the same disagreement the
+			// directory rule above fixes, one level down.
+			if gitIgnored != nil && gitIgnored(rel) {
+				return nil
+			}
 			if _, ok := found[dir]; !ok {
 				found[dir] = d.Name()
 			}
@@ -189,6 +230,12 @@ func Scan(root string, o Options) (*Result, error) {
 		return nil, err
 	}
 
+	// Include is applied AFTER the walk, so an explicitly declared directory
+	// wins over every automatic exclusion above — .gitignore, the vendored-name
+	// list, and the depth bound. That ordering is the escape hatch that makes
+	// honouring .gitignore safe: if the repo ignores a tree but you want it as a
+	// module anyway, say so and you get it. Pinned by
+	// TestIncludeOverridesGitignore.
 	for _, g := range o.Include {
 		matches, _ := filepath.Glob(filepath.Join(absRoot, filepath.FromSlash(g)))
 		for _, m := range matches {

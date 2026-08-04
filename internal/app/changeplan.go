@@ -72,12 +72,12 @@ func cmdChangePlan(args []string, stdout io.Writer) error {
 		fmt.Sscanf(v, "%d", &depth)
 	}
 
-	card, cerr := analyze.Card(nodes, edges, f.args[0])
+	card, cerr := analyze.Card(nodes, edges, f.args[0], ambOpts(f)...)
 	// Module-scope miss: mirror affected/card — answer repo-wide, say where.
 	scopeNote := ""
 	if cerr != nil && sc != nil && sc.kind == scopeModule {
 		if fn, fe, ferr := federatedAll(sc, storeRoot); ferr == nil {
-			if c2, err2 := analyze.Card(fn, fe, f.args[0]); err2 == nil {
+			if c2, err2 := analyze.Card(fn, fe, f.args[0], ambOpts(f)...); err2 == nil {
 				scopeNote = fmt.Sprintf("[not in %s — found in %s]", sc.moduleName, moduleOwnerOf(sc, c2.Node.Source))
 				card, cerr = c2, nil
 				nodes, edges = fn, fe
@@ -87,10 +87,10 @@ func cmdChangePlan(args []string, stdout io.Writer) error {
 	if cerr != nil {
 		return cerr
 	}
-	_, impacts, aerr := analyze.Affected(nodes, edges, card.Node.Label, depth, nil)
+	_, impacts, aerr := analyze.Affected(nodes, edges, card.Node.Label, depth, nil, ambOpts(f)...)
 	if aerr != nil {
 		// Label-resolution edge case: fall back to the asked name.
-		_, impacts, aerr = analyze.Affected(nodes, edges, f.args[0], depth, nil)
+		_, impacts, aerr = analyze.Affected(nodes, edges, f.args[0], depth, nil, ambOpts(f)...)
 		if aerr != nil {
 			return aerr
 		}

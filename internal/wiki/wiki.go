@@ -11,8 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/muthuishere/ctx-optimize/internal/analyze"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
@@ -89,11 +91,21 @@ func Generate(s *store.Store) (int, error) {
 			return 0, err
 		}
 	}
+	// File pages are the bulk — one per file/document node. Each is a pure
+	// function of (graph, node, pageOf) written to its own pre-computed
+	// filename, so the loop parallelizes exactly: output is byte-identical
+	// (verified page-by-page over 12,021 pages), only the order of unrelated
+	// writes changes. `written` is filled from the KNOWN name set before the
+	// fan-out, so the hot path needs no lock.
+	//
+	// Worth 15% of a large gather (4.76s → 4.03s on a 12k-file repo). It
+	// measured as WORTHLESS the first time, because a quadratic in
+	// analyze.Communities was eating 12.8s and drowning the signal.
 	for _, n := range fileNodes {
-		name := filePage[n.ID]
-		if err := write(name, renderFile(g, n, pageOf, name)); err != nil {
-			return 0, err
-		}
+		written[filePage[n.ID]] = true
+	}
+	if err := writePagesParallel(dir, g, fileNodes, filePage, pageOf); err != nil {
+		return 0, err
 	}
 
 	// The wiki owns wiki/: .md pages from an earlier graph that this run
@@ -111,6 +123,58 @@ func Generate(s *store.Store) (int, error) {
 		}
 	}
 	return len(written), nil
+}
+
+// writePagesParallel renders and writes one page per node across NumCPU
+// workers. Deterministic: page bodies depend only on their own node and the
+// shared read-only graph, and each lands at its own path. The first error wins
+// and stops the rest — a half-written wiki must fail the gather, not be
+// reported as N pages.
+func writePagesParallel(dir string, g *graph, nodes []schema.Node, page map[string]string, pageOf map[string]string) error {
+	workers := runtime.NumCPU()
+	if workers > len(nodes) {
+		workers = len(nodes)
+	}
+	if workers < 1 {
+		return nil
+	}
+	jobs := make(chan schema.Node, workers*4)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstErr error
+	fail := func(err error) {
+		mu.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		mu.Unlock()
+	}
+	stopped := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return firstErr != nil
+	}
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for n := range jobs {
+				if stopped() {
+					continue // drain so the producer never blocks
+				}
+				name := page[n.ID]
+				if err := writeAtomic(filepath.Join(dir, name), []byte(renderFile(g, n, pageOf, name))); err != nil {
+					fail(err)
+				}
+			}
+		}()
+	}
+	for _, n := range nodes {
+		jobs <- n
+	}
+	close(jobs)
+	wg.Wait()
+	return firstErr
 }
 
 // ---- graph view ----

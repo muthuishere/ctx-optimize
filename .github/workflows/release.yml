@@ -51,10 +51,44 @@ jobs:
             require("fs").writeFileSync(f, JSON.stringify(p,null,2)+"\n");'
       - name: copy README (npm "files" is resolved relative to each package dir)
         run: cp README.md npm/README.md
+      # Publishes are ATTEMPTED FOR ALL and idempotent (#15). Two failure modes
+      # were unrecoverable before:
+      #   • `run:` executes under `bash -e`, so the FIRST platform failure
+      #     aborted the loop — 4 good packages never attempted, wrapper skipped.
+      #   • a re-run then hit `403/409 already_exists` on whatever DID publish
+      #     and aborted again, so the tag was burnt (v0.10.2: a Sigstore 409
+      #     killed the run, the re-run failed on already_exists, and v0.10.3
+      #     shipped instead).
+      # Treating "this exact version is already there" as success makes a re-run
+      # complete instead of aborting, which is what makes a tag retryable.
       - name: publish platform packages
         run: |
+          set +e
+          failed=""
           for d in npm/platforms/*; do
-            (cd "$d" && npm publish --access public)
+            name=$(node -p "require('./$d/package.json').name")
+            ver=$(node -p "require('./$d/package.json').version")
+            if npm view "$name@$ver" version >/dev/null 2>&1; then
+              echo "= $name@$ver already published — skipping"
+              continue
+            fi
+            if (cd "$d" && npm publish --access public); then
+              echo "+ $name@$ver published"
+            else
+              echo "! $name@$ver FAILED"
+              failed="$failed $name"
+            fi
           done
+          if [ -n "$failed" ]; then
+            echo "::error::platform publish failed for:$failed (the rest succeeded; re-run this job — published versions are skipped)"
+            exit 1
+          fi
       - name: publish wrapper
-        run: cd npm && npm publish --access public
+        run: |
+          set +e
+          ver=$(node -p "require('./npm/package.json').version")
+          if npm view "@muthuishere/ctx-optimize@$ver" version >/dev/null 2>&1; then
+            echo "= wrapper @$ver already published — skipping"
+            exit 0
+          fi
+          cd npm && npm publish --access public

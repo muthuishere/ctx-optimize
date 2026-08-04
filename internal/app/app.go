@@ -8,6 +8,7 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -86,6 +87,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdQuery(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
+	case "store":
+		err = cmdStore(rest, stdout)
 	case "fresh":
 		return cmdFresh(rest, stdout, stderr)
 	case "save-result":
@@ -187,6 +190,47 @@ func parseFlags(args []string) *flags {
 		}
 	}
 	return f
+}
+
+// ambOpts turns --include-ambiguous into the analyze option. Traversal verbs
+// exclude AMBIGUOUS edges by default (ADR 2026-07-25-abstain-out-loud); this
+// is the door for a caller who has read the abstention and wants the shortlist
+// anyway — e.g. a method whose receiver could not be typed
+// (ADR 2026-07-25-method-call-resolution), where the fact-only answer is a
+// FLOOR. Every verb that honors it marks the widened rows.
+func ambOpts(f *flags) []analyze.Option {
+	if f.bools["include-ambiguous"] {
+		return []analyze.Option{analyze.IncludeAmbiguous()}
+	}
+	return nil
+}
+
+// noWiki resolves whether this gather should skip wiki generation. Precedence,
+// most-specific first: --wiki > --no-wiki > the repo's committed `"wiki"` key
+// (#9) > the default, which since ADR 2026-07-27-wiki-off-by-default is OFF.
+//
+// --wiki is the per-run escape hatch that makes the new default reversible
+// without editing a config: it forces a wiki even against a committed
+// `"wiki": false`. The config is the ROOT's — a module dir almost never has its
+// own — so one setting governs the whole repo, which is what "this repo does
+// not want a per-file wiki" means.
+func noWiki(f *flags, sc *scope) bool {
+	if f.bools["wiki"] {
+		return false
+	}
+	if f.bools["no-wiki"] {
+		return true
+	}
+	cfg := sc.cfg
+	if cfg == nil {
+		var err error
+		if cfg, err = project.Load(sc.rootDir); err != nil {
+			// An unreadable config cannot opt IN to the wiki; the default
+			// governs, and the default is off.
+			return true
+		}
+	}
+	return !cfg.WikiEnabled()
 }
 
 // resolvePath resolves --path (default cwd) — the module directory that both
@@ -395,7 +439,7 @@ func upCore(args []string, stdout io.Writer) error {
 					return err
 				}
 				fmt.Fprintf(stdout, "== %s\n", t.label)
-				if err := gatherInto(ts, t.base, t.dirs, t.excludes, f.bools["force"] || t.residual, f.bools["no-adapters"], f.bools["no-wiki"], stdout); err != nil {
+				if err := gatherInto(ts, t.base, t.dirs, t.excludes, f.bools["force"] || t.residual, f.bools["no-adapters"], noWiki(f, sc), stdout); err != nil {
 					return err
 				}
 			}
@@ -445,8 +489,19 @@ func upCore(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "up: store present (%d nodes; freshness unknown — no git provenance). `ctx-optimize sync` to force a refresh\n", len(nodes))
 		return nil
 	}
-	fmt.Fprintf(stdout, "store is stale (%s) — fast re-gather, adapter scripts skipped:\n", freshnessLine(reports, overall))
-	if err := cmdAdd(append(pass, ".", "--no-adapters"), stdout, strings.NewReader("")); err != nil {
+	// A PARTIAL store must be retried in FULL. The fast path skips adapter
+	// scripts, and if an adapter is what failed, skipping it would make the
+	// re-gather "succeed" with the adapter's data still missing — clearing the
+	// partial marker and reporting fresh. That would be worse than the bug this
+	// state exists to expose.
+	addArgs := append(pass, ".")
+	if overall == freshness.Partial {
+		fmt.Fprintf(stdout, "store is incomplete (%s) — full re-gather, adapters INCLUDED:\n", freshnessLine(reports, overall))
+	} else {
+		fmt.Fprintf(stdout, "store is stale (%s) — fast re-gather, adapter scripts skipped:\n", freshnessLine(reports, overall))
+		addArgs = append(addArgs, "--no-adapters")
+	}
+	if err := cmdAdd(addArgs, stdout, strings.NewReader("")); err != nil {
 		return err
 	}
 	fmt.Fprintln(stdout, "up: store refreshed")
@@ -705,6 +760,41 @@ func cmdConfig(args []string, stdout io.Writer) error {
 // cmdAdd is both the built-in producer runner (`add <path>`) and the
 // universal door (`add --json -` / `add --json file`): every adapter in the
 // world enters here, strictly validated.
+// rebuildDrop deletes the store(s) this add is about to write, so the gather
+// starts from nothing. Multi-module: every planned module store plus the root
+// residual, because a retired producer can be in any of them.
+//
+// Missing stores are not an error — "rebuild" on a fresh checkout is just
+// "gather". Anything that IS deleted is audited, exactly like `store delete`.
+func rebuildDrop(f *flags, storeRoot string, sc *scope, stdout io.Writer) error {
+	// Reuse the SAME plan the gather will use, so rebuild can never drop a key
+	// the gather won't rewrite (or miss one it will).
+	keys := []string{sc.storeKey, sc.rootKey}
+	if tasks, terr := planTasks(sc.rootDir, sc.rootKey, sc.modules, map[string]bool{}); terr == nil {
+		for _, t := range tasks {
+			keys = append(keys, t.storeKey)
+		}
+	}
+	seen := map[string]bool{}
+	for _, key := range keys {
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		deleted, kept, err := store.Delete(storeRoot, key, false)
+		if err != nil {
+			// No store yet (or not a store): nothing to rebuild from.
+			continue
+		}
+		_ = audit.Append(storeRoot, audit.Line{Actor: "cli", Action: "store.rebuild", Target: deleted})
+		fmt.Fprintf(stdout, "rebuild: dropped store %q\n", deleted)
+		for _, k := range kept {
+			fmt.Fprintf(stdout, "rebuild: kept nested module store %s (rebuilt by its own task)\n", k)
+		}
+	}
+	return nil
+}
+
 func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	f := parseFlags(args)
 	// Source lane (ADR 2026-07-17, H2): a var-name-shaped positional
@@ -726,6 +816,21 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	storeRoot, err := store.Root(f.strs["store"])
 	if err != nil {
 		return err
+	}
+	// --rebuild: drop the store first, then gather into an empty one. The
+	// blunt instrument for "resync from scratch". It exists because Replace is
+	// producer-scoped, so a RETIRED producer's nodes survive every incremental
+	// gather; the reconcile in gatherInto reports those and prunes them on a
+	// complete --force run, and this is the guaranteed version for when you
+	// would rather not reason about it.
+	//
+	// Nested module stores are KEPT (store.Delete's default) — rebuilding a
+	// monorepo root must not silently destroy its modules' stores; each module
+	// is rebuilt by its own task in the same run.
+	if f.bools["rebuild"] {
+		if err := rebuildDrop(f, storeRoot, sc, stdout); err != nil {
+			return err
+		}
 	}
 
 	// The --json door UPSERTS (a one-off pipe may be partial); the gather
@@ -795,7 +900,7 @@ func cmdAdd(args []string, stdout io.Writer, stdin io.Reader) error {
 	if err != nil {
 		return err
 	}
-	if err := gatherInto(s, base, dirs, nil, f.bools["force"], f.bools["no-adapters"], f.bools["no-wiki"], stdout); err != nil {
+	if err := gatherInto(s, base, dirs, nil, f.bools["force"], f.bools["no-adapters"], noWiki(f, sc), stdout); err != nil {
 		return err
 	}
 	if sc.kind == scopeModule {
@@ -1112,6 +1217,131 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 	return nil
 }
 
+// cmdStore is the store-management group. Today: `store delete`, the CLI
+// counterpart of the dashboard's delete, which until now had no CLI equivalent
+// at all — leaving `rm -rf ~/ctxoptimize/<name>` as the only answer, aimed by
+// hand at a root that holds every repo's store plus the audit log.
+func cmdStore(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: ctx-optimize store delete [--path DIR] [--yes]")
+	}
+	switch args[0] {
+	case "delete", "rm", "remove":
+		return cmdStoreDelete(args[1:], stdout)
+	default:
+		return fmt.Errorf("unknown store subcommand %q — only: delete", args[0])
+	}
+}
+
+// cmdStoreDelete removes the store for the module you are IN, and nothing else.
+// The key is resolved exactly as `add`/`status` resolve it (config name, else
+// the module key) — never from a path argument, so there is no way to point this
+// at an arbitrary directory.
+//
+// Deletion is permanent and derived-data-only: `.ctxoptimize/` stays (that is
+// committed config, not a cache) and a sibling repo's store is never in scope.
+// Re-gather with `add .`.
+func cmdStoreDelete(args []string, stdout io.Writer) error {
+	f := parseFlags(args)
+	if len(f.args) > 0 {
+		return fmt.Errorf("store delete takes no positional argument — it deletes the store for the module you are in (use --path DIR to point elsewhere)")
+	}
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return err
+	}
+	// ALWAYS the whole repo. The scope's ROOT key is the target even when cwd is
+	// a module dir, because a repo's module stores are that same repo's derived
+	// data and re-gathering is seconds — a per-module delete is surface with no
+	// use case (owner-directed 2026-07-26).
+	//
+	// This also removes a bug: the per-module path resolved the key with
+	// ModuleKey, producing `svcB` where the store actually lives at
+	// `dtest/svcB`, so `store delete` inside a module always missed.
+	sc, err := resolveScope(f)
+	if err != nil {
+		return err
+	}
+	key := sc.rootKey
+	dir := filepath.Join(storeRoot, filepath.FromSlash(key))
+	nested := []string{}
+	if n, nerr := store.PreviewDelete(storeRoot, key); nerr == nil {
+		nested = n
+	}
+	if !f.bools["yes"] {
+		// Say exactly what goes BEFORE asking. A confirmation that does not
+		// name the blast radius is theatre — and it must never UNDER-state it.
+		fmt.Fprintf(stdout, "would delete %d store(s) for repo %q under %s\n", len(nested)+1, key, dir)
+		if len(nested) > 0 {
+			fmt.Fprintf(stdout, "  the root store + %d module store(s)%s\n", len(nested), summarizeList(nested, 5))
+		}
+		fmt.Fprintln(stdout, "  .ctxoptimize/ in the repo is NOT touched; re-gather with `add .`")
+
+		// At a terminal, ASK — printing "pass --yes" makes the user type the
+		// whole command twice for no added safety. Off a terminal (pipe, CI,
+		// the dashboard) there is nobody to answer, and a missing answer must
+		// never read as consent: refuse and say how to opt in explicitly.
+		if !stdinIsTerminal() {
+			fmt.Fprintln(stdout, "pass --yes to do it (stdin is not a terminal, so nothing was asked)")
+			return nil
+		}
+		fmt.Fprint(stdout, "delete it? [y/N] ")
+		reply, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		switch strings.ToLower(strings.TrimSpace(reply)) {
+		case "y", "yes":
+		default:
+			fmt.Fprintln(stdout, "cancelled — nothing was deleted")
+			return nil
+		}
+	}
+	deleted, _, err := store.Delete(storeRoot, key, true)
+	if err != nil {
+		return err
+	}
+	if aerr := audit.Append(storeRoot, audit.Line{
+		Actor: "cli", Action: "store.delete", Target: deleted,
+	}); aerr != nil {
+		fmt.Fprintf(stdout, "warning: store deleted but audit log not written: %v\n", aerr)
+	}
+	// One line, with the count. chromium has 33 module stores, and 33 lines of
+	// confirmation bury the one line that matters.
+	fmt.Fprintf(stdout, "deleted %d store(s) for repo %q → %s\n", len(nested)+1, deleted, dir)
+	fmt.Fprintln(stdout, "re-gather with `ctx-optimize add .`")
+	return nil
+}
+
+// stdinIsTerminal reports whether there is a human who can answer a prompt.
+// Pure stdlib, no x/term dependency.
+//
+// ModeCharDevice alone is NOT enough: /dev/null is a character device with
+// nobody behind it, so `store delete < /dev/null` printed a prompt, read EOF,
+// and reported "cancelled" — the safe outcome by luck, with the wrong
+// explanation. Excluded by identity, which is exact where a name comparison
+// would not be.
+func stdinIsTerminal() bool {
+	info, err := os.Stdin.Stat()
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	if devNull, derr := os.Stat(os.DevNull); derr == nil && os.SameFile(info, devNull) {
+		return false
+	}
+	return true
+}
+
+// summarizeList renders ": a, b, c … and N more" — long enough to recognise
+// what is in the set, short enough that the important line stays visible.
+// Returns "" for an empty list so callers can print a bare count.
+func summarizeList(items []string, max int) string {
+	if len(items) == 0 {
+		return ""
+	}
+	if len(items) <= max {
+		return ": " + strings.Join(items, ", ")
+	}
+	return fmt.Sprintf(": %s … and %d more", strings.Join(items[:max], ", "), len(items)-max)
+}
+
 func cmdStatus(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	s, err := openStore(f)
@@ -1152,6 +1382,12 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	if stamps, err := sources.SourceStamps(s.Dir); err == nil && len(stamps) > 0 {
 		st["sources"] = stamps // id → last-captured unix (sanitized ids only)
 	}
+	// Absent when the wiki is current or was never built — the key appearing
+	// at all IS the warning.
+	wikiStale := wikiStaleness(s.Dir)
+	if !wikiStale.IsZero() {
+		st["wiki"] = map[string]any{"stale": true, "built": wikiStale.Unix()}
+	}
 	sum, sumErr := metrics.Summarize(s.Dir)
 	if sumErr == nil && sum.Total > 0 {
 		st["served"] = sum
@@ -1161,6 +1397,10 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "store:  %s\nnodes:  %d\nedges:  %d\nremote: %s", s.Dir, len(nodes), len(edges), orNone(remoteLine))
 	fmt.Fprintf(stdout, "\nfresh:  %s\n", freshnessLine(reports, overall))
+	if !wikiStale.IsZero() {
+		fmt.Fprintf(stdout, "wiki:   NOT refreshed since %s — the graph is newer\n", wikiStale.Format("2006-01-02"))
+		fmt.Fprintf(stdout, "        rebuild: ctx-optimize wiki  ·  remove: ctx-optimize wiki --delete\n")
+	}
 	if line := sourcesStatusLine(s.Dir, time.Now()); line != "" {
 		fmt.Fprintf(stdout, "sources: %s\n", line)
 	}
@@ -1170,6 +1410,39 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "served: %d answers · ~%d tokens saved (~$%.2f)\n", sum.Total, sum.EstSaved, sum.EstUSD)
 	}
 	return nil
+}
+
+// wikiStaleness reports when a wiki is sitting on disk that gathers no longer
+// refresh (ADR 2026-07-27-wiki-off-by-default §4). Zero time means "nothing to
+// say" — no wiki, or one at least as new as the graph.
+//
+// A stale wiki is strictly worse than no wiki: it reads as current and cites
+// lines that have moved. Since the default flip, `add` stops refreshing it
+// silently, so status is where that fact has to surface.
+//
+// Two constraints, both learned the hard way:
+//
+//   - The predicate is wiki/index.md, NOT the wiki/ directory. store.New
+//     pre-creates graph/ wiki/ cards/ hooks/ unconditionally, so an EMPTY
+//     wiki/ is the normal state of every store that has only ever gathered
+//     with the wiki off — i.e. every store, by default. Keying off the dir
+//     would warn about a wiki that was never built.
+//   - Two os.Stat calls on fixed paths, never a ReadDir/WalkDir. Enumerating
+//     wiki/ is what cost 8s per gather on chromium's 434,597 pages (#9), and
+//     status is a verb people run constantly.
+func wikiStaleness(dir string) time.Time {
+	wi, err := os.Stat(filepath.Join(dir, "wiki", "index.md"))
+	if err != nil {
+		return time.Time{}
+	}
+	g, err := os.Stat(filepath.Join(dir, "graph", "nodes.ndjson"))
+	if err != nil {
+		return time.Time{}
+	}
+	if !wi.ModTime().Before(g.ModTime()) {
+		return time.Time{}
+	}
+	return wi.ModTime()
 }
 
 // freshnessReports evaluates every recorded source against its repo's CURRENT
@@ -1194,6 +1467,16 @@ func freshnessLine(reports []freshness.Report, overall freshness.State) string {
 	switch overall {
 	case freshness.Fresh:
 		return "✓ up to date with git HEAD"
+	case freshness.Partial:
+		// Name the lanes. "Incomplete" without saying WHICH part is missing
+		// leaves the reader unable to judge whether their question is affected.
+		for _, r := range reports {
+			if len(r.Partial) > 0 {
+				return fmt.Sprintf("✗ PARTIAL — the last gather failed %d lane(s): %s; the store is INCOMPLETE. Re-run: ctx-optimize add .",
+					len(r.Partial), strings.Join(r.Partial, "; "))
+			}
+		}
+		return "✗ PARTIAL — the last gather did not complete; the store is INCOMPLETE"
 	case freshness.Unknown:
 		if len(reports) == 0 {
 			return "(unknown — no git provenance; run `add` in a git repo to enable)"
@@ -1383,12 +1666,12 @@ func cmdPath(args []string, stdout io.Writer) error {
 	stdout = cw
 	st, _ := openStore(f)
 	defer func() { served(st, "path", strings.Join(f.args, " → "), 1, cw, t0) }()
-	steps, perr := analyze.ShortestPath(nodes, edges, f.args[0], f.args[1])
+	steps, perr := analyze.ShortestPath(nodes, edges, f.args[0], f.args[1], ambOpts(f)...)
 	scopeNote := ""
 	// Module-scope miss (an endpoint isn't local): retry repo-wide, labeled.
 	if perr != nil && sc != nil && sc.kind == scopeModule {
 		if fn, fe, ferr := federatedAll(sc, storeRoot); ferr == nil {
-			if s2, err2 := analyze.ShortestPath(fn, fe, f.args[0], f.args[1]); err2 == nil {
+			if s2, err2 := analyze.ShortestPath(fn, fe, f.args[0], f.args[1], ambOpts(f)...); err2 == nil {
 				scopeNote = fmt.Sprintf("[not in %s — answered repo-wide]", sc.moduleName)
 				steps, perr = s2, nil
 				sc = nil // repo-wide now: the boundary note no longer applies
@@ -1421,8 +1704,17 @@ func cmdPath(args []string, stdout io.Writer) error {
 		return nil
 	}
 	fmt.Fprintln(stdout, steps[0].From)
+	weakest := ""
 	for _, st := range steps {
-		fmt.Fprintf(stdout, "  %s %s %s\n", st.Dir, st.Relation, st.To)
+		hop := ""
+		if st.Confidence == schema.Ambiguous {
+			hop = "  ? AMBIGUOUS"
+			weakest = st.Relation
+		}
+		fmt.Fprintf(stdout, "  %s %s %s%s\n", st.Dir, st.Relation, st.To, hop)
+	}
+	if weakest != "" {
+		fmt.Fprintln(stdout, "? this path crosses an AMBIGUOUS edge (--include-ambiguous): it is a candidate route, not a fact.")
 	}
 	if note != "" {
 		fmt.Fprintln(stdout, note)
@@ -1444,9 +1736,9 @@ func cmdExplain(args []string, stdout io.Writer) error {
 	stdout = cw
 	st, _ := openStore(f)
 	defer func() { served(st, "explain", f.args[0], 1, cw, t0) }()
-	ex, err := analyze.Explain(nodes, edges, f.args[0])
+	ex, err := analyze.Explain(nodes, edges, f.args[0], ambOpts(f)...)
 	if id, ok := fuzzyPick(err, f); ok {
-		if ex, err = analyze.Explain(nodes, edges, id); err == nil {
+		if ex, err = analyze.Explain(nodes, edges, id, ambOpts(f)...); err == nil {
 			ex.ResolvedVia = "fuzzy" // --fuzzy took a candidate: stay labeled
 		}
 	}
@@ -1474,9 +1766,9 @@ func cmdCard(args []string, stdout io.Writer) error {
 	}
 	t0 := time.Now()
 	cw := &countingWriter{w: stdout}
-	c, cerr := analyze.Card(nodes, edges, f.args[0])
+	c, cerr := analyze.Card(nodes, edges, f.args[0], ambOpts(f)...)
 	if id, ok := fuzzyPick(cerr, f); ok {
-		if c, cerr = analyze.Card(nodes, edges, id); cerr == nil {
+		if c, cerr = analyze.Card(nodes, edges, id, ambOpts(f)...); cerr == nil {
 			c.ResolvedVia = "fuzzy" // --fuzzy took a candidate: stay labeled
 		}
 	}
@@ -1499,7 +1791,7 @@ func cmdCard(args []string, stdout io.Writer) error {
 		}
 		fn, fe, ferr := loadFederated(sc, storeRoot, nil)
 		if ferr == nil {
-			if fc, ferr2 := analyze.Card(fn, fe, f.args[0]); ferr2 == nil {
+			if fc, ferr2 := analyze.Card(fn, fe, f.args[0], ambOpts(f)...); ferr2 == nil {
 				owner := moduleOwnerOf(sc, fc.Node.Source)
 				fmt.Fprintf(cw, "[not in %s — found in %s]\n", sc.moduleName, owner)
 				c, cerr = fc, nil
@@ -1794,16 +2086,16 @@ func cmdAffected(args []string, stdout io.Writer) error {
 	if r, ok := f.strs["relation"]; ok {
 		relations = append(relations, r)
 	}
-	target, impacts, aerr := analyze.Affected(nodes, edges, f.args[0], depth, relations)
+	target, impacts, aerr := analyze.Affected(nodes, edges, f.args[0], depth, relations, ambOpts(f)...)
 	if id, ok := fuzzyPick(aerr, f); ok {
-		target, impacts, aerr = analyze.Affected(nodes, edges, id, depth, relations)
+		target, impacts, aerr = analyze.Affected(nodes, edges, id, depth, relations, ambOpts(f)...)
 	}
 	scopeNote := ""
 	// Module-scope miss: the symbol likely lives in a sibling module —
 	// answer repo-wide and say where it was (mirrors cmdCard).
 	if aerr != nil && sc != nil && sc.kind == scopeModule {
 		if fn, fe, ferr := federatedAll(sc, storeRoot); ferr == nil {
-			if t2, i2, err2 := analyze.Affected(fn, fe, f.args[0], depth, relations); err2 == nil {
+			if t2, i2, err2 := analyze.Affected(fn, fe, f.args[0], depth, relations, ambOpts(f)...); err2 == nil {
 				scopeNote = fmt.Sprintf("[not in %s — found in %s]", sc.moduleName, moduleOwnerOf(sc, t2.Source))
 				target, impacts, aerr = t2, i2, nil
 				sc = nil // repo-wide now: the boundary note no longer applies
@@ -1853,8 +2145,19 @@ func cmdAffected(args []string, stdout io.Writer) error {
 		fmt.Fprintln(stdout, scopeNote)
 	}
 	fmt.Fprintf(stdout, "changing %s impacts %d nodes (depth %d):\n", target.Label, len(impacts), depth)
+	maybes := 0
 	for _, im := range impacts {
-		fmt.Fprintf(stdout, "  d%d %s  [%s]  via %s on %s\n", im.Depth, im.Node.Label, im.Node.Kind, im.Via, im.DependsOn)
+		// A widened row must never look like a fact. The marker rides on the
+		// row itself, not just a footer, because rows get copied one at a time.
+		mark := " "
+		if im.Confidence == schema.Ambiguous {
+			mark = "?"
+			maybes++
+		}
+		fmt.Fprintf(stdout, " %sd%d %s  [%s]  via %s on %s\n", mark, im.Depth, im.Node.Label, im.Node.Kind, im.Via, im.DependsOn)
+	}
+	if maybes > 0 {
+		fmt.Fprintf(stdout, "? %d of these arrived on an AMBIGUOUS edge (--include-ambiguous): candidates, NOT facts. Verify before acting.\n", maybes)
 	}
 	if note != "" {
 		fmt.Fprintln(stdout, note)
@@ -1916,7 +2219,7 @@ func cmdHubs(args []string, stdout io.Writer) error {
 	} else if !pred.Empty() {
 		nodes, edges = graphfilter.Apply(nodes, edges, pred)
 	}
-	hubs := analyze.Hubs(nodes, edges, top)
+	hubs := analyze.Hubs(nodes, edges, top, ambOpts(f)...)
 	if f.bools["ndjson"] {
 		enc := json.NewEncoder(stdout)
 		for _, h := range hubs {
@@ -1935,13 +2238,28 @@ func cmdHubs(args []string, stdout io.Writer) error {
 	return nil
 }
 
-// cmdWiki regenerates the deterministic markdown wiki from the graph. Every
-// successful `add` already does this; the verb rebuilds on demand.
+// cmdWiki builds the deterministic markdown wiki from the graph. Since ADR
+// 2026-07-27-wiki-off-by-default this verb IS the wiki: gathers no longer
+// generate one unless asked (`--wiki`, or `"wiki": true` in the config).
+//
+// --delete removes it. It exists because the flip leaves real pages on disk in
+// every repo that gathered before the upgrade, and those pages now go stale
+// silently. The alternative users would otherwise reach for is `store delete`,
+// which drops the whole graph — 2.85M nodes on linux — plus a re-gather, to
+// reclaim an artifact they were not using. A stale wiki also is not free: the
+// manifest walk re-hashes it on every gather (≈1.1s at linux's 60k pages), so
+// "leave it and ignore it" keeps costing something.
+//
+// Scoped by construction: wiki/ is self-contained, nothing outside it links in,
+// and this verb rebuilds it in full from the graph.
 func cmdWiki(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	s, err := openStore(f)
 	if err != nil {
 		return err
+	}
+	if f.bools["delete"] {
+		return deleteWiki(s, f.strs["store"], stdout)
 	}
 	pages, err := wiki.Generate(s)
 	if err != nil {
@@ -1951,6 +2269,40 @@ func cmdWiki(args []string, stdout io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(stdout, "wiki: %d pages → %s\n", pages, filepath.Join(s.Dir, "wiki"))
+	return nil
+}
+
+// deleteWiki removes THIS store's wiki/ and nothing else, then refreshes the
+// manifest so the pages stop being fingerprinted on every later gather.
+//
+// No confirmation prompt, unlike `store delete`. The blast radius is one
+// derived directory that `ctx-optimize wiki` reconstructs from the graph in
+// under a second — the asymmetry that makes `store delete` ask (an expensive,
+// slow re-gather) does not exist here.
+func deleteWiki(s *store.Store, storeFlag string, stdout io.Writer) error {
+	dir := filepath.Join(s.Dir, "wiki")
+	// index.md, not the directory: store.New pre-creates an empty wiki/ in
+	// every store, so its presence proves nothing (see wikiStaleness).
+	if _, err := os.Stat(filepath.Join(dir, "index.md")); err != nil {
+		fmt.Fprintf(stdout, "wiki: nothing to delete — no wiki in %s\n", s.Dir)
+		return nil
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if _, err := s.UpdateManifest(); err != nil {
+		return err
+	}
+	root, rerr := store.Root(storeFlag)
+	if rerr == nil {
+		if aerr := audit.Append(root, audit.Line{
+			Actor: "cli", Action: "wiki.delete", Target: s.Dir,
+		}); aerr != nil {
+			fmt.Fprintf(stdout, "warning: wiki deleted but audit log not written: %v\n", aerr)
+		}
+	}
+	fmt.Fprintf(stdout, "wiki: deleted → %s\n", dir)
+	fmt.Fprintln(stdout, "the graph is untouched; rebuild any time with `ctx-optimize wiki`")
 	return nil
 }
 
@@ -2904,12 +3256,21 @@ commands:
                               merges, and records
                               the name in config sources (refreshed on up).
                               Names only on argv — never a raw URL
-  add [<path>] [--json -|F]   gather built-ins + every adapter script in
+  add [<path>] [--rebuild]    gather built-ins + every adapter script in
                               .ctxoptimize/adapters/; re-gather prunes stale nodes
                               (--force to allow >50%% shrink); --no-adapters skips
                               scripts; --json door upserts
                               multi-module root: fans out one worker per module
                               [--jobs N] + refreshes the navigator (no auto-merge)
+                              --rebuild drops the store(s) first and gathers into
+                              an empty one: the guaranteed resync. Needed because
+                              Replace is producer-SCOPED, so a RETIRED producer
+                              (deleted adapter, removed grammar pack) is never
+                              replaced and its nodes survive every incremental
+                              gather. A normal add now REPORTS those; a complete
+                              --force run prunes them; --rebuild is the certain
+                              path. Nested module stores are kept (each module is
+                              rebuilt by its own task). Audited
   sync                        fast re-gather of the repo you're in: "add ." minus
                               adapter scripts (code/docs/manifests/git only)
   capture <ENV_NAME>          one source connector → Batch JSON on stdout, no
@@ -2952,12 +3313,40 @@ commands:
   default: fuzzy matches announce themselves ([resolved via fuzzy → id]);
   a fuzzy TIE refuses with ranked candidates instead of guessing (--fuzzy
   takes the top candidate anyway).
-  wiki                        regenerate the markdown wiki in the store's wiki/
-                              dir (deterministic, from nodes+edges only; every
-                              add already regenerates it)
+
+  --include-ambiguous  on card/explain/affected/path/hubs/change-plan: also
+  walk AMBIGUOUS edges — the call sites the store REFUSED to attribute
+  (a name defined more than once, or a method whose receiver type it could
+  not establish). Off by default, so those verbs answer with facts only; a
+  method's blast radius is therefore a FLOOR. Turn it on to see the
+  shortlist: every widened row is marked '?' and the maybes are listed
+  under their own MAYBE heading — they are candidates to verify, never
+  facts. edges --relation calls --confidence AMBIGUOUS --to/--from <id>
+  lists the same shortlist on its own. (report stays facts-only by
+  design: it has a dedicated section for what could not be resolved.)
+  wiki                        build the markdown wiki in the store's wiki/ dir
+                              (deterministic, from nodes+edges only). OPT-IN
+                              since v0.12: gathers skip it — it was 89% of a
+                              linux gather and no verb reads it. Turn it on per
+                              run with 'add --wiki', or per repo with
+                              "wiki": true in .ctxoptimize/config.json.
+                              --delete   remove the wiki; the graph is untouched
+                                         and this verb rebuilds it
   status                      store facts + freshness vs git HEAD  [--json]
+  store delete                delete THIS REPO's stores (the derived graph) — the
+                              root store AND every module store, always the whole
+                              repo, whichever dir you run it from. A sibling repo
+                              is never in scope. Prints the full blast radius,
+                              then ASKS [y/N]; off a terminal (pipe, CI) nothing
+                              is asked and nothing is deleted — pass --yes to opt
+                              in explicitly. .ctxoptimize/ is never touched
+                              (committed config, not a cache) — re-gather with
+                              'add .', it takes seconds. Audited
   fresh                       is the store current with git HEAD? one-line
-                              verdict; exit 0 fresh / 1 stale / 2 unknown
+                              verdict; exit 0 fresh / 1 stale / 2 unknown /
+                              3 PARTIAL (the last gather had producer lanes fail,
+                              so the store is INCOMPLETE — a different fix from
+                              stale: look at why, don't just re-gather)
                               (agent/hook gate before trusting an answer)  [--json]
   save-result --question Q    record how a store answer worked out
                               [--answer A] [--type query|path|explain|affected]
@@ -3031,10 +3420,14 @@ flags:  --path DIR   module the store is keyed by (default: cwd)
 The store lives at ~/ctxoptimize/<repo-name>/ ("name" in config.json overrides).
 
 .ctxoptimize/ (in the repo, commit it):
-  config.json    {"name": "my-module",
+  config.json    {"name": "my-module", "wiki": true,
                   "remote": {"push": "node .ctxoptimize/push.js",
                              "pull": "node .ctxoptimize/pull.js"}}
                  push/pull are ANY shell line (js, py, sh, or inline)
+                 "wiki": true builds the markdown wiki on add/up. Absent =
+                 FALSE since v0.12 — the graph is the query source, and the
+                 wiki was 89% of a linux gather. The 'wiki' verb builds a
+                 complete one on demand; 'add --wiki' forces one per run
   push.js/…      your transport scripts (init writes inert *.sample pair +
                  remote.example.md with git/s3/custom recipes)
   adapters/      drop scripts here — every .js/.py/.sh runs on add and must

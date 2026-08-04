@@ -18,7 +18,7 @@ description: >
   `change-plan <symbol>` (ONE composed answer for "I'm about to change X":
   callers + blast radius + which tests to run + confidence — use it whenever
   the intent is modifying code), `affected <symbol>` (impact/blast radius),
-  `path <a> <b>`, `explain`, plus a generated wiki. Use it for ANY question about code: where is X,
+  `path <a> <b>`, `explain`, plus an opt-in generated wiki (`ctx-optimize wiki`). Use it for ANY question about code: where is X,
   how does Y work, who calls Z, what breaks if I change W, architecture,
   onboarding. Fall back to Grep/Read only for what the store lacks. Also
   builds/refreshes/shares the store ("gather this repo", "add the schema /
@@ -116,7 +116,9 @@ Do NOT default to `query` for everything. The verb follows the intent:
 | **Orient** — where do I start in this repo | `ctx-optimize hubs --top 10 --json` |
 | **Explain the whole repo** — architecture in one call | `ctx-optimize report --json` — subsystems, hubs, the seams between subsystems, and what the graph could NOT resolve. Read the gaps section before claiming any caller list is complete |
 | **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — hydrates each hit's verbatim source from the file at answer time (nothing stored; default stays terse). Lines that look like credentials come back `[redacted]` — deliberate, and it applies to plain `card` too. Do NOT open the file to read around it: the point is that a secret's VALUE never enters your context. Cite the key, not the value. |
-| **`card` says `unattributed callers: N`** — is the caller list complete? | It is NOT. That name is defined more than once, so those call sites were never guessed. The card prints both the shortlist (`edges --relation calls --confidence AMBIGUOUS --to <id>`) and the grep. **Run the grep** — do not report the `called by` list as complete when this line is present |
+| **`card` says `unattributed callers: N`** — is the caller list complete? | It is NOT, and the line says WHY. *"defined more than once"* → several declarations share the name. *"on a receiver whose type this store never established"* → this is a **method**, and the store holds only this repo's declarations, so it can never tell `err.Error()` from a call to your own `Error`. Either way the card prints the shortlist (`edges --relation calls --confidence AMBIGUOUS --to <id>`) and the exact grep. **Run the grep** — do not report `called by` as complete when this line is present |
+| **`affected` / `change-plan` on a METHOD returns few or no callers** | Expected, not a bug: cross-file method calls are attributed only when the receiver is actually tied (call written on the type, `self.`/`this.`, or the type named in the calling scope). Everything else is abstained on, so **a method's blast radius is a FLOOR** |
+| **I need the abstained call sites too** | Re-run the same verb with **`--include-ambiguous`** (`card`, `explain`, `affected`, `path`, `hubs`, `change-plan`). Widened rows are marked `?` / listed under a `MAYBE` heading — treat them as candidates to verify, never as callers. Flat list instead: `edges --relation calls --confidence AMBIGUOUS --to <id>` (or `--from`). Then settle: `grep -rn '\b<Name>\b' .` for a name collision, `grep -rn '\.<Method>(' .` + check each receiver's type for an unresolved receiver |
 | **About to hand a citation to a human** — does this claim still hold? | `ctx-optimize verify "<label or file:L10-L20>" --json` — node exists (exact only), file exists, range in bounds, drifted-since-gather |
 
 If you ran `query` and then immediately wanted callers or tests — you picked
@@ -129,7 +131,7 @@ verb as a `<route>` with its trigger `<when>`, `<goal>`, and exact `<cmd>` —
 answer (query/card/affected/path/explain/hubs/wiki/status/fresh), build
 (init/scan/add/multi-path modules), customize (routes/manifests/languages/
 adapters), share (remote push/pull — YOUR committed script is the transport), export (merge/export), learn
-(save-result/reflect), and manage (serve/config/log/install/update/uninstall/version).
+(save-result/reflect), and manage (serve/config/log/store delete/install/update/uninstall/version).
 Consult it whenever you're unsure which verb or flag fits — nothing is hidden
 there. The table below is the hot path; the XML is the whole map.
 
@@ -185,7 +187,7 @@ grep on structure wastes the store):
 | Asked to add docs/PDF/logs/anything non-code with NO native connector | follow `./references/adapters.md` — docs convert to markdown then `add .`; exotic systems get an adapter script, run on demand via `adapters run [name]` (dynamic creds/tunnels: the script sets the env var and calls `ctx-optimize capture <NAME>` back) |
 | Wants their FRAMEWORK ROUTES / custom router / k8s / build-tool deps / a new language indexed, or "the graph is missing my X" | follow `./references/customize.md` — check `routes/manifests/languages list` first (often already core → just `add .`); else scaffold a drop-in PACK (`routes add` / `manifests add` / `languages add`, name or github-url), edit the rule, `add .`. Read `./references/extending.md` BEFORE shipping a pack — the traps (a grammar pack can silently delete `calls` edges) |
 | User says share / publish / push / pull / export to team / import / load a store — or wants sharing SET UP (github repo, s3/r2 bucket, anything) | follow `./references/push-pull.md` — the remote is a script YOU AUTHOR: arm init's `push.js.sample`/`pull.js.sample` (git lane) or write one, declare `{"remote": {"push": "<cmd>", "pull": "<cmd>"}}` in config.json, commit; then `remote push`/`pull` run it |
-| Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `sync` (fast lane) / `add .` (full) / `adapters run` (slow lane); `fresh` gate |
+| Told code changed / asked about freshness ("is the graph current?") | follow `./references/sync.md` — `sync` (fast lane) / `add .` (full) / `adapters run` (slow lane); `fresh` gate. **`fresh` exit 3 = PARTIAL**: the last gather had producer LANES FAIL, so a producer (code, docs, manifests, an adapter) is MISSING from the graph — not merely out of date. Never answer from a partial store without saying so; the verdict and `--json` name which lanes failed, and re-gathering may not help if the lane is still broken |
 | Combining several repos/modules into one graph | `ctx-optimize merge <mod>... --into <name>` (opt-in, never automatic) |
 | Wanting a readable map of the module | open the store's `wiki/index.md` (regenerated on every `add`; `ctx-optimize wiki` to force) |
 | Exporting for OTHER TOOLS (Graphviz/Gephi/Neo4j/Obsidian) | `ctx-optimize export --format json|dot|graphml|csv|obsidian|all` — for ANSWERING questions use `nodes`/`edges`/`deps` above instead, not `export \| jq` |
@@ -245,6 +247,58 @@ model anywhere; you are the judge, the binary only tallies.
 - **At session start in a repo with a store**, run `ctx-optimize reflect` and
   read `reflections/LESSONS.md` in the store: preferred nodes (corroborated,
   recency-weighted), dead ends to avoid, and verbatim corrections.
+
+## Store lifecycle — rebuild and delete (destructive; ASK the user first)
+
+| Intent | Command | What to know |
+|---|---|---|
+| **Rebuild from nothing** ("resync properly", "the store looks wrong") | `ctx-optimize add . --rebuild` | Drops the store(s) this add writes, then gathers into an empty one. Needed because `Replace` is producer-SCOPED: a **retired** producer (deleted adapter, removed pack) is never replaced, so its nodes survive every incremental gather. A normal `add` REPORTS those as `retired producer(s)`; a complete `--force` run prunes them; `--rebuild` is the certain path |
+| **Delete this repo's store** | `ctx-optimize store delete` | The root store AND every module store, always the whole repo, whichever dir you run it from. Dry-run + `[y/N]` prompt by default; `--yes` for non-interactive. `.ctxoptimize/` is never touched (committed config, not a cache). Re-gather with `add .` — it takes seconds |
+
+**Never run either on a user's behalf without asking.** They are permanent, and a
+store is cheap to rebuild but the user may be mid-task. If a store looks stale or
+wrong, prefer `sync` / `add .`, and mention `--rebuild` as an option rather than
+taking it.
+
+## Settling an abstention permanently — `.ctxoptimize/resolutions.json`
+
+When `card` reports `unattributed callers` for a **method** whose receiver could
+not be typed, and the user confirms the name belongs to a type they do NOT own
+(`Error`, `String`, `Close` on stdlib/dependency types), that answer can be
+written down instead of re-derived every session:
+
+```json
+{ "external_methods": ["Error", "String", "Close"] }
+```
+
+Committed, so the whole team's agents inherit it. It only ever RETIRES a
+shortlist — it never creates a call edge and never deletes a resolved one — so a
+wrong entry costs recall and can never make the graph wrong. A declared name that
+matches nothing is reported on every gather.
+
+**Propose it, do not write it unasked**: it is an assertion about the user's code,
+and they are the one who knows whether that method is theirs.
+
+## The core promise — we do not invent structure that isn't there
+
+**If it cannot be parsed honestly, it is not in the store — and the store says
+so.** Every abstention you will meet is this one rule:
+
+- a name defined more than once → AMBIGUOUS shortlist, not a guess
+- a method whose receiver was never typed → `unattributed callers: N`, not a caller list
+- a fuzzy tie → ranked candidates and a refusal, not `matches[0]`
+- a credential-shaped value → `[redacted]`, on every path
+- a failed producer lane → `fresh` exit 3, not "fresh"
+- **`#` at the start of a line in a `.txt` → a comment, not a heading.** A `.txt`
+  yields ONE node: the file. No sections. Measured over 30,289 real `.txt` files:
+  95.1% of the "headings" markdown parsing found there were comment lines or
+  prose fragments, and they ranked FIRST — 26–30% of top-10 slots.
+
+**So when a question is about the CONTENT of a `.txt`, grep it and say so.** The
+store deliberately holds only the filename. Same for `LICENSE.txt`,
+`requirements.txt` comments, `CMakeLists.txt`, Unicode data files, `*-expected.txt`
+baselines. This is not a gap to work around silently — it is the promise, and
+routing to grep is the correct behaviour, not a fallback you should apologise for.
 
 ## Honesty rules
 

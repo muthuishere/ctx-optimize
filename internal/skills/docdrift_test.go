@@ -69,6 +69,117 @@ func TestAmbiguousContractNotDrifted(t *testing.T) {
 	}
 }
 
+// ADR 2026-07-25-method-call-resolution added a SECOND reason to abstain, and
+// the two are settled by different greps. A surface that explains only the
+// name-collision case tells an agent something false about a method whose name
+// is unique — the exact failure the ADR exists to close.
+func TestUnresolvedReceiverExplainedToAgents(t *testing.T) {
+	skill := repoFile(t, "internal/skills/bundled/ctx-optimize/SKILL.md")
+	if !strings.Contains(skill, "receiver") {
+		t.Error("SKILL.md never explains the unresolved-receiver abstention — an agent will read an empty method caller list as 'nothing calls it'")
+	}
+	routing := repoFile(t, "internal/skills/bundled/ctx-optimize/references/activation-routing.xml")
+	for _, want := range []string{"unresolved-receiver", "name-collision"} {
+		if !strings.Contains(routing, want) {
+			t.Errorf("activation-routing.xml is missing the %q reason — the agent cannot pick the grep that settles it", want)
+		}
+	}
+}
+
+// ADR 2026-07-26-include-ambiguous. An agent that knows the answer is a FLOOR
+// but not that a flag exists will either under-report or fall straight back to
+// grep. Both agent surfaces must name the flag AND the marking, because a
+// widened row presented as a caller is the failure the flag is designed around.
+func TestIncludeAmbiguousDocumentedForAgents(t *testing.T) {
+	for _, rel := range []string{
+		"internal/skills/bundled/ctx-optimize/SKILL.md",
+		"internal/skills/bundled/ctx-optimize/references/activation-routing.xml",
+	} {
+		body := repoFile(t, rel)
+		if !strings.Contains(body, "--include-ambiguous") {
+			t.Errorf("%s never mentions --include-ambiguous — the agent cannot get past the abstention without leaving the tool", rel)
+		}
+		if !strings.Contains(body, "MAYBE") {
+			t.Errorf("%s names the flag without the marking convention — a widened row could be reported as a caller", rel)
+		}
+	}
+}
+
+// Verbs and config keys shipped 2026-07-26. Each is here because an agent that
+// does not know it exists behaves WORSE than one that does — it will re-derive a
+// settled abstention every session, or fail to warn about an incomplete store, or
+// hand the user a `rm -rf` because it thinks there is no delete verb.
+//
+// A doc audit that day found five things shipped with ZERO agent-surface
+// coverage. This is the guard that makes that a test failure instead of a
+// discovery months later.
+func TestNewSurfacesReachTheAgent(t *testing.T) {
+	skill := repoFile(t, "internal/skills/bundled/ctx-optimize/SKILL.md")
+	routing := repoFile(t, "internal/skills/bundled/ctx-optimize/references/activation-routing.xml")
+	card := repoFile(t, "internal/project/templates/instructions.md")
+
+	for _, c := range []struct {
+		what, needle, why string
+		in                []string
+	}{
+		{"store delete", "store delete",
+			"without it an agent reaches for `rm -rf ~/ctxoptimize/...`, aimed at a root holding every repo's store",
+			[]string{skill, routing}},
+		{"add --rebuild", "--rebuild",
+			"a retired producer's nodes survive every incremental gather; an agent with no --rebuild will keep re-running `add` and keep seeing them",
+			[]string{skill, routing, card}},
+		{"declared resolutions", "external_methods",
+			"otherwise every session re-derives the same abstention the repo already settled",
+			[]string{skill, routing, card}},
+		{"partial store (fresh exit 3)", "PARTIAL",
+			"an agent that does not know exit 3 exists will answer from a store with a producer missing and call it fresh",
+			[]string{skill, routing, card}},
+	} {
+		for i, body := range c.in {
+			if !strings.Contains(body, c.needle) {
+				t.Errorf("%s missing from agent surface #%d — %s", c.what, i, c.why)
+			}
+		}
+	}
+}
+
+// The CORE PROMISE (owner-directed 2026-07-26): "we do not invent structure that
+// isn't there — if it cannot be parsed honestly it is not indexed, and you are
+// told to grep."
+//
+// This is the sentence every abstention in the tool is an instance of, so it is
+// the highest-value thing on the agent surface and the easiest to lose in an
+// edit. An agent that does not know `.txt` holds only a filename will either
+// report "not found" for content that is right there in the file, or quietly
+// grep without saying why the store could not answer — and the second is worse,
+// because it hides a deliberate design decision behind what looks like a miss.
+func TestCorePromiseIsOnTheAgentSurface(t *testing.T) {
+	skill := repoFile(t, "internal/skills/bundled/ctx-optimize/SKILL.md")
+	for _, want := range []string{
+		"do not invent structure",
+		"grep it and say so",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("SKILL.md lost %q — the promise is what makes every abstention legible", want)
+		}
+	}
+	// The .txt rule specifically: an agent must know the store holds ONLY the
+	// filename, or it will read a miss as absence.
+	if !strings.Contains(skill, ".txt") {
+		t.Error("SKILL.md does not tell the agent that a .txt yields no sections — it will report content as not-found")
+	}
+
+	// And the promise must survive in the human doc too, with its measurement:
+	// an unmeasured promise is a slogan.
+	cli := repoFile(t, "docs/cli.md")
+	if !strings.Contains(cli, "do not invent structure") {
+		t.Error("docs/cli.md lost the core promise")
+	}
+	if !strings.Contains(cli, "30,289") {
+		t.Error("docs/cli.md states the promise without the measurement behind it — that makes it a slogan")
+	}
+}
+
 // Redaction (0.9.2) is the other claim whose absence is a security problem: an
 // agent that meets `[redacted]` and does not know why will open the file, which
 // re-creates the leak the redaction closed.

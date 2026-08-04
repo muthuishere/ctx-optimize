@@ -10,6 +10,452 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-08-05
+
+### Added
+
+- **`fresh` exit code 3 = PARTIAL — a store missing a producer no longer reports
+  fresh** (#13). Lane containment RECORDED which lanes failed but nothing READ
+  the record, so `fresh` exited **0** for a store whose code lane had failed —
+  defeating the one job it exists for, gating an agent or hook before it trusts
+  an answer. A head-matching partial store reported `fresh` outright.
+
+  `partial` is a distinct state, not a reuse of `stale`, because the two need
+  different responses: stale means "old but complete", partial means "a producer
+  is missing from this graph". It outranks every other state in the aggregate, so
+  a sibling's staleness cannot mask it. `status`, the verdict line and
+  `fresh --json` all name **which** lanes failed — "incomplete" alone leaves the
+  reader unable to judge whether their question is affected. A hook gating on
+  `!= 0` keeps working unchanged.
+
+  Two holes found while wiring it:
+  - **`up` on a partial store took the adapter-skipping fast path.** If an
+    adapter was what failed, skipping it made the re-gather "succeed" with the
+    adapter's data still missing — *clearing* the marker. `up` now retries a
+    partial store in full, adapters included.
+  - **A gather that skips a lane cleared that lane's prior failure.**
+    `sync --no-adapters` reported complete after never retrying the adapter that
+    broke. Untried lane failures are now carried forward, marked
+    `(not retried: adapters skipped)`.
+
+- **`"wiki"` key in `.ctxoptimize/config.json`** (#9). Onboarding chromium wrote
+  **434,597 wiki pages / 1.7 GB** into a single directory — and `wiki.Generate`'s
+  stale-page cleanup re-reads that directory at the end of **every** later
+  gather (8 seconds just to list it), so the cost is paid forever for pages
+  nobody opens.
+
+  ```json
+  { "name": "my-repo", "wiki": false }
+  ```
+
+  `false` skips generation during `add`/`up`; **`ctx-optimize wiki` still builds
+  a COMPLETE wiki on demand**, so "off" never means "unavailable" — it just moves
+  off the hot path. `init` scaffolds the key explicitly (a knob nobody can see is
+  a knob nobody uses), and **absent means enabled**, so no existing repo silently
+  loses its wiki.
+
+  A page cap was prototyped and **rejected**: any cap is a number nobody can
+  justify — 2,000 no better than 200 or 20,000 — and it yields a wiki that is
+  both incomplete *and* still large. Whether a per-file wiki is wanted is the
+  repo's call, not ours.
+
+- **Declared resolutions: `.ctxoptimize/resolutions.json`** (ADR
+  `openspec/changes/2026-07-26-declared-resolutions/`). The store abstains on
+  call sites it cannot justify, which is correct and leaves the same question to
+  be re-derived by every agent forever. Now a repo can write the answer down and
+  commit it. First cut is one key, deliberately the one that **cannot make the
+  graph wrong**:
+
+  ```json
+  { "external_methods": ["Error", "String", "Close"] }
+  ```
+
+  Bare method names whose receivers are never types you own. The store holds
+  only YOUR declarations, so it can never tell `err.Error()` from a call to your
+  own `Error` — it abstains and shows a shortlist. Listing the name retires that
+  shortlist.
+
+  The safety claim is structural, not a promise: the declaration is consulted
+  **only on the abstention path**, so it can never delete a resolved edge
+  (`MyErr.Error()`, which names its own receiver, still resolves) and there is no
+  code path from a declaration to an emitted edge at all. It applies only to
+  receiver-qualified calls — an unqualified `Error()` is a plain function call
+  and may well be yours.
+
+  Malformed is a **hard error, never a warning**: bad JSON, unknown key,
+  qualified name, parens, empty entry. A silently ignored declaration is the
+  worst outcome because the author believes it is in force; the unknown-key
+  error names the keys that ARE supported, so a `receiver_types` line fails
+  loudly today instead of doing nothing. A declared name matching no call site
+  is reported on every gather — a file nobody prunes decays into
+  confident-looking claims about code that moved on.
+
+  Measured on this repo, same commit, one declared line: AMBIGUOUS
+  `unresolved-receiver` **239 → 141** (98 maybes retired), INFERRED unchanged at
+  2,455, `name-collision` untouched. `init`/`up` scaffold an inert
+  `resolutions.json.sample`.
+
+  **Not shipped:** `receiver_types` / `scoped` — the keys that *resolve* rather
+  than retire. The binary cannot type-check a type claim, so a wrong line there
+  becomes a confidently wrong edge; that trade gets its own ADR.
+
+- **`--include-ambiguous` — a door out of the abstention** (ADR
+  `openspec/changes/2026-07-26-include-ambiguous/`). Abstaining made the
+  traversal verbs answer with facts only, which means a method's blast radius
+  is a **FLOOR** — and there was no command to ask for the rest. Now
+  `card`, `explain`, `affected`, `path`, `hubs` and `change-plan` all take
+  `--include-ambiguous`.
+
+  Off by default; no existing answer moves. When on, **every widened result is
+  marked**: `affected` prefixes the row with `?` plus a footer count (the marker
+  rides on the row because rows get copied one at a time), `card` and `explain`
+  put the shortlist under its own `MAYBE …(AMBIGUOUS — verify before acting)`
+  heading, `path` labels the hop. Two properties are pinned by tests: the
+  default filter is what you get for FREE (verbs call `forTraversal`, so it
+  cannot be lost by forgetting), and the fact fields — `called_by`, `incoming`
+  — stay facts-only whatever flags are passed, so a consumer that never heard of
+  the flag reads exactly what it read before.
+
+  `report` is deliberately excluded: its structure is facts-only by design and
+  it already has a dedicated section for what could not be resolved.
+
+  On this repo: `affected Batch.Validate --depth 1` → 10 nodes,
+  `--include-ambiguous` → 32, of which 22 marked `?`.
+
+- **`store delete` — remove ONE store, from the CLI, safely** (ADR
+  `openspec/changes/2026-07-26-store-delete/`). There was no CLI way to delete a
+  store: `uninstall` explicitly leaves them, so the practical answer was
+  `rm -rf ~/ctxoptimize/<name>` — aimed by hand at a root holding **every**
+  repo's store plus `audit.ndjson`, unconfirmed and unaudited.
+
+  `ctx-optimize store delete` resolves the key from cwd exactly as `add`/`status`
+  do (no positional argument, so it cannot be aimed at an arbitrary directory),
+  is **dry-run by default** (prints what goes, what survives, and that
+  `.ctxoptimize/` is untouched), performs on `--yes`, and is audited.
+
+  It **asks** `[y/N]` at a terminal after printing the blast radius. Off a
+  terminal (pipe, CI, `< /dev/null`) nothing is asked and nothing is deleted —
+  a missing answer must never read as consent, so `--yes` is the only
+  non-interactive path.
+
+  **Fixed a live bug while building it:** a store dir is not a leaf — a
+  multi-module repo nests its module stores INSIDE the root store
+  (`~/ctxoptimize/reqsume/` contains `reqsume/e2e/`). The dashboard's
+  `os.RemoveAll` therefore **destroyed stores it never reported**. Deletion now
+  goes through one guarded primitive that reports exactly what it touched.
+
+  **It is always the whole repo**, whichever directory you run it from: the root
+  store plus every module store, at any depth. Measured on chromium, the first
+  version reported `deleted store "chromium"` and left **33 chromium module
+  stores** on disk — a lie by omission. There is no per-module delete: module
+  stores are the same repo's derived data and re-gathering takes seconds, so the
+  flag was surface with no use case. What stays impossible is reaching a store
+  the caller never named; a sibling repo is never in scope.
+
+  Two bugs closed on the way there. The per-module path resolved its key with
+  `ModuleKey`, producing `svcB` where the store actually lives at `dtest/svcB`,
+  so `store delete` inside a module always missed — gone with the module path
+  itself. And the nested-store scan stopped at the first store it found, so a
+  repo declaring both `svcB` and `svcB/inner` reported **2 stores where there
+  were 3**: the delete was right, but a confirmation prompt that under-states
+  its blast radius is the one direction that must never happen.
+
+  Also closed: `SanitizeKeyPath` drops a `..` segment, so the key `repo/..` was
+  rewritten to `repo` — no traversal escape, but a delete of a store the caller
+  never named. A destructive verb now requires the key to survive cleaning
+  unchanged. Found by a test, not by reading.
+
+  **Not shipped:** the delete-and-rebuild "resync". Whether a rebuild is a
+  convenience or a correctness fix depends on whether a retired *adapter* leaves
+  nodes in the store forever, which is unmeasured. That check comes first.
+
+### Changed
+
+- **BREAKING: the wiki is off by default — `add` no longer builds one.** On
+  linux v6.9 (84,300 files) the wiki was **1,317.8s of a 1,475.4s cold gather —
+  89.3%** — for a byte-identical graph, and no verb reads it: every query
+  answers from `graph/`. Cold gather drops **1,475s → 132s** (re-measured after
+  the change: 2,849,719 nodes, matching the pre-change count to the unit), which
+  turns the graphify head-to-head (531.97s on the same tree) from a 2.8× loss
+  into a **4.0× win**.
+
+  Issue #9 made the wiki configurable and left the default alone. That was half
+  a fix: linux and chromium have no `.ctxoptimize/config.json` at all, so a
+  config-only lever never reached the repos paying the most. The cost is
+  non-linear, which is why it went unnoticed — on every published benchmark
+  corpus (≤754 files) the wiki is free.
+
+  **"Off" never means "unavailable."** `ctx-optimize wiki` still builds a
+  complete wiki on demand, and the new **`--wiki`** flag forces one for a single
+  gather (it beats a committed `"wiki": false`). `"wiki": true` in
+  `.ctxoptimize/config.json` is unchanged and still opts a repo in — repos
+  scaffolded by `init`/`up` since #9 carry that key explicitly, so **they see no
+  change at all**. `init` now scaffolds `"wiki": false`, reversing the
+  2026-07-26 request to scaffold it on, which predates the measurement.
+
+  What loses its auto-wiki: repos whose config predates the key, and repos with
+  no `.ctxoptimize/` at all. For them the wiki stops refreshing and goes
+  **stale** — which is strictly worse than no wiki, because it reads as current
+  and cites lines that have moved. So staleness is now stated, not discovered:
+
+  - **`status` says so** when a wiki on disk is older than the graph, and names
+    both remedies. Silent otherwise — including for the empty `wiki/` directory
+    that `store.New` pre-creates in every store.
+  - **`ctx-optimize wiki --delete`** removes it. The graph is untouched and the
+    verb rebuilds it. This exists so nobody reaches for `store delete`, which
+    drops the whole graph (2.85M nodes on linux) plus a re-gather to reclaim an
+    artifact they were not using. A stale wiki is not free either: the manifest
+    walk does not skip `wiki/`, so every gather re-hashes it — ≈1.1s at linux's
+    60k pages / 250MB.
+
+  ADR `openspec/changes/2026-07-27-wiki-off-by-default/`; measurements in its
+  `spikes.md`. Judged floors unmoved (linux-block 16.5, newtonsoft 13.0), as
+  they must be — the wiki was never on the query path.
+
+- **`scan` now honours `.gitignore`, and stopped hard-coding `out`** (#10). The
+  code producer already respected `.gitignore` with git's own semantics; `scan`
+  did not — so the two disagreed about what is even in the repo. Chromium's
+  **`out/Default`** was proposed as a module while extraction correctly skipped it
+  as gitignored build output (`chromium/.gitignore:252: /out*/`).
+
+  `out` was briefly added to the built-in prune list, which patched the symptom
+  with a name generic enough to break any repo that legitimately keeps source in
+  `out/`. Removed. `.gitignore` handles it, correctly, for every repo rather than
+  just Google-shaped ones — chromium still resolves to **21 modules**, now by
+  principle instead of by coincidence.
+
+  Precedence is now explicit, and the repo decides at every level: `.gitignore` →
+  `scan.exclude`/`scan.markers` → **`scan.include`, which beats every automatic
+  exclusion including `.gitignore`** (the escape hatch that makes honouring it
+  safe) → the hand-editable `modules` list in `config.json` → and only then a
+  short built-in list for trees that are **vendored yet checked in**, where
+  `.gitignore` cannot help (`vendor`, `node_modules`, `third_party`, …).
+
+  Also finished: a **marker file** must be tracked too, not just its directory. A
+  repo that generates and gitignores its `package.json` / `Cargo.toml` is not
+  declaring a project there — calling that directory a module was the same
+  disagreement, one level down.
+
+  Vendored code is still **indexed** — that is deliberate, so you can query into
+  a dependency. What the prune decides is only whether a subtree gets its own
+  store and its own line in the module list.
+
+- **A `.txt` is plain text: `#` is a comment, not a heading** (#14, ADR
+  `openspec/changes/2026-07-26-hash-is-a-comment-not-a-heading/`). The doc
+  producer claimed both `.md` and `.txt`, so a shell-comment licence header —
+  every line starting with `#` — became a wall of `section` nodes whose labels
+  were mid-sentence prose.
+
+  Measured across **30,289 real `.txt` files in 22 repositories**: 6,902 section
+  nodes, **95.1% of them comment lines or prose fragments**. Linux's 1,695 `.txt`
+  files yielded **zero** genuine headings. And they were not harmless — they
+  ranked **first**, taking **26–30% of top-10 query slots** wherever they existed;
+  one repo's 35 `.txt` files produced **16.1% of its entire store**.
+
+  A `.txt` now yields exactly one node: the file, as a `document`. `.md` is
+  unchanged. `internal/navigator` — a **second** code path applying the same
+  `#`-is-a-heading rule to `README.txt` — was fixed with it, so the two
+  subsystems cannot disagree about the same file.
+
+  A threshold rule ("is `#` a comment character in *this* file?" — ≥4 consecutive
+  `#` lines or >20% density) was designed, measured against all 30,289 files, and
+  **rejected**: it needed two invented numbers, and a number nobody can justify is
+  exactly what this project refuses elsewhere. 95% junk means the extraction is
+  not worth having, not that it needs tuning.
+
+  **Cost, stated rather than hidden:** a `.txt` that genuinely is markdown
+  (`llms.txt`, LLM prompts kept as `.txt`, a manuscript) becomes reachable by
+  filename instead of by content. Rename it `.md`, or grep it. A smaller,
+  predictable loss beats a heuristic that misfires in ways nobody can enumerate.
+
+  The per-file `document` node is kept **unconditionally**:
+  `internal/extract/manifests` anchors `declares` edges on the file path and emits
+  no node of its own, so it is the only node backing every python dependency edge
+  — and `PartitionValidate` does not quarantine absent endpoints, so dropping it
+  would dangle silently.
+
+  Golden diff: `pydeps.txt` loses 4 section nodes + 4 edges (60→56 nodes), all
+  pip-compile comment lines. `crlf_test.go`'s assertion that
+  `# LICENCE / TRWYDDED` is "a real CRLF heading" is **inverted**, with the
+  reversal explained in the test; the CR-stripping and empty-heading cases move to
+  a `.md` fixture. Corpus counts and judged tiers unmoved (16.5 / 13.0).
+
+- **The core promise is now written down**: *we do not invent structure that isn't
+  there — if it cannot be parsed honestly, it is not indexed, and you are told to
+  grep.* Every abstention in the tool is that one rule wearing different clothes:
+  ambiguous callees, unresolved receivers, fuzzy ties, `[redacted]` values,
+  partial gathers, and now `#` in a `.txt`. Stated in `docs/cli.md` with its
+  measurement, and on the agent surface in `SKILL.md` — where routing a
+  `.txt`-content question to grep is described as **the correct behaviour, not a
+  fallback to apologise for**. Pinned by `TestCorePromiseIsOnTheAgentSurface`,
+  including the requirement that the doc carry the measurement: an unmeasured
+  promise is a slogan.
+
+### Fixed
+
+- **A single long task no longer looks hung** (#12). Progress ticks fired only on
+  task COMPLETION, so on chromium the output went `[47/48]` and then silent for
+  minutes while the 3.6M-node residual gathered. Two additions, both stderr-only
+  (so `--json` and piped output are untouched) and both plain lines (so CI logs
+  stay readable):
+
+  - a line when a task **starts** (`→ third_party/androidx`) — you can see what is
+    running instead of inferring it from what has not appeared yet;
+  - a **heartbeat** naming the in-flight tasks and how long each has been going
+    (`… still running (47/48 done): . (2m14s)`), so silence never means "no idea
+    whether this is alive".
+
+  The heartbeat stays silent until a task outlives its interval, so a normal repo
+  prints exactly what it printed before — pinned by a test in both directions.
+
+- **A failed npm publish no longer burns the tag** (#15). `run:` executes under
+  `bash -e`, so the first platform package that failed aborted the loop: four
+  good packages never attempted, wrapper step skipped. A re-run then hit
+  `already_exists` on whatever *had* published and aborted again — which is how
+  v0.10.2 was lost (a Sigstore 409 killed the run, the re-run failed on
+  `already_exists`, v0.10.3 shipped instead).
+
+  Now every platform is attempted, failures are collected and reported together,
+  and a version that is already on the registry counts as success — so a re-run
+  completes instead of aborting. That is what makes a tag retryable.
+
+- **A big `add` was 4× slower than it needed to be: the dust-merge loop in
+  community detection was O(n² log n)** (ADR
+  `openspec/changes/2026-07-26-quadratic-dust-merge/`). Reported as "the progress
+  bar sometimes takes too long"; the display was the symptom.
+
+  The dust-merge phase needs one thing per iteration — the smallest non-isolated
+  community — and it got it by **rebuilding and re-sorting the entire community
+  list every iteration**. On a 12,000-file repo that is ~12,000 iterations of a
+  12,000-entry sort (~1.7B comparisons): **12.8 seconds, 90% of the wiki's total
+  time, to return ZERO communities**, since every component was disconnected dust
+  that gets dropped. Replaced with a min-heap over `(size, id)` with lazy
+  invalidation — same candidate, same tie-breaking, so clustering output is
+  byte-identical (verified: 10 subsystems, same members, same order).
+
+  Also: wiki file pages now render and write across `NumCPU` workers, worth 15%
+  of a large gather. Output verified page-by-page — 0 of 12,021 pages differ.
+
+  | | before | after |
+  |---|---:|---:|
+  | `add` on a 12k-file repo | 16.46s | **3.89s** (4.2×) |
+  | `Communities` on 12k dust components | ~12.8s | **16ms** |
+
+  The corpus tier is unchanged (linux 0.4s, Newtonsoft 1.0s) — this fixes graphs
+  in the bad shape and does nothing for graphs that never were. `TestCommunities50kUnderASecond`
+  passed at 29ms throughout: its graph is connected, so the dust loop barely ran.
+  `TestCommunitiesDustMergeIsNotQuadratic` adds the missing shape.
+
+  **Not fixed:** progress is still reported only on task completion, so a single
+  long task still prints nothing while it runs.
+
+- **One break no longer stops the whole** (ADR
+  `openspec/changes/2026-07-26-failure-containment/`). Asked of the chromium run;
+  the answer was that failure was contained at one level, not at two, and at a
+  fourth level nothing was ever cleaned up at all.
+
+  - **A producer lane no longer aborts the others.** `gatherInto` had seven early
+    returns, and the worst shape was the adapter lane: it returned *after*
+    code/docs/manifests were extracted but *before* the commit loop, so one
+    broken adapter script **discarded a whole successful gather**. Every lane now
+    runs, everything that worked is committed, and the failures are reported
+    together and returned as one error. Same containment at commit time — one
+    producer tripping the shrink guard no longer stops the rest from landing.
+  - **A partial gather is recorded as partial.** Containment alone would be a
+    downgrade, so `freshness.Source` gained `partial` (which lanes failed) and a
+    partial gather **clears the tree signature**, so the next run cannot
+    short-circuit as "unchanged" and freeze the gap in place.
+  - **The navigator survives a failed module.** `if len(failed) > 0 { return }`
+    fired before `writeNavigator`, so one broken module out of 48 denied
+    root-level federation over the 47 that worked. The navigator is built from
+    the full task plan, not from the successes, so writing it was always safe —
+    the return was just in the wrong place.
+  - **A retired producer's nodes are no longer immortal.** `Replace` is
+    producer-scoped, so a producer that stops running is never replaced.
+    Measured: an adapter emitting `custom://ghost`, then deleted, kept its node
+    through `--force` and every later gather. Now reported on every gather, and
+    pruned on a run with no skips and no failures. Reported rather than
+    auto-pruned because absence means either "retired" or "did not run this time"
+    (`--no-adapters`, unchanged HEAD, a failed lane), and deleting a lane's data
+    because it did not run would be far worse than a stale node.
+
+### Added
+
+- **`add --rebuild`** — drop the store(s) this add will write, then gather into
+  nothing: the guaranteed resync, for when you would rather not reason about
+  producer scoping. Uses the same task plan as the gather, so it cannot drop a
+  key the gather won't rewrite; nested module stores are kept (each is rebuilt by
+  its own task); audited as `store.rebuild`.
+
+### Fixed
+
+- **Onboarding chromium: three defects, found by running it** (ADR
+  `openspec/changes/2026-07-26-chromium-onboarding-defects/`). A full chromium
+  checkout gathered without falling over (366,277 nodes in the root residual),
+  and the output carried three real problems.
+
+  - **`scan` reported 241 "modules"; 217 (90%) were vendored.** All under
+    `third_party/`, plus `out/Default` — GN build output — and nested cases like
+    `net/third_party/quiche/src/depstool`. `pruneDirs` already refused
+    `vendor`/`dist`/`build`/`target` on exactly this reasoning and just did not
+    know the names Google-style repos use. **241 → 21 modules on chromium.**
+    Scan-only: the code producer still walks those trees, so nothing stops being
+    indexed — a vendored subtree simply no longer gets its own store.
+  - **CRLF files leaked a carriage return into every extracted value**, and a
+    bare `# ` line in one became a heading titled `"\r"` — an empty slug and an
+    empty label, which the schema correctly refused
+    (`quarantined 18 invalid item(s) … label is required`, from
+    `third_party/hunspell_dictionaries/README_*.txt`, shell-comment licence
+    headers). Lines are now split with the CR stripped, and a heading with no
+    text is skipped rather than emitted. Verified on the real file: 0 empty
+    labels, no quarantine.
+  - **Dangling symlinks were reported per-file at the same volume as real parse
+    failures** (`third_party/nearby` vendors broken links). Now counted and
+    summarized once — reporting each one trains the reader to ignore the channel
+    that carries real skips.
+
+  Investigated and **not** a defect: progress appearing to stop at `[47/48]`.
+  Every task ticks from a `defer`; `[48/48]` is the root residual, the slowest
+  task, which finishes after those messages. Recorded so nobody re-investigates.
+
+  Recorded and deliberately **not** fixed: `.txt` files are parsed as markdown,
+  so a `#`-prefixed prose line in a licence file becomes a `section` node. Valid
+  but useless. Fixing it means dropping `.txt` or guessing "this isn't
+  markdown" — own ADR.
+
+- **A unique method name is no longer treated as evidence about the receiver**
+  (ADR `openspec/changes/2026-07-25-method-call-resolution/`, the 0.11.0 known
+  issue, now closed). `calleeName` returned the last name node and threw the
+  receiver away, so `err.Error()` and `Error()` were indistinguishable — and
+  when exactly one declaration in the repo bore the label `Error`, every
+  `err.Error()` resolved to it **confidently**. Not ambiguity: one candidate, so
+  the AMBIGUOUS shortlist never fired, and these edges DID flow into `affected`,
+  `change-plan`, `hubs` and clustering.
+
+  The receiver is now captured and a **method** candidate is attributed only on
+  an actual tie: the receiver names the type (`Batch.Validate()`), the call is
+  `self`/`this`/unqualified from inside the owner, or the owner type is written
+  in the SAME declaration as the call (`e := &Engine{}; e.Charge()` — this is
+  the tie that keeps "which tests cover X" answerable). Anything else is
+  **abstained on**, not dropped: it becomes an AMBIGUOUS shortlist, filtered out
+  of every traversal, reachable with `edges --confidence AMBIGUOUS`.
+
+  Measured on this repo: **225 attributions reclassified from INFERRED to
+  AMBIGUOUS, none lost** (2,626 → 2,401 INFERRED). `AmbiguousError.Error` went
+  from 89 confident callers to 89 declared abstentions. **Judged tiers
+  unchanged — linux-block 16.5/20, newtonsoft 13.0/20, byte-identical before
+  and after** (re-run against stashed changes to be sure); hermetic + corpus
+  golden green; gather time unmoved.
+
+- **The card no longer explains an abstention with the wrong reason.** There are
+  now two, they are settled by different greps, and the reason is stamped on the
+  edge (`metadata.ambiguous_reason`: `name-collision` | `unresolved-receiver`).
+  Saying "the name is defined more than once" about a name defined exactly once
+  would be a false explanation, which is worse than none. `card` prints the
+  matching line and grep; SKILL.md and `references/activation-routing.xml` carry
+  the split plus the consequence an agent must not miss — **a blast radius for a
+  method is a FLOOR, not the full set** — pinned by the doc-drift guard.
+
 ## [0.11.0] — 2026-07-25
 
 ### Added
@@ -83,12 +529,25 @@ embeddings, no MCP, no network except your configured remote.**
 
 ### Known issue (not fixed)
 
-- **Bare-name method resolution is imprecise.** Call resolution keys on the
-  unqualified name, so every `err.Error()` in a repo resolves to whichever single
-  declaration is labelled `Error`. On this repo that is **85 of 2,596 INFERRED call
-  edges (3%)** pointing at `AmbiguousError.Error`, plus `Strings` (53) and `Open`
-  (49). Surfaced by the new `report` verb. Fixing it is a resolution change with
-  large golden churn and gets its own ADR.
+- **Bare-name method resolution is imprecise** (ADR
+  `openspec/changes/2026-07-25-method-call-resolution/`). `calleeName` returns the
+  last name node and discards the receiver, so `err.Error()` and `Error()` are
+  indistinguishable — and when exactly one declaration in the repo has the bare
+  label `Error`, every `err.Error()` resolves to it **confidently**. This is not
+  ambiguity: there is one candidate, so the AMBIGUOUS shortlist never fires. A
+  unique name is being treated as evidence that a method call targets it, when the
+  receiver's type is what decides. Root cause is a blind spot — the graph holds
+  only OUR declarations, so a bare-name method match silently assumes the receiver
+  is ours, which for `Error`/`String`/`Close` is usually false.
+  Measured here: **331 of 2,596 INFERRED call edges (12%) target a method** and are
+  only reachable by bare-name match, 215 of them cross-package. That is the suspect
+  population, not the error count — `Batch.Validate` (31) is mostly right,
+  `AmbiguousError.Error` (85) is almost all wrong. These are INFERRED, so unlike
+  AMBIGUOUS edges they DO flow into `affected`, `change-plan`, `hubs` and
+  clustering. Surfaced by the new `report` verb. Not fixed in 0.11.0: the
+  candidate fix trades recall for precision and that had to be measured on the
+  judged tiers first. **Fixed in [Unreleased]** — the measurement came back
+  score-neutral.
 
 ## [0.10.4] — 2026-07-25
 

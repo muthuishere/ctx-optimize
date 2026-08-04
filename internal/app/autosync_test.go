@@ -187,6 +187,13 @@ func TestSyncNoWikiRefreshesGraphNotWiki(t *testing.T) {
 	repo, storeRoot, key := setupIncremental(t, map[string]string{
 		"go.mod": "module ex\n\ngo 1.22\n", "main.go": baseMain,
 	})
+	// A wiki has to be built explicitly now that gathers no longer make one
+	// (ADR 2026-07-27-wiki-off-by-default). That is precisely the store this
+	// test is about: pages already on disk, and a resync that must not touch
+	// them.
+	if out, code := runCLIIn(t, storeRoot, "wiki", "--path", repo); code != 0 {
+		t.Fatalf("setup: wiki build failed: %s", out)
+	}
 	wikiBefore := readFile(t, filepath.Join(storeRoot, key, "wiki"), "index.md")
 	mustWrite(t, repo, "main.go", baseMain+"func Beta() {}\n")
 
@@ -198,8 +205,11 @@ func TestSyncNoWikiRefreshesGraphNotWiki(t *testing.T) {
 	t.Setenv("CTX_OPTIMIZE_STORE", storeRoot)
 	out, _ := runCLI(t, 0, "sync", "--no-wiki")
 
-	if !strings.Contains(out, "wiki: skipped (resync") {
-		t.Fatalf("--no-wiki must report the wiki was skipped: %s", out)
+	// Assert the BEHAVIOUR (a skip is reported, and the verb that rebuilds is
+	// named), not the exact sentence — the wording changed when `"wiki": false`
+	// gave the same message a second cause (#9).
+	if !strings.Contains(out, "wiki: skipped") || !strings.Contains(out, "ctx-optimize wiki") {
+		t.Fatalf("--no-wiki must report the skip and name the verb that rebuilds: %s", out)
 	}
 	if !strings.Contains(graphOf(t, storeRoot, key), "::Beta") {
 		t.Fatal("--no-wiki must still refresh the GRAPH (query source)")

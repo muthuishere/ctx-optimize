@@ -248,6 +248,10 @@ type Step struct {
 	Relation string `json:"relation"`
 	Dir      string `json:"dir"` // "->" or "<-"
 	To       string `json:"to"`
+	// Confidence of the edge this step crossed. Only ever AMBIGUOUS under
+	// IncludeAmbiguous — a path is only as good as its weakest hop, so the
+	// hop has to say which it is.
+	Confidence string `json:"confidence,omitempty"`
 }
 
 type hop struct {
@@ -257,9 +261,10 @@ type hop struct {
 }
 
 // ShortestPath BFSes the undirected view from a to b.
-func ShortestPath(nodes []schema.Node, edges []schema.Edge, a, b string) ([]Step, error) {
-	// A path through a maybe is not a path.
-	edges = WithoutAmbiguous(edges)
+func ShortestPath(nodes []schema.Node, edges []schema.Edge, a, b string, opts ...Option) ([]Step, error) {
+	// A path through a maybe is not a path — unless the caller asked, and
+	// then every hop it crossed carries its confidence.
+	edges = forTraversal(edges, opts)
 	from, err := Resolve(nodes, a)
 	if err != nil {
 		return nil, err
@@ -319,7 +324,7 @@ func unwind(visited map[string]hop, from, to string) []Step {
 		if !h.fwd {
 			dir = "<-"
 		}
-		steps = append(steps, Step{From: h.prev, Relation: h.e.Relation, Dir: dir, To: cur})
+		steps = append(steps, Step{From: h.prev, Relation: h.e.Relation, Dir: dir, To: cur, Confidence: h.e.Confidence})
 		cur = h.prev
 	}
 	// reverse into from→to order
@@ -337,11 +342,42 @@ type Impact struct {
 	Depth     int         `json:"depth"`
 	Via       string      `json:"via"` // relation of the edge that reached it
 	DependsOn string      `json:"depends_on"`
+	// Confidence of the edge that reached it. Only ever AMBIGUOUS when the
+	// caller passed IncludeAmbiguous, and then it is the ONLY thing telling
+	// them this row is a maybe — renderers must not drop it.
+	Confidence string `json:"confidence,omitempty"`
 }
 
 // Affected walks edges BACKWARD (source depends on target): everything with
 // an edge INTO the blast set is impacted, up to depth hops. Optional relation
 // filter (empty = all relations).
+// Option tunes a traversal verb. The zero set is the honest default; an
+// option is always someone explicitly asking for something weaker.
+type Option func(*options)
+
+type options struct{ includeAmbiguous bool }
+
+// IncludeAmbiguous lets AMBIGUOUS edges into a traversal. The caller has asked
+// for maybes and must SAY SO in what it prints — an unmarked maybe in a blast
+// radius is exactly the wrong answer this store exists to avoid. Every verb
+// that accepts this option reports which results arrived on an ambiguous edge.
+func IncludeAmbiguous() Option { return func(o *options) { o.includeAmbiguous = true } }
+
+// forTraversal applies the default AMBIGUOUS filter unless the caller opted
+// out. Verbs call this instead of WithoutAmbiguous so the default cannot be
+// lost by forgetting to filter — the filter is still the code path you get for
+// free, and widening it takes an explicit argument.
+func forTraversal(edges []schema.Edge, opts []Option) []schema.Edge {
+	var o options
+	for _, f := range opts {
+		f(&o)
+	}
+	if o.includeAmbiguous {
+		return edges
+	}
+	return WithoutAmbiguous(edges)
+}
+
 // WithoutAmbiguous drops AMBIGUOUS edges. Every traversal verb applies it by
 // default, and that is what makes emitting them honest at all: an AMBIGUOUS
 // `calls` edge is a SHORTLIST TO GREP, not a fact. Let one into a blast radius
@@ -351,6 +387,18 @@ type Impact struct {
 //
 // They stay reachable on purpose, via `edges --confidence AMBIGUOUS` and
 // `--relation calls`, where the caller has asked for maybes and knows it.
+// ambiguousOnly is WithoutAmbiguous' complement: the maybes alone, for the
+// verbs that report them in a SEPARATE list rather than mixing them in.
+func ambiguousOnly(edges []schema.Edge) []schema.Edge {
+	var out []schema.Edge
+	for _, e := range edges {
+		if e.Confidence == schema.Ambiguous {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func WithoutAmbiguous(edges []schema.Edge) []schema.Edge {
 	out := make([]schema.Edge, 0, len(edges))
 	for _, e := range edges {
@@ -361,9 +409,10 @@ func WithoutAmbiguous(edges []schema.Edge) []schema.Edge {
 	return out
 }
 
-func Affected(nodes []schema.Node, edges []schema.Edge, name string, depth int, relations []string) (*schema.Node, []Impact, error) {
-	// A blast radius must contain no maybes — see WithoutAmbiguous.
-	edges = WithoutAmbiguous(edges)
+func Affected(nodes []schema.Node, edges []schema.Edge, name string, depth int, relations []string, opts ...Option) (*schema.Node, []Impact, error) {
+	// A blast radius must contain no maybes — see WithoutAmbiguous — unless
+	// the caller asked for them, in which case each row says so.
+	edges = forTraversal(edges, opts)
 	target, err := Resolve(nodes, name)
 	if err != nil {
 		return nil, nil, err
@@ -403,7 +452,7 @@ func Affected(nodes []schema.Node, edges []schema.Edge, name string, depth int, 
 					continue
 				}
 				seen[e.Source] = true
-				out = append(out, Impact{Node: byID[e.Source], Depth: d, Via: e.Relation, DependsOn: id})
+				out = append(out, Impact{Node: byID[e.Source], Depth: d, Via: e.Relation, DependsOn: id, Confidence: e.Confidence})
 				next = append(next, e.Source)
 			}
 		}
@@ -420,9 +469,20 @@ type Explanation struct {
 	ResolvedVia string              `json:"resolved_via"` // exact-id | exact-label | last-segment | fuzzy
 	Outgoing    map[string][]string `json:"outgoing"`     // relation → target ids
 	Incoming    map[string][]string `json:"incoming"`     // relation → source ids
+	// Ambiguous edges, kept in their OWN maps rather than merged into the
+	// two above: a consumer that ignores these fields still reads only facts,
+	// which is the property that makes widening safe to offer at all.
+	// Populated only under IncludeAmbiguous.
+	OutgoingAmbiguous map[string][]string `json:"outgoing_ambiguous,omitempty"`
+	IncomingAmbiguous map[string][]string `json:"incoming_ambiguous,omitempty"`
 }
 
-func Explain(nodes []schema.Node, edges []schema.Edge, name string) (*Explanation, error) {
+func Explain(nodes []schema.Node, edges []schema.Edge, name string, opts ...Option) (*Explanation, error) {
+	var o options
+	for _, f := range opts {
+		f(&o)
+	}
+	amb := ambiguousOnly(edges)
 	edges = WithoutAmbiguous(edges)
 	n, via, err := ResolveVia(nodes, name)
 	if err != nil {
@@ -435,6 +495,32 @@ func Explain(nodes []schema.Node, edges []schema.Edge, name string) (*Explanatio
 		}
 		if e.Target == n.ID {
 			ex.Incoming[e.Relation] = append(ex.Incoming[e.Relation], e.Source)
+		}
+	}
+	if o.includeAmbiguous && len(amb) > 0 {
+		ex.OutgoingAmbiguous = map[string][]string{}
+		ex.IncomingAmbiguous = map[string][]string{}
+		for _, e := range amb {
+			if e.Source == n.ID {
+				ex.OutgoingAmbiguous[e.Relation] = append(ex.OutgoingAmbiguous[e.Relation], e.Target)
+			}
+			if e.Target == n.ID {
+				ex.IncomingAmbiguous[e.Relation] = append(ex.IncomingAmbiguous[e.Relation], e.Source)
+			}
+		}
+		for _, m := range []map[string][]string{ex.OutgoingAmbiguous, ex.IncomingAmbiguous} {
+			if len(m) == 0 {
+				continue
+			}
+			for k := range m {
+				sort.Strings(m[k])
+			}
+		}
+		if len(ex.OutgoingAmbiguous) == 0 {
+			ex.OutgoingAmbiguous = nil
+		}
+		if len(ex.IncomingAmbiguous) == 0 {
+			ex.IncomingAmbiguous = nil
 		}
 	}
 	for _, m := range []map[string][]string{ex.Outgoing, ex.Incoming} {
@@ -477,6 +563,8 @@ func RenderExplanation(ex *Explanation) string {
 	}
 	writeRels("outgoing", ex.Outgoing, "→")
 	writeRels("incoming", ex.Incoming, "←")
+	writeRels("MAYBE outgoing (AMBIGUOUS — verify before acting)", ex.OutgoingAmbiguous, "→")
+	writeRels("MAYBE incoming (AMBIGUOUS — verify before acting)", ex.IncomingAmbiguous, "←")
 	if len(ex.Outgoing) == 0 && len(ex.Incoming) == 0 {
 		sb.WriteString("no edges — an isolated node.\n")
 	}
@@ -490,20 +578,20 @@ func RenderExplanation(ex *Explanation) string {
 // spike campaign measured pointer-chase reads (find node → open file for the
 // signature) as the #1 context waste; this is the fix.
 type CardData struct {
-	Node        schema.Node       `json:"node"`
-	ResolvedVia string            `json:"resolved_via"` // exact-id | exact-label | last-segment | fuzzy
-	Signature string              `json:"signature,omitempty"`
-	Doc       string              `json:"doc,omitempty"`
-	Body      string              `json:"body,omitempty"`      // first lines of the actual source span, filled by the caller when the file is reachable
+	Node        schema.Node `json:"node"`
+	ResolvedVia string      `json:"resolved_via"` // exact-id | exact-label | last-segment | fuzzy
+	Signature   string      `json:"signature,omitempty"`
+	Doc         string      `json:"doc,omitempty"`
+	Body        string      `json:"body,omitempty"` // first lines of the actual source span, filled by the caller when the file is reachable
 	// ContentError is set instead of an expanded Body by the caller's
 	// `--include-content` hydration (content-hydration spike,
 	// openspec/changes/2026-07-24-content-hydration) when the full source
 	// couldn't be read — never fails the card.
-	ContentError string `json:"content_error,omitempty"`
-	Parent    string              `json:"parent,omitempty"`    // what contains it
-	Contains  []string            `json:"contains,omitempty"`  // what it contains
-	Calls     []string            `json:"calls,omitempty"`     // outgoing calls
-	CalledBy  []string            `json:"called_by,omitempty"` // incoming calls
+	ContentError string   `json:"content_error,omitempty"`
+	Parent       string   `json:"parent,omitempty"`    // what contains it
+	Contains     []string `json:"contains,omitempty"`  // what it contains
+	Calls        []string `json:"calls,omitempty"`     // outgoing calls
+	CalledBy     []string `json:"called_by,omitempty"` // incoming calls
 	// AmbiguousCallers counts call sites that name this symbol but could NOT be
 	// attributed to it, because the name is defined more than once. They are
 	// deliberately absent from CalledBy — the card cites only facts — but the
@@ -512,22 +600,55 @@ type CardData struct {
 	// cannot say who calls it, so we say how many we could not place, and grep
 	// settles it.
 	AmbiguousCallers int `json:"ambiguous_callers,omitempty"`
-	Imports   []string            `json:"imports,omitempty"`   // file nodes only
-	Other     map[string][]string `json:"other,omitempty"`     // any remaining relations, "rel →|←" keyed
+	// UnresolvedReceiverCallers is the subset of AmbiguousCallers abstained on
+	// for a DIFFERENT reason: the name is unique, but the call went through a
+	// receiver whose type we never established. Split out because the two
+	// abstentions are settled by different greps — saying "defined more than
+	// once" about a name that is defined exactly once would be a false
+	// explanation, which is worse than no explanation.
+	UnresolvedReceiverCallers int `json:"unresolved_receiver_callers,omitempty"`
+	// The shortlists themselves, named only when the caller passed
+	// IncludeAmbiguous. Separate from CalledBy/Calls on purpose — those two
+	// are facts under every option.
+	AmbiguousCalledBy []string            `json:"ambiguous_called_by,omitempty"`
+	AmbiguousCalls    []string            `json:"ambiguous_calls,omitempty"`
+	Imports           []string            `json:"imports,omitempty"` // file nodes only
+	Other             map[string][]string `json:"other,omitempty"`   // any remaining relations, "rel →|←" keyed
 }
 
-func Card(nodes []schema.Node, edges []schema.Edge, name string) (*CardData, error) {
+func Card(nodes []schema.Node, edges []schema.Edge, name string, opts ...Option) (*CardData, error) {
 	n, via, err := ResolveVia(nodes, name)
 	if err != nil {
 		return nil, err
+	}
+	var o options
+	for _, f := range opts {
+		f(&o)
 	}
 	c := &CardData{Node: *n, ResolvedVia: via, Signature: n.Metadata["signature"], Doc: n.Metadata["doc"]}
 	// Count the abstentions before dropping them: callers/callees on a card are
 	// cited directly, so no maybes may enter the lists — but vanishing without
 	// a trace is what made the card read as complete.
 	for _, e := range edges {
-		if e.Confidence == schema.Ambiguous && e.Relation == "calls" && e.Target == n.ID {
+		if e.Confidence != schema.Ambiguous {
+			continue
+		}
+		if e.Relation == "calls" && e.Target == n.ID {
 			c.AmbiguousCallers++
+			if e.Metadata["ambiguous_reason"] == schema.AmbiguousUnresolvedReceiver {
+				c.UnresolvedReceiverCallers++
+			}
+		}
+		// Under IncludeAmbiguous the shortlist itself is named, in its OWN
+		// fields. CalledBy/Calls stay facts-only whatever the caller asked
+		// for, so code that reads them cannot be widened by accident.
+		if o.includeAmbiguous {
+			if e.Target == n.ID {
+				c.AmbiguousCalledBy = append(c.AmbiguousCalledBy, e.Source)
+			}
+			if e.Source == n.ID {
+				c.AmbiguousCalls = append(c.AmbiguousCalls, e.Target)
+			}
 		}
 	}
 	edges = WithoutAmbiguous(edges)
@@ -550,7 +671,7 @@ func Card(nodes []schema.Node, edges []schema.Edge, name string) (*CardData, err
 			other[e.Relation+" ←"] = append(other[e.Relation+" ←"], e.Source)
 		}
 	}
-	for _, s := range [][]string{c.Contains, c.Calls, c.CalledBy, c.Imports} {
+	for _, s := range [][]string{c.Contains, c.Calls, c.CalledBy, c.Imports, c.AmbiguousCalledBy, c.AmbiguousCalls} {
 		sort.Strings(s)
 	}
 	for k := range other {
@@ -609,11 +730,20 @@ func RenderCard(c *CardData) string {
 	// Say no out loud. `called by` above is exact; this line admits what could
 	// not be placed, and names the grep that settles it — an agent must never
 	// read the list as complete when it isn't.
-	if c.AmbiguousCallers > 0 {
-		fmt.Fprintf(&sb, "  unattributed callers: %d — the name is defined more than once, so these call sites were NOT guessed.\n", c.AmbiguousCallers)
+	if n := c.AmbiguousCallers - c.UnresolvedReceiverCallers; n > 0 {
+		fmt.Fprintf(&sb, "  unattributed callers: %d — the name is defined more than once, so these call sites were NOT guessed.\n", n)
 		fmt.Fprintf(&sb, "    candidates: ctx-optimize edges --relation calls --confidence AMBIGUOUS --to %s\n", c.Node.ID)
 		fmt.Fprintf(&sb, "    confirm:    grep -rn '\\b%s\\b' .\n", lastSegment(c.Node.Label))
 	}
+	if c.UnresolvedReceiverCallers > 0 {
+		fmt.Fprintf(&sb, "  unattributed callers: %d — call sites write `.%s(...)` on a receiver whose type this store never established, so they were NOT attributed here.\n", c.UnresolvedReceiverCallers, lastSegment(c.Node.Label))
+		fmt.Fprintf(&sb, "    candidates: ctx-optimize edges --relation calls --confidence AMBIGUOUS --to %s\n", c.Node.ID)
+		fmt.Fprintf(&sb, "    confirm:    grep -rn '\\.%s(' .   # then check each receiver's type\n", lastSegment(c.Node.Label))
+	}
+	// Named shortlists, under --include-ambiguous. Titled so no reader can
+	// mistake them for the fact lists above.
+	writeList("MAYBE called by (AMBIGUOUS — verify before acting)", c.AmbiguousCalledBy, 0)
+	writeList("MAYBE calls (AMBIGUOUS — verify before acting)", c.AmbiguousCalls, 0)
 	writeList("imports", c.Imports, 15)
 	rels := make([]string, 0, len(c.Other))
 	for r := range c.Other {
@@ -635,9 +765,10 @@ type Hub struct {
 }
 
 // Hubs returns the top-N nodes by total degree (ties by id).
-func Hubs(nodes []schema.Node, edges []schema.Edge, top int) []Hub {
-	// God-node ranking is exactly what guessed edges corrupt (VISION.md:284).
-	edges = WithoutAmbiguous(edges)
+func Hubs(nodes []schema.Node, edges []schema.Edge, top int, opts ...Option) []Hub {
+	// God-node ranking is exactly what guessed edges corrupt (VISION.md:284),
+	// so the maybes are out unless the caller insists.
+	edges = forTraversal(edges, opts)
 	if top <= 0 {
 		top = 10
 	}

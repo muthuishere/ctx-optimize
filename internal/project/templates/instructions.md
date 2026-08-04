@@ -35,7 +35,9 @@ CI gate: `up && fresh`.
 | **Orient** — where do I start | `ctx-optimize hubs --top 10 --json` |
 | **List / filter** — every node of a kind, edges of a relation, deps by scope ("all k8s services", "which files use react", "our dev deps") | `ctx-optimize nodes --kind K` / `edges --relation R` / `deps --scope dev [--importers]` — native, portable, **never `export \| jq`** |
 | **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — verbatim source hydrated from the file at answer time (nothing stored) |
-| **Code changed** — bring the store current | `ctx-optimize sync` — incremental resync of THIS repo (0-change ≈ ms); `--adapters` adds adapter scripts, `--all` adds native sources (dials), `--no-wiki` graph-only. Opt-in autosync: `"autosync": "lazy"` in config.json (stale reads resync themselves in the background) |
+| **The answer looks short — where are the rest of the callers?** | add `--include-ambiguous` to `card`/`explain`/`affected`/`path`/`hubs`/`change-plan`. These verbs answer with FACTS ONLY by default, so a **method's blast radius is a floor**: call sites the store refused to attribute are held back as a shortlist. The flag walks them, and marks every widened row (`?`, or a `MAYBE` heading) — candidates to verify, never callers |
+| **Code changed** — bring the store current | `ctx-optimize sync` — incremental resync of THIS repo (0-change ≈ ms); `--adapters` adds adapter scripts, `--all` adds native sources (dials). Opt-in autosync: `"autosync": "lazy"` in config.json (stale reads resync themselves in the background) |
+| **Want a browsable markdown wiki** | `ctx-optimize wiki` — OPT-IN, no gather builds one (it was 89% of a linux gather and no verb reads it). Per run: `add --wiki`. Per repo: `"wiki": true` in config.json. Remove a stale one: `ctx-optimize wiki --delete` (the graph is untouched — never use `store delete` for this) |
 
 Query with 2–4 terms, not sentences; `card` wants the exact label (query the
 short name first if unsure). Output is parsed fact with exact `file:line` —
@@ -50,6 +52,69 @@ claims hold. A failed verify means re-query or `ctx-optimize sync` — NEVER
 rephrase the claim. Fuzzy resolution announces itself (`resolved_via`) and
 refuses ties with ranked candidates — pick one, don't pass `--fuzzy` on a
 user's behalf.
+
+## When the store says "I don't know"
+
+`card` may print `unattributed callers: N`. That means `called by` is
+**incomplete by design** — the store refused to guess, and the line says which
+kind of refusal it was:
+
+- *"the name is defined more than once"* — several declarations share the name.
+  Settle it with `grep -rn '\b<Name>\b' .`
+- *"on a receiver whose type this store never established"* — a **method**. The
+  store holds only this repo's declarations, so it can never tell `err.Error()`
+  from a call to your own `Error`. Settle it with `grep -rn '\.<Method>(' .`
+  and check each receiver's type.
+
+Consequence: for a method, `affected` / `change-plan` give a **floor**, not the
+full set. To see the held-back shortlist without leaving the tool, re-run the
+same verb with `--include-ambiguous`; widened rows are marked and are
+candidates to verify, never callers. Flat list: `edges --relation calls
+--confidence AMBIGUOUS --to <id>`.
+
+Never present `called by` as the complete caller set while that line is printed.
+
+## Settling an abstention for good
+
+If the same method keeps coming back as `unattributed callers` and you know the
+name belongs to a type this repo does NOT own (`Error`, `String`, `Close` on
+stdlib or dependency types), write it down instead of re-deriving it —
+`.ctxoptimize/resolutions.json`, committed, inherited by everyone's agents:
+
+```json
+{ "external_methods": ["Error", "String", "Close"] }
+```
+
+It only ever RETIRES a shortlist: it never creates a call edge and never deletes
+a resolved one, so a wrong entry costs recall and cannot make the graph wrong. A
+declared name matching no call site is reported on every gather. Malformed is a
+hard error — a silently ignored declaration is worse than none.
+
+## Rebuilding and deleting (both permanent)
+
+```sh
+ctx-optimize add . --rebuild   # drop the store(s), gather into an empty one
+ctx-optimize store delete      # delete this repo's stores; asks [y/N]
+```
+
+`--rebuild` exists because a **retired** producer's nodes survive incremental
+gathers: `Replace` is producer-scoped, so deleting an adapter script leaves its
+nodes in the graph. A normal `add` reports those; `--rebuild` is the certain fix.
+
+`store delete` takes the root store **and** every module store — always the whole
+repo, whichever directory you run it from. `.ctxoptimize/` is never touched; it is
+committed config, not a cache. Re-gather with `add .`.
+
+## Is the store trustworthy right now?
+
+```sh
+ctx-optimize fresh   # exit 0 fresh / 1 stale / 2 unknown / 3 PARTIAL
+```
+
+**Exit 3 is the one to notice**: the last gather had producer lanes FAIL, so a
+producer (code, docs, manifests, an adapter) is *missing* from the graph — not
+merely out of date. `status` and `fresh --json` name which lanes failed. Never
+answer from a partial store without saying so.
 
 ## Tool choice — store vs grep (two-sided; wrong in either direction is the failure)
 

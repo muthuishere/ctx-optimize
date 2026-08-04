@@ -18,6 +18,12 @@ const (
 	// Unknown — a head is missing (not a git repo, git absent, or no provenance
 	// was recorded). Freshness cannot be determined; never treated as an error.
 	Unknown State = "unknown"
+	// Partial — the gather that wrote this store had producer lanes FAIL, so
+	// the store is incomplete whatever its head says. A DISTINCT state, not
+	// Stale: stale means "the code moved on, re-gather", partial means "the
+	// last gather broke, look at why". Overloading one exit code would tell a
+	// hook the wrong fix (ADR 2026-07-26-failure-containment, issue #13).
+	Partial State = "partial"
 )
 
 // Source is what add recorded about one gathered root.
@@ -27,6 +33,12 @@ type Source struct {
 	HeadUnix  int64  `json:"head_unix"`          // committer time of that HEAD
 	AddedUnix int64  `json:"added_unix"`         // when add ran
 	TreeSig   string `json:"tree_sig,omitempty"` // stat-signature of the source tree at add time (path+mtime+size hash) — the 0-change short-circuit gate (ADR 2026-07-24-lazy-autosync, lever 1)
+	// Partial names the producer lanes that FAILED in the gather that wrote
+	// this record. Lane failures are contained (one broken adapter no longer
+	// discards a whole gather), and containment is only honest if the
+	// incompleteness is recorded: a store missing its code lane must not
+	// answer as though it has one. Empty = complete.
+	Partial []string `json:"partial,omitempty"`
 }
 
 // Report is the freshness verdict for one source.
@@ -37,6 +49,10 @@ type Report struct {
 	CurrentHead  string `json:"current_head"`             // head right now (may be "")
 	AgeSeconds   int64  `json:"age_seconds"`              // now - added_unix (store snapshot age)
 	BehindSecond int64  `json:"behind_seconds,omitempty"` // current_head_unix - store_head_unix, when stale & known
+	// Partial carries the producer lanes that failed in the gather that wrote
+	// this source, so a caller can say WHICH part is missing rather than just
+	// that something is.
+	Partial []string `json:"partial,omitempty"`
 }
 
 // Evaluate compares one recorded source against the repo's current head.
@@ -51,7 +67,13 @@ func Evaluate(rec Source, currentHead string, currentHeadUnix, now int64) Report
 	if rec.AddedUnix > 0 && now >= rec.AddedUnix {
 		r.AgeSeconds = now - rec.AddedUnix
 	}
+	r.Partial = rec.Partial
 	switch {
+	case len(rec.Partial) > 0:
+		// Wins over everything: a store missing a producer is not trustworthy
+		// however well its head matches. A head-matching partial store used to
+		// report Fresh, which is the exact lie this state exists to stop.
+		r.State = Partial
 	case rec.Head == "" || currentHead == "":
 		r.State = Unknown
 	case rec.Head == currentHead:
@@ -72,29 +94,43 @@ func Overall(reports []Report) State {
 	if len(reports) == 0 {
 		return Unknown
 	}
-	sawUnknown := false
+	// Severity order: Partial > Stale > Unknown > Fresh. Partial is highest
+	// because it is the only one that means data is MISSING rather than old,
+	// and a mixed store must not have that masked by a sibling's staleness.
+	sawStale, sawUnknown := false, false
 	for _, r := range reports {
 		switch r.State {
+		case Partial:
+			return Partial
 		case Stale:
-			return Stale
+			sawStale = true
 		case Unknown:
 			sawUnknown = true
 		}
 	}
-	if sawUnknown {
+	switch {
+	case sawStale:
+		return Stale
+	case sawUnknown:
 		return Unknown
 	}
 	return Fresh
 }
 
 // ExitCode maps an overall state to a process exit code for agent/hook gating:
-// 0 fresh, 1 stale, 2 unknown.
+// 0 fresh, 1 stale, 2 unknown, 3 partial.
+//
+// 3 is a new code rather than a reuse of 1: an existing hook that gates on
+// `!= 0` keeps working unchanged, while one that distinguishes cases can tell
+// "re-gather, the code moved" from "the last gather broke, go look".
 func ExitCode(s State) int {
 	switch s {
 	case Fresh:
 		return 0
 	case Stale:
 		return 1
+	case Partial:
+		return 3
 	default:
 		return 2
 	}

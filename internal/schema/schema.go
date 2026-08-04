@@ -25,6 +25,22 @@ const (
 
 var validConfidence = map[string]bool{Extracted: true, Inferred: true, Ambiguous: true}
 
+// Reasons an edge is AMBIGUOUS, stamped in Edge.Metadata["ambiguous_reason"].
+// The tier says "we did not decide"; the reason says WHY, and the why decides
+// which command settles it — so consumers can tell a reader what to run
+// instead of making them guess.
+const (
+	// AmbiguousNameCollision: the callee name is declared more than once in
+	// the repo. A grep on the bare name lists the candidates.
+	AmbiguousNameCollision = "name-collision"
+	// AmbiguousUnresolvedReceiver: exactly one declaration bears the name,
+	// but the call was written through a receiver whose TYPE we never
+	// established (`err.Error()`), and the graph holds only our own
+	// declarations — so a unique name is not evidence. A grep on the
+	// qualified call shape (`\.Error\(`) settles it.
+	AmbiguousUnresolvedReceiver = "unresolved-receiver"
+)
+
 // Node is one thing in the graph: a function, class, file, document section,
 // DB table, kafka topic — anything an adapter can name and locate.
 type Node struct {

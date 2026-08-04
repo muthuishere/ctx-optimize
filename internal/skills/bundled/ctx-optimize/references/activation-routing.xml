@@ -32,7 +32,7 @@
       <when>need a symbol's signature, doc, callers, or callees; about to open a file just to read one function's shape</when>
       <goal>The card IS the read — signature + doc + location + callers + callees without opening the file.</goal>
       <cmd>ctx-optimize card "&lt;exact label&gt;" --json  [--include-content]</cmd>
-      <note>`ambiguous_callers` / the `unattributed callers: N` line means `called_by` is INCOMPLETE BY DESIGN: the symbol's name is defined more than once, so those call sites were never attributed (a guess would be worse than a gap — ADR 2026-07-25-abstain-out-loud). Traversal verbs (affected/hubs/path/explain/change-plan) exclude AMBIGUOUS edges too. To see the candidates: `edges --relation calls --confidence AMBIGUOUS --to &lt;node-id&gt;`; to settle it, grep the bare name. Never present `called_by` as the full caller set while that line is present.</note>
+      <note>`ambiguous_callers` / the `unattributed callers: N` line means `called_by` is INCOMPLETE BY DESIGN — a guess would be worse than a gap (ADRs 2026-07-25-abstain-out-loud, 2026-07-25-method-call-resolution). Two causes, and the edge carries which one in `metadata.ambiguous_reason`: `name-collision` (the name is defined more than once — grep the bare name) and `unresolved-receiver` (a METHOD called through a receiver whose type was never established; the store holds only this repo's declarations, so it cannot distinguish `err.Error()` from a call to your own `Error` — grep `\.&lt;Method&gt;(` and check each receiver's type). Traversal verbs (affected/hubs/path/explain/change-plan) exclude AMBIGUOUS edges too, so blast radius for a method is a FLOOR, not the full set. To walk them anyway, re-run the SAME verb with `--include-ambiguous` (ADR 2026-07-26-include-ambiguous): widened rows are marked `?` or listed under a MAYBE heading and are candidates to verify, never callers — the fact fields (`called_by`, `incoming`) stay facts-only whatever flags you pass. For a flat list instead: `edges --relation calls --confidence AMBIGUOUS --to &lt;node-id&gt;`. Never present `called_by` as the full caller set while that line is present.</note>
       <note>Alias: `node`. Wants the node's LABEL exactly. Unsure? `query` the short name, copy the label from the hit, then `card` it. `--include-content` returns the full verbatim body inline (read from the source file at answer time) — use it instead of opening the file. Credential-shaped lines are `[redacted]`, including without the flag; that is the hard rule that a secret's VALUE must never reach model context, so do not route around it with a file read.</note>
     </route>
 
@@ -68,9 +68,30 @@
       <cmd>ctx-optimize hubs --top 10 --json</cmd>
     </route>
 
+    <route id="store-delete" group="manage">
+      <when>delete the store, remove the graph, wipe the index for this repo, start over completely</when>
+      <goal>Delete THIS repo's stores — root store AND every module store, at any depth. DESTRUCTIVE: ask the user before running it.</goal>
+      <cmd>ctx-optimize store delete   [--yes] [--path DIR]</cmd>
+      <note>Always the whole repo, whichever directory you run it from; a sibling repo is never in scope (the key resolves like add/status, there is no path argument). Dry-run by default: it prints the full blast radius then asks [y/N]. Off a terminal nothing is asked and nothing is deleted — `--yes` is the only non-interactive path. `.ctxoptimize/` is NEVER touched: that is committed config, not a cache. Audited. Re-gather with `add .` — it takes seconds. NEVER run this on a user's behalf without asking; prefer `sync` / `add .` if the store merely looks stale.</note>
+    </route>
+
+    <route id="rebuild" group="build">
+      <when>resync properly, rebuild from scratch, the store looks wrong, stale nodes that will not go away, I deleted an adapter but its nodes are still there</when>
+      <goal>Drop the store(s) this add writes, then gather into an empty one — the guaranteed clean slate.</goal>
+      <cmd>ctx-optimize add . --rebuild</cmd>
+      <note>Needed because Replace is producer-SCOPED: a producer that stops running is never replaced, so a RETIRED producer's nodes (deleted adapter script, removed grammar pack) survive every incremental gather — even under --force. A normal `add` now REPORTS them (`retired producer(s) still in the graph`), and a complete `--force` run prunes them; --rebuild is the certain path. Uses the same task plan as the gather so it cannot drop a key the gather will not rewrite; nested module stores are kept (each is rebuilt by its own task); audited. Destructive — ask first.</note>
+    </route>
+
+    <route id="resolutions" group="customize">
+      <when>the store keeps abstaining on the same method, err.Error() shows as unattributed every time, settle an ambiguity permanently, stop re-deriving the same answer</when>
+      <goal>Write a confirmed resolution into the repo so it is inherited by the whole team instead of re-derived every session.</goal>
+      <cmd>.ctxoptimize/resolutions.json → {"external_methods": ["Error", "String", "Close"]}</cmd>
+      <note>Bare METHOD names whose receivers are never types the repo owns. The store holds only the repo's own declarations, so it cannot tell `err.Error()` from a call to their own `Error` — it abstains and shows a shortlist; listing the name retires it. The ONE key that cannot make the graph wrong: consulted only on the abstention path, so it never deletes a resolved edge and there is no path from a declaration to an emitted edge. Receiver-qualified calls only. Malformed = HARD ERROR (bad JSON, unknown key, qualified name, parens, empty entry) because a silently ignored declaration is worse than none. A declared name matching nothing is reported every gather. PROPOSE it, do not write it unasked — it is an assertion about the user's code and only they know whether that method is theirs. `init` scaffolds resolutions.json.sample.</note>
+    </route>
+
     <route id="wiki" group="answer">
       <when>readable map of the module, architecture overview doc, human-readable summary of the graph</when>
-      <goal>Open the store's generated wiki (regenerated on every `add`).</goal>
+      <goal>Open (or rebuild) the store's generated wiki. Regenerated on every `add` UNLESS the repo sets `"wiki": false` in .ctxoptimize/config.json — this verb always builds a COMPLETE one, so "off" never means "unavailable".</goal>
       <cmd>open ~/ctxoptimize/&lt;name&gt;/wiki/index.md   # force regen: ctx-optimize wiki</cmd>
     </route>
 
@@ -99,7 +120,8 @@
 
     <route id="fresh" group="answer">
       <when>is the graph up to date, is the store stale, should I re-gather before trusting this</when>
-      <goal>One-line freshness verdict; exit 0 fresh / 1 stale / 2 unknown — the agent/hook gate before trusting an answer.</goal>
+      <goal>One-line freshness verdict; exit 0 fresh / 1 stale / 2 unknown / 3 PARTIAL — the agent/hook gate before trusting an answer.</goal>
+      <note>Exit 3 = PARTIAL: the last gather had producer LANES FAIL, so the store is INCOMPLETE — a producer (code, docs, manifests, an adapter) is missing from the graph, not merely out of date. Never answer from a partial store without saying so; the verdict and `--json` name which lanes failed. Different fix from stale: re-gathering may not help if the lane is still broken.</note>
       <cmd>ctx-optimize fresh --json</cmd>
     </route>
 

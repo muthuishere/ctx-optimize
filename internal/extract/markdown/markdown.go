@@ -97,7 +97,7 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 			}
 			return nil
 		}
-		extractFile(b, rel, string(data))
+		extractFile(b, rel, string(data), ext == ".md")
 		return nil
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ func extractConfig(b *schema.Batch, rel, content string) {
 		FileType: "config", Source: rel, Location: "L1",
 	})
 	usedSlugs := map[string]int{}
-	lines := strings.Split(content, "\n")
+	lines := splitLines(content)
 	// S2: a `key: |` / `key: >` header (any indicator) opens a literal/folded
 	// block whose body is DATA. Skip every line indented deeper than the
 	// opening key until a non-blank line at or below that indent closes it.
@@ -274,14 +274,45 @@ func blockScalarHeader(val string) bool {
 	return digits <= 1 && chomp <= 1
 }
 
-func extractFile(b *schema.Batch, rel, content string) {
+// extractFile emits the per-file document node, and — only for real markdown —
+// its heading sections and link edges.
+//
+// A `.txt` gets the document node and nothing else. `#` is a comment character
+// in shell, python, conf, ini, requirements.txt, CMakeLists.txt, robots.txt and
+// licence headers; it is a heading only in markdown. Measured over 30,289 real
+// `.txt` files across 22 repos: 6,902 section nodes, of which **95.1% were
+// comment lines or mid-sentence prose fragments**. Linux's 1,695 `.txt` files
+// yielded ZERO genuine headings. And they were not harmless — they ranked FIRST:
+// junk `.txt` sections took 26–30% of top-10 query slots wherever they existed,
+// and one repo's 35 `.txt` files produced 16.1% of its entire store.
+//
+// A threshold rule ("is `#` a comment char in this file?") was designed and
+// rejected: it needed two invented numbers, and this repo already refused a
+// wiki page cap for exactly that reason. 95% junk means the extraction is not
+// worth having, not that it needs tuning.
+//
+// The cost, stated: a `.txt` that genuinely IS markdown (`llms.txt`, LLM prompts
+// kept as `.txt`, a manuscript) loses its sections and becomes reachable by
+// filename rather than by content. The fix for those is to name the file `.md`,
+// and the store's own tool-choice ladder already routes literal-text questions
+// to grep. That is a smaller, more predictable cost than a heuristic misfiring
+// in ways nobody can enumerate.
+//
+// The document node is kept UNCONDITIONALLY: internal/extract/manifests emits
+// `declares` edges anchored on the file path and no node of its own, so this is
+// the only node backing every python dependency edge — and PartitionValidate
+// does not quarantine absent endpoints, so dropping it would dangle silently.
+func extractFile(b *schema.Batch, rel, content string, markdown bool) {
 	docID := rel
 	b.Nodes = append(b.Nodes, schema.Node{
 		ID: docID, Label: filepath.Base(rel), Kind: "document",
 		FileType: "document", Source: rel, Location: "L1",
 	})
+	if !markdown {
+		return
+	}
 
-	lines := strings.Split(content, "\n")
+	lines := splitLines(content)
 	var stack []openSection
 	sectionStart := map[string]int{}
 	usedSlugs := map[string]int{} // repeated headings ("Files changed") get -2, -3…
@@ -303,7 +334,14 @@ func extractFile(b *schema.Batch, rel, content string) {
 		lineNo := i + 1
 		if m := headingRe.FindStringSubmatch(line); m != nil {
 			level := len(m[1])
-			title := m[2]
+			title := strings.TrimSpace(m[2])
+			// A heading with no text is not a section: there is no name to
+			// cite and no slug to build an id from. Emitting one produced a
+			// node with an empty label, which the schema correctly refuses —
+			// better to never emit it than to have Validate quarantine it.
+			if title == "" || slug(title) == "" {
+				continue
+			}
 			closeTo(level, lineNo-1)
 			s := slug(title)
 			usedSlugs[s]++
@@ -354,6 +392,20 @@ func currentScope(stack []openSection, docID string) string {
 		return stack[len(stack)-1].id
 	}
 	return docID
+}
+
+// splitLines splits on \n and strips a trailing \r, so a CRLF file behaves
+// exactly like an LF one. Without this the CR rides along into every value we
+// store, and a bare "# " heading in a CRLF file yields the title "\r" — which
+// slugs to nothing and emitted a node with an EMPTY label. Chromium's
+// third_party/hunspell_dictionaries/*.txt (shell-comment licence headers, CRLF)
+// quarantined 18 nodes exactly that way.
+func splitLines(content string) []string {
+	lines := strings.Split(content, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimSuffix(l, "\r")
+	}
+	return lines
 }
 
 func slug(title string) string {
