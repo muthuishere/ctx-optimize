@@ -110,7 +110,22 @@ footer a{color:var(--muted)}
 .docshell > *{min-width:0}
 .sidebar{grid-column:1;grid-row:1;position:sticky;top:60px;max-height:calc(100vh - 60px);
   overflow-y:auto;overscroll-behavior:contain;padding:26px 18px 48px 0;
-  border-right:1px solid var(--border);font-size:.88rem}
+  font-size:.88rem}
+/* The divider is drawn on the GRID, not on .sidebar: a bordered sticky element
+   is only as tall as its own scroll box, so the rule dead-ended mid-page as
+   soon as the sidebar ran out of items. */
+.docshell{position:relative}
+.docshell::before{content:"";position:absolute;top:0;bottom:0;left:calc(30px + 262px + 19px);
+  width:1px;background:var(--border);pointer-events:none}
+/* Scroll, but don't paint a second scrollbar next to the page's own. The
+   sidebar and rail are sticky panes, not documents — a visible track next to
+   the window scrollbar reads as a bug. Thumb fades in on hover only. */
+.sidebar,.rail{scrollbar-width:thin;scrollbar-color:transparent transparent}
+.sidebar:hover,.rail:hover{scrollbar-color:var(--border) transparent}
+.sidebar::-webkit-scrollbar,.rail::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-track,.rail::-webkit-scrollbar-track{background:transparent}
+.sidebar::-webkit-scrollbar-thumb,.rail::-webkit-scrollbar-thumb{background:transparent;border-radius:3px}
+.sidebar:hover::-webkit-scrollbar-thumb,.rail:hover::-webkit-scrollbar-thumb{background:var(--border)}
 .rail{grid-column:3;grid-row:1;position:sticky;top:60px;max-height:calc(100vh - 60px);
   overflow-y:auto;overscroll-behavior:contain;padding:34px 0 40px;font-size:.82rem}
 .docmain{grid-column:2;grid-row:1;padding-bottom:24px}
@@ -143,6 +158,7 @@ footer a{color:var(--muted)}
 .rail .toc a:hover{color:var(--accent);border-left-color:var(--accent);text-decoration:none}
 @media (max-width:1240px){
   .docshell{grid-template-columns:240px minmax(0,1fr);column-gap:32px}
+  .docshell::before{left:calc(30px + 240px + 15px)}
   .rail{grid-column:2;grid-row:1;position:static;max-height:none;overflow:visible;
     padding:26px 0 0;border-bottom:1px solid var(--border)}
   .docmain{grid-column:2;grid-row:2}
@@ -152,6 +168,7 @@ footer a{color:var(--muted)}
 }
 @media (max-width:900px){
   .docshell{grid-template-columns:minmax(0,1fr);padding:0 22px}
+  .docshell::before{display:none}
   .sidebar{grid-column:1;grid-row:1;position:static;max-height:none;overflow:visible;
     border-right:none;border-bottom:1px solid var(--border);padding:18px 0 12px}
   .rail{grid-column:1;grid-row:2}
