@@ -103,6 +103,77 @@ footer a{color:var(--muted)}
   .wrap{padding:0 22px}
   nav ul{gap:18px}
 }
+
+/* ---- docs shell: persistent left sidebar + on-this-page rail ---- */
+.docshell{max-width:1560px;margin:0 auto;padding:0 30px;display:grid;
+  grid-template-columns:262px minmax(0,1fr) 208px;column-gap:40px;align-items:start}
+.docshell > *{min-width:0}
+.sidebar{grid-column:1;grid-row:1;position:sticky;top:60px;max-height:calc(100vh - 60px);
+  overflow-y:auto;overscroll-behavior:contain;padding:26px 18px 48px 0;
+  border-right:1px solid var(--border);font-size:.88rem}
+.rail{grid-column:3;grid-row:1;position:sticky;top:60px;max-height:calc(100vh - 60px);
+  overflow-y:auto;overscroll-behavior:contain;padding:34px 0 40px;font-size:.82rem}
+.docmain{grid-column:2;grid-row:1;padding-bottom:24px}
+.docmain .wrap{max-width:100%;padding:0}
+.sbtitle{font-family:var(--mono);font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:14px}
+.sbgroup{border-bottom:1px solid var(--border)}
+.sbgroup:last-of-type{border-bottom:none}
+.sbgroup > summary{cursor:pointer;list-style:none;padding:10px 6px 10px 0;color:var(--text);
+  font-weight:600;font-size:.85rem;display:flex;align-items:center;justify-content:space-between}
+.sbgroup > summary::-webkit-details-marker{display:none}
+.sbgroup > summary::after{content:"+";color:var(--dim);font-family:var(--mono);font-size:.9rem}
+.sbgroup[open] > summary::after{content:"\2212"}
+.sbgroup > summary:hover{color:var(--accent)}
+.sbgroup ul{list-style:none;margin:0 0 12px;padding:0}
+.sbgroup li a{display:block;padding:5px 10px;margin-left:2px;border-left:1px solid var(--border);
+  color:var(--muted);font-size:.83rem;line-height:1.45}
+.sbgroup li a:hover{color:var(--text);border-left-color:var(--border2);text-decoration:none}
+.sbgroup li a.local{color:var(--text)}
+.sbgroup li a.cur{color:var(--accent);font-weight:600;border-left:2px solid var(--accent);
+  background:rgba(74,222,128,.06)}
+.sbfoot{margin-top:22px;padding-top:16px;border-top:1px solid var(--border);
+  color:var(--dim);font-size:.78rem}
+.sbfoot a{color:var(--muted)}
+.railhead{font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:12px}
+.rail .toc{margin:0;display:flex;flex-direction:column;gap:0;flex-wrap:nowrap}
+.rail .toc a{border:none;border-left:1px solid var(--border);border-radius:0;
+  padding:5px 10px;font-family:var(--sans);font-size:.8rem;color:var(--muted)}
+.rail .toc a:hover{color:var(--accent);border-left-color:var(--accent);text-decoration:none}
+@media (max-width:1240px){
+  .docshell{grid-template-columns:240px minmax(0,1fr);column-gap:32px}
+  .rail{grid-column:2;grid-row:1;position:static;max-height:none;overflow:visible;
+    padding:26px 0 0;border-bottom:1px solid var(--border)}
+  .docmain{grid-column:2;grid-row:2}
+  .rail .toc{flex-direction:row;flex-wrap:wrap;gap:8px;padding-bottom:18px}
+  .rail .toc a{border:1px solid var(--border);border-radius:20px;padding:5px 12px}
+  .rail .toc a:hover{border-color:var(--border2)}
+}
+@media (max-width:900px){
+  .docshell{grid-template-columns:minmax(0,1fr);padding:0 22px}
+  .sidebar{grid-column:1;grid-row:1;position:static;max-height:none;overflow:visible;
+    border-right:none;border-bottom:1px solid var(--border);padding:18px 0 12px}
+  .rail{grid-column:1;grid-row:2}
+  .docmain{grid-column:1;grid-row:3}
+  .sbfoot{display:none}
+}
+
+.sbmenu > summary{display:none}
+.sbmenu-bar{cursor:pointer;list-style:none}
+.sbmenu-bar::-webkit-details-marker{display:none}
+@media (max-width:900px){
+  .sidebar{padding:12px 0 10px}
+  .sbmenu > summary{display:flex;align-items:center;justify-content:space-between;
+    padding:12px 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);
+    color:var(--text);font-weight:600;font-size:.9rem}
+  .sbmenu > summary::after{content:"\25be";color:var(--dim);font-family:var(--mono)}
+  .sbmenu[open] > summary::after{content:"\25b4"}
+  .sbmenu > summary:hover{color:var(--accent)}
+  .sbbody{max-height:52vh;overflow-y:auto;overscroll-behavior:contain;
+    margin-top:10px;padding:4px 14px;border:1px solid var(--border);border-radius:10px}
+  .sbtitle{display:none}
+}
 </style>
 </head>
 <body>
@@ -115,12 +186,91 @@ footer a{color:var(--muted)}
   </ul>
 </div></nav>
 
-<header class="hero"><div class="wrap">
-  <div class="kicker"><a href="docs.html" style="color:inherit">Docs</a> › how it works</div>
-  <h1>The mental model an agent<br><span class="ghost">actually needs.</span></h1>
-  <p class="lede">Not "we have a graph." Here's what's actually on disk, how a fact gets in, how honest it is once it's there, and how a question finds it in milliseconds instead of a grep-and-read chain. Everything below is what the binary really does — nothing aspirational.</p>
-  <p class="lede" style="margin-top:22px;font-size:.98rem">In the docs: <b>How it works</b> · <a href="docs.html">Reference</a> · <a href="cookbook.html">Cookbook</a> · <a href="use-cases.html">Use cases</a> · <a href="compare.html">Comparison &amp; benchmarks</a></p>
-  <div class="toc">
+
+<div class="docshell">
+<aside class="sidebar" aria-label="Docs navigation">
+<details class="sbmenu" open>
+<summary class="sbmenu-bar">Documentation menu</summary>
+<div class="sbbody">
+<div class="sbtitle">Documentation</div>
+<details class="sbgroup" open><summary>Start here</summary><ul>
+<li><a href="docs.html">Overview</a></li>
+<li><a href="docs.html#install">Install</a></li>
+<li><a href="docs.html#quickstart">Quick start</a></li>
+<li><a href="docs.html#skill">The agent skill</a></li>
+</ul></details>
+<details class="sbgroup" open><summary>The verbs</summary><ul>
+<li><a href="docs.html#intent">Pick a verb by intent</a></li>
+<li><a href="docs.html#cli">CLI reference</a></li>
+<li><a href="docs.html#cli-build">Build &amp; refresh</a></li>
+<li><a href="docs.html#cli-ask">Ask</a></li>
+<li><a href="docs.html#cli-list">List &amp; filter — no jq</a></li>
+<li><a href="docs.html#cli-manage">Manage &amp; share</a></li>
+</ul></details>
+<details class="sbgroup" open><summary>Cookbook</summary><ul>
+<li><a href="cookbook.html">All recipes</a></li>
+<li><a href="cookbook.html#daily">Daily questions</a></li>
+<li><a href="cookbook.html#editing">Before you edit</a></li>
+<li><a href="cookbook.html#trust">Trust &amp; freshness</a></li>
+<li><a href="cookbook.html#external">Beyond code</a></li>
+<li><a href="cookbook.html#monorepo">Monorepos</a></li>
+<li><a href="cookbook.html#team">Team &amp; onboarding</a></li>
+</ul></details>
+<details class="sbgroup" open><summary>Use cases</summary><ul>
+<li><a href="use-cases.html">All workflows</a></li>
+<li><a href="use-cases.html#onboarding">Onboarding a repo</a></li>
+<li><a href="use-cases.html#refactoring">Safe refactoring</a></li>
+<li><a href="use-cases.html#impact">Impact analysis</a></li>
+<li><a href="use-cases.html#monorepos">Monorepos</a></li>
+<li><a href="use-cases.html#sources">Docs + live schema</a></li>
+</ul></details>
+<details class="sbgroup" open><summary>Benchmarks</summary><ul>
+<li><a href="compare.html">Comparison — the whole board</a></li>
+<li><a href="compare.html#graded">Graded quality run</a></li>
+<li><a href="compare.html#kernel">Kernel scoreboard</a></li>
+<li><a href="compare.html#performance">Gather &amp; query tables</a></li>
+<li><a href="compare.html#each">Where each rival wins</a></li>
+</ul></details>
+<details class="sbgroup" open><summary>Concepts</summary><ul>
+<li><a href="concepts.html" class="cur" aria-current="page">How it works</a></li>
+<li><a href="concepts.html#shape" class="local">The shape of the graph</a></li>
+<li><a href="concepts.html#kinds" class="local">Node &amp; edge kinds</a></li>
+<li><a href="concepts.html#provenance" class="local">EXTRACTED vs INFERRED</a></li>
+<li><a href="concepts.html#freshness" class="local">Freshness &amp; HEAD-gating</a></li>
+<li><a href="concepts.html#extraction" class="local">Tree-sitter on WASI</a></li>
+<li><a href="concepts.html#monorepo" class="local">Monorepo federation</a></li>
+<li><a href="concepts.html#retrieval" class="local">How a query answers</a></li>
+</ul></details>
+<details class="sbgroup" open><summary>Beyond code</summary><ul>
+<li><a href="docs.html#sources">Native sources</a></li>
+<li><a href="docs.html#adapters">Adapters</a></li>
+<li><a href="docs.html#languages">Languages &amp; grammar packs</a></li>
+<li><a href="docs.html#packs">Route &amp; manifest packs</a></li>
+</ul></details>
+<details class="sbgroup" open><summary>Configuration</summary><ul>
+<li><a href="docs.html#repo-config">Repo config</a></li>
+<li><a href="docs.html#global-config">Global settings</a></li>
+<li><a href="docs.html#env">Environment</a></li>
+<li><a href="docs.html#multi-module">Multi-module</a></li>
+<li><a href="docs.html#remotes">Remotes &amp; sharing</a></li>
+</ul></details>
+<details class="sbgroup" open><summary>Under the hood</summary><ul>
+<li><a href="docs.html#store">Store layout</a></li>
+<li><a href="docs.html#index">The lookup index</a></li>
+<li><a href="docs.html#learning">Learning loop</a></li>
+<li><a href="docs.html#contract">The contract</a></li>
+</ul></details>
+<details class="sbgroup"><summary>Release notes</summary><ul>
+<li><a href="docs.html#v013">v0.13.0 — the lookup index</a></li>
+<li><a href="docs.html#v04">v0.4 — scripted remotes, up</a></li>
+<li><a href="docs.html#v03">v0.3 — routes, deps, dashboard</a></li>
+</ul></details>
+<div class="sbfoot"><a href="index.html">&larr; Home</a> · <a href="https://github.com/muthuishere/ctx-optimize">GitHub</a> · <a href="https://www.npmjs.com/package/@muthuishere/ctx-optimize">npm</a></div>
+</div>
+</details>
+</aside>
+<aside class="rail" aria-label="On this page"><div class="railhead">On this page</div>
+<div class="toc">
     <a href="#shape">The shape of the graph</a>
     <a href="#kinds">Node &amp; edge kinds</a>
     <a href="#provenance">EXTRACTED vs INFERRED</a>
@@ -130,6 +280,13 @@ footer a{color:var(--muted)}
     <a href="#monorepo">Monorepo federation</a>
     <a href="#retrieval">How a query answers</a>
   </div>
+</aside>
+<main class="docmain">
+
+<header class="hero"><div class="wrap">
+  <div class="kicker"><a href="docs.html" style="color:inherit">Docs</a> › how it works</div>
+  <h1>The mental model an agent<br><span class="ghost">actually needs.</span></h1>
+  <p class="lede">Not "we have a graph." Here's what's actually on disk, how a fact gets in, how honest it is once it's there, and how a question finds it in milliseconds instead of a grep-and-read chain. Everything below is what the binary really does — nothing aspirational.</p>
 </div></header>
 
 <section class="doc" id="shape"><div class="wrap">
@@ -257,6 +414,9 @@ $ ctx-optimize fresh; echo $?
   <p class="sec-sub">There's no vector index and no model in this path. <code>query</code> ranks nodes with IDF-weighted lexical matching plus prefix and trigram tiers over labels, doc comments, and file paths, then returns complete hits — id, kind, file, line range, signature, doc — under a hard token budget, so an agent gets citeable facts instead of a pointer it still has to chase.</p>
   <p class="body">Pick the verb by intent, not habit: <code>query</code> to find something from words, <code>card</code> to inspect a known symbol without opening its file, <code>change-plan</code> for the one composed call an edit needs (signature + callers + blast radius + which tests to run), <code>affected</code> for blast radius alone, <code>path</code> to connect two symbols, <code>explain</code> for plain-language context, <code>hubs</code> to orient in an unfamiliar repo. The full breakdown, with real commands, is the <a href="cookbook.html">cookbook</a>.</p>
 </div></section>
+
+</main>
+</div>
 
 <footer><div class="wrap">
   <div>ctx-<em style="color:var(--accent);font-style:normal">optimize</em> — gather once, refresh cheaply, answer from the store.</div>

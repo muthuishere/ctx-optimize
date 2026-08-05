@@ -32,23 +32,30 @@ useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
    8 graded "who calls this / what breaks" questions, 3 runs, n=36 per arm.
    Zero false claims and zero empty answers, in 15 tool calls per run against
    grep's 42.7. [Full method + failures](proof/agent/RESULTS-QUALITY.md).
-2. **Fastest to build, by a wide margin** — linux v6.9 in **118.18s** vs
+2. **The agent finishes sooner even though each query is slower** — ripgrep
+   answers a single lookup faster than we do (1.59s vs 3.70s on the kernel).
+   But an agent does not make one call: on the graded run it made **42.7 tool
+   calls per question with grep against our 15.0** — grep, read a file, grep
+   again, chase a caller, re-read. End to end it finished in **40.1s with
+   ctx-optimize against 65.5s with grep, 1.6x faster overall**, and answered
+   67% correctly against 35%. Per-call latency is not the unit; the question is.
+3. **Fastest to build, by a wide margin** — linux v6.9 in **118.18s** vs
    CodeGraph's 289.86s and graphify's 527.72s; GitNexus did not finish in 45
    minutes. A 1,476-file repo in **0.648s** vs 5.123s / 1.323s / 10.649s. And
    the graph is the most complete: 2,849,719 nodes in 2.0GB, against
    CodeGraph's 1,838,442 in 4.1GB.
-3. **Instant symbol lookup** — `card` on the kernel resolves an exact symbol in
+4. **Instant symbol lookup** — `card` on the kernel resolves an exact symbol in
    **under 20ms** (it was 1.8s), via a plain-text index that is 20% of the
    graph. Fuzzy and ambiguous names still cost a full scan, deliberately: they
    rank against every node, and refusing to guess is the point.
-4. **Complete answers, not pointer lists** — `card` returns signature + doc +
+5. **Complete answers, not pointer lists** — `card` returns signature + doc +
    callers/callees with `file:line`, so the agent doesn't reopen the file.
    `change-plan` composes the whole "I'm about to edit X" answer — callers,
    blast radius, which tests to run — in a single call. What we measured and
    kept: **impact-answer correctness**, onboarding traces, wall time. What we
    measured and dropped: token savings — Claude Code −0.2%, Codex +3.0%, so we
    don't claim it ([CRITIQUE.md](docs/CRITIQUE.md)).
-5. **Your infrastructure goes in the graph too** — databases, buckets, queues
+6. **Your infrastructure goes in the graph too** — databases, buckets, queues
    and APIs enter by env-var **name**; the value is a URL and its scheme picks
    the connector. Nine of them: **postgres · mysql · mongodb · redis · kafka ·
    nats · s3 · mssql · openapi**. The secret value is never read into config,
@@ -58,7 +65,7 @@ useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
    export BILLING_DB_URL='postgres://reader:$PG_PASS@db.internal:5432/billing'
    ctx-optimize add BILLING_DB_URL      # same door for s3, kafka, mongo, redis, nats, mssql, openapi
    ```
-5. **Extensible without a fork** — languages are drop-in tree-sitter
+7. **Extensible without a fork** — languages are drop-in tree-sitter
    [grammar packs](docs/languages-packs.md) (12 embedded, `languages add` builds
    any other), external systems are [dropped scripts](docs/adapters.md) through
    one validated JSON door, and the [remote is your script](docs/remote-github.md).
@@ -110,7 +117,8 @@ Full reference with when-and-why for each: [docs/cli.md](docs/cli.md).
 
 ## Proof
 
-Apple M5 Pro (18 cores, 48 GB). ctx-optimize v0.12.0, graphify 0.9.12,
+Apple M5 Pro (18 cores, 48 GB). ctx-optimize on the build that became
+v0.13.0, graphify 0.9.12,
 CodeGraph 1.5.0, GitNexus 1.6.9, ast-grep 0.45.0, ripgrep 15.2.0. Each tool on
 its own fastest deterministic path, no LLM anywhere. Cold gather best-of-3,
 query median-of-5.

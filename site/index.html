@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ctx-optimize — ask what breaks, get an answer, not grep hits</title>
-<meta name="description" content="A deterministic code knowledge graph for coding agents. On the Linux kernel we are 4.7x SLOWER than CodeGraph at answering — and we answered 4 of 5 questions usefully to their 0 of 5. We're not the fastest to answer. We're the one that answers. One static Go binary: no database, no server, no LLM, no embeddings, no MCP.">
+<meta name="description" content="A grep-armed agent was asked who calls requestWithVars. It found the right files, named zero callers, and invented the line numbers — recorded, not hypothesised. ctx-optimize answers it in one call: 79% vs 29% correct on impact questions, 15.0 vs 42.7 tool calls, 40.1s vs 65.5s. ripgrep is still faster per call, and grep still wins 'where is X'.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -54,6 +54,14 @@ h1 .ghost{color:var(--dim)}
 .hero pre{margin-top:34px;width:100%;max-width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;font-family:var(--mono);font-size:clamp(.72rem,2.6vw,.85rem);line-height:1.9;overflow-x:auto;color:var(--muted)}
 .hero pre .g{color:var(--accent)}
 .hero pre .c{color:var(--dim)}
+.hero pre .r{color:var(--contrast)}
+
+/* side-by-side terminal duel */
+.duel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:34px}
+.duel pre{margin-top:0;min-width:0}
+.duel pre.them{border-left:3px solid var(--contrast)}
+.duel pre.us{border-left:3px solid var(--accent)}
+.duel .lbl{display:block;font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
 
 /* section headers */
 .sec-kicker{font-family:var(--mono);font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
@@ -95,6 +103,9 @@ h3.sub{font-family:var(--disp);font-size:1.15rem;font-weight:700;margin-top:44px
 
 /* verdict strip */
 .verdicts{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:34px}
+.verdicts.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.verdicts.four .verdict{padding:22px}
+.verdicts.four .n{font-size:1.5rem}
 .verdict{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:24px 26px}
 .verdict .n{font-family:var(--disp);font-size:1.8rem;font-weight:700;letter-spacing:-.02em;margin-bottom:6px}
 .verdict.them .n{color:var(--contrast)}
@@ -147,11 +158,15 @@ footer a{color:var(--muted)}
 .reveal.on{opacity:1;transform:none}
 @media (prefers-reduced-motion: reduce){.reveal{opacity:1;transform:none;transition:none}}
 
+@media (max-width:1000px){
+  .verdicts.four{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .duel{grid-template-columns:1fr}
+}
 @media (max-width:820px){
   .wrap{padding:0 22px}
   nav ul{gap:18px}
   section{padding:64px 0}
-  .how .grid,.more .grid,.verdicts{grid-template-columns:1fr}
+  .how .grid,.more .grid,.verdicts,.verdicts.four{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -165,24 +180,100 @@ footer a{color:var(--muted)}
   </ul>
 </div></nav>
 
-<!-- 1 · the claim -->
+<!-- 1 · the wound, measured -->
 <header class="hero"><div class="wrap">
-  <div class="kicker">measured 2026-08 · v0.12.0 · Apple M5 Pro, 18 cores, 48 GB</div>
-  <h1>Ask what breaks.<br>Get an answer,<br><span class="ghost">not grep hits.</span></h1>
-  <p class="lede">A deterministic code knowledge graph for coding agents. <b>query</b>, <b>card</b>, <b>change-plan</b>, <b>affected</b>, <b>path</b> — every one returns a resolved symbol with its signature, its <code>file:line</code> and its callers. One static Go binary. No database, no server, no LLM, no embeddings, no MCP.</p>
-  <p class="claim">We're not the fastest to answer.<br>We're the one that answers.
-    <span>On the Linux kernel, CodeGraph beat us to the reply by 4.7&times; — and returned nothing useful on all five questions. The scoreboard below leads with our losses because that is the only way the wins mean anything.</span></p>
+  <div class="kicker">observed in a graded benchmark run · gorilla/mux · 3 runs, n = 36 answers per arm</div>
+  <h1>It grepped. It found<br>the right files. It named<br><span class="ghost">zero callers.</span></h1>
+  <p class="lede">We asked a grep-armed agent <i>which functions call <code>requestWithVars</code></i>. It ran one search, got matching <b>lines</b>, and answered <i>"mux.go at line 4, test_helpers.go at line 3"</i> — the ordinal positions in grep's own output. <b>The real call sites are <code>mux.go:209</code> and <code>test_helpers.go:18</code></b>, inside <code>Router.ServeHTTP</code> and <code>SetURLVars</code>. Neither was named; both line numbers were invented. Scored 0/2 by a deterministic grader that never saw which tool produced the answer. <b>This is a recorded transcript, not a scenario we imagined.</b></p>
+
+  <div class="duel" id="top-transcript">
+    <pre class="them"><span class="lbl">arm a · shell + ripgrep</span><span class="c">$ grep -r 'requestWithVars' .   → 189 bytes of matching LINES</span>
+
+The functions that call `requestWithVars` are:
+ 1. In `mux.go` at line <span class="r">4</span>: `req = requestWithVars(req, match.Vars)`
+ 2. In `test_helpers.go` at line <span class="r">3</span>: `return requestWithVars(r, val)`
+
+<span class="r">✗ no caller named · line numbers fabricated · 0/2</span></pre>
+    <pre class="us"><span class="lbl">arm b · ctx-optimize</span><span class="c">$ </span><span class="g">ctx-optimize affected requestWithVars</span>
+
+The following functions call `requestWithVars`:
+ 1. <span class="g">Router.ServeHTTP</span>    — mux.go, lines 188-229
+ 2. <span class="g">SetURLVars</span>          — test_helpers.go, lines 17-19
+ 3. <span class="g">ExampleSetURLVars</span>   — mux_test.go, lines 2549-2556
+
+<span class="g">✓ one call · resolved symbols · real ranges · 2/2</span></pre>
+  </div>
+  <p class="lede" style="margin-top:22px;max-width:820px">Grep hands over lines. The store hands over resolved symbols. Every line handed over is another read, another grep, another round trip — and that is what the rest of these numbers are made of.</p>
+
+  <div class="verdicts four">
+    <div class="verdict us">
+      <div class="n">79% <span style="color:var(--dim);font-size:.7em">vs 29%</span></div>
+      <p><b>Correct facts on "who calls this / what breaks if I change this"</b> — 8 questions, against a grep-armed agent on the same corpus with the same model.</p>
+    </div>
+    <div class="verdict us">
+      <div class="n">15.0 <span style="color:var(--dim);font-size:.7em">vs 42.7</span></div>
+      <p><b>Tool calls per run.</b> About a third of the shell agent's round trips, on the identical twelve questions.</p>
+    </div>
+    <div class="verdict us">
+      <div class="n">40.1 s <span style="color:var(--dim);font-size:.7em">vs 65.5 s</span></div>
+      <p><b>Wall seconds per run — 1.6&times; faster end to end</b>, assembled entirely out of individually <i>slower</i> queries.</p>
+    </div>
+    <div class="verdict us">
+      <div class="n">0 <span style="color:var(--dim);font-size:.7em">vs 4</span></div>
+      <p><b>Empty answers</b>, and <b>0 against 3</b> runs that hit the step cap with nothing to show. Overall correctness <b>67%</b> against 35% shell, 40% graphify.</p>
+    </div>
+  </div>
+
+  <div class="note red"><b>Now the part that cuts the other way.</b> <b>ripgrep is faster than us on every single call</b> — 1.59&nbsp;s to our 3.70&nbsp;s on the Linux kernel — and grep <b>wins the "where is X" questions outright, 47% to our 42%</b>. Both true, both ours to report. The point is not that grep is slow; it is that <b>per-call latency is not the unit</b>. An agent answering one real question makes dozens of calls, and the question is what gets scored.</div>
+
   <div class="cta">
-    <a class="btn btn-primary" href="#scoreboard">See the scoreboard</a>
+    <a class="btn btn-primary" href="#quality">The full graded run</a>
+    <a class="btn btn-ghost" href="#scoreboard">Where we lose</a>
     <a class="btn btn-ghost" href="#start">Quick start</a>
   </div>
-  <pre class="reveal"><span class="g">npm install -g @muthuishere/ctx-optimize</span>
+  <pre class="reveal"><span class="g">npm install -g @muthuishere/ctx-optimize</span>          <span class="c"># v0.13.0 · one static binary per platform</span>
 cd your-repo &amp;&amp; <span class="g">ctx-optimize up</span>          <span class="c"># one verb: bootstrap, gather, or pull</span></pre>
+  <p class="lede" style="font-size:.95rem;margin-top:20px">A deterministic code knowledge graph for coding agents. <b>query</b>, <b>card</b>, <b>change-plan</b>, <b>affected</b>, <b>path</b> — every one returns a resolved symbol with its signature, its <code>file:line</code> and its callers. No database, no server, no LLM, no embeddings, no MCP. Transcript above recorded in <a href="https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/RESULTS-QUALITY.md">proof/agent/RESULTS-QUALITY.md</a>.</p>
 </div></header>
 
 <hr class="sep">
 
-<!-- 2 · the losses, first -->
+<!-- 2 · the unit is the whole question -->
+<section id="quality"><div class="wrap">
+  <div class="sec-kicker">the unit is the whole question</div>
+  <h2 class="sec">The agent doesn't make one call. It makes dozens.</h2>
+  <p class="sec-sub">Per-query latency is the number everyone compares, and it is the wrong unit. <b>ripgrep is faster than us on every single call</b> — 1.59&nbsp;s to our 3.70&nbsp;s on the kernel, 11&nbsp;ms to our 12 on flask. But an agent answering a real question never makes one call. It greps, reads a file, greps again, chases a caller, re-reads, greps once more. A grep-driven agent is fast per call and needs <b>about three times as many calls</b>.</p>
+  <p class="sec-sub"><b>End to end, the agent using ctx-optimize finished the same 12 questions in 40.1&nbsp;s against the shell agent's 65.5&nbsp;s — 1.6&times; faster overall — while each individual query it made was slower.</b> Per-call latency does not determine whether the agent answers correctly, or when it finishes. The unit is the whole question.</p>
+
+  <h3 class="sub">The graded run, in full</h3>
+  <p class="body">Corpus <b>gorilla/mux</b> — small, modern, well-named Go, the terrain where plain grep is already strong. Three arms: a shell agent with ripgrep, the same agent with ctx-optimize, the same agent with graphify, one clone each so no arm can read another's artifacts. Twelve hand-verified questions, <b>3 runs, n = 36 answers per arm</b>, model <code>gpt-4o-mini</code>, deterministic grading — no LLM judge, the same rule for every arm.</p>
+
+  <div class="tablewrap"><table>
+    <tr><th>metric</th><th>shell (ripgrep)</th><th>ctx-optimize</th><th>graphify</th></tr>
+    <tr><td>Tool calls per run</td><td>42.7</td><td class="win">15.0</td><td>26.0</td></tr>
+    <tr><td>Wall seconds per run</td><td>65.5</td><td class="win">40.1</td><td>43.1</td></tr>
+    <tr><td>Correctness</td><td>35%</td><td class="win">67%</td><td>40%</td></tr>
+    <tr><td>Impact — "who calls this" (8 q)</td><td>29%</td><td class="win">79%</td><td>42%</td></tr>
+    <tr><td>Locate — "where is X" (4 q)</td><td class="win">47%</td><td class="lose">42%</td><td>36%</td></tr>
+    <tr><td>False claims</td><td class="win">0</td><td class="win">0</td><td>1</td></tr>
+    <tr><td>Empty answers</td><td class="lose">4</td><td class="win">0</td><td class="win">0</td></tr>
+    <tr><td>Hit the step cap (no answer)</td><td class="lose">3</td><td class="win">0</td><td class="win">0</td></tr>
+    <tr><td>Cost per run</td><td>$0.0051</td><td>$0.0040</td><td>$0.0070</td></tr>
+  </table></div>
+  <p class="fine"><b>On that last row:</b> $0.0040 against $0.0051 is what this run cost, on this corpus, with this model. It is <b>not</b> a token-savings claim and never becomes one — that claim was measured on frontier harnesses and killed (&minus;0.2% Claude Code, +3.0% Codex; see <a href="#never">below</a>).</p>
+
+  <h3 class="sub">The mechanism repeats across the run</h3>
+  <p class="body">The pair of transcripts at the <a href="#top-transcript">top of this page</a> is question <code>i4</code>, run 3, verbatim from <a href="https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/RESULTS-QUALITY.md">proof/agent/RESULTS-QUALITY.md</a> — and it is not a one-off. The same shape repeats on <code>i1</code>, where the shell arm answered <i>"Route (method not specified) — route.go:7, 8, 9, 10"</i> while the store returned <code>Host</code>, <code>Path</code>, <code>PathPrefix</code> and <code>Queries</code> with their signatures, and again on <code>i3</code>. That is what the wall-clock number is made of: <b>grep hands over lines, the store hands over resolved symbols</b>, and every line handed over is another read, another grep, another round trip.</p>
+
+  <div class="note red"><b>The locate row is the one to look at hardest: grep wins it, 47% to our 42%.</b> "Where is X" is exactly what a string search is for, and on a small, well-named Go router it beats a graph. Our advantage is confined to <b>"who calls this"</b> — 79% against 29% — because reverse call edges are a fact grep cannot produce at any speed. Honest headline: <i>ctx-optimize answers impact questions; grep answers location questions.</i></div>
+  <div class="note warn"><b>And part of the gap is the model, not the tools.</b> The agent is <code>gpt-4o-mini</code> — a cheap model that flounders on long grep transcripts. It ran <code>grep -r</code> without <code>-n</code>, and on one question burned 15 steps on malformed commands and returned nothing. A stronger model would close some of this on its own. What is fairly measured here is <i>the answer a cheap agent actually produces</i>, not the best answer grep could support. Small corpus, cheap model, n = 3 — evidence, not proof.</div>
+  <div class="note warn"><b>Two defects this run surfaced in our own tool, still open.</b> <b>(1)</b> Ambiguous method names collapse the call graph: <code>Match</code> is defined 8 times in mux, those edges are filtered out by the AMBIGUOUS rule, and <code>affected "Route.Match"</code> returns <i>only the containing file</i> — a confidently useless answer. <b>(2)</b> <code>query</code> ranking misfires on conceptual phrasing and loses locate questions to plain grep. Both are written up in full in <a href="https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/RESULTS-QUALITY.md">RESULTS-QUALITY.md</a>.</div>
+  <p class="body">Raw per-question JSON, the prompts, and the harness: <a href="proof/agent/">proof/agent/</a>.</p>
+</div></section>
+
+<hr class="sep">
+
+<!-- 3 · the losses, first -->
 <section id="scoreboard"><div class="wrap">
   <div class="sec-kicker red">where we lose</div>
   <h2 class="sec">Two tools answer the Linux kernel faster than we do. Neither one answered.</h2>
@@ -191,7 +282,7 @@ cd your-repo &amp;&amp; <span class="g">ctx-optimize up</span>          <span cl
   <div class="tablewrap"><table>
     <tr>
       <th>question</th>
-      <th>ctx-optimize 0.12.0</th>
+      <th>ctx-optimize</th>
       <th>CodeGraph 1.5.0</th>
       <th>graphify 0.9.12</th>
       <th>ripgrep 15.2.0</th>
@@ -257,31 +348,7 @@ cd your-repo &amp;&amp; <span class="g">ctx-optimize up</span>          <span cl
 
   <div class="note red"><b>graphify returned the same answer to four different questions.</b> <code>u64</code> or <code>u32</code> out of <code>netfilter/x_tables.h</code>, lines 507&ndash;508, for mq-deadline, ext4, spinlocks and TCP alike. That is not a wrong answer — it is a constant, emitted regardless of the question, at 23&nbsp;seconds a call.</div>
 
-  <div class="note warn"><b>Read this before you quote the table.</b> This is a <b>5-question judged sample against a stated rule</b>, not a blind graded run — one author, one grading pass, a corpus we also tune against. Five questions is a small n and we are reporting our own scorecard. Our own miss is in it. Treat it as evidence, not proof; the graded, multi-run study is <a href="#quality">below</a>.</div>
-</div></section>
-
-<hr class="sep">
-
-<!-- 3 · graded answer quality -->
-<section id="quality"><div class="wrap">
-  <div class="sec-kicker">answer quality · graded</div>
-  <h2 class="sec">The blind version: 12 hand-verified questions, 3 runs, an agent doing the asking.</h2>
-  <p class="sec-sub">Corpus <b>gorilla/mux</b>. Three arms — a shell agent with ripgrep, the same agent with ctx-optimize, the same agent with graphify. Twelve questions with hand-verified answers, three runs each (<b>n = 36 per arm</b>), graded by <code>gpt-4o-mini</code>.</p>
-
-  <div class="tablewrap"><table>
-    <tr><th>metric</th><th>shell (ripgrep)</th><th>ctx-optimize</th><th>graphify</th></tr>
-    <tr><td>Correctness</td><td>35%</td><td class="win">67%</td><td>40%</td></tr>
-    <tr><td>Impact — "who calls this" (8 q)</td><td>29%</td><td class="win">79%</td><td>42%</td></tr>
-    <tr><td>Locate — "where is X" (4 q)</td><td class="win">47%</td><td class="lose">42%</td><td>36%</td></tr>
-    <tr><td>False claims</td><td class="win">0</td><td class="win">0</td><td>1</td></tr>
-    <tr><td>Empty answers</td><td class="lose">4</td><td class="win">0</td><td class="win">0</td></tr>
-    <tr><td>Tool calls per run</td><td>42.7</td><td class="win">15.0</td><td>26.0</td></tr>
-    <tr><td>Cost per run</td><td>$0.0051</td><td class="win">$0.0040</td><td>$0.0070</td></tr>
-  </table></div>
-
-  <div class="note red"><b>grep wins the locate questions — 47% to our 42%.</b> "Where is X" is exactly what a string search is for, and on a small, well-named Go router it beats a graph. The gap opens on <b>"who calls this"</b>: 79% against 29%, because reverse call edges are a fact grep cannot produce at any speed.</div>
-  <div class="note warn"><b>And part of the gap is the model, not the tools.</b> The judge and the agent are <code>gpt-4o-mini</code> — a cheap model that flounders on long grep transcripts. A stronger model would close some of this on its own. What the numbers show is a <i>cheap</i> agent lifted by structured answers, not a tool ceiling.</div>
-  <p class="body">Raw per-question JSON, the prompts, and the harness: <a href="proof/agent/">proof/agent/</a>.</p>
+  <div class="note warn"><b>Read this before you quote the table.</b> This is a <b>5-question judged sample against a stated rule</b>, not a blind graded run — one author, one grading pass, a corpus we also tune against. Five questions is a small n and we are reporting our own scorecard. Our own miss is in it. Treat it as evidence, not proof; the graded, multi-run study is <a href="#quality">above</a>.</div>
 </div></section>
 
 <hr class="sep">
@@ -295,7 +362,7 @@ cd your-repo &amp;&amp; <span class="g">ctx-optimize up</span>          <span cl
   <h3 class="sub">Linux kernel v6.9 — 84,300 files</h3>
   <div class="tablewrap"><table>
     <tr><th>&nbsp;</th><th>gather</th><th>nodes</th><th>store</th></tr>
-    <tr><td>ctx-optimize 0.12.0</td><td class="win">118.18 s</td><td>2,849,719</td><td class="win">2.0 GB</td></tr>
+    <tr><td>ctx-optimize</td><td class="win">118.18 s</td><td>2,849,719</td><td class="win">2.0 GB</td></tr>
     <tr><td>CodeGraph 1.5.0</td><td>289.86 s</td><td>1,838,442</td><td>4.1 GB</td></tr>
     <tr><td>graphify 0.9.12</td><td>527.72 s</td><td>910,778</td><td>3.1 GB</td></tr>
     <tr><td>GitNexus 1.6.9</td><td class="lose">did not finish</td><td class="na">—</td><td class="na">—</td></tr>
@@ -314,10 +381,10 @@ cd your-repo &amp;&amp; <span class="g">ctx-optimize up</span>          <span cl
   </table></div>
   <p class="fine">— = not measured in this run. Empty cells stay empty; we publish only what the harness produced. <b>ripgrep is faster than us on both corpora it ran</b> (11&nbsp;ms to our 12, 23&nbsp;ms to our 27) and it is answering a different question — matching lines, not resolved symbols.</p>
 
-  <h3 class="sub">Symbol lookup — in the unreleased index work</h3>
-  <p class="body">Not in v0.12.0 yet. An exact-symbol index takes <code>card &lt;symbol&gt;</code> on the kernel from <b>1.73&ndash;1.83&nbsp;s to 0.00&ndash;0.02&nbsp;s</b>. Fuzzy and ambiguous names are <b>unchanged at ~7.4&nbsp;s</b> — deliberately, because they rank against every node in the graph. The index costs <b>0.43&nbsp;GB, 20% of the graph</b>; CodeGraph's index is 54% of their 4.1&nbsp;GB store. Equivalence is verified, not assumed: <b>2,002 of 2,002 resolutions identical</b> to a full scan.</p>
+  <h3 class="sub">Symbol lookup — shipped in v0.13.0</h3>
+  <p class="body">Released 2026-08-05, on npm and tagged. An exact-symbol index takes <code>card &lt;symbol&gt;</code> on the kernel from <b>1.73&ndash;1.83&nbsp;s to 0.00&ndash;0.02&nbsp;s</b>. Fuzzy and ambiguous names are <b>unchanged at ~7.4&nbsp;s</b> — deliberately, because they rank against every node in the graph. The index costs <b>0.43&nbsp;GB, 20% of the graph</b>; CodeGraph's index is 54% of their 4.1&nbsp;GB store. Equivalence is verified, not assumed: <b>2,002 of 2,002 resolutions identical</b> to a full scan. It fails safe — a missing, stale or truncated index falls back to the full scan, so it can make an answer fast, never wrong. Wired into <code>card</code> only so far; <code>change-plan</code>, <code>affected</code> and <code>path</code> are follow-ups, each needing its own equivalence proof.</p>
 
-  <div class="note"><b>Methodology.</b> Apple M5 Pro, 18 cores, 48&nbsp;GB. ctx-optimize v0.12.0 · CodeGraph 1.5.0 · graphify 0.9.12 · GitNexus 1.6.9 · ripgrep 15.2.0. Kernel questions are median-of-3; small-corpus gather is best-of-3, query median-of-5. The full board — including the tools we have <b>not</b> benchmarked, and a published correction to our own earlier numbers — is on <a href="compare.html">the comparison page</a>.</div>
+  <div class="note"><b>Methodology.</b> Apple M5 Pro, 18 cores, 48&nbsp;GB. <b>ctx-optimize: measured on the v0.12.0 binary plus the symbol-index work — i.e. the build that became v0.13.0</b> (released 2026-08-05); the figures have not been re-run against the tagged v0.13.0 artifact, so they are labelled by the build that produced them, not by a version they were not taken on. CodeGraph 1.5.0 · graphify 0.9.12 · GitNexus 1.6.9 · ripgrep 15.2.0. Kernel questions are median-of-3; small-corpus gather is best-of-3, query median-of-5. The full board — including the tools we have <b>not</b> benchmarked, and a published correction to our own earlier numbers — is on <a href="compare.html">the comparison page</a>.</div>
 </div></section>
 
 <hr class="sep">
@@ -399,7 +466,7 @@ cd your-repo &amp;&amp; <span class="g">ctx-optimize up</span>                 <
 <hr class="sep">
 
 <!-- 9 · what we don't claim -->
-<section class="never"><div class="wrap">
+<section class="never" id="never"><div class="wrap">
   <div class="sec-kicker red">what we don't claim</div>
   <h2 class="sec">The claims we killed, and why they're not coming back.</h2>
   <p class="sec-sub">Each of these was on this site or in our own docs at some point. Each was retired because a measurement said so — not because someone objected.</p>
