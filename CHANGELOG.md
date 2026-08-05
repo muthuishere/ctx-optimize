@@ -10,6 +10,86 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-08-05
+
+### Added
+
+- **A lookup index for the graph — `card` on the Linux kernel went 1.8s → under
+  20ms** (ADR `openspec/changes/2026-08-05-query-at-scale/`). Every verb used to
+  materialize the whole graph to answer about one symbol: reading all 2.1GB of a
+  kernel store costs 0.12s, `json.Unmarshal` of it costs 3.19s, so ~97% of a
+  lookup was deserialization paid *before the question was known*.
+
+  `<store>/graph/index/` now holds plain sorted text — `labels.idx`, `ids.idx`,
+  `edges-by-source.idx`, `edges-by-target.idx`. A lookup binary-searches with
+  8KB `ReadAt` windows and parses only the matching records. **0.43GB, 20% of
+  the graph** (CodeGraph's index is 54% of their DB), built in ~6s, ~5% added to
+  a kernel gather and ~5% on small corpora.
+
+  **The index is an optimization that fails safe.** Its header records the
+  source file's size and modtime; on any mismatch — absent, stale, truncated,
+  partial — the caller falls back to the full scan. It can make an answer fast;
+  it cannot make one wrong. It is machine-local (byte offsets into this
+  machine's graph), excluded from the manifest and never transported.
+
+  Wired into `card` only, and only for exact-id/exact-label resolution. Fuzzy
+  and ambiguous names still cost a full scan **deliberately** — they rank
+  against every node, and refusing to guess is the point. `change-plan`,
+  `affected`, `path` are follow-ups, each needing its own equivalence proof.
+
+  Gated by a differential test that resolves the same symbols through both paths
+  and compares whole result sets: **2002/2002 identical on the kernel store.**
+  It caught four real defects during development — JSON escapes in index keys
+  (11,798 kernel labels, 0.414%), a case-sensitivity divergence between index
+  and fallback, a self-edge double-count, and a partial index reporting itself
+  current.
+
+### Changed
+
+- **Benchmarks re-run and corrected; several published numbers were wrong.**
+  The 2026-07-24 harness was a scratch script that was never committed, so its
+  numbers could not be reproduced from the repo. It now lives at
+  `benchmarks/bench_multi.py` with `benchmarks/suite/` (pinned, shallow clones).
+
+  Corrections, all of which had flattered us or a competitor:
+  - CodeGraph's kernel query published as **536ms** → **880ms**. The harness
+    passed CodeGraph only the first word while every other tool answered the
+    full phrase.
+  - CodeGraph's flask query published as **416ms** → **102ms** (it resolves its
+    store from cwd; the harness invoked it from the wrong directory). The whole
+    2026-07-24 head-to-head was retired rather than patched, since the same bug
+    touched every CodeGraph cell.
+  - Linux gather **164.17s** → **118.18s**; query **3.91s** → **3.70s** median.
+  - CodeGraph and GitNexus kernel rows filled in: 289.86s, and **GitNexus did
+    not finish in 45 minutes** (137 CPU-minutes, 36GB heap, no index) — recorded
+    as a non-finish, never as a win.
+
+- **Positioning rewritten to lead with the losses.** The "fastest code graph"
+  claim is **retracted**: CodeGraph answers kernel queries in 0.79s to our
+  3.70s, and ripgrep in 1.59s. What replaced it is measured — on five kernel
+  questions our top hit was useful **4 of 5** against CodeGraph's and graphify's
+  **0 of 5**; on a graded 12-question run (gorilla/mux, 3 runs, n=36/arm)
+  ctx-optimize scored **67%** against grep's 35% and graphify's 40%, and **79%
+  vs 29%** on "what calls this / what breaks if I change this".
+
+  **grep wins "where is X" (47% vs 42%)** and that is now stated on the site.
+
+- **Site restructured to one marketing page + docs + GitHub**, nav cut from nine
+  items to two. Every token-savings claim removed site-wide (`docs/CRITIQUE.md`
+  S16 measured it dead: Claude Code −0.2%, Codex +3.0%).
+
+### Added — proof
+
+- `proof/agent/RESULTS-QUALITY.md`, `grade.mjs`, `run-quality.sh`,
+  `questions-graded-mux.json` — the graded answer-quality harness. Scoring is
+  deterministic against hand-verified facts; the grader never sees the arm. It
+  also fixed a confound: all arms previously shared one clone, so the shell arm
+  could read `.ctxoptimize/` and `graphify-out/`.
+
+  It surfaced two live ctx-optimize defects, both disclosed rather than hidden:
+  ambiguous method names collapse the call graph (`affected "Run"` returns only
+  the containing file), and `query` ranking loses locate questions to grep.
+
 ## [0.12.0] — 2026-08-05
 
 ### Added

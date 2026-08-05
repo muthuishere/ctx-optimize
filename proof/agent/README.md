@@ -20,6 +20,35 @@ Options: `--model <slug>` · `--repo <url> --name <short>` · `--questions <file
 (multi-module build: `init --scan --yes && add .`) · `--smoke` (free
 deterministic checks only) · `--smoke-monorepo` (both, on etcd).
 
+## Answer-quality arm (correctness, not cost)
+
+`run-bench.sh` measures what an answer *costs*. `run-quality.sh` measures whether
+it is *right* — the primary metric, since ripgrep is already faster than us at
+raw lookup.
+
+```sh
+proof/agent/run-quality.sh                       # 12 questions x 3 arms
+proof/agent/run-quality.sh --only "i5 l2"        # pilot
+node proof/agent/grade.mjs --results r1,r2,r3 \
+  --name gorilla-mux-graded --questions proof/agent/questions-graded-mux.json
+```
+
+- Grading is **deterministic — no LLM judge.** `grade.mjs` scores the agent's
+  final ANSWER against hand-verified facts declared in the questions file (each
+  carries the `truth` file:line it was checked against), plus `forbid` patterns
+  that catch false claims. The identical rule runs on every arm and the grader
+  never sees which arm produced the answer.
+- **One clone per arm**, so arm a's grep cannot read `graphify-out/` or
+  `.ctxoptimize/`.
+- `agent.mjs` records a `trace` of every tool call, a `truncated` flag (hit the
+  step cap without answering) and `tool_errors`, so no "fast" number can be
+  trusted without looking at what actually came back. grep exit 1 is reported as
+  `[no matches]`, not an error.
+- Aggregate several runs: the agent is not deterministic even at temperature 0,
+  and single-run totals swing by up to 20 points.
+
+Measured results and the honest caveats: [`RESULTS-QUALITY.md`](RESULTS-QUALITY.md).
+
 ## Monorepo arm (multi-module)
 
 etcd is a real 12-module repo (api, client/v3, server, pkg, etcdctl, …).

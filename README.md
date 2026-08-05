@@ -1,474 +1,229 @@
 # ctx-optimize
 
 [![CI](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml/badge.svg)](https://github.com/muthuishere/ctx-optimize/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/muthuishere/ctx-optimize.svg)](https://pkg.go.dev/github.com/muthuishere/ctx-optimize)
 [![npm](https://img.shields.io/npm/v/@muthuishere/ctx-optimize?logo=npm)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
-[![benchmark](https://img.shields.io/badge/benchmark-run%20it%20yourself-4ade80)](proof/agent/)
-[![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://www.npmjs.com/package/@muthuishere/ctx-optimize)
+[![Go Reference](https://pkg.go.dev/badge/github.com/muthuishere/ctx-optimize.svg)](https://pkg.go.dev/github.com/muthuishere/ctx-optimize)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Discord](https://img.shields.io/badge/AgentNexus-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/V9C2kvHC8D)
 
-**Gather a codebase — and its world — into one local knowledge store an AI agent answers from. Deterministic. No LLM API. No DB. Gather once, refresh cheaply, never go everywhere every time.**
+**[muthuishere.github.io/ctx-optimize](https://muthuishere.github.io/ctx-optimize/)** — docs, demos, benchmarks, and the use-case tour.
+**[Releases & changelog](CHANGELOG.md)** — what shipped in every version, newest first.
 
-Your coding agent burns its context window on grep-and-read: to answer one
-question it greps, opens files, chases callers, re-reads. ctx-optimize turns a
-repo — plus, via adapters, database schemas, messaging topics, log shapes,
-documents — into a queryable graph stored as plain files in a central
-per-module store, and your agent (Claude Code, Codex, Devin — any skill-capable
-harness) answers *from the store* in a single call. The binary is
-deterministic — no LLM, no DB, and network only when you ask: `update`
-(releases), `grammar build` (zig, downloaded once), and whatever your own
-remote scripts do. The only intelligence in the system is the agent you
-already run.
+### Know what breaks before you change it.
 
-> **Status: v0.4.** On npm (`@muthuishere/ctx-optimize`) with
-> prebuilt binaries for macOS / Linux / Windows; CI green; benchmarks
-> reproducible (see [Proof](#proof--reproducible-not-our-word)). Working
-> today: code extraction for **12 embedded languages** (Go, Python, JS,
-> TS/TSX, Java, C, C++, C#, Rust, Zig, SQL — tree-sitter compiled to WASM,
-> zero setup) plus **drop-in grammar packs** for any other language
-> (kotlin/swift/dart ship in `grammars/`), markdown docs, the universal
-> adapter door, `query`/`path`/`explain`/`affected`/`hubs`, **symbol cards**
-> (`card X`: signature + doc + callers/callees, no file read),
-> **`change-plan`** (one composed answer for "I'm about to change X":
-> signature + callers + blast radius + which tests to run), the
-> **deterministic wiki** (opt-in: `ctx-optimize wiki`, or `--wiki`) with a
-> **community-detected "Subsystems" map**, the save-result/reflect
-> learning loop, merge/export (json/dot/graphml/csv/obsidian), **scripted
-> remote push/pull**, and **multi-module monorepo support** (`scan` /
-> `init --scan` / parallel fan-out `add` / navigator + federated queries).
-> New on main (unreleased): **native sources** — databases, buckets, queues,
-> and external APIs enter the store by env-var name (`ctx-optimize add
-> BILLING_DB_URL`); 9 wire-protocol connectors in a companion binary — see
-> [Databases, buckets, queues, APIs](#databases-buckets-queues-apis--native-sources).
-> New in v0.4 (**breaking**): **the remote is your script** — the binary
-> ships no transport of its own; `remote push`/`pull` run the commands you
-> declare in the committed config (`remote init` and the built-in
-> `file://`/`s3://` lanes are gone — see [Sharing](#sharing--the-remote-is-your-script)),
-> **`up`** (the one onboarding verb: pull, gather, or refresh — whatever the
-> state needs), **`sync`** + **`adapters run`** (fast lane / slow lane around
-> adapter scripts), and **`update`** (self-updates the binary and every
-> installed surface — sha256-verified, user-invoked only).
-> New in v0.3: **framework routes** (FastAPI/Flask/Express/NestJS/Angular/
-> React Router/Vue + OpenAPI/Drupal/Ingress YAML — route nodes linked to
-> their handlers, so `affected <handler>` surfaces the URL that binds it),
-> the **manifest lane** (package.json/pom.xml/csproj+sln/go.mod/gradle
-> dependencies + K8s topology as graph — one `dep:` node federates across
-> build tools and modules), **git-history co-change edges** ("these files
-> change together", from `git log` alone), a **first-class React dashboard**
-> (`serve`: onboard/repos/viewer/settings/changes, all audited), and the
-> **pack doctrine** — routes and manifests are extensible with drop-in JSON
-> packs (`routes add` / `manifests add`, name or GitHub URL) exactly like
-> grammar packs. Exact call edges (x/tools + LSP) are next — see `openspec/`.
+One static Go binary gathers a repo — and, via native sources, its databases,
+buckets, queues and APIs — into a local knowledge graph your agent answers
+from in one call instead of a grep-and-read chain. On a graded benchmark it
+answered **79% of "what calls this / what breaks if I change this" questions
+correctly, against 29% for a grep-armed agent**. It indexes the **linux
+kernel — 84,300 files — in 118 seconds**, 2.5x faster than the next tool, and
+is the only one of four that produces a usable kernel graph at all.
+Deterministic: no LLM, no embeddings, no database, no MCP, no credentials at
+rest. The only intelligence in the system is the agent you already run.
 
-**Docs:** [`docs/`](docs/) — [CLI reference](docs/cli.md) (every verb: when & why) · [monorepos](docs/monorepos.md) · [share the store over GitHub](docs/remote-github.md) · [native sources](docs/sources.md) · [custom adapters](docs/adapters.md) · [agent integration](docs/agents.md)
+Where it does **not** win: `ripgrep` is faster at finding a string and better
+at "where is X" (47% vs 42%), and CodeGraph answers free-text kernel queries
+in 880ms against our 4.0s — though on five kernel questions its top hit was
+useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
 
-**Demos, benchmarks, proof:** [`benchmarks/`](benchmarks/) · [`proof/`](proof/) — everything reproducible from this repo.
-— landing page, unedited demos, and the full proof write-up. Everything below
-is reproducible; see [Proof](#proof--reproducible-not-our-word).
+## Why
+
+1. **Best at impact questions** — **79% vs 29%** (grep) and 42% (graphify) on
+   8 graded "who calls this / what breaks" questions, 3 runs, n=36 per arm.
+   Zero false claims and zero empty answers, in 15 tool calls per run against
+   grep's 42.7. [Full method + failures](proof/agent/RESULTS-QUALITY.md).
+2. **Fastest to build, by a wide margin** — linux v6.9 in **118.18s** vs
+   CodeGraph's 289.86s and graphify's 527.72s; GitNexus did not finish in 45
+   minutes. A 1,476-file repo in **0.648s** vs 5.123s / 1.323s / 10.649s. And
+   the graph is the most complete: 2,849,719 nodes in 2.0GB, against
+   CodeGraph's 1,838,442 in 4.1GB.
+3. **Instant symbol lookup** — `card` on the kernel resolves an exact symbol in
+   **under 20ms** (it was 1.8s), via a plain-text index that is 20% of the
+   graph. Fuzzy and ambiguous names still cost a full scan, deliberately: they
+   rank against every node, and refusing to guess is the point.
+4. **Complete answers, not pointer lists** — `card` returns signature + doc +
+   callers/callees with `file:line`, so the agent doesn't reopen the file.
+   `change-plan` composes the whole "I'm about to edit X" answer — callers,
+   blast radius, which tests to run — in a single call. What we measured and
+   kept: **impact-answer correctness**, onboarding traces, wall time. What we
+   measured and dropped: token savings — Claude Code −0.2%, Codex +3.0%, so we
+   don't claim it ([CRITIQUE.md](docs/CRITIQUE.md)).
+5. **Your infrastructure goes in the graph too** — databases, buckets, queues
+   and APIs enter by env-var **name**; the value is a URL and its scheme picks
+   the connector. Nine of them: **postgres · mysql · mongodb · redis · kafka ·
+   nats · s3 · mssql · openapi**. The secret value is never read into config,
+   stored, or printed. [docs/sources.md](docs/sources.md)
+
+   ```sh
+   export BILLING_DB_URL='postgres://reader:$PG_PASS@db.internal:5432/billing'
+   ctx-optimize add BILLING_DB_URL      # same door for s3, kafka, mongo, redis, nats, mssql, openapi
+   ```
+5. **Extensible without a fork** — languages are drop-in tree-sitter
+   [grammar packs](docs/languages-packs.md) (12 embedded, `languages add` builds
+   any other), external systems are [dropped scripts](docs/adapters.md) through
+   one validated JSON door, and the [remote is your script](docs/remote-github.md).
+   The store is plain sorted ndjson at `~/ctxoptimize/<repo>/` — diffable,
+   portable, greppable.
 
 ## Install
 
-npm (recommended — thin JS launcher resolves a prebuilt platform binary via
-`optionalDependencies`; no postinstall script, no download):
+```sh
+npm install -g @muthuishere/ctx-optimize     # prebuilt binaries, macOS/Linux/Windows
+go install github.com/muthuishere/ctx-optimize/cmd/ctx-optimize@latest   # or from source
+
+ctx-optimize install     # skills + hooks for every agent CLI it detects
+ctx-optimize update      # binary + skills + hooks; network only when YOU run it
+```
+
+## Quick start
 
 ```sh
-npm install -g @muthuishere/ctx-optimize
+ctx-optimize up                        # the only onboarding verb: bootstraps config,
+                                       # pulls the team store or gathers. Idempotent.
+ctx-optimize query "refund flow"       # complete, citable hits under a token budget
+ctx-optimize change-plan RefundService # callers + blast radius + which tests to run
+ctx-optimize serve                     # → 127.0.0.1:4747, embedded dashboard, zero external requests
 ```
 
-Go:
+## What you ask it
 
-```sh
-go install github.com/muthuishere/ctx-optimize/cmd/ctx-optimize@latest
-```
-
-Then install the agent surface — skills + hooks for every agent CLI it
-detects (Claude Code, Codex, Copilot, Devin):
-
-```sh
-ctx-optimize install
-```
-
-Later, one command updates the whole tool:
-
-```sh
-ctx-optimize update           # the binary itself (npm installs via npm; standalone
-                              # binaries from GitHub Releases, sha256-verified
-                              # against checksums.txt, swapped atomically; dev
-                              # builds left alone), then skills + hooks + the
-                              # global rule from the new binary — an exact replace
-ctx-optimize update --check   # report only, touch nothing
-```
-
-The network call happens only when YOU run it — the binary never checks for
-updates in the background. `ctx-optimize uninstall` removes everything
-`install` wrote; stores and committed repo pointers stay.
-
-## Usage
-
-One verb is the whole getting-started story — bare repo, fresh clone,
-teammate machine, CI, stale store, doesn't matter:
-
-```sh
-ctx-optimize up
-```
-
-`up` looks at the state and does the right thing: no config → bootstraps it
-(monorepos via scan; curate `.ctxoptimize/config.json` after) and gathers;
-committed config with a `remote.pull` and no local store → pulls the team's
-prebuilt graph (falls back to gathering, loudly); no remote → gathers;
-stale vs git HEAD → fast re-gather; fresh → no-op. Idempotent — run it
-whenever.
-
-```sh
-# author-side, when you want control instead of `up`'s defaults:
-# scaffold .ctxoptimize/ (config, adapter + transport samples,
-# remote.example.md), review monorepo module lists, pick pointer targets
-ctx-optimize init
-
-# gather / refresh explicitly (up calls these lanes for you)
-ctx-optimize add .
-
-# ask the store — complete, citable hits under a token budget
-ctx-optimize query "where is the refund flow" --json
-
-# about to change something? ONE composed call: signature + callers +
-# blast radius + WHICH TESTS TO RUN + co-change history
-ctx-optimize change-plan "RefundService"
-
-# list / filter natively — NO jq, NO python, works on Windows, all modules
-ctx-optimize nodes --kind service --where namespace=prod   # every prod k8s service
-ctx-optimize edges --relation resolves_to                  # code→dependency links
-ctx-optimize deps --scope dev --importers                  # dev deps + who imports each
-
-# fast lane / slow lane: re-gather code without running adapter scripts;
-# run adapters (DB dumps, doc converters) on demand — all, or one by name
-ctx-optimize sync
-ctx-optimize adapters run
-
-# native sources: a database/bucket/queue/API by env-var name — the value
-# is a URL, its scheme picks the connector; recorded, refreshed on every up
-ctx-optimize add BILLING_DB_URL
-
-# feed ANY other system through the universal adapter door (strictly validated)
-./my-exotic-adapter | ctx-optimize add --json -
-
-# combine module stores into one view; dump for other tools
-ctx-optimize merge api worker billing --into everything
-ctx-optimize export --format dot --out graph.dot
-
-# see it: local dashboard (embedded single file, zero external requests)
-ctx-optimize serve          # → http://127.0.0.1:4747 — graph, search, details
-
-ctx-optimize status --json
-```
-
-- The store is **plain files** (ndjson/json/md) — diffable, portable, at
-  `~/ctxoptimize/<repo-name>/`. The only thing in your repo is the
-  committable `.ctxoptimize/` directory.
-- **Sharing is your script.** `remote push` / `remote pull` run the commands
-  declared in the committed config — the binary ships no transport of its
-  own. Queries always run on the local folder. See
-  [Sharing](#sharing--the-remote-is-your-script).
-
-## Sharing — the remote is your script
-
-The binary never moves bytes to a host it chose. `remote push` / `remote pull`
-run the commands you declare in `.ctxoptimize/config.json` — any shell line
-(js, py, sh, or inline):
-
-```json
-{
-  "remote": {
-    "push": "node .ctxoptimize/push.js",
-    "pull": "node .ctxoptimize/pull.js"
-  }
-}
-```
-
-Your command gets the store context in env — `CTX_STORE_DIR` (the local store
-tree; pull pre-creates it), `CTX_STORE_KEY`, `CTX_SCOPE_PREFIX` (module scope),
-`CTX_DIRECTION` (`push`/`pull` — one script can serve both) — and a non-zero
-exit fails the verb. Same trust model as adapters and npm scripts.
-
-`init` scaffolds a complete zero-dependency **git lane** as inert samples: a
-private git repo hosts every store (artifacts are sorted ndjson, so git diffs
-and merges them cleanly). Arming it:
-
-```sh
-gh repo create your-org/ctx-stores --private          # once per team
-mv .ctxoptimize/push.js.sample .ctxoptimize/push.js
-mv .ctxoptimize/pull.js.sample .ctxoptimize/pull.js
-# set STORE_REPO_URL in both, add the "remote" block to config.json, commit
-ctx-optimize remote push
-```
-
-A teammate who clones the repo runs `ctx-optimize up` — done. S3/R2/MinIO is
-a small aws-CLI script over the same env contract; GCS, artifactory,
-rsync-over-ssh, anything: write the script that copies `CTX_STORE_DIR` to and
-from your host and declare it. Recipes live in the scaffolded
-`.ctxoptimize/remote.example.md`. Secrets stay env-var NAMES that the shell
-expands at run time — never in config or scripts, never printed.
-
-Upgrading from v0.3: `remote init` and the built-in `file://`/`s3://`
-transports are gone. A legacy URL-shaped config still loads but is inert —
-`push`/`pull` print the migration pointer.
-
-## Databases, buckets, queues, APIs — native sources
-
-**A source is an environment variable name. Its value is a URL. The URL
-scheme picks the connector.** One command from zero to "refreshed on every
-`up`":
-
-```sh
-ctx-optimize adapters help postgres    # setup card: value format, credential params, paste-ready commands
-export BILLING_DB_URL='postgres://reader:$PG_PASS@db.internal:5432/billing'   # or root .env / ~/.config/ctx-optimize/.env
-ctx-optimize add BILLING_DB_URL        # resolve → dial → capture → merge → recorded in config sources
-```
-
-Nine wire-protocol-native connectors — **postgres, mysql, mongodb, redis,
-kafka, nats, s3** (MinIO/R2 via endpoint hosts, bare AWS via the credential
-chain), **mssql**, and **openapi** (http(s) URL or a spec file path) — no
-pg_dump/atlas/tbls needed on any machine. Captures are the **logical shape**
-a developer reasons about: system schemas skipped, a partitioned table is one
-node with `partitions: N`, bounded samples with every cap reported. Measured:
-a 100-table / 3-schema postgres captures in **31 ms** including connect
-(pg_dump 101 ms, atlas 248 ms, tbls 1356 ms) — and where a 100-partition
-table plus 500 Timescale chunks bloat other tools to 600–716 raw tables, it
-emits **101 logical tables**.
-
-Secret hygiene is structural: argv and committed config carry env-var
-**names** only (a literal password in an entry is a hard error), values
-resolve process env → root `.env` → `~/.config/ctx-optimize/.env` in memory at dial
-time, stored ids are sanitized, and every output is scrubbed. A teammate
-without the credentials still runs `up` cleanly — that source is a one-line
-skip and the nodes arrive via `remote pull`; `--strict` turns skips into CI
-failures. Recorded sources refresh on `up` under a 24h TTL
-(`--sources=always|never`). The drivers live in a **companion binary**,
-`ctx-optimize-adapters`, shipped beside the main one in every archive and
-npm package — the main binary stays driver-free and exactly as fast, and
-execs the sibling only when a source dials.
-
-## Multi-module — monorepos get one graph per module, plus a navigator
-
-One giant graph for a 300-module monorepo helps nobody: people work in one
-module at a time, and an agent that loads the whole repo's graph pays for
-299 modules it isn't asking about. ctx-optimize builds **one store per
-module** and a small **navigator** that routes questions instead:
-
-```sh
-# find every project in the tree — read-only, prints the exact config it would write
-ctx-optimize scan                # markers: go.mod/go.work, package.json, gradle,
-                                 # maven, Cargo.toml, pyproject… (--depth N, default 5)
-
-# write ALL found modules into the committed config — generated once, then the
-# list is yours: edit, add, prune (.ctxoptimize/config.json modules[])
-ctx-optimize init --scan --yes
-
-# gather: one worker per module, in parallel; stores mirror the repo tree
-ctx-optimize add .               # → ~/ctxoptimize/<repo>/<module-path>/, each
-                                 #   with its own graph  [--jobs N]
-```
-
-Measured on `apache/beam`: **310 modules discovered at depth 8, all gathered
-in 14.5s at ~9× CPU, zero failures** — including maven modules nested inside
-other modules' resource trees.
-
-The root store holds a **navigator**, not a merged giant graph:
-`modules.json` + `navigator.md` — every module's path, node/edge counts, top
-hub symbols, and README one-liner. (`ctx-optimize wiki` adds a unified wiki
-front page linking into each module's own wiki.) Query scope then follows
-your cwd:
-
-```sh
-cd sdks/java/transform-service
-ctx-optimize query "expansion service"  # answers from THIS module's graph, labeled;
-                                        # zero hits auto-escalate repo-wide (--root forces)
-cd -                                    # back at the repo root:
-ctx-optimize query "kafka read"         # navigator ranks modules, federates across the
-                                        # best matches  [--modules all|a,b]
-ctx-optimize card SomeSymbol            # not in your module? answered from the owning
-                                        # module, labeled "[not in X — found in Y]"
-```
-
-`merge <mod>... --into <name>` stays opt-in for when you actually want one
-combined graph. (graphify's monorepo story is manual per-directory builds —
-no discovery, no parallel gather, no navigator.)
-
-## Proof — reproducible, not our word
-
-Two kinds of evidence, both runnable.
-
-**Speed vs graphify** (raw data in [`benchmarks/`](benchmarks/)): a 12k-file
-corpus gathered in **0.67s vs 8.88s**, queries **~4× faster**, a smaller
-store. Methodology beside the raw data in [`benchmarks/`](benchmarks/).
-
-**What an agent actually saves.** A headless harness lets the *same* model
-answer a set of questions **three ways** over OpenRouter — plain shell,
-ctx-optimize, and graphify — and reports the provider's own token/cost
-accounting (`usage.include=true`), not our estimate. Last public CI run on
-`gorilla/mux` (a small, well-named repo — plain grep's *best* case, i.e. the
-hardest terrain for a graph to win on):
-
-| comparison | result |
+| You want to… | Verb |
 |---|---|
-| ctx-optimize **vs plain shell** | **−31% cost · −64% tool calls · −36% tokens** |
-| ctx-optimize **vs graphify** | **~half the tokens & tool calls** |
-| graphify **vs plain shell** | **+22% tokens** — its `query` returns a raw node dump that costs *more* than grep |
+| find something by intent | `query "<terms>"` |
+| inspect one symbol (signature, doc, callers, callees) | `card <symbol>` |
+| edit safely — callers, impact, tests, co-change | `change-plan <symbol>` |
+| blast radius of a change | `affected <symbol>` |
+| how are these two connected | `path <a> <b>` |
+| why does this node exist / where from | `explain <node>` |
+| the load-bearing symbols | `hubs` |
+| list & filter without jq | `nodes --kind K` · `edges --relation R` · `deps --scope dev` |
+| add a database / bucket / queue / API | `add BILLING_DB_URL` |
+| feed anything else in | `<your-script> \| add --json -` |
+| re-gather code only / run adapters only | `sync` · `adapters run [name]` |
+| is my store trustworthy right now | `fresh` · `status --json` |
+| share it with the team | `remote push` / `remote pull` |
+| combine or dump the graph | `merge a b --into all` · `export --format dot` |
+| a human-readable wiki of the codebase | `wiki` |
+| browse it | `serve` |
 
-ctx-optimize answers most questions in a single `query`/`card` call; both arms
-answered correctly with `file:line` citations (a cheaper wrong answer is a
-loss, not a saving).
+Full reference with when-and-why for each: [docs/cli.md](docs/cli.md).
 
-**Run it yourself — no source needed**, it uses the published CLI:
+## Proof
 
-```sh
-npm i -g @muthuishere/ctx-optimize      # the store CLI
-pipx install graphifyy                  # the competitor (arm c; optional)
-export OPENROUTER_API_KEY=sk-or-...      # read from env only, never logged
-bash proof/agent/run-bench.sh           # defaults: gorilla/mux, openai/gpt-4o-mini
-```
+Apple M5 Pro (18 cores, 48 GB). ctx-optimize v0.12.0, graphify 0.9.12,
+CodeGraph 1.5.0, GitNexus 1.6.9, ast-grep 0.45.0, ripgrep 15.2.0. Each tool on
+its own fastest deterministic path, no LLM anywhere. Cold gather best-of-3,
+query median-of-5.
 
-Or fork and click **Run workflow** — [`.github/workflows/benchmark.yml`](.github/workflows/benchmark.yml)
-runs it headless on a clean runner and publishes the table to the job summary.
-Harness + full write-up: [`proof/agent/`](proof/agent/)
+| corpus | ctx-optimize | CodeGraph | graphify | GitNexus |
+|---|---|---|---|---|
+| **linux v6.9** · 84,300 files | **118.18s** / 4,039ms | 289.86s / **880ms** | 527.72s / 22,799ms\* | **did not finish** (>45 min) |
+| graphify-src · 1,476 files | **0.648s** / 27ms | 1.323s / 101ms | 5.123s / 373ms | 10.649s / 779ms |
+| ctx-optimize-src · 409 files | **0.326s** / 12ms | 0.762s / — | 1.352s / 120ms | 12.85s / — |
+| flask · 344 files | **0.314s** / 12ms | 0.438s / 102ms | 0.845s / 106ms | 6.355s / 794ms |
+| gin · 253 files | **0.342s** / 11ms | 0.593s / — | 0.777s / 110ms | 7.56s / — |
 
-**The model ladder** ([`benchmarks/agent-model-bench/`](benchmarks/agent-model-bench/)):
-same prebuilt linux-kernel store (~274k nodes), same 8 block-layer questions,
-one fresh agent session per model, answers judged blind against withheld
-golden keys:
+*gather / free-text query. `—` = not measured. GitNexus burned 137 CPU-minutes
+with a 36 GB heap on the kernel and produced no index; that is recorded as a
+non-finish, not as a win for anyone.*
 
-| model · harness | score /80 | avg s/question | tool calls (8 q) |
+On the kernel, ctx-optimize emits **2,849,719 nodes in a 2.0 GB store**;
+CodeGraph 1,838,442 in 4.1 GB; graphify 910,778 in 3.1 GB.
+
+**Where we lose: free-text query LATENCY at scale.** CodeGraph answers a kernel
+query in 880ms against our 4,039ms — 4.6x — because 54% of their 4.1 GB is
+B-tree index. (An earlier draft said 536ms; that was CodeGraph answering a
+single word while every other tool answered the full phrase. Fixed in the
+harness.) They are faster and, on the five kernel questions below, less useful:
+Ours is 20%, and it currently accelerates exact symbol lookup only — `card` on
+the kernel went 1.8s → **under 20ms** — not the lexical ranking `query` runs. A
+postings index for `query` is not built and not claimed.
+
+\* **graphify cannot query the kernel graph at default settings.** It builds
+the 1.2 GB `graph.json`, then querying it fails with `exceeds
+536_870_912-byte cap`. The 22,799ms is only reachable after raising
+`GRAPHIFY_MAX_GRAPH_BYTES` by hand.
+
+### Query: speed *and* relevance, on the same questions
+
+Five real kernel questions, linux v6.9, median of 3. Grading rule, applied
+identically: **does the top hit name a symbol actually related to the question,
+with `file:line`?** The hit is shown so you can judge it yourself.
+
+| question | ctx-optimize | CodeGraph | graphify |
 |---|---|---|---|
-| Fable 5 · Claude Code | **80** | 24.6 | 23 |
-| Sonnet 5 · Claude Code | **80** | 17.5 | 25 |
-| Opus 4.8 · Claude Code | **79** | 19.0 | 22 |
-| Haiku 4.5 · Claude Code | **72** | 13.6 | 18 |
-| gpt-4o-mini · toolnexus, one-shot | **54** | 9.4 | 24 |
+| mq deadline dispatch request | **3.92s** ✅ `dd_dispatch_prio_aged_requests` block/mq-deadline.c:564 | 0.88s ❌ `struct request` | 23.10s ❌ `u64` |
+| ext4 write iter | **3.54s** ✅ `ext4_buffered_write_iter` fs/ext4/file.c:285 | 0.78s ❌ `function iter` | 22.45s ❌ `u32` |
+| spinlock irqsave | **3.80s** ✅ `__raw_spin_lock_irqsave` | 0.59s ❌ `struct spinlock` | 23.07s ❌ `u32` |
+| tcp congestion control | **3.70s** ✅ `proc_tcp_available_congestion_control` | 0.79s ❌ `struct tcp` | 23.69s ❌ `u64` |
+| page allocation failure | 3.60s ❌ `MLX5_…ALLOCATION_FAIL` | 0.81s ❌ *(empty)* | 22.77s ❌ `kcalloc()` |
+| **median / useful top hit** | **3.70s · 4 of 5** | 0.79s · **0 of 5** | 23.07s · **0 of 5** |
 
-The store is model-portable: the cheapest Claude tier lands 90% of frontier
-quality at half the wall time, and a $0.15/M-token model reaches ~70% — for
-$0.015 total — when the mandatory protocol from the committed
-`.ctxoptimize/instructions.md` card ("Small models & custom runtimes") is
-pinned in its system prompt. Without that protocol the same small model
-scored 23/80. One-shot per question beats a continuous loop: same score,
-7× cheaper, no cross-question bleed.
+ripgrep runs these in 1.59s and returns matching **lines** — genuinely useful,
+a different artifact, so it isn't scored against a symbol rule.
 
-## .ctxoptimize/ — config that travels with the repo
+**CodeGraph is 4.7× faster and got none of them.** FTS5 OR-matches each word and
+ranks by frequency, so a multi-word question returns the generic struct literally
+named `request` / `tcp` / `spinlock`. graphify returns `u64`/`u32` from
+`netfilter/x_tables.h` for four different questions — a constant, not an answer.
 
-```
-.ctxoptimize/
-  config.json          name + remote commands + sources[] (+ modules[] in a monorepo)
-  instructions.md      the committed usage card agents read — managed block,
-                       version-stamped, refreshed by `up` (upgrade-only; your
-                       edits outside the markers are never touched)
-  adapters/            drop scripts here — every .js/.py/.sh runs on `add`
-  push.js / pull.js    your transport scripts (init writes an inert *.sample pair)
-  remote.example.md    transport recipes: git lane, s3 lane, custom
-  (no secrets here)    source URLs with secrets live in the environment,
-                       your root .env, or ~/.config/ctx-optimize/.env
-                       (machine-global, outside the repo) — never in config
-```
+We are the slowest graph tool that answers the question. Caveats: this is a
+5-question judged sample against a stated rule, not a blind graded run like the
+one below — and **we got one of five wrong too.**
 
-`config.json`:
+### Answer quality — graded, not asserted
 
-```json
-{
-  "name": "my-module",
-  "remote": {
-    "push": "node .ctxoptimize/push.js",
-    "pull": "node .ctxoptimize/pull.js"
-  }
-}
-```
+gorilla/mux, 12 hand-verified questions, 3 runs, n=36 answers per arm,
+`gpt-4o-mini`. Scored deterministically against expected facts; the grader
+never sees which arm produced the answer.
 
-Commit the directory — it is safe by construction:
+| | shell (ripgrep) | **ctx-optimize** | graphify |
+|---|--:|--:|--:|
+| **correctness** | 35% | **67%** | 40% |
+| · impact — "who calls this" (8q) | 29% | **79%** | 42% |
+| · locate — "where is X" (4q) | **47%** | 42% | 36% |
+| false claims | 0 | **0** | 1 |
+| empty answers | 4 | **0** | 0 |
+| tool calls / run | 42.7 | **15.0** | 26.0 |
+| cost / run | $0.0051 | **$0.0040** | $0.0070 |
 
-- `name` picks the store folder under `~/ctxoptimize/` (default: repo basename).
-- `remote` declares the push/pull commands — plain shell lines the binary
-  runs as-is (cwd = repo root). Secrets stay env-var NAMES in scripts and
-  config alike; the shell expands them at run time — values are never
-  written or printed.
-- **Adapters are files**: dropping `kafka.js` into `.ctxoptimize/adapters/`
-  is the whole registration (`.js`/`.mjs` → node, `.py` → python3, `.sh` →
-  sh; other extensions inert — `init` seeds an `example.js.sample` template).
-  Each script prints batch JSON to stdout; `ctx-optimize add` runs the
-  built-in extractors **and** every adapter through the fail-closed door.
-  Adapters can be arbitrarily slow (DB dumps, doc converters), so they get
-  their own lanes: `sync` re-gathers the repo you're in and **skips** them
-  (safe — replace is producer-scoped, adapter nodes stay put), `adapters
-  run [name]` re-runs all or one on demand, `add --no-adapters` is the fast
-  lane spelled long. One `add` refreshes the whole world; a fresh clone
-  needs zero setup — `ctx-optimize up`.
+**grep wins "where is X". We win "what breaks if I change it."** Two caveats
+that ride with these numbers: part of the gap is cheap-model weakness rather
+than a tool ceiling — re-run on a frontier model before quoting it as a
+ceiling — and a known defect (ambiguous method names collapse the call graph)
+means the 79% was scored *despite* a live bug, not because the graph is
+complete. Method, every failure, and the defects:
+[proof/agent/RESULTS-QUALITY.md](proof/agent/RESULTS-QUALITY.md).
 
-## Grammar packs — add any language without recompiling
+### ripgrep is faster than us, and that's fine
 
-A language is just a grammar + a node-type mapping. The 12 embedded ones
-cover the mainstream; anything else is a **pack**: `<name>.wasm` +
-`<name>.json` dropped into `~/ctxoptimize/grammars/` (machine-wide) or
-`.ctxoptimize/grammars/` (travels with the repo). Next `add` picks it up;
-pack extensions override embedded ones. kotlin, swift and dart ship as packs
-in `grammars/` — copy the pair in to enable.
+On raw latency, grep-class tools win: on flask, **ripgrep 11ms and ast-grep
+17ms vs our 12ms** (plain grep: 253ms); on graphify-src, rg 23ms and ast-grep
+56ms vs our 27ms. It's true and it isn't the point: ripgrep returns **matching
+lines**; ctx-optimize returns a **resolved symbol** — signature, callers,
+callees, blast radius, each with `file:line`. `rg` cannot answer "who calls
+this". Exhaustive literal-string sweeps stay grep's job, and we tell agents
+exactly that in the shipped instructions card.
 
-Build your own from ANY tree-sitter grammar with one command — no toolchain
-to install (zig auto-downloads once, sha256-verified; grammar fetched as a
-tarball, no git):
+Raw data and methodology: [`benchmarks/`](benchmarks/). Agent-level harness
+(same model, three ways, provider's own accounting) and the model ladder:
+[`proof/agent/`](proof/agent/) — reproducible from a clean runner via
+[`.github/workflows/benchmark.yml`](.github/workflows/benchmark.yml).
 
-```sh
-ctx-optimize languages add kotlin        # known names resolve to the right repo/branch/exts
-ctx-optimize languages add clojure       # Lisps too — head-symbol decls, see docs/languages-packs.md
-ctx-optimize languages add cljgo         # a dialect entry: clojure.core + cljgo's own definers
-ctx-optimize languages add https://github.com/tree-sitter-grammars/tree-sitter-lua
-# → ~/ctxoptimize/grammars/<name>.wasm + <name>.json (mapping auto-suggested
-#   from the grammar's node-types.json — review it, then `add` just works)
-ctx-optimize languages list              # embedded + packs + addable names
-ctx-optimize languages remove <name>
-```
+## More
 
-## Adapters — the open door
+[CLI reference](docs/cli.md) · [monorepos](docs/monorepos.md) ·
+[native sources](docs/sources.md) · [sharing the store](docs/remote-github.md) ·
+[custom adapters](docs/adapters.md) · [grammar & route packs](docs/languages-packs.md) ·
+[agent integration](docs/agents.md) · [cookbook](docs/cookbook.md) ·
+[troubleshooting](docs/troubleshooting.md) ·
+[design & lineage](docs/design.md) · [vision](docs/VISION.md) ·
+[standing critique](docs/CRITIQUE.md)
 
-Everything external is an adapter emitting one JSON schema into
-`ctx-optimize add --json -`: nodes (`id`, `label`, `kind`, `file_type`,
-`source`, `location`) and edges (`source`, `target`, `relation`,
-`confidence` ∈ `EXTRACTED|INFERRED|AMBIGUOUS`). The door validates strictly and
-tags provenance per producer. Your agent can write a new adapter on demand —
-point it at any system with the schema and it gathers it. Make it permanent by
-dropping the script into `.ctxoptimize/adapters/` — every future `add` runs it.
+## Community & license
 
-## Design
+Questions, bugs, or you built something with it? Join
+**[AgentNexus](https://discord.gg/V9C2kvHC8D)** — a Discord for people building
+with AI agents, `#ctx-optimize` channel.
 
-Evidence-first: every product decision traces to a measured spike
-(`openspec/changes/2026-07-11-graphify-gaps/spikes.md`) — including honest
-benchmarks against a real agent baseline (not corpus-stuffing strawmen), the
-terrain law (graph value is inverse to a codebase's greppability), and the
-symbol-card finding (agents' reads are pointer-chases a complete answer
-eliminates). Extensibility is a verified differentiator, not a slogan: a
-source audit of graphify (2026-07-11) found its languages, data-source lanes
-and exporters are all fork-required static registries (only its remote hooks
-are user-pluggable); here languages are drop-in packs, adapters are dropped
-scripts, and the batch door takes any producer. Vision: `docs/VISION.md`.
-Standing critique: `docs/CRITIQUE.md`.
-
-## Lineage
-
-With all due respect to graphify — a project we learned a great deal from —
-there is a direct line between it and this tool: graphify's central graph
-store and its pluggable remote push/pull hooks (the one part of graphify an
-end user can extend without forking) were contributed upstream by this
-project's author (graphify #1751 / #1752; git-verifiable). ctx-optimize is
-that same idea carried through the whole product: the store, the languages,
-the adapters, and the sync are all open seams by design — nothing here
-requires a fork to extend.
-
-## Community
-
-Questions, bug reports, or you built something with it? Join **[AgentNexus](https://discord.gg/V9C2kvHC8D)** —
-a Discord for people building with AI agents, with a dedicated `#ctx-optimize` channel.
-
-## License
-
-MIT © 2026 Muthukumaran Navaneethakrishnan
-
----
-
-Made by [muthuishere](https://github.com/muthuishere).
+MIT © 2026 Muthukumaran Navaneethakrishnan · made by [muthuishere](https://github.com/muthuishere).

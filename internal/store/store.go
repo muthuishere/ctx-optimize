@@ -456,6 +456,16 @@ func (s *Store) UpdateManifest() (*Manifest, error) {
 		if rel == "manifest.json" || rel == "config.json" || rel == "source.json" || rel == "sources.json" || strings.HasSuffix(rel, ".tmp") {
 			return nil // machine-local (config/source/sources freshness) or transient (.tmp) — never fingerprinted
 		}
+		// graph/index/ is machine-local AND large (432MB on linux). Two reasons
+		// it is never fingerprinted: its header embeds the source file's
+		// size+mtime so the manifest would never be stable, and hashing it on
+		// every gather is exactly the recurring tax the wiki charged before
+		// 0.12.0 (~1.1s/gather for an artifact nothing reads). It stores byte
+		// offsets into this machine's graph, is rebuilt on demand, and does not
+		// travel (ADR 2026-08-05-query-at-scale).
+		if strings.HasPrefix(rel, "graph/index/") {
+			return fs.SkipDir
+		}
 		h, size, err := hashFile(path)
 		if os.IsNotExist(err) {
 			return nil // transient tmp renamed away mid-walk

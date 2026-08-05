@@ -1,0 +1,85 @@
+{
+ "_note": [
+  "Linux kernel v6.9 scale row, 2026-08-05. Recovered from the harness stdout:",
+  "bench_multi.py wrote its incremental JSON only after the grep-class controls,",
+  "and plain `grep -rn` on a 144k-file tree outlived the run, so the file was",
+  "never flushed. Every number below is verbatim from that stdout plus direct",
+  "follow-up commands; nothing is estimated.",
+  "",
+  "READ THIS BEFORE PUBLISHING ANY 'FASTEST' CLAIM: ctx-optimize wins COLD",
+  "GATHER by 2.5x and LOSES QUERY to CodeGraph by 7.5x at this scale. The",
+  "headline 'fastest code graph' is NOT supportable on the query axis.",
+  "CodeGraph's 536ms was verified to return real resolved symbols with",
+  "file:line, not an error path (the trap graphify's 0.06s fell into)."
+ ],
+ "machine": "Apple M5 Pro, 18 cores, 48 GB",
+ "runs": "cold gather best-of-1 (single run at this scale), query median-of-3",
+ "versions": {
+  "ctx-optimize": "v0.12.0",
+  "graphify": "0.9.12",
+  "codegraph": "1.5.0",
+  "gitnexus": "1.6.9",
+  "ripgrep": "15.2.0"
+ },
+ "corpus": {
+  "name": "linux v6.9",
+  "path": "~/ctx-golden-corpora/linux",
+  "files_all": 144011,
+  "files_note": "144,011 = every file in the tree (harness count_files, .git excluded). The 84,300 figure used in earlier ADRs counts extractable source files only. Do not mix the two on one page.",
+  "question": "block device queue"
+ },
+ "results": {
+  "ctx-optimize": {
+   "cold_s": 118.184,
+   "query_ms": 4039,
+   "nodes": 2849719,
+   "store_bytes": 2000000000,
+   "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
+   "runtime_deps": "none"
+  },
+  "graphify": {
+   "cold_s": 527.718,
+   "query_ms": 22799,
+   "nodes": 910778,
+   "store_note": "1.2GB graph.json + 1.9GB cache",
+   "path_note": "update <path> --no-cluster",
+   "caveat": "CANNOT query at default settings: builds a 1.2GB graph.json then fails with 'exceeds 536_870_912-byte cap'. The 22799ms is only reachable after raising GRAPHIFY_MAX_GRAPH_BYTES.",
+   "runtime_deps": "none"
+  },
+  "codegraph": {
+   "cold_s": 289.855,
+   "query_ms": 536,
+   "files_indexed": 62652,
+   "nodes": 1838442,
+   "edges": 5815719,
+   "store_bytes": 4400000000,
+   "store_note": "4.1GB node-sqlite DB (4196.57 MB reported by its own status), WAL journal",
+   "path_note": "init <path> (local node-sqlite, no embeddings/LLM)",
+   "verified": "query output manually inspected — returns resolved structs/functions/enum members with file:line. Real answers, not an error path.",
+   "runtime_deps": "none"
+  },
+  "gitnexus": {
+   "cold_s": null,
+   "query_ms": null,
+   "error": "TIMEOUT after 2700s (cold gather)",
+   "observed": "42+ min wall, ~137 min CPU at 99% across workers, node --max-old-space-size=36864, no index produced",
+   "path_note": "analyze <path> --skip-git --index-only",
+   "reporting_rule": "Report as 'did not finish within 45 minutes on an 18-core M5 Pro'. NEVER as a win for anyone else."
+  },
+  "ripgrep": {
+   "query_ms": 3022,
+   "term": "block",
+   "path_note": "literal scan, no index — returns matching LINES, not resolved symbols. Different question; latency floor only."
+  },
+  "grep": {
+   "query_ms": null,
+   "note": "plain grep -rn outlived the harness on this tree; not measured at this scale"
+  }
+ },
+ "what_this_changes": {
+  "gather": "ctx-optimize is fastest by a wide margin: 118.184s vs CodeGraph 289.855s (2.5x), graphify 527.718s (4.5x), GitNexus DNF.",
+  "query": "ctx-optimize LOSES at this scale: CodeGraph 536ms vs our 4039ms (7.5x). ripgrep 3022ms also beats us.",
+  "why": "CodeGraph indexes into SQLite and seeks; we deserialize the whole graph per invocation. Measured earlier: reading all 2.1GB of ndjson costs 0.12s, so ~97% of our 4s is parsing 2.85M nodes + 5.54M edges, paid before the question is even known.",
+  "honest_headline": "Fastest to BUILD a code graph, and the only tool that produces a complete kernel graph at all (graphify emits 910k nodes and then refuses to read them; GitNexus does not finish). Query speed at scale is CodeGraph's, not ours."
+ }
+}

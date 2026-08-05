@@ -19,6 +19,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
+html,body{max-width:100%;overflow-x:hidden}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;font-size:16px;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1180px;margin:0 auto;padding:0 40px}
 a{color:var(--accent);text-decoration:none}
@@ -49,7 +50,13 @@ h2.sec{font-family:var(--disp);font-size:clamp(1.5rem,3vw,2.1rem);font-weight:70
 section.doc{padding:56px 0;border-top:1px solid var(--border)}
 section.doc:first-of-type{border-top:none}
 
-.toc{margin:44px 0 24px;display:flex;flex-wrap:wrap;gap:10px}
+.pages{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:38px}
+.pages a{display:block;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px 24px;color:var(--text);transition:border-color .18s}
+.pages a:hover{border-color:var(--border2);text-decoration:none}
+.pages a h4{font-family:var(--disp);font-size:1.05rem;font-weight:700;margin-bottom:6px}
+.pages a p{color:var(--muted);font-size:.88rem}
+
+.toc{margin:18px 0 24px;display:flex;flex-wrap:wrap;gap:10px}
 .toc a{font-family:var(--mono);font-size:.8rem;color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:6px 14px}
 .toc a:hover{color:var(--text);border-color:var(--border2);text-decoration:none}
 
@@ -82,7 +89,8 @@ footer a{color:var(--muted)}
 
 @media (max-width:800px){
   .wrap{padding:0 22px}
-  nav ul{display:none}
+  nav ul{gap:18px}
+  .pages{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -91,22 +99,24 @@ footer a{color:var(--muted)}
 <nav><div class="wrap">
   <div class="logo"><a href="index.html" style="color:inherit;text-decoration:none">ctx-<em>optimize</em></a></div>
   <ul>
-    <li><a href="index.html#getstart">Get started</a></li>
-    <li><a href="index.html#demo">Demo</a></li>
-    <li><a href="index.html#numbers">Benchmarks</a></li>
-    <li><a href="concepts.html">Concepts</a></li>
-    <li><a href="cookbook.html">Cookbook</a></li>
-    <li><a href="use-cases.html">Use cases</a></li>
     <li><a href="docs.html">Docs</a></li>
-    <li><a href="compare.html">Compare</a></li>
     <li><a href="https://github.com/muthuishere/ctx-optimize">GitHub</a></li>
   </ul>
 </div></nav>
 
 <header class="hero"><div class="wrap">
-  <div class="kicker">reference</div>
-  <h1>Every command, every config key.<br><span class="ghost">One page, nothing hidden.</span></h1>
-  <p class="lede">ctx-optimize is configured in exactly three places: the <b>committed repo config</b> (<code>.ctxoptimize/config.json</code>), a <b>machine-global config</b> (<code>~/ctxoptimize/config.json</code>), and <b>one environment variable</b>. Everything else is a command.</p>
+  <div class="kicker">documentation</div>
+  <h1>The docs.<br><span class="ghost">Reference here, everything else one click away.</span></h1>
+  <p class="lede">This page is the complete <b>reference</b>: every command, every config key. ctx-optimize is configured in exactly three places — the <b>committed repo config</b> (<code>.ctxoptimize/config.json</code>), a <b>machine-global config</b> (<code>~/ctxoptimize/config.json</code>), and <b>one environment variable</b>. Everything else is a command.</p>
+
+  <div class="pages">
+    <a href="concepts.html"><h4>How it works</h4><p>The store format, producers, edge confidence, freshness, and why the graph is deterministic.</p></a>
+    <a href="cookbook.html"><h4>Cookbook</h4><p>The question you'd ask a teammate → the exact command. Daily use, editing, trust, external systems, monorepos, teams.</p></a>
+    <a href="use-cases.html"><h4>Use cases</h4><p>Onboarding, safe refactoring, impact analysis, monorepos, indexing docs and a live schema.</p></a>
+    <a href="compare.html"><h4>Comparison &amp; benchmarks</h4><p>The measured head-to-head — where each rival wins, what we have not run, and corrections to our own numbers.</p></a>
+  </div>
+
+  <h3 class="sub" style="margin-top:44px">On this page</h3>
   <div class="toc">
     <a href="#install">Install</a>
     <a href="#quickstart">Quickstart</a>
@@ -192,7 +202,7 @@ ctx-optimize affected PaymentService --depth 2</pre>
   <p class="body">Updates the binary (npm installs via npm; standalone binaries from GitHub Releases, sha256-verified against the release's <code>checksums.txt</code>, swapped atomically — dev builds left alone) and then refreshes skills, hooks and the global rule from the binary that is now current. <code>update --check</code> reports without touching anything. User-invoked network only — never a background check.</p>
 
   <h3 class="sub"><code>change-plan</code> — the composed "I'm about to change X" answer</h3>
-  <p class="body">One bounded call returns the signature, callers, blast radius, <b>which tests to run</b> (affected filtered to test declarations), historical co-changes, and a confidence footer separating extracted from inferred evidence. Measured on this repo: <b>229 tokens in 1 call vs 2,270 across the query+card+affected chain it replaces — ~90% fewer answer tokens</b>. Alias: <code>plan</code>.</p>
+  <p class="body">One bounded call returns the signature, callers, blast radius, <b>which tests to run</b> (affected filtered to test declarations), historical co-changes, and a confidence footer separating extracted from inferred evidence. <b>One call in place of the query&nbsp;→&nbsp;card&nbsp;→&nbsp;affected chain</b> it replaces. Alias: <code>plan</code>. (We do not claim it saves you tokens — that claim was measured and killed; see <a href="https://github.com/muthuishere/ctx-optimize/blob/main/docs/CRITIQUE.md">CRITIQUE.md</a> and the <a href="index.html#quality">graded run</a>, where the store arm made 15.0 tool calls per run against the shell arm's 42.7.)</p>
 </div></section>
 
 <section class="doc" id="v03"><div class="wrap">
@@ -254,12 +264,12 @@ ctx-optimize manifests list</pre>
     <tr><th>command</th><th>what it does</th></tr>
     <tr><td>query|ask "terms" [--budget N] [--modules all|a,b] [--root]</td><td>Ranked, cited hits (id, kind, file:line, signature, neighbors). Scope follows cwd: in a module dir it answers from that module and escalates repo-wide on zero hits; at the root it federates across all modules. <code>--budget</code> caps output tokens (default 2000).</td></tr>
     <tr><td>card "X"</td><td>Symbol card: signature, doc, location, callers, callees — cite without opening the file. Accepts id, exact label, or fuzzy name; strips invented qualifiers (<code>ns::Class::Method</code> → <code>Method</code>); a total miss suggests the nearest labels.</td></tr>
-    <tr><td>change-plan "X" [--json]</td><td>The composed "I'm about to change X" answer, one bounded call: signature + callers + blast radius + <b>which tests to run</b> + co-change history, with a confidence footer. ~90% fewer answer tokens than the query+card+affected chain (measured). Alias: <code>plan</code>.</td></tr>
+    <tr><td>change-plan "X" [--json]</td><td>The composed "I'm about to change X" answer, one bounded call: signature + callers + blast radius + <b>which tests to run</b> + co-change history, with a confidence footer. One call in place of the query+card+affected chain. Alias: <code>plan</code>.</td></tr>
     <tr><td>explain "X"</td><td>Plain-language node + neighborhood.</td></tr>
     <tr><td>affected "X" [--depth N] [--relation R]</td><td>Reverse impact: what breaks if X changes.</td></tr>
     <tr><td>path "A" "B"</td><td>Shortest path between two nodes.</td></tr>
     <tr><td>hubs [--top N]</td><td>Most-connected nodes — where to start reading.</td></tr>
-    <tr><td>status</td><td>Store facts + freshness vs git HEAD + tokens-saved tally.</td></tr>
+    <tr><td>status</td><td>Store facts + freshness vs git HEAD + a local tally of answers served.</td></tr>
     <tr><td>fresh</td><td>One-line verdict; exit 0 fresh / 1 stale / 2 unknown. The agent/hook gate before trusting an answer.</td></tr>
     <tr><td>serve|dashboard [--port 4747]</td><td>Local dashboard on 127.0.0.1 — zero external requests; mutations are loopback-only and audited.</td></tr>
   </table></div>
@@ -442,7 +452,7 @@ ctx-optimize save-result --question "where is auth" --answer "internal/auth" \
 
 <span class="c"># at session start — aggregate with recency decay into reflections/LESSONS.md</span>
 ctx-optimize reflect</pre>
-  <p class="body">Deterministic, no model anywhere: the agent is the judge, the binary only tallies — preferred nodes (corroborated, recency-weighted), dead ends to avoid, verbatim corrections. <code>status</code> shows the running tokens-saved tally.</p>
+  <p class="body">Deterministic, no model anywhere: the agent is the judge, the binary only tallies — preferred nodes (corroborated, recency-weighted), dead ends to avoid, verbatim corrections. <code>status</code> shows the running tally of answers served. It is a local counter, not a savings claim — we do not claim token savings anywhere (<a href="https://github.com/muthuishere/ctx-optimize/blob/main/docs/CRITIQUE.md">CRITIQUE.md</a>).</p>
 </div></section>
 
 <section class="doc" id="contract"><div class="wrap">

@@ -215,6 +215,14 @@ func TestFanOutDeterministicAcrossJobs(t *testing.T) {
 			case "source.json", "sources.json", "manifest.json", "config.json":
 				return nil
 			}
+			// graph/index/ is machine-local for the same reason: its header
+			// carries the source file's size+mtime so a stale index can be
+			// detected, and it stores BYTE OFFSETS into this machine's copy of
+			// the graph. It is rebuilt from the graph on demand and never
+			// travels (ADR 2026-08-05-query-at-scale).
+			if strings.Contains(filepath.ToSlash(rel), "/graph/index/") {
+				return nil
+			}
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return err

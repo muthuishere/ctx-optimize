@@ -621,6 +621,21 @@ func Card(nodes []schema.Node, edges []schema.Edge, name string, opts ...Option)
 	if err != nil {
 		return nil, err
 	}
+	return CardFor(n, via, edges, opts...), nil
+}
+
+// CardFor builds the card for an ALREADY-RESOLVED node. Card is a thin wrapper
+// over it, so there is exactly one implementation of the card and no second
+// copy to drift.
+//
+// The seam exists for the index fast path (ADR 2026-08-05-query-at-scale):
+// every branch below tests `e.Source == n.ID` or `e.Target == n.ID`, so edges
+// that touch neither contribute nothing. A caller that has fetched precisely
+// those edges from the index may pass them and get a byte-identical card
+// without materializing 5.5M edges. It MUST pass the resolution provenance it
+// actually used — a fast path that reports "exact-id" where the full path said
+// "exact-label" is a changed answer.
+func CardFor(n *schema.Node, via string, edges []schema.Edge, opts ...Option) *CardData {
 	var o options
 	for _, f := range opts {
 		f(&o)
@@ -680,7 +695,7 @@ func Card(nodes []schema.Node, edges []schema.Edge, name string, opts ...Option)
 	if len(other) > 0 {
 		c.Other = other
 	}
-	return c, nil
+	return c
 }
 
 // RenderCard is the human/agent-readable form; --json marshals CardData.

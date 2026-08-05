@@ -865,6 +865,19 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 			return werr
 		}
 	}
+	// Rebuild the lookup index whenever the graph moved (ADR
+	// 2026-08-05-query-at-scale). Measured ~2.5s on linux's 2.85M nodes,
+	// 0.008s on a 1,476-file repo — ~2% of a kernel gather, noise elsewhere.
+	//
+	// Best-effort ON PURPOSE: the index is an optimization that fails safe, so
+	// a build failure must degrade speed, never correctness or the gather. A
+	// missing or stale index is detected by its header and the reader falls
+	// back to the full scan.
+	if graphChanged || force {
+		if ierr := s.BuildIndex(); ierr != nil {
+			fmt.Fprintf(out, "index: not rebuilt (%v) — lookups fall back to a full scan\n", ierr)
+		}
+	}
 	if _, err := s.UpdateManifest(); err != nil {
 		return err
 	}

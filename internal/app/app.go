@@ -1755,21 +1755,80 @@ func cmdExplain(args []string, stdout io.Writer) error {
 	return nil
 }
 
+// cardViaIndex answers `card` from the store index when it can do so provably
+// identically to the full scan, and refuses otherwise.
+//
+// Refuses (ok=false) for: a federated root scope (many stores, one answer), a
+// missing or stale index, and any name that does not resolve at the exact-id or
+// exact-label tier. Those all fall through to the unchanged full path — the
+// later resolution tiers rank against every node in the store and no point
+// lookup can reproduce them.
+func cardViaIndex(f *flags) (*analyze.CardData, *scope, string, bool) {
+	sc, err := resolveScope(f)
+	if err != nil {
+		return nil, nil, "", false
+	}
+	// Federated: the answer spans module stores, so a single-store index cannot
+	// produce it. Also excluded when --root was asked for the same reason.
+	if f.bools["root"] || (sc.kind == scopeRoot && len(sc.modules) > 0) {
+		return nil, nil, "", false
+	}
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return nil, nil, "", false
+	}
+	s, err := store.Open(storeRoot, sc.storeKey)
+	if err != nil || !s.IndexCurrent() {
+		return nil, nil, "", false
+	}
+	n, via, ok := s.ResolveExact(f.args[0])
+	if !ok || n == nil {
+		return nil, nil, "", false
+	}
+	edges, err := s.EdgesTouching(n.ID)
+	if err != nil {
+		return nil, nil, "", false
+	}
+	return analyze.CardFor(n, via, edges, ambOpts(f)...), sc, storeRoot, true
+}
+
 func cmdCard(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) != 1 {
 		return fmt.Errorf(`usage: ctx-optimize card "X"`)
 	}
-	nodes, edges, sc, storeRoot, err := loadGraphScoped(f)
-	if err != nil {
-		return err
-	}
 	t0 := time.Now()
 	cw := &countingWriter{w: stdout}
-	c, cerr := analyze.Card(nodes, edges, f.args[0], ambOpts(f)...)
-	if id, ok := fuzzyPick(cerr, f); ok {
-		if c, cerr = analyze.Card(nodes, edges, id, ambOpts(f)...); cerr == nil {
-			c.ResolvedVia = "fuzzy" // --fuzzy took a candidate: stay labeled
+
+	// Index fast path (ADR 2026-08-05-query-at-scale): when the name resolves
+	// exactly by id or label, the card needs one node and the edges touching
+	// it — not 2.85M nodes and 5.5M edges. Measured on linux: 4,039ms -> ~2ms.
+	//
+	// It answers ONLY the cases it can prove identical, and hands everything
+	// else (last-segment, fuzzy, federated, ambiguity) to the full path below
+	// unchanged. So the fast path can make `card` quick; it cannot make it
+	// different. internal/store's equivalence test pins that claim against a
+	// real corpus.
+	var nodes []schema.Node
+	var edges []schema.Edge
+	var sc *scope
+	var storeRoot string
+	var c *analyze.CardData
+	var cerr error
+
+	if fc, fsc, froot, ok := cardViaIndex(f); ok {
+		c, sc, storeRoot = fc, fsc, froot
+	} else {
+		var err error
+		nodes, edges, sc, storeRoot, err = loadGraphScoped(f)
+		if err != nil {
+			return err
+		}
+		c, cerr = analyze.Card(nodes, edges, f.args[0], ambOpts(f)...)
+		if id, ok := fuzzyPick(cerr, f); ok {
+			if c, cerr = analyze.Card(nodes, edges, id, ambOpts(f)...); cerr == nil {
+				c.ResolvedVia = "fuzzy" // --fuzzy took a candidate: stay labeled
+			}
 		}
 	}
 	bodyRoot := f.strs["path"]
@@ -1785,7 +1844,8 @@ func cmdCard(args []string, stdout io.Writer) error {
 	// module. Retry against the federated root graph and say where it was.
 	if cerr != nil && sc != nil && sc.kind == scopeModule {
 		if len(sc.modules) == 0 {
-			if sc.modules, err = expandRootModules(sc); err != nil {
+			var mErr error
+			if sc.modules, mErr = expandRootModules(sc); mErr != nil {
 				return cerr
 			}
 		}

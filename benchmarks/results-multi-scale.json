@@ -1,0 +1,224 @@
+{
+ "corpora": {
+  "corpus-ctx-src": {
+   "ast-grep": {
+    "lang": "go",
+    "path_note": "no index \u2014 scans the tree on every query",
+    "pattern": "func $NAME($$$) {$$$}",
+    "query_ms": 27
+   },
+   "codegraph": {
+    "cold_s": 0.762,
+    "error": null,
+    "path_note": "init <path> cold / sync <path> warm (local node-sqlite, no embeddings/LLM)",
+    "query_error": "exit 1: \u2717 CodeGraph not initialized in /Users/muthuishere/muthu/gitworkspace/ctx-optimize",
+    "query_ms": null,
+    "runs": 3,
+    "runtime_deps": "none (local node-sqlite; telemetry disabled in the timed path)",
+    "store_bytes": 12001509,
+    "warm_s": 0.121
+   },
+   "ctx-optimize": {
+    "cold_s": 0.326,
+    "error": null,
+    "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
+    "query_ms": 12,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 1688995,
+    "warm_s": 0.027
+   },
+   "files": 409,
+   "gitnexus": {
+    "cold_s": 12.85,
+    "error": null,
+    "path_note": "analyze --skip-git --index-only (no embeddings/skills/PDG; no LLM)",
+    "query_error": "exit 1: na/tools/gitnexus/gitnexus/dist/cli/tool.js:103:20)\n    at async Command.<anonymous> (file:///Users/muthuishere/ctx-bench-arena/tools/gitnexus/gitnexus/dist/cli/lazy-action.js:33:9)\n\nNode.js v24.18.0",
+    "query_ms": null,
+    "runs": 3,
+    "runtime_deps": "none (local LadybugDB)",
+    "store_bytes": 143769009,
+    "warm_s": 8.337
+   },
+   "graphify": {
+    "cold_s": 1.352,
+    "error": null,
+    "path_note": "update <path> --no-cluster (extraction+graph only, no clustering/LLM; its fastest path)",
+    "query_ms": 120,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 6743928,
+    "warm_s": 1.343
+   },
+   "question": "store merge producer"
+  },
+  "corpus-flask": {
+   "ast-grep": {
+    "lang": "python",
+    "path_note": "no index \u2014 scans the tree on every query",
+    "pattern": "def $NAME($$$):",
+    "query_ms": 18
+   },
+   "codegraph": {
+    "cold_s": 0.438,
+    "error": null,
+    "path_note": "init <path> cold / sync <path> warm (local node-sqlite, no embeddings/LLM)",
+    "query_error": "exit 1: \u2717 CodeGraph not initialized in /Users/muthuishere/muthu/gitworkspace/ctx-optimize",
+    "query_ms": null,
+    "runs": 3,
+    "runtime_deps": "none (local node-sqlite; telemetry disabled in the timed path)",
+    "store_bytes": 5206245,
+    "warm_s": 0.133
+   },
+   "ctx-optimize": {
+    "cold_s": 0.314,
+    "error": null,
+    "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
+    "query_ms": 12,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 1649510,
+    "warm_s": 0.036
+   },
+   "files": 344,
+   "gitnexus": {
+    "cold_s": 6.355,
+    "error": null,
+    "path_note": "analyze --skip-git --index-only (no embeddings/skills/PDG; no LLM)",
+    "query_error": "exit 1: na/tools/gitnexus/gitnexus/dist/cli/tool.js:103:20)\n    at async Command.<anonymous> (file:///Users/muthuishere/ctx-bench-arena/tools/gitnexus/gitnexus/dist/cli/lazy-action.js:33:9)\n\nNode.js v24.18.0",
+    "query_ms": null,
+    "runs": 3,
+    "runtime_deps": "none (local LadybugDB)",
+    "store_bytes": 63400427,
+    "warm_s": 4.943
+   },
+   "graphify": {
+    "cold_s": 0.845,
+    "error": null,
+    "path_note": "update <path> --no-cluster (extraction+graph only, no clustering/LLM; its fastest path)",
+    "query_ms": 106,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 3317484,
+    "warm_s": 0.742
+   },
+   "question": "route decorator handling"
+  },
+  "corpus-gin": {
+   "ast-grep": {
+    "lang": "go",
+    "path_note": "no index \u2014 scans the tree on every query",
+    "pattern": "func $NAME($$$) {$$$}",
+    "query_ms": 26
+   },
+   "codegraph": {
+    "cold_s": 0.593,
+    "error": null,
+    "path_note": "init <path> cold / sync <path> warm (local node-sqlite, no embeddings/LLM)",
+    "query_error": "exit 1: \u2717 CodeGraph not initialized in /Users/muthuishere/muthu/gitworkspace/ctx-optimize",
+    "query_ms": null,
+    "runs": 3,
+    "runtime_deps": "none (local node-sqlite; telemetry disabled in the timed path)",
+    "store_bytes": 8065253,
+    "warm_s": 0.137
+   },
+   "ctx-optimize": {
+    "cold_s": 0.342,
+    "error": null,
+    "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
+    "query_ms": 11,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 1696599,
+    "warm_s": 0.036
+   },
+   "files": 253,
+   "gitnexus": {
+    "cold_s": 7.56,
+    "error": null,
+    "path_note": "analyze --skip-git --index-only (no embeddings/skills/PDG; no LLM)",
+    "query_error": "exit 1: na/tools/gitnexus/gitnexus/dist/cli/tool.js:103:20)\n    at async Command.<anonymous> (file:///Users/muthuishere/ctx-bench-arena/tools/gitnexus/gitnexus/dist/cli/lazy-action.js:33:9)\n\nNode.js v24.18.0",
+    "query_ms": null,
+    "runs": 3,
+    "runtime_deps": "none (local LadybugDB)",
+    "store_bytes": 76232930,
+    "warm_s": 5.371
+   },
+   "graphify": {
+    "cold_s": 0.777,
+    "error": null,
+    "path_note": "update <path> --no-cluster (extraction+graph only, no clustering/LLM; its fastest path)",
+    "query_ms": 110,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 4966453,
+    "warm_s": 0.745
+   },
+   "question": "router group middleware"
+  },
+  "corpus-graphify-src": {
+   "ast-grep": {
+    "lang": "python",
+    "path_note": "no index \u2014 scans the tree on every query",
+    "pattern": "def $NAME($$$):",
+    "query_ms": 54
+   },
+   "codegraph": {
+    "cold_s": 1.323,
+    "error": null,
+    "path_note": "init <path> cold / sync <path> warm (local node-sqlite, no embeddings/LLM)",
+    "query_error": "exit 1: \u2717 CodeGraph not initialized in /Users/muthuishere/muthu/gitworkspace/ctx-optimize",
+    "query_ms": null,
+    "runs": 3,
+    "runtime_deps": "none (local node-sqlite; telemetry disabled in the timed path)",
+    "store_bytes": 26284261,
+    "warm_s": 0.133
+   },
+   "ctx-optimize": {
+    "cold_s": 0.648,
+    "error": null,
+    "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
+    "query_ms": 27,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 9054553,
+    "warm_s": 0.027
+   },
+   "files": 1476,
+   "gitnexus": {
+    "cold_s": 10.649,
+    "error": null,
+    "path_note": "analyze --skip-git --index-only (no embeddings/skills/PDG; no LLM)",
+    "query_error": "exit 1: na/tools/gitnexus/gitnexus/dist/cli/tool.js:103:20)\n    at async Command.<anonymous> (file:///Users/muthuishere/ctx-bench-arena/tools/gitnexus/gitnexus/dist/cli/lazy-action.js:33:9)\n\nNode.js v24.18.0",
+    "query_ms": null,
+    "runs": 3,
+    "runtime_deps": "none (local LadybugDB)",
+    "store_bytes": 201318898,
+    "warm_s": 7.811
+   },
+   "graphify": {
+    "cold_s": 5.123,
+    "error": null,
+    "path_note": "update <path> --no-cluster (extraction+graph only, no clustering/LLM; its fastest path)",
+    "query_ms": 373,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 26866576,
+    "warm_s": 5.483
+   },
+   "question": "how does clustering work"
+  }
+ },
+ "machine": "Apple M5 Pro, 18 cores, 48 GB",
+ "versions": {
+  "ctx-optimize": "ctx-optimize v0.11.0-24-g8621d6d-dirty (8621d6d, 2026-08-04T18:36:33Z)"
+ }
+}

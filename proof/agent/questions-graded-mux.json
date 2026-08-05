@@ -1,0 +1,174 @@
+{
+  "repo": "https://github.com/gorilla/mux",
+  "name": "gorilla-mux-graded",
+  "comment": "ANSWER-QUALITY question set. Every question carries a `grade` block whose facts were verified by hand against the checked-out source with ripgrep (see `truth` on each fact for the exact file:line). The grader scores the AGENT'S FINAL ANSWER, deterministically, with no model in the loop and no knowledge of which arm produced it — so arm a (shell), arm b (ctx-optimize) and arm c (graphify) are judged by the identical rule. `impact` questions are the load-bearing class: they are the 'who calls this function' claim.",
+  "questions": [
+    {
+      "id": "i1",
+      "class": "impact",
+      "prompt": "Which functions or methods call Route.addRegexpMatcher? List every caller.",
+      "grade": {
+        "facts": [
+          { "name": "Route.Host", "truth": "route.go:367", "any_of": ["route.host", ") host(", "func (r *route) host"] },
+          { "name": "Route.Path", "truth": "route.go:427", "any_of": [") path(", "route.path(", "`path`", "path method"] },
+          { "name": "Route.PathPrefix", "truth": "route.go:443", "any_of": ["pathprefix"] },
+          { "name": "Route.Queries", "truth": "route.go:474", "any_of": ["queries"] }
+        ],
+        "forbid": [
+          { "name": "claims no callers", "any_of": ["no callers", "nothing calls", "is not called", "no other code calls"] }
+        ]
+      }
+    },
+    {
+      "id": "i2",
+      "class": "impact",
+      "prompt": "Which function calls uniqueVars, and where?",
+      "grade": {
+        "facts": [
+          { "name": "addRegexpMatcher is the sole caller", "truth": "route.go:267,273,280", "any_of": ["addregexpmatcher"] },
+          { "name": "cites route.go", "truth": "route.go", "any_of": ["route.go"] }
+        ],
+        "forbid": [
+          { "name": "claims no callers", "any_of": ["no callers", "nothing calls", "is not called"] }
+        ]
+      }
+    },
+    {
+      "id": "i3",
+      "class": "impact",
+      "prompt": "Which methods call matchInArray? Name each one.",
+      "grade": {
+        "facts": [
+          { "name": "methodMatcher.Match", "truth": "route.go:391-392", "any_of": ["methodmatcher"] },
+          { "name": "schemeMatcher.Match", "truth": "route.go:500-501", "any_of": ["schemematcher"] }
+        ],
+        "forbid": [
+          { "name": "claims no callers", "any_of": ["no callers", "nothing calls", "is not called"] }
+        ]
+      }
+    },
+    {
+      "id": "i4",
+      "class": "impact",
+      "prompt": "Which functions call requestWithVars? List every caller.",
+      "grade": {
+        "facts": [
+          { "name": "Router.ServeHTTP", "truth": "mux.go:209", "any_of": ["servehttp"] },
+          { "name": "SetURLVars", "truth": "test_helpers.go:18", "any_of": ["seturlvars"] }
+        ],
+        "forbid": [
+          { "name": "claims no callers", "any_of": ["no callers", "nothing calls", "is not called"] }
+        ]
+      }
+    },
+    {
+      "id": "i5",
+      "class": "impact",
+      "prompt": "If I change the Route.Match method, what other code calls it? List every caller of Route.Match (the method on *Route, not the Router or matcher ones).",
+      "grade": {
+        "facts": [
+          { "name": "Router.Match", "truth": "mux.go:153", "any_of": ["router.match", "func (r *router) match", "router's match"] },
+          { "name": "getAllMethodsForRoute", "truth": "middleware.go:79", "any_of": ["getallmethodsforroute"] }
+        ],
+        "forbid": [
+          { "name": "claims no callers", "any_of": ["no callers", "nothing calls", "is not called", "no other code calls", "does not appear to be called"] },
+          { "name": "names a matcher type as a caller (it implements Match, it does not call Route.Match)", "any_of": ["headermatcher", "schemematcher", "matcherfunc", "headerregexmatcher"] },
+          { "name": "names an unrelated helper as a caller", "any_of": ["matchmapwithstring", "matchmapwithregex", "gethandlerwithmiddlewares"] }
+        ]
+      }
+    },
+    {
+      "id": "i6",
+      "class": "impact",
+      "prompt": "Which function calls cleanPath, and where?",
+      "grade": {
+        "facts": [
+          { "name": "Router.ServeHTTP", "truth": "mux.go:195", "any_of": ["servehttp"] },
+          { "name": "cites mux.go", "truth": "mux.go", "any_of": ["mux.go"] }
+        ],
+        "forbid": [
+          { "name": "claims no callers", "any_of": ["no callers", "nothing calls", "is not called"] }
+        ]
+      }
+    },
+    {
+      "id": "i7",
+      "class": "impact",
+      "prompt": "Which method calls routeRegexpGroup.setMatch, and where?",
+      "grade": {
+        "facts": [
+          { "name": "Route.Match", "truth": "route.go:112", "any_of": ["route.match", "*route) match", "route's match"] },
+          { "name": "cites route.go", "truth": "route.go", "any_of": ["route.go"] }
+        ],
+        "forbid": [
+          { "name": "claims no callers", "any_of": ["no callers", "nothing calls", "is not called"] },
+          { "name": "names Router.Match (wrong type) as the caller", "any_of": ["router.match", "*router) match"] }
+        ]
+      }
+    },
+    {
+      "id": "i8",
+      "class": "impact",
+      "prompt": "Which function calls getAllMethodsForRoute, and where?",
+      "grade": {
+        "facts": [
+          { "name": "CORSMethodMiddleware", "truth": "middleware.go:58", "any_of": ["corsmethodmiddleware"] },
+          { "name": "cites middleware.go", "truth": "middleware.go", "any_of": ["middleware.go"] }
+        ],
+        "forbid": [
+          { "name": "claims no callers", "any_of": ["no callers", "nothing calls", "is not called"] }
+        ]
+      }
+    },
+    {
+      "id": "l1",
+      "class": "locate",
+      "prompt": "Where is a route template like /users/{id} parsed into a regular expression? Name the function and the file.",
+      "grade": {
+        "facts": [
+          { "name": "newRouteRegexp", "truth": "regexp.go:41", "any_of": ["newrouteregexp"] },
+          { "name": "cites regexp.go", "truth": "regexp.go", "any_of": ["regexp.go"] }
+        ],
+        "forbid": []
+      }
+    },
+    {
+      "id": "l2",
+      "class": "locate",
+      "prompt": "Which method dispatches an incoming HTTP request to a matched handler, and where is it defined?",
+      "grade": {
+        "facts": [
+          { "name": "Router.ServeHTTP", "truth": "mux.go:188", "any_of": ["servehttp"] },
+          { "name": "cites mux.go", "truth": "mux.go", "any_of": ["mux.go"] }
+        ],
+        "forbid": []
+      }
+    },
+    {
+      "id": "l3",
+      "class": "locate",
+      "prompt": "How are path variables captured from a URL and made available to a handler? Name the functions involved and their files.",
+      "grade": {
+        "facts": [
+          { "name": "setMatch extracts vars", "truth": "regexp.go:339", "any_of": ["setmatch"] },
+          { "name": "Vars accessor", "truth": "mux.go:466", "any_of": ["mux.vars", "func vars(", "vars("] },
+          { "name": "request context helper", "truth": "mux.go:493/505", "any_of": ["requestwithvars", "requestwithrouteandvars"] }
+        ],
+        "forbid": []
+      }
+    },
+    {
+      "id": "l4",
+      "class": "locate",
+      "prompt": "Where does the router decide which route matches a request, and what does it do when no route matches?",
+      "grade": {
+        "facts": [
+          { "name": "Router.Match", "truth": "mux.go:151", "any_of": ["router.match", "*router) match", "router's match"] },
+          { "name": "NotFoundHandler", "truth": "mux.go:174 / mux.go:225", "any_of": ["notfoundhandler"] },
+          { "name": "cites mux.go", "truth": "mux.go", "any_of": ["mux.go"] }
+        ],
+        "forbid": []
+      }
+    }
+  ]
+}

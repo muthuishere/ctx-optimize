@@ -148,7 +148,13 @@ function runShell(command) {
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (e) {
-    return `[shell error] ${e.stderr || e.message || e}`.slice(0, OUT_CAP);
+    // grep/rg exit 1 == "no matches", which is a legitimate empty result, not a
+    // tool failure. Only exit >1 (or anything on stderr) is a real error — the
+    // distinction matters, otherwise the shell arm is charged for its own
+    // successful zero-hit searches.
+    const err = String(e.stderr || "").trim();
+    if (e.status === 1 && !err) return "[no matches]";
+    return `[shell error] ${err || e.message || e}`.slice(0, OUT_CAP);
   }
 }
 function runCtx(argv) {
@@ -212,7 +218,9 @@ async function main() {
 
   const usage = { prompt: 0, completion: 0, total: 0, cost: 0 };
   const calls = { run_shell: 0, ctx_optimize: 0, graphify: 0 };
+  const trace = [];        // every tool invocation, for audit
   let answer = "";
+  let truncated = true;    // cleared when the model actually answers
   const t0 = Date.now();
 
   for (let step = 0; step < MAX_STEPS; step++) {
@@ -228,20 +236,27 @@ async function main() {
     messages.push(msg);
 
     const toolCalls = msg.tool_calls || [];
-    if (toolCalls.length === 0) { answer = msg.content || ""; break; }
+    if (toolCalls.length === 0) { answer = msg.content || ""; truncated = false; break; }
 
     for (const tc of toolCalls) {
       const name = tc.function?.name;
       let out = "";
+      let input = "";
       try {
         const a = JSON.parse(tc.function?.arguments || "{}");
-        if (name === "run_shell") { calls.run_shell++; out = runShell(a.command || ""); }
-        else if (name === "ctx_optimize") { calls.ctx_optimize++; out = runCtx(a.argv || []); }
-        else if (name === "graphify") { calls.graphify++; out = runGraphify(a.argv || []); }
+        if (name === "run_shell") { calls.run_shell++; input = a.command || ""; out = runShell(input); }
+        else if (name === "ctx_optimize") { calls.ctx_optimize++; input = (a.argv || []).join(" "); out = runCtx(a.argv || []); }
+        else if (name === "graphify") { calls.graphify++; input = (a.argv || []).join(" "); out = runGraphify(a.argv || []); }
         else out = `[unknown tool ${name}]`;
       } catch (e) {
         out = `[tool arg parse error] ${e.message}`;
       }
+      trace.push({
+        tool: name, input,
+        out_bytes: String(out).length,
+        error: /^\[(shell|ctx-optimize|graphify) error\]/.test(String(out)),
+        head: String(out).slice(0, 300),
+      });
       messages.push({
         role: "tool", tool_call_id: tc.id, name,
         content: String(out).slice(0, OUT_CAP),
@@ -257,7 +272,10 @@ async function main() {
     tool_calls: calls,
     tokens: { prompt: usage.prompt, completion: usage.completion, total: usage.total },
     cost_usd: round(usage.cost, 6),
+    truncated,                               // true = hit --max-steps without answering
+    tool_errors: trace.filter((t) => t.error).length,
     answer: answer.trim(),
+    trace,
   };
   process.stdout.write(JSON.stringify(record, null, 2) + "\n");
 }
