@@ -40,6 +40,33 @@ legacy/hostile code" as a published-benchmark secondary claim.
    be absorbed natively within quarters.
 5. **Proof-matrix methodology** — Codex/Devin token reporting isn't comparable
    out of the box; our credibility weapon has a methodology dependency.
+6. **"2.5x faster than the next tool" names a cohort that excludes the fast
+   competitors** (added 2026-08-14, competitive research). README:19 makes the
+   claim against `benchmarks/suite/tools.json`, whose own `_doc` promises
+   "every tool we benchmark AND every tool we deliberately do not — with the
+   reason". It lists neither **GNU Global (gtags)**, **Zoekt**, nor **SCIP**.
+   That is not a small omission: gtags claims ~37M lines/minute and indexes
+   symbol *references*, so "who calls this" is partly in its scope, from a
+   decades-old tool many people already have installed; Zoekt indexes the
+   kernel in roughly 160s single-threaded with sub-50ms queries. Until they
+   are measured, the honest forms are "fastest of the graph-building agent
+   tools we tested" or naming the cohort inline. **Either measure them or
+   narrow the claim — do not leave it as it stands.**
+7. **The judged scoreboard is self-authored, self-graded and self-floored** —
+   20 questions per corpus, written by us, marked by us, against floors we
+   set. It is genuinely useful as a regression net and worth ~nothing as
+   external evidence; a skeptic discounts it entirely and is right to. An
+   independent yardstick (Loc-Bench scores at file/module/function
+   granularity, which maps 1:1 onto our node kinds) is the missing piece.
+8. **Against SCIP we have no accuracy argument** — scip-* indexers run the real
+   type checker, so their edges are compiler-precise where ours are heuristic
+   (INFERRED/AMBIGUOUS by construction). Our case there is cost and coverage —
+   no build required, works on non-compiling trees, 12 languages out of the
+   box — and it must never be dressed up as precision.
+9. **Published perf numbers went stale the moment the boundary lane landed** —
+   README's 118.18s kernel build predates the +60% full-gather regression
+   (ADR 6 / ADR 7). Until that is fixed, the headline number is not
+   reproducible from HEAD. Re-measure before it is quoted again.
 
 ## Kill criteria (pre-committed)
 Thin slice (cards + deterministic wiki) on kernel + one true legacy repo:
