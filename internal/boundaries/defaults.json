@@ -5,135 +5,635 @@
       "id": "env-go",
       "transport": "config.env",
       "direction": "consumes",
-      "when": { "ext": [".go"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "os\\.Getenv\\(\\s*\"([A-Z][A-Z0-9_]{2,})\"", "identifier": 1 }],
-      "flag": { "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW", "set": { "sensitive": "true" } }
+      "when": {
+        "ext": [
+          ".go"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "os\\.Getenv\\(\\s*\"([A-Z][A-Z0-9_]+)\"",
+          "identifier": 1
+        }
+      ],
+      "flag": {
+        "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW",
+        "set": {
+          "sensitive": "true"
+        }
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'os\\.Getenv\\(' --ext .go --count  # corpora: go-kubernetes, go-gin, ctx-optimize"
+        },
+        "expected": 179,
+        "matched": 145,
+        "recall": 0.81,
+        "sampled": 10,
+        "confirmed": 10,
+        "precision": 1.0,
+        "known_misses": [
+          "os.Getenv(varName) — name is a variable (k8s: 31 sites)",
+          "lowercase or 1-char names excluded by the [A-Z][A-Z0-9_]+ shape"
+        ]
+      }
     },
     {
       "id": "env-js",
       "transport": "config.env",
       "direction": "consumes",
-      "when": { "ext": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "(?:process\\.env|import\\.meta\\.env)\\.([A-Z][A-Z0-9_]{2,})", "identifier": 1 }],
-      "flag": { "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW", "set": { "sensitive": "true" } }
+      "when": {
+        "ext": [
+          ".ts",
+          ".tsx",
+          ".js",
+          ".jsx",
+          ".mjs",
+          ".cjs"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "(?:process\\.env|import\\.meta\\.env)\\.([A-Z][A-Z0-9_]+)\\b",
+          "identifier": 1
+        },
+        {
+          "re": "(?:process\\.env|import\\.meta\\.env)\\[\\s*['\"`]([A-Z][A-Z0-9_]+)",
+          "identifier": 1
+        }
+      ],
+      "flag": {
+        "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW",
+        "set": {
+          "sensitive": "true"
+        }
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '(process\\.env|import\\.meta\\.env)[.\\[]' --ext .ts,.tsx,.js,.mjs --count  # corpora: ts-typescript, ts-hono"
+        },
+        "expected": 39,
+        "matched": 37,
+        "recall": 0.95,
+        "sampled": 8,
+        "confirmed": 8,
+        "precision": 1.0,
+        "known_misses": [
+          "process.env[varName] — key is a variable",
+          "lowercase names (npm_config_*)"
+        ]
+      }
     },
     {
       "id": "env-py",
       "transport": "config.env",
       "direction": "consumes",
-      "when": { "ext": [".py"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "os\\.environ(?:\\.get)?[\\[(]\\s*['\"]([A-Z][A-Z0-9_]{2,})['\"]", "identifier": 1 }],
-      "flag": { "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW", "set": { "sensitive": "true" } }
+      "when": {
+        "ext": [
+          ".py"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "os\\.environ(?:\\.get|\\.setdefault|\\.pop)?[\\[(]\\s*['\"]([A-Z][A-Z0-9_]+)['\"]",
+          "identifier": 1
+        }
+      ],
+      "flag": {
+        "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW",
+        "set": {
+          "sensitive": "true"
+        }
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'os\\.environ(\\.get|\\.setdefault|\\.pop)?[\\[(]' --ext .py --count  # corpora: py-django, py-flask"
+        },
+        "expected": 65,
+        "matched": 53,
+        "recall": 0.82,
+        "sampled": 10,
+        "confirmed": 10,
+        "precision": 1.0,
+        "known_misses": [
+          "os.environ[key] — key is a variable",
+          "bare os.environ passed or copied whole (no key at the site)"
+        ]
+      }
     },
     {
       "id": "process-go",
       "transport": "process.exec",
       "direction": "consumes",
-      "when": { "ext": [".go"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "exec\\.Command(?:Context)?\\(\\s*(?:ctx,\\s*)?\"([^\"]{1,60})\"", "identifier": 1 }]
+      "when": {
+        "ext": [
+          ".go"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "exec\\.Command(?:Context)?\\(\\s*(?:ctx,\\s*)?\"([^\"]{1,60})\"",
+          "identifier": 1
+        }
+      ],
+      "tier": "AMBIGUOUS",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'exec\\.Command(Context)?\\(' --ext .go --count  # corpora: go-kubernetes, ctx-optimize"
+        },
+        "expected": 251,
+        "matched": 163,
+        "recall": 0.65,
+        "sampled": 10,
+        "confirmed": 10,
+        "precision": 1.0,
+        "known_misses": [
+          "exec.Command(binVar, args...) — binary is a variable (k8s: 73, self: 15); statically unknowable, no widening recovers it without misfiring on argument literals"
+        ]
+      }
     },
     {
       "id": "process-js",
       "transport": "process.exec",
       "direction": "consumes",
-      "when": { "ext": [".ts", ".js", ".mjs", ".cjs"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "child_process\\.(?:spawn|exec|execFile|execSync)\\(\\s*[`'\"]([^`'\"]{1,60})", "identifier": 1 }]
+      "when": {
+        "ext": [
+          ".ts",
+          ".js",
+          ".mjs",
+          ".cjs"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "child_process\\.(?:spawn|exec|execFile|execSync)\\(\\s*[`'\"]([^`'\"]{1,60})",
+          "identifier": 1
+        }
+      ],
+      "tier": "AMBIGUOUS",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'child_process\\.(spawn|exec|execFile|execSync)\\(' --ext .ts,.js,.mjs,.cjs --count  # corpora: ts-typescript, ts-hono — ZERO sites"
+        },
+        "expected": 0,
+        "matched": 0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "no corpus sites available — tier set by family evidence (process-go 0.65, process-py 0.00), not measurement",
+          "destructured `spawn(` via import {spawn} — receiver-less form unmatched"
+        ]
+      }
     },
     {
       "id": "process-py",
       "transport": "process.exec",
       "direction": "consumes",
-      "when": { "ext": [".py"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "subprocess\\.(?:run|Popen|call|check_output)\\(\\s*\\[\\s*['\"]([^'\"]{1,60})", "identifier": 1 }]
+      "when": {
+        "ext": [
+          ".py"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "subprocess\\.(?:run|Popen|call|check_output)\\(\\s*\\[\\s*['\"]([^'\"]{1,60})",
+          "identifier": 1
+        }
+      ],
+      "tier": "AMBIGUOUS",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'subprocess\\.(run|Popen|call|check_output)\\(' --ext .py --count  # corpora: py-django, py-flask"
+        },
+        "expected": 14,
+        "matched": 0,
+        "recall": 0.0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "subprocess.run(argsVar) — argv is a variable at every django site; the literal-list form this rule reads did not occur once"
+        ]
+      }
     },
     {
       "id": "http-url-literal",
       "transport": "network.http",
       "direction": "consumes",
-      "when": { "ext": [".go", ".ts", ".tsx", ".js", ".jsx", ".py", ".java", ".cs", ".kt", ".swift", ".rb"] },
-      "exclude": { "path": ["testdata/", "benchmarks/", "docs/", "site/"] },
-      "match": [{ "re": "[\"'`]https?://([a-zA-Z0-9][a-zA-Z0-9.-]*\\.[a-z]{2,})[\"'`/]", "identifier": 1 }],
-      "metadata": { "otel.server.address": "$identifier" },
-      "tier": "INFERRED"
+      "when": {
+        "ext": [
+          ".go",
+          ".ts",
+          ".tsx",
+          ".js",
+          ".jsx",
+          ".py",
+          ".java",
+          ".cs",
+          ".kt",
+          ".swift",
+          ".rb"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/",
+          "docs/",
+          "site/"
+        ]
+      },
+      "match": [
+        {
+          "re": "[\"'`]https?://([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::\\d+)?[\"'`/:?]",
+          "identifier": 1
+        }
+      ],
+      "metadata": {
+        "otel.server.address": "$identifier"
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '[\"'`]https?://' --ext .go,.ts,.tsx,.js,.py --count  # corpora: ts-typescript, py-django, go-kubernetes, ctx-optimize"
+        },
+        "expected": 2776,
+        "matched": 2432,
+        "recall": 0.88,
+        "sampled": 10,
+        "confirmed": 10,
+        "precision": 1.0,
+        "known_misses": [
+          "template hosts — f\"https://{host}\", %s, ${} (the AMBIGUOUS lane needs the literal to match first)",
+          "URLs assembled by concatenation",
+          "bare scheme strings (\"https://\")"
+        ]
+      }
     },
     {
       "id": "routes-express",
       "transport": "network.http",
       "direction": "provides",
-      "when": { "ext": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "\\b(?:app|router|[A-Za-z_][A-Za-z0-9_]*Router)\\.(?:get|post|put|delete|patch)\\(\\s*['\"](/[^'\"]*)['\"]\\s*,", "identifier": 1 }],
-      "metadata": { "otel.http.route": "$identifier" },
-      "tier": "INFERRED"
+      "when": {
+        "ext": [
+          ".ts",
+          ".tsx",
+          ".js",
+          ".jsx",
+          ".mjs",
+          ".cjs"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "\\b(?:app|router|[A-Za-z_][A-Za-z0-9_]*Router)\\.(?:get|post|put|delete|patch)\\(\\s*['\"](/[^'\"]*)['\"]\\s*,",
+          "identifier": 1
+        }
+      ],
+      "metadata": {
+        "otel.http.route": "$identifier"
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '\\.(get|post|put|delete|patch)\\(\\s*['\"]/' --ext .ts,.js --count  # corpus: ts-hono (express-shaped API)"
+        },
+        "expected": 689,
+        "matched": 524,
+        "recall": 0.76,
+        "sampled": 4,
+        "confirmed": 4,
+        "precision": 1.0,
+        "known_misses": [
+          "chained .get('/x', h) with no receiver on the line",
+          "single-argument registrations without the trailing comma"
+        ]
+      }
     },
     {
       "id": "routes-go",
       "transport": "network.http",
       "direction": "provides",
-      "when": { "ext": [".go"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "when": {
+        "ext": [
+          ".go"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
       "match": [
-        { "re": "\\.Handle(?:Func)?\\(\\s*\"(/[^\"]*)\"", "identifier": 1 },
-        { "re": "\\.(?:GET|POST|PUT|DELETE|PATCH)\\(\\s*\"(/[^\"]*)\"", "identifier": 1 },
-        { "re": "\\.(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"\\s*,", "identifier": 1 }
+        {
+          "re": "\\.Handle(?:Func)?\\(\\s*\"(/[^\"]*)\"",
+          "identifier": 1
+        },
+        {
+          "re": "\\.(?:GET|POST|PUT|DELETE|PATCH)\\(\\s*\"(/[^\"]*)\"",
+          "identifier": 1
+        },
+        {
+          "re": "\\.(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"\\s*,",
+          "identifier": 1
+        }
       ],
-      "metadata": { "otel.http.route": "$identifier" },
-      "tier": "INFERRED"
+      "metadata": {
+        "otel.http.route": "$identifier"
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '\\.(GET|POST|PUT|DELETE|PATCH|Handle|HandleFunc|Get|Post|Put|Delete|Patch)\\(\\s*\"/' --ext .go --count  # corpus: go-gin"
+        },
+        "expected": 182,
+        "matched": 182,
+        "recall": 1.0,
+        "sampled": 3,
+        "confirmed": 3,
+        "precision": 1.0,
+        "known_misses": [
+          "measured 1.00/1.00 but tier CAPPED at INFERRED per D3: regex without AST never claims EXTRACTED — the AST recognizers own route truth"
+        ]
+      }
     },
     {
       "id": "routes-java",
       "transport": "network.http",
       "direction": "provides",
-      "when": { "ext": [".java", ".kt"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "@(?:Get|Post|Put|Delete|Patch|Request)Mapping\\(\\s*(?:value\\s*=\\s*)?\"(/[^\"]*)\"", "identifier": 1 }],
-      "metadata": { "otel.http.route": "$identifier" },
-      "tier": "INFERRED"
+      "when": {
+        "ext": [
+          ".java",
+          ".kt"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "@(?:Get|Post|Put|Delete|Patch|Request)Mapping\\(\\s*(?:value\\s*=\\s*)?\"(/[^\"]*)\"",
+          "identifier": 1
+        }
+      ],
+      "metadata": {
+        "otel.http.route": "$identifier"
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '@(Get|Post|Put|Delete|Patch|Request)Mapping\\(' --ext .java --count  # corpus: java-spring"
+        },
+        "expected": 668,
+        "matched": 490,
+        "recall": 0.73,
+        "sampled": 10,
+        "confirmed": 9,
+        "precision": 0.9,
+        "known_misses": [
+          "@RequestMapping(path=…/name=…) attribute forms",
+          "literals not starting with /",
+          "javadoc {@code @PostMapping(\"/home\")} matches — the one sampled false positive"
+        ]
+      }
     },
     {
       "id": "routes-cs",
       "transport": "network.http",
       "direction": "provides",
-      "when": { "ext": [".cs"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "when": {
+        "ext": [
+          ".cs"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
       "match": [
-        { "re": "\\[Http(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"", "identifier": 1 },
-        { "re": "\\.Map(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"", "identifier": 1 }
+        {
+          "re": "\\[Http(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"",
+          "identifier": 1
+        },
+        {
+          "re": "\\.Map(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"",
+          "identifier": 1
+        }
       ],
-      "metadata": { "otel.http.route": "$identifier" },
-      "tier": "INFERRED"
+      "metadata": {
+        "otel.http.route": "$identifier"
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(' --ext .cs --count  # corpora: csharp-efcore, csharp-newtonsoft — ZERO sites"
+        },
+        "expected": 0,
+        "matched": 0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "no corpus sites available — fixture-verified only; needs an aspnet corpus"
+        ]
+      }
     },
     {
       "id": "routes-py",
       "transport": "network.http",
       "direction": "provides",
-      "when": { "ext": [".py"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "@\\w[\\w.]*\\.(?:get|post|put|delete|patch|route)\\(\\s*['\"](/[^'\"]*)['\"]", "identifier": 1 }],
-      "metadata": { "otel.http.route": "$identifier" },
-      "tier": "INFERRED"
+      "when": {
+        "ext": [
+          ".py"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "@\\w[\\w.]*\\.(?:get|post|put|delete|patch|route)\\(\\s*['\"](/[^'\"]*)['\"]",
+          "identifier": 1
+        }
+      ],
+      "metadata": {
+        "otel.http.route": "$identifier"
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '@\\w[\\w.]*\\.(get|post|put|delete|patch|route)\\(' --ext .py --count  # corpus: py-flask"
+        },
+        "expected": 306,
+        "matched": 303,
+        "recall": 0.99,
+        "sampled": 3,
+        "confirmed": 3,
+        "precision": 1.0,
+        "known_misses": [
+          "app.add_url_rule(...) programmatic registration",
+          "multi-line decorators; tier capped at INFERRED per D3 (regex, not AST)"
+        ]
+      }
     },
     {
       "id": "webstorage",
       "transport": "storage.local",
       "direction": "consumes",
-      "when": { "ext": [".ts", ".tsx", ".js", ".jsx"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "(?:localStorage|sessionStorage)\\.(?:getItem|setItem|removeItem)\\(\\s*[`'\"]([^`'\"]{1,80})", "identifier": 1 }]
+      "when": {
+        "ext": [
+          ".ts",
+          ".tsx",
+          ".js",
+          ".jsx"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "(?:localStorage|sessionStorage)\\.(?:getItem|setItem|removeItem)\\(\\s*[`'\"]([^`'\"]{1,80})",
+          "identifier": 1
+        }
+      ],
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono — ZERO sites"
+        },
+        "expected": 0,
+        "matched": 0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "no corpus sites available — fixture-verified only; unmeasured never claims EXTRACTED, tier capped at INFERRED"
+        ]
+      }
     },
     {
       "id": "websocket-js",
       "transport": "network.ws",
       "direction": "consumes",
-      "when": { "ext": [".ts", ".tsx", ".js", ".jsx"] },
-      "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [{ "re": "new\\s+(?:WebSocket|EventSource)\\(\\s*[`'\"]([^`'\"]{1,120})", "identifier": 1 }]
+      "when": {
+        "ext": [
+          ".ts",
+          ".tsx",
+          ".js",
+          ".jsx"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "match": [
+        {
+          "re": "new\\s+(?:WebSocket|EventSource)\\(\\s*[`'\"]([^`'\"]{1,120})",
+          "identifier": 1
+        }
+      ],
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'new\\s+(WebSocket|EventSource)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono"
+        },
+        "expected": 2,
+        "matched": 1,
+        "recall": 0.5,
+        "sampled": 1,
+        "confirmed": 1,
+        "precision": 1.0,
+        "known_misses": [
+          "new WebSocket(urlVar) — url is a variable",
+          "n=2 is too small to derive a tier mechanically; capped at INFERRED pending a ws-heavy corpus"
+        ]
+      }
     }
   ]
 }
