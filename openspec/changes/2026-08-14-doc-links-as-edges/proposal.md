@@ -1,8 +1,13 @@
-# ADR 4 — doc links as edges: doc→code, anchors, and what measurement killed
+# ADR 4 — the markdown producer: fence correctness first, then doc links
 
 Status: DRAFT — owner review pending 2026-08-14. No product code until agreed.
 Scope: `internal/extract/markdown` only. No schema change, no new node kind,
 no new producer. HTML is explicitly deferred (D5).
+
+**Headline: this started as a link-coverage feature and measurement turned it
+into a bug fix.** 9.4% of reqsume's section nodes are fabricated from inside
+code fences (D0). The link work (D2–D4) is the smaller half and must not land
+first.
 
 ## Context — what the markdown producer does today
 
@@ -49,6 +54,87 @@ architecture. reqsume's code calls `api.openai.com`, and no doc mentions it.
 are not a declared-endpoint source in real repos, and feeding 141 bibliography
 links into the boundary lane would have poisoned `drift` with noise dressed as
 signal. Recorded here so it is not re-proposed.
+
+## D0 — the fence bug: the producer parses code blocks as prose
+
+`markdown.go` has **no fenced-code-block tracking** — no `` ``` `` state
+anywhere in the file. Every line is matched against `headingRe`/`mdLinkRe`
+regardless of whether it is inside a fence. Reproduced on a 3-heading fixture:
+
+```
+README.md::install-the-thing  "Install the thing"   ← a bash COMMENT in ```bash
+README.md::example-doc-title  "Example Doc Title"   ← inside a ```markdown fence
+README.md::real-heading       "Real Heading"        ← the only true heading
++ references edge README.md::example-doc-title -> docs/guide.md   ← from EXAMPLE code
+```
+
+Two of three section nodes are fabricated, and an edge was minted from sample
+markdown inside a fence.
+
+**Measured blast radius** — headings inside fences, across three corpora:
+
+| corpus | real sections | phantom | share |
+|---|---|---|---|
+| ctx-optimize | 2151 | **67** | 3.0% |
+| reqsume | 5315 | **551** | **9.4%** |
+| linux `Documentation/` | 0 | 0 | n/a — `.rst`, not `.md` |
+
+**Nearly one in ten section nodes in reqsume's store is fabricated from a code
+block.** Those nodes are queryable, rankable, and citable today: a `query` can
+return a phantom section with a real file:line, and a reader who follows the
+citation lands inside an example. That is the store telling a confident lie,
+which is the one failure mode this project exists to avoid.
+
+Link damage is currently **0** in both repos — but only by luck of the narrow
+`.md`-only regex: fenced examples rarely link to `.md` files. Widening link
+extraction (D2–D4) without D0 converts a zero into a live false-positive
+source, since fences are exactly where example links live.
+
+This is a **correctness defect in shipped output**, not a missing feature — and it hits us hardest precisely where we document
+ourselves: every `# comment` in every shell example in every README is a
+candidate phantom section. It also means widening link extraction (D2–D4)
+*without* fixing fences would multiply the fabrication, since fences are where
+example links live.
+
+Fixing this is mandatory and lands first.
+
+## D0b — a byte scanner, not regex, and not tree-sitter
+
+The obvious question is why markdown does not ride the tree-sitter/WASI lane
+that `internal/extract/code` uses. Two reasons, one of them measured.
+
+**Measured — regex is 4.4× slower than a hand scanner on our own corpus.**
+Benchmarked over this repo's 316 markdown files (~3.5 MB), same work
+(headings + link candidates), Go 1.22, `-benchtime 3x`:
+
+| approach | throughput | per-pass |
+|---|---|---|
+| today's 3 regexes per line | 347 MB/s | 10.2 ms |
+| plain byte scanner | **1535 MB/s** | **2.3 ms** |
+
+Worth stating precisely, because "regex is slow" is not quite the finding: Go's
+`regexp` is RE2, so it is *linear* — no catastrophic backtracking, which is
+exactly why the `search` verb uses it and should keep using it. The cost here is
+constant-factor, and in absolute terms markdown extraction is ~10 ms of a
+multi-second gather. **Regex is not the bottleneck. It is simply beaten on both
+axes** — the scanner is 4.4× faster *and* fence state is trivial to carry in a
+scanner (one bool, toggled on ` ``` `) whereas a per-line regex fundamentally
+cannot see block context. Correctness is the reason to switch; the speed is
+change we get back.
+
+**Tree-sitter is the wrong tool for this specific grammar.** `markdown` is not
+in `internal/grammar/registry.go` at all, and adding it is not the usual pack
+drop: upstream `tree-sitter-markdown` is a **split grammar** — block structure
+and inline content (links, emphasis) are two separate parsers, and links live in
+the *inline* one. Our lane embeds one grammar per language with one node-type
+mapping, so markdown would be the first language needing two parsers chained.
+That is real integration work plus WASM weight, to land somewhere between the
+scanner and the current regex on speed. ⚠️ Verify the split-grammar shape at
+build time before anyone acts on this paragraph — it is the current upstream
+layout, not a measurement of ours.
+
+⇒ Rewrite the producer's line loop as a byte scanner with fence state. Keep
+regex where it earns its place (the `search` verb's RE2 sweep, boundary rules).
 
 ## D1 — resolve-or-drop (the precision gate)
 
@@ -122,12 +208,22 @@ templates). Not this ADR.
 
 ## Perf, gates, kill criterion
 
-- Cost: two extra regexes and one `os.Stat`-class existence check per link on a
-  file set already walked and line-scanned. Budget: **≤ +2%** on markdown
-  extraction, measured on this repo and reqsume before/after.
+- Cost: the scanner rewrite (D0b) is expected to make markdown extraction
+  **faster in absolute terms** even with D1–D4 added — 4.4× headroom against
+  one existence check per link, on a file set already walked. Budget: markdown
+  extraction must not get slower than today's 10.2 ms/3.5 MB baseline.
 - Gates: hermetic tests beside the code; `task ci`; `task golden` including the
-  corpus tier — D3 is expected to move snapshot targets and every moved line is
-  reviewed individually.
+  corpus tier. **Two separate expected snapshot movements, reviewed
+  independently:** D0 REMOVES phantom sections/edges minted inside fences
+  (node counts go DOWN and that is the fix landing — the golden floors move
+  down with a recorded note, exactly as linux-block 8163→8162 did), and D3
+  moves anchored link targets from file nodes to section nodes. A snapshot
+  change that is neither of those is a bug.
+- D0's before/after is the headline: 67 phantom sections here and 551 in
+  reqsume must go to **zero**, with real-section counts unchanged (2151 /
+  5315). A drop in REAL sections means the fence state machine over-consumed —
+  the likeliest bug in this slice, so it gets a dedicated test with nested
+  fences, `~~~` fences, indented fences and an unterminated fence at EOF.
 - Kill criterion: if D2+D3 together add fewer than 50 edges across the two
   measured repos **or** any dangling/dead edge survives D1, the slice is not
   worth its surface — ship D3 alone (the anchor half carries the volume) and
