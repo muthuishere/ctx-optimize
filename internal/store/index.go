@@ -147,11 +147,11 @@ func writeIndex(path, header string, m map[string][]int64) error {
 	}
 	sort.Strings(keys)
 
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := createTemp(path) // unique per writer — see store.go createTemp
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
 	w := bufio.NewWriterSize(f, 4<<20)
 	fmt.Fprintln(w, header)
 	for _, k := range keys {
@@ -181,7 +181,11 @@ func writeIndex(path, header string, m map[string][]int64) error {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // BuildIndex rebuilds every index for this store from the graph on disk.

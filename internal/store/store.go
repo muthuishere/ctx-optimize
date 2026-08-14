@@ -594,26 +594,48 @@ func readNDJSON(path string, each func([]byte) error) error {
 	return sc.Err()
 }
 
+// createTemp opens a UNIQUELY named temp file beside path, for the
+// write-then-rename swap every store artifact uses.
+//
+// It used to be a fixed "<path>.tmp", which is only atomic against readers —
+// never against a second writer. Two gathers on one store then truncated each
+// other's temp, the first rename consumed it, and the loser failed with
+// ENOENT, aborting its lane and leaving a partial store. Observed on a linux
+// v6.9 gather (2026-08-13): `commit code: rename …/nodes.ndjson.tmp →
+// nodes.ndjson: no such file or directory`, which cost the manifest, the
+// source record and the lookup index in one shot. A unique name per writer
+// makes each rename its own; last writer wins, and neither store is torn.
+func createTemp(path string) (*os.File, error) {
+	return os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+}
+
 func writeNDJSON(path string, n int, item func(int) any) error {
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := createTemp(path)
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
 	w := bufio.NewWriter(f)
 	enc := json.NewEncoder(w)
 	for i := 0; i < n; i++ {
 		if err := enc.Encode(item(i)); err != nil {
 			f.Close()
+			os.Remove(tmp) // a failed write must not leave the temp behind
 			return err
 		}
 	}
 	if err := w.Flush(); err != nil {
 		f.Close()
+		os.Remove(tmp)
 		return err
 	}
 	if err := f.Close(); err != nil {
+		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path) // atomic swap: readers never see a half-written graph
+	if err := os.Rename(tmp, path); err != nil { // atomic swap: readers never see a half-written graph
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
