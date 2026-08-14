@@ -2,7 +2,8 @@
   "repo": "linux",
   "ref": "v6.9",
   "gather_subdir": "block",
-  "min_nodes": 8163,
+  "min_nodes": 8162,
+  "_floor_note": "8163→8162 on 2026-08-14 (ADR 2026-08-13 D7 importresolve): the module://../blk.h placeholder is pruned because its one edge (partitions/check.h imports ../blk.h) now rewrites to the real blk.h file node, EXTRACTED. Edges held at 12258 — a dead-end node became a real join, nothing was lost.",
   "min_edges": 12007,
   "must_nodes": [
     {

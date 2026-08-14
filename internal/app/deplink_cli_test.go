@@ -70,13 +70,24 @@ func TestDeplinkEndToEnd(t *testing.T) {
 			t.Errorf("missing resolves_to edge: %s", w)
 		}
 	}
-	// …and every link is INFERRED + synthesized_by (never claimed EXTRACTED).
+	// …and every dep-boundary link is INFERRED + synthesized_by:deplink (never
+	// claimed EXTRACTED); in-repo links (module://self/... -> file) come from
+	// importresolve, where the go.mod module line makes EXTRACTED honest.
 	for _, line := range strings.Split(edges, "\n") {
-		if strings.Contains(line, `"relation":"resolves_to"`) {
-			if !strings.Contains(line, `"confidence":"INFERRED"`) || !strings.Contains(line, `"synthesized_by":"deplink"`) {
-				t.Errorf("resolves_to edge not INFERRED+synthesized_by: %s", line)
-			}
+		if !strings.Contains(line, `"relation":"resolves_to"`) {
+			continue
 		}
+		if strings.Contains(line, `"target":"dep:`) {
+			if !strings.Contains(line, `"confidence":"INFERRED"`) || !strings.Contains(line, `"synthesized_by":"deplink"`) {
+				t.Errorf("dep resolves_to edge not INFERRED+synthesized_by: %s", line)
+			}
+		} else if !strings.Contains(line, `"synthesized_by":"importresolve"`) {
+			t.Errorf("non-dep resolves_to edge from unknown producer: %s", line)
+		}
+	}
+	// The self-module import now resolves to the actual file (ADR 2026-08-13 D7).
+	if !strings.Contains(edges, `"source":"module://github.com/acme/svc/internal/store","target":"internal/store/store.go","relation":"resolves_to","confidence":"EXTRACTED"`) {
+		t.Error("self-module import must resolve_to its in-repo file, EXTRACTED")
 	}
 
 	// The repo's OWN module must never become a dependency link (spike 1).

@@ -616,6 +616,10 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 		fmt.Fprintf(os.Stderr, "ctx-optimize: %s: external_methods matched no call site: %s\n",
 			ResolutionsFile(base), strings.Join(stale, ", "))
 	}
+	// D7 (ADR 2026-08-13): join in-repo imports to the files they name —
+	// relative/alias specifiers rewrite the edge, go packages gain
+	// resolves_to. External/unknown specifiers stay untouched.
+	resolveImports(base, roots, batch)
 	sortBatch(batch)
 	return batch, nil
 }
