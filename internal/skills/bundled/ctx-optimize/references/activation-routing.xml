@@ -112,6 +112,25 @@
       <ref>references/sources.md</ref>
     </route>
 
+    <route id="ports" group="answer">
+      <when>what external APIs do we call, what is our egress footprint, which env vars or secrets does this service read, what processes do we spawn, what does this app expose, what queues/topics/storage keys do we touch, which third-party SDKs talk out</when>
+      <goal>Read BOUNDARY crossings from the graph — `port` nodes. Reserved metadata: `direction` (provides|consumes) · `transport` (`network.http` `network.ws` `config.env` `process.exec` `storage.*` `messaging.*` …) · `identifier` (the external name) · `scope` (internal|external, computed BY JOIN — a consumed identifier is internal iff some `provides` port in the workspace matches it) · `sensitive` · `resolved` · `raw` (pre-normalization spelling). Edges: `consumes` / `provides` from the code site, each carrying `rule` and `site` provenance.</goal>
+      <cmd>ctx-optimize nodes --kind port --json</cmd>
+      <cmd>ctx-optimize nodes --kind port --where scope=external      # the egress footprint</cmd>
+      <cmd>ctx-optimize nodes --kind port --where transport=config.env --where sensitive=true   # credential NAMES, never values</cmd>
+      <cmd>ctx-optimize card "api.openai.com" --json                  # who consumes it, at which file:line</cmd>
+      <cmd>ctx-optimize services            # the SDK-mediated egress registry (firebase/stripe/openai…): the dependency IS the boundary</cmd>
+      <note>A port's TIER is honest and varies by rule: `config.env` reads are INFERRED (a variable name is unmatchable) and `process.exec` is AMBIGUOUS (argv is usually a variable), so a port list is a FLOOR, not a census. `resolved: dynamic` means the identifier was a template (`${…}`, `%s`) and the engine refused to assert it. Secrets appear by NAME only — never read, print, or ask for a value.</note>
+      <ref>references/boundaries-authoring.md</ref>
+    </route>
+
+    <route id="drift" group="answer">
+      <when>is anything documented but not implemented, dead endpoints, do we expose something nobody calls, env vars read but never declared, does our boundary surface disagree with itself</when>
+      <goal>Report where `provides`, `consumes` and `declared` disagree. FINDINGS are accusations and fire only on EXTRACTED×EXTRACTED evidence (`dead-contract`, `env-undeclared`); everything weaker is LISTED as an observation (`lower-tier-orphan`, `possibly-consumed`, `would-join`) — an INFERRED consumer blocks the accusation.</goal>
+      <cmd>ctx-optimize drift  [--json] [--strict]     # --strict exits nonzero on findings: the CI gate</cmd>
+      <note>0 findings with many observations is the gate WORKING, not a miss — it means the evidence is too weak to accuse. Ports group by (transport, identifier), never node id, so federated duplicates across modules collapse to one contract.</note>
+    </route>
+
     <route id="status" group="answer">
       <when>is there a store, how big is it, store facts, node/edge counts, is the graph current</when>
       <goal>Store facts + freshness vs git HEAD. Use as the pre-answer gate: nodes &gt; 0 ⇒ query, don't rebuild.</goal>
@@ -239,6 +258,16 @@
       <note>TRAP, measure it: a pack's `names` yields the BARE identifier and call resolution DROPS module-wide-ambiguous names, so a pack whose decl names duplicate existing ones silently deletes working `calls` edges — measured 126 destroyed (1.10% of 11,501) + 1 invented on real Apache beam, 66.6% collision rate. Count `edges --relation calls --ndjson | wc -l` before and after `add .`. Qualified labels do not fix it (resolution keys on the bare name).</note>
       <ref>references/extending.md  (the traps)</ref>
       <ref>references/customize.md</ref>
+    </route>
+
+    <route id="boundaries-author" group="customize">
+      <when>the graph is missing our external API calls / env reads / routes / queue usage, teach it our custom HTTP wrapper or router, add boundary rules for a framework we use, author boundaries.json</when>
+      <goal>Author DECLARATIVE boundary rules — data in `.ctxoptimize/boundaries.json`, never code — through a fixed 8-step MEASURED loop: survey (from the store) → propose → ground (independent count) → run → measure recall AND precision → iterate → derive tier → write rule + evidence. Ladder, merged by rule `id` so a repo rule can narrow or replace a shipped default: repo `.ctxoptimize/boundaries.json` &gt; machine `~/ctxoptimize/boundaries/*.json` &gt; the 14 embedded defaults.</goal>
+      <cmd>ctx-optimize search 'exec\.Command\(' --ext .go --count      # ground truth: cross-OS, SAME file set as the extractor</cmd>
+      <cmd>edit .ctxoptimize/boundaries.json  → ctx-optimize add . --force  → ctx-optimize nodes --kind port</cmd>
+      <cmd>ctx-optimize boundaries verify                               # the standing check; numbers only move UP</cmd>
+      <note>A rule without a `verified` block is INVALID. The tier is DERIVED, never asserted: recall ≥0.95 EXTRACTED · 0.70–0.95 INFERRED · &lt;0.70 AMBIGUOUS or reject; `known_misses` is MANDATORY whenever recall &lt; 1.0. Two measured failures make this the law: a naive regex matched 16 of 137 real call sites (12%) because every call went through one wrapper and the tool reported nothing wrong; and a vendored corpus was reported as production egress. Ground truth must be BROADER than your own capture logic, or recall is 1.00 by construction. Secrets by NAME only, `flag.when_identifier_matches` sets `sensitive`; no network during authoring; vendored trees excluded via top-level `exclude.path`.</note>
+      <ref>references/boundaries-authoring.md</ref>
     </route>
 
     <route id="adapters" group="customize">
