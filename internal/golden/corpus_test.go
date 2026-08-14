@@ -47,9 +47,11 @@ type corpusSpec struct {
 		Min        int    `json:"min"`
 	} `json:"cross_split_calls"`
 	// Performance gates — the coarse "never goes away" ceilings that run on
-	// every machine. Set ~10x over measured local wall: slow CI runners pass,
-	// an order-of-magnitude regression (accidental O(n²), a double tree walk)
-	// fails. Fine-grained p50/p95 baseline diffs are the bench harness's job.
+	// every machine, including CI boxes nobody calibrated. Because they must
+	// assume the slowest plausible runner, they can only catch
+	// order-of-magnitude breakage; the SAME-MACHINE baseline in perf.go is
+	// what catches the ~1.5x class. Fine-grained p50/p95 diffs stay the bench
+	// harness's job. See perf.go for the two-gate reasoning.
 	MaxGatherSeconds float64 `json:"max_gather_seconds"`
 	ProbeQuery       *struct {
 		Text  string `json:"text"`
@@ -116,11 +118,18 @@ func runCorpus(t *testing.T, base, specPath string) {
 		}
 	}
 
-	storeRoot := t.TempDir()
-	start := time.Now()
-	runCLI(t, "init", "--path", gatherRoot, "--store", storeRoot)
-	runCLI(t, "add", gatherRoot, "--path", gatherRoot, "--store", storeRoot)
-	gatherWall := time.Since(start)
+	corpusName := strings.TrimSuffix(filepath.Base(specPath), ".json")
+
+	// timedGather runs a full gather into a fresh store and returns the wall.
+	// Separated so the perf gate can measure a SECOND time before failing.
+	timedGather := func() (string, time.Duration) {
+		storeRoot := t.TempDir()
+		start := time.Now()
+		runCLI(t, "init", "--path", gatherRoot, "--store", storeRoot)
+		runCLI(t, "add", gatherRoot, "--path", gatherRoot, "--store", storeRoot)
+		return storeRoot, time.Since(start)
+	}
+	storeRoot, gatherWall := timedGather()
 
 	// Fold every module store into one fact set for landmark checks.
 	var nodes int
@@ -152,16 +161,54 @@ func runCorpus(t *testing.T, base, specPath string) {
 	}
 	t.Logf("%s@%s: %d nodes, %d edges, gather %.1fs", spec.Repo, spec.Ref, nodes, edges, gatherWall.Seconds())
 	if recordingEnabled() {
-		name := strings.TrimSuffix(filepath.Base(specPath), ".json")
-		if err := appendHistory(historyLine{Kind: "corpus", Corpus: name, Nodes: nodes, Edges: edges, GatherMS: gatherWall.Milliseconds()}); err != nil {
+		if err := appendHistory(historyLine{Kind: "corpus", Corpus: corpusName, Nodes: nodes, Edges: edges, GatherMS: gatherWall.Milliseconds()}); err != nil {
 			t.Errorf("audit record failed: %v", err)
+		}
+		if err := recordPerfBaseline(corpusName, gatherWall); err != nil {
+			t.Errorf("perf baseline record failed: %v", err)
+		} else {
+			t.Logf("recorded perf baseline %s = %dms (machine %s)", corpusName, gatherWall.Milliseconds(), perfFingerprint())
 		}
 	}
 
-	// Performance is part of the golden contract — a gather that got an order
-	// of magnitude slower is as broken as one that lost nodes.
+	// Gate 1 — the portable absolute ceiling. Coarse by necessity (it runs on
+	// uncalibrated hardware), so it only catches order-of-magnitude breakage.
 	if spec.MaxGatherSeconds > 0 && gatherWall.Seconds() > spec.MaxGatherSeconds {
-		t.Errorf("gather took %.1fs, performance ceiling %.0fs — performance regression", gatherWall.Seconds(), spec.MaxGatherSeconds)
+		t.Errorf("gather took %.2fs, performance ceiling %gs — performance regression", gatherWall.Seconds(), spec.MaxGatherSeconds)
+	}
+	// Gate 2 — the same-machine baseline, which is what catches the ~1.5x
+	// class the ceiling must let through. Silent when this machine has no
+	// recorded baseline: wall-clock does not travel between machines.
+	if !recordingEnabled() {
+		if want, ok := perfBaselineFor(corpusName); ok {
+			limit := time.Duration(float64(want) * perfTolerance)
+			if gatherWall > limit {
+				// Measure again before accusing: a transient stall reproduces
+				// rarely, a regression reproduces always. Costs nothing unless
+				// we are already about to fail.
+				_, retry := timedGather()
+				best := gatherWall
+				if retry < best {
+					best = retry
+				}
+				if best > limit {
+					t.Errorf("gather %s vs baseline %s on this machine (%s) — %.2fx, over the %.2fx tolerance; "+
+						"confirmed by a second run at %s. Either a real regression, or re-record with RECORD_GOLDEN=1 and justify the rise.",
+						best.Round(time.Millisecond), want.Round(time.Millisecond), perfFingerprint(),
+						float64(best)/float64(want), perfTolerance, retry.Round(time.Millisecond))
+				} else {
+					t.Logf("gather %s exceeded the %.2fx tolerance but a second run came in at %s (baseline %s) — treated as noise",
+						gatherWall.Round(time.Millisecond), perfTolerance, retry.Round(time.Millisecond), want.Round(time.Millisecond))
+				}
+			} else {
+				t.Logf("gather %s vs baseline %s (%.2fx of %.2fx tolerance)",
+					gatherWall.Round(time.Millisecond), want.Round(time.Millisecond),
+					float64(gatherWall)/float64(want), perfTolerance)
+			}
+		} else {
+			t.Logf("no gather baseline for machine %s — the tight perf gate is INACTIVE here; "+
+				"establish one with RECORD_GOLDEN=1 (baselines on file: %v)", perfFingerprint(), perfBaselineCorpora())
+		}
 	}
 	if pq := spec.ProbeQuery; pq != nil {
 		qs := time.Now()
@@ -200,6 +247,68 @@ func runCorpus(t *testing.T, base, specPath string) {
 			t.Errorf("calls into *%s = %d, golden floor %d", m.TargetSuffix, n, m.Min)
 		}
 	}
+	// Determinism at corpus scale. ADR 2026-08-14-stable-node-identity blocks
+	// byte-identity here — same-name declarations collapse to one id and the
+	// surviving copy's LOCATION varies per run (354 nodes on linux/block, 229
+	// on Newtonsoft). The identity SET is what survives that bug and is still
+	// worth pinning: it catches a node or edge appearing/vanishing between
+	// runs, which is a different and worse failure than a line number moving.
+	// Promote this to storeDigest() byte-equality once ADR 5 lands.
+	if !testing.Short() {
+		reStore, _ := timedGather()
+		reNodes := map[string]bool{}
+		reEdges := map[string]bool{}
+		for _, key := range storeKeys(t, reStore) {
+			st, err := store.Open(reStore, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ns, err := st.Nodes()
+			if err != nil {
+				t.Fatal(err)
+			}
+			es, err := st.Edges()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, n := range ns {
+				reNodes[n.ID] = true
+			}
+			for _, e := range es {
+				reEdges[e.Source+"\x00"+e.Relation+"\x00"+e.Target] = true
+			}
+		}
+		var missing, added int
+		for id := range nodeIndex {
+			if !reNodes[id] {
+				if missing++; missing <= 3 {
+					t.Errorf("node id present in run 1, absent in run 2: %s", id)
+				}
+			}
+		}
+		for id := range reNodes {
+			if _, ok := nodeIndex[id]; !ok {
+				if added++; added <= 3 {
+					t.Errorf("node id absent in run 1, present in run 2: %s", id)
+				}
+			}
+		}
+		if missing > 3 || added > 3 {
+			t.Errorf("identity set unstable across two gathers: %d missing, %d added (first 3 of each shown)", missing, added)
+		}
+		if len(reEdges) != len(allEdges) {
+			// Edge tuples are deduped into a set here; compare set sizes only
+			// after the same dedup, or a legitimate duplicate would read as drift.
+			seen := map[string]bool{}
+			for _, e := range allEdges {
+				seen[e.src+"\x00"+e.rel+"\x00"+e.dst] = true
+			}
+			if len(seen) != len(reEdges) {
+				t.Errorf("edge identity set unstable across two gathers: %d vs %d distinct tuples", len(seen), len(reEdges))
+			}
+		}
+	}
+
 	if c := spec.CrossSplitCalls; c != nil {
 		n := 0
 		for _, e := range allEdges {

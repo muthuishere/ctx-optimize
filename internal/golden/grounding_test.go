@@ -20,7 +20,7 @@ func TestGoldenGroundingProbes(t *testing.T) {
 	repo := t.TempDir()
 	copyTree(t, filepath.Join("testdata", "repos", "multimod"), repo)
 	storeRoot := t.TempDir()
-	gatherWithin(t, 10*time.Second, repo, storeRoot)
+	gatherWithin(t, 3*time.Second, repo, storeRoot)
 
 	run := func(wantCode int, args ...string) string {
 		t.Helper()

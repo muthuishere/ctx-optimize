@@ -38,6 +38,16 @@ func runCLI(t *testing.T, args ...string) string {
 // gatherWithin runs init+add and enforces a wall-clock ceiling — performance
 // is part of the golden contract even on the tiny hermetic fixtures (a repo
 // this small taking seconds means something pathological landed in gather).
+//
+// Callers pass 3s against fixtures measured at 69-406ms on the reference
+// machine (darwin-arm64, n=7, busy). That is ~7x the slowest fixture, chosen
+// to survive a slower CI runner. Be honest about what this catches: these
+// fixtures are dominated by process and wasm-grammar init, not per-file work,
+// so a lane that adds cost PER FILE barely moves them — the 2026-08-14
+// boundaries regression (+60% on real corpora) would NOT have tripped this.
+// Per-file regressions are the corpus tier's job, and the ~1.5x class is
+// internal/golden/perf.go's. This ceiling catches the pathological: an
+// accidental O(n²), a hang, a lane that runs unconditionally at startup.
 func gatherWithin(t *testing.T, ceiling time.Duration, repo, storeRoot string) {
 	t.Helper()
 	start := time.Now()

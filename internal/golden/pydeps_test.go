@@ -22,7 +22,7 @@ func TestGoldenPythonRustDepsRepo(t *testing.T) {
 	copyTree(t, filepath.Join("testdata", "repos", "pydeps"), repo)
 	storeRoot := t.TempDir()
 
-	gatherWithin(t, 10*time.Second, repo, storeRoot)
+	gatherWithin(t, 3*time.Second, repo, storeRoot)
 
 	snap := snapshot(t, storeRoot)
 

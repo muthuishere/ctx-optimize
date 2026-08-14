@@ -17,8 +17,8 @@ func TestGoldenMultiModuleConfigRepo(t *testing.T) {
 	copyTree(t, filepath.Join("testdata", "repos", "multimod"), repo)
 	storeRoot := t.TempDir()
 
-	gatherWithin(t, 10*time.Second, repo, storeRoot)
-	resyncWithin(t, 3*time.Second, repo, storeRoot)
+	gatherWithin(t, 3*time.Second, repo, storeRoot)
+	resyncWithin(t, 1500*time.Millisecond, repo, storeRoot)
 
 	snap := snapshot(t, storeRoot)
 
@@ -63,7 +63,7 @@ func TestGoldenDotnetSlnRepo(t *testing.T) {
 	copyTree(t, filepath.Join("testdata", "repos", "dotnetsln"), repo)
 	storeRoot := t.TempDir()
 
-	gatherWithin(t, 10*time.Second, repo, storeRoot)
+	gatherWithin(t, 3*time.Second, repo, storeRoot)
 
 	snap := snapshot(t, storeRoot)
 

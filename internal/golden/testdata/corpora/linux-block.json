@@ -25,7 +25,8 @@
       "min": 1
     }
   ],
-  "max_gather_seconds": 12,
+  "max_gather_seconds": 3,
+  "_max_gather_seconds_note": "12→3 on 2026-08-14. The absolute ceiling is PORTABLE — it runs on uncalibrated CI hardware, so it must assume the slowest plausible runner and can only ever catch order-of-magnitude breakage. 12s against a 0.42s gather was 29x headroom: pure decoration, and it let the +50% boundaries regression ship green. 3s is ~6x the slowest of n=5 runs on the reference machine (darwin-arm64, measured while other heavy work ran: min 390ms, max 470ms), which absorbs a 4x-slower runner plus cold-cache margin. The ~1.5x class of regression is caught by the same-machine baseline in internal/golden/perf.go, NOT by this number.",
   "probe_query": {
     "text": "back merge request",
     "max_ms": 1500

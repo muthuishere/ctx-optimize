@@ -30,7 +30,8 @@
   "to_prefix": "Src/Newtonsoft.Json/",
   "min": 344
  },
- "max_gather_seconds": 25,
+ "max_gather_seconds": 7,
+ "_max_gather_seconds_note": "25→7 on 2026-08-14. The absolute ceiling is PORTABLE — it runs on uncalibrated CI hardware, so it must assume the slowest plausible runner and can only ever catch order-of-magnitude breakage. 25s against a 1.14s gather was 22x headroom, which let this corpus's own +50% boundaries regression (0.81s→1.21s) ship green. 7s is ~6x the slowest of n=5 runs on the reference machine (darwin-arm64, busy: min 1.111s, max 1.171s), absorbing a 4x-slower runner plus cold-cache margin. The ~1.5x class is caught by the same-machine baseline in internal/golden/perf.go, NOT by this number.",
  "probe_query": {
   "text": "serialize object",
   "max_ms": 1500
