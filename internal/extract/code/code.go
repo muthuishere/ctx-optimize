@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/muthuishere/ctx-optimize/internal/boundaries"
 	"github.com/muthuishere/ctx-optimize/internal/extract/ignore"
@@ -1127,11 +1128,22 @@ func signatureOf(declText string) string {
 			break
 		}
 	}
-	sig := strings.TrimSpace(strings.TrimRight(sb.String(), " \t{"))
-	if len(sig) > 160 {
-		sig = sig[:160] + "…"
+	return truncBytes(strings.TrimSpace(strings.TrimRight(sb.String(), " \t{")), 160)
+}
+
+// truncBytes caps a string at n BYTES without splitting a rune. A plain s[:n]
+// can land mid-sequence and put invalid UTF-8 in the store, which json.Marshal
+// then rewrites as � escapes — so the same source produced different bytes
+// depending on how many times the value happened to be re-read and re-written.
+// Cut on a boundary and the value is stable the first time.
+func truncBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
 	}
-	return sig
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
 }
 
 // docAbove collects the comment block sitting DIRECTLY above a declaration.
@@ -1155,11 +1167,7 @@ func docAbove(raw []RawNode, i int, typeOf func(RawNode) string, text func(RawNo
 		parts = append([]string{strings.TrimSpace(text(raw[j]))}, parts...)
 		startRow = raw[j].StartRow
 	}
-	doc := strings.Join(parts, "\n")
-	if len(doc) > 500 {
-		doc = doc[:500] + "…"
-	}
-	return doc
+	return truncBytes(strings.Join(parts, "\n"), 500)
 }
 
 // importTarget extracts what an import statement points at: the last named
