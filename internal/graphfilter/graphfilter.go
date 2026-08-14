@@ -132,13 +132,22 @@ func matchWhere(conds []Cond, meta map[string]string, field func(string) (string
 }
 
 // resolveKey looks a where-key up as a top-level field first (via field), then
-// as metadata.<k> or a bare metadata key.
+// as metadata.<k> or a bare metadata key. An EMPTY top-level field falls
+// through to the bare metadata key: `scope` is a struct field only dependency
+// nodes populate, while port nodes carry metadata["scope"] — the empty field
+// must not shadow real metadata (`--where scope=external` on ports).
+// `metadata.<k>` stays the explicit metadata-only path.
 func resolveKey(key string, meta map[string]string, field func(string) (string, bool)) (string, bool) {
 	if mk, ok := strings.CutPrefix(key, "metadata."); ok {
 		v, ok := meta[mk]
 		return v, ok
 	}
 	if v, ok := field(key); ok {
+		if v == "" {
+			if mv, mok := meta[key]; mok {
+				return mv, true
+			}
+		}
 		return v, true
 	}
 	v, ok := meta[key]

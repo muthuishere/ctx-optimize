@@ -85,6 +85,38 @@ func TestWhereExactAndContainsAndMissing(t *testing.T) {
 	}
 }
 
+func TestWhereEmptyFieldFallsThroughToMetadata(t *testing.T) {
+	// Port nodes carry scope in METADATA; the top-level Scope struct field is
+	// dependency-only and empty on them. The empty field must not shadow the
+	// metadata value (the `nodes --kind port --where scope=external` miss).
+	port := schema.Node{
+		ID: "port:network.http:>api.openai.com", Label: "api.openai.com",
+		Kind: "port", FileType: "boundary",
+		Metadata: map[string]string{"direction": "consumes", "scope": "external"},
+	}
+	p, _ := ParsePred(map[string]string{"where": "scope=external"})
+	if !p.MatchNode(port) {
+		t.Fatal("metadata scope shadowed by empty top-level Scope field")
+	}
+	// A SET top-level field still wins over metadata with the same bare key.
+	dep := schema.Node{ID: "dep:npm/react", Label: "react", Kind: "dependency",
+		Scope: "runtime", Metadata: map[string]string{"scope": "external"}}
+	p, _ = ParsePred(map[string]string{"where": "scope=runtime"})
+	if !p.MatchNode(dep) {
+		t.Fatal("set top-level field must win")
+	}
+	// metadata.<k> stays the explicit metadata-only path.
+	p, _ = ParsePred(map[string]string{"where": "metadata.scope=external"})
+	if !p.MatchNode(dep) || !p.MatchNode(port) {
+		t.Fatal("metadata.scope must read metadata regardless of the field")
+	}
+	// Empty field + absent metadata key: unchanged no-match, no crash.
+	p, _ = ParsePred(map[string]string{"where": "location=L1"})
+	if p.MatchNode(port) {
+		t.Fatal("empty field with no metadata fallback must not match")
+	}
+}
+
 func TestIDPrefixSharedDim(t *testing.T) {
 	p, _ := ParsePred(map[string]string{"id-prefix": "dep:"})
 	gotN, gotE := Apply(nodes(), edges(), p)
