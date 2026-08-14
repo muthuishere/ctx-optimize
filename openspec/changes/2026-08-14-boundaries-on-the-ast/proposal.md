@@ -186,6 +186,29 @@ merely equal.
 
 The owner asked for this directly, and the spike found the mechanism.
 
+**Measured: the regression hits the developer's inner loop, not just the first
+gather.** OLD (`0a2b192`) vs HEAD, *touch one file and re-gather*:
+
+| corpus | scenario | old | new | delta |
+|---|---|---|---|---|
+| ts-typescript | one file touched | 8.15s | 22.46s | **+176%** |
+| go-kubernetes | one file touched | 13.46s | 21.73s | **+61%** |
+| ts-hono | one file touched | 0.36s | 0.59s | +64% |
+| py-django | one file touched | 2.76s | 4.14s | +50% |
+| py-django | **no change** | 0.20s | **0.17s** | −15% (faster) |
+| reqsume (multi-module) | one file in `apps/api` | 0.71s | 0.92s | +30% |
+
+The earlier audit's "incremental is unaffected" was **accurate but
+incomplete** — it measured only the *no-change* re-gather, the one incremental
+case that does no work at all. That case is genuinely fine and even slightly
+faster. **Every case where you actually edited something pays the full
+regression.** Editing one `.ts` file in the TypeScript compiler costs 22.5s
+instead of 8.2s. That is the loop a developer sits in all day.
+
+Multi-module containment is the only real mitigation: touching `apps/api` left
+5 of reqsume's 6 modules short-circuited. It helps monorepos and does nothing
+for single-module repos like kubernetes.
+
 **Today incremental is all-or-nothing per module.** `treeSignature`
 (`internal/app/multimodule.go:601`) hashes sorted `rel\0mtimeNano\0size` over
 the module; lever 1 (`:732`) is binary — signature matches, skip everything;
@@ -208,6 +231,25 @@ content; and most entries are *negative* (17,858 files → 349 ports), so
 whole `extractFile` result — code + routes + boundaries together — keyed on
 content hash, making lever 1 per-file instead of per-module for *every*
 producer. That is where a one-file change genuinely costs one file of work.
+
+Two facts that ADR must inherit:
+
+- **Correctness of today's incremental path is sound.** Incremental vs a
+  `--force` full gather of the same state produced identical identity sets —
+  44,911 nodes / 134,974 edges, zero difference either way. No stale or missing
+  facts. The lever is crude, not wrong.
+- **ADR 5 blocks the obvious verification method.** Two *full* gathers of the
+  same tree with the same binary differ by 50–60 nodes (the node-id collision
+  bug), e.g. django's `RelatedFieldWidgetWrapper.choices` alternating between
+  the `@property` getter and its setter. So byte-identity cannot be used to
+  verify an incremental path until ADR 5 lands; identity-set comparison is the
+  only rigorous check available. **ADR 5 is therefore a prerequisite for
+  trustworthy incremental work, not an independent nicety.**
+
+Gotcha to record: `treeSignature` skips `build`, `dist`, `node_modules`,
+`vendor`, `target`, `*-out` and `.git`. Edits under those names never trigger a
+re-gather — consistent with the extractor, but it means a source tree that
+legitimately lives in `build/` is invisible to both.
 
 ## Migration, gates, kill criterion
 
