@@ -52,9 +52,9 @@ type File struct {
 // authoring loop (ADR 2026-08-13-boundary-authoring) owns its shape; the
 // engine only executes.
 type Rule struct {
-	ID        string            `json:"id"`
-	Transport string            `json:"transport"`
-	Direction string            `json:"direction"`
+	ID        string `json:"id"`
+	Transport string `json:"transport"`
+	Direction string `json:"direction"`
 	When      struct {
 		Ext []string `json:"ext"`
 	} `json:"when"`
@@ -202,7 +202,12 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(rules) == 0 {
+	services, err := LoadServices(root)
+	if err != nil {
+		return nil, err
+	}
+	sdk := compileSDKMatchers(services)
+	if len(rules) == 0 && len(services) == 0 {
 		return batch, nil
 	}
 
@@ -257,7 +262,13 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 			return nil
 		}
 		rs := rulesFor(name)
-		if len(rs) == 0 {
+		var sdkRS []sdkMatcher
+		if len(sdk) > 0 {
+			if i := strings.LastIndexByte(name, '.'); i >= 0 && sdkSourceExts[name[i:]] {
+				sdkRS = sdk
+			}
+		}
+		if len(rs) == 0 && len(sdkRS) == 0 {
 			return nil
 		}
 		info, ierr := d.Info()
@@ -279,9 +290,17 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 			}
 			applyRule(r, rel, content, nodes, edges)
 		}
+		if len(sdkRS) > 0 && !excludedPath(rel, sdkExcludes) {
+			for _, m := range sdkRS {
+				applySDKSite(m, rel, content, nodes, edges)
+			}
+		}
 		return nil
 	})
 	if err != nil {
+		return nil, err
+	}
+	if err := joinServices(root, exclude, services, nodes, edges); err != nil {
 		return nil, err
 	}
 

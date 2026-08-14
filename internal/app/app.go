@@ -87,6 +87,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdQuery(rest, stdout)
 	case "search": // cross-OS literal sweep — same RE2 + file set as boundary rules (ADR 2026-08-13)
 		err = cmdSearch(rest, stdout)
+	case "services": // D5 services registry — the dependency IS the boundary (ADR 2026-08-13)
+		err = cmdServices(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
 	case "store":
@@ -3433,6 +3435,11 @@ commands:
                               SAME file set as the extractor — gitignore +
                               skip-dirs + size cap — so counts line up with
                               what gather saw. file:line:text by default
+  services [list] [--json]     effective services registry (SDK-mediated egress:
+                              embedded defaults + machine + repo overrides)
+  services add <file|url>     validate + install a registry file into
+                              ~/ctxoptimize/services/ (network only on this
+                              explicit command)
   deps [--scope runtime|dev|peer|...] [--importers] [--json|--ndjson]
                               dependencies with scope; --importers adds the
                               files that import each (one command, no jq join)

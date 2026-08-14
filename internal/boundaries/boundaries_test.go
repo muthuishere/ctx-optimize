@@ -19,11 +19,12 @@ func write(t *testing.T, root, rel, content string) {
 	}
 }
 
-// Hermetic: point the machine dir somewhere empty so a developer's real
-// ~/ctxoptimize/boundaries never leaks into a test.
+// Hermetic: point the machine dirs somewhere empty so a developer's real
+// ~/ctxoptimize/boundaries and ~/ctxoptimize/services never leak into a test.
 func hermetic(t *testing.T) {
 	t.Helper()
 	t.Setenv("CTX_OPTIMIZE_BOUNDARIES", t.TempDir())
+	t.Setenv("CTX_OPTIMIZE_SERVICES", t.TempDir())
 }
 
 func find(b *schema.Batch, id string) *schema.Node {

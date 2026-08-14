@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "services": {
+    "algolia": {
+      "match": { "deps": ["npm:algoliasearch", "pypi:algoliasearch", "go:github.com/algolia/algoliasearch-client-go*"], "hosts": ["*.algolia.net"] },
+      "config_hint": "ALGOLIA_"
+    },
+    "anthropic": {
+      "match": { "deps": ["npm:@anthropic-ai/sdk", "pypi:anthropic", "go:github.com/anthropics/anthropic-sdk-go*"], "hosts": ["api.anthropic.com"] },
+      "config_hint": "ANTHROPIC_",
+      "endpoints": [
+        { "method": "POST", "path": "/v1/messages", "sdk": ["messages.create", "messages.stream"] }
+      ]
+    },
+    "auth0": {
+      "match": { "deps": ["npm:auth0", "npm:@auth0/*", "pypi:auth0-python", "go:github.com/auth0/go-auth0*"], "hosts": ["*.auth0.com"] },
+      "config_hint": "AUTH0_"
+    },
+    "aws": {
+      "match": { "deps": ["npm:aws-sdk", "npm:@aws-sdk/*", "pypi:boto3", "pypi:botocore", "go:github.com/aws/aws-sdk-go*", "maven:software.amazon.awssdk:*", "nuget:AWSSDK.*"], "hosts": ["*.amazonaws.com"] },
+      "config_hint": "AWS_"
+    },
+    "azure": {
+      "match": { "deps": ["npm:@azure/*", "pypi:azure-identity", "pypi:azure-storage-blob", "go:github.com/Azure/azure-sdk-for-go*", "nuget:Azure.*"], "hosts": ["*.azure.com", "*.windows.net"] },
+      "config_hint": "AZURE_"
+    },
+    "clerk": {
+      "match": { "deps": ["npm:@clerk/*", "go:github.com/clerk/clerk-sdk-go*"], "hosts": ["api.clerk.com"] },
+      "config_hint": "CLERK_"
+    },
+    "cloudflare": {
+      "match": { "deps": ["npm:cloudflare", "pypi:cloudflare", "go:github.com/cloudflare/cloudflare-go*"], "hosts": ["api.cloudflare.com"] },
+      "config_hint": "CLOUDFLARE_"
+    },
+    "convertapi": {
+      "match": { "deps": ["npm:convertapi", "pypi:convertapi", "go:github.com/ConvertAPI/convertapi-go*"], "hosts": ["v2.convertapi.com"] },
+      "config_hint": "CONVERTAPI_"
+    },
+    "datadog": {
+      "match": { "deps": ["npm:dd-trace", "pypi:ddtrace", "pypi:datadog", "go:github.com/DataDog/datadog-api-client-go*"], "hosts": ["*.datadoghq.com"] },
+      "config_hint": "DD_"
+    },
+    "elevenlabs": {
+      "match": { "deps": ["npm:@elevenlabs/elevenlabs-js", "npm:elevenlabs", "pypi:elevenlabs"], "hosts": ["api.elevenlabs.io"] },
+      "config_hint": "ELEVENLABS_"
+    },
+    "firebase": {
+      "match": { "deps": ["npm:firebase", "npm:firebase-admin", "pypi:firebase-admin", "go:firebase.google.com/go*", "maven:com.google.firebase:firebase-admin"], "hosts": ["*.googleapis.com", "*.firebaseio.com"] },
+      "config_hint": "FIREBASE_"
+    },
+    "gcloud": {
+      "match": { "deps": ["npm:@google-cloud/*", "pypi:google-cloud-*", "go:cloud.google.com/go*", "maven:com.google.cloud:*"], "hosts": ["*.googleapis.com"] },
+      "config_hint": "GOOGLE_"
+    },
+    "gemini": {
+      "match": { "deps": ["npm:@google/generative-ai", "npm:@google/genai", "pypi:google-generativeai", "pypi:google-genai"], "hosts": ["generativelanguage.googleapis.com"] },
+      "config_hint": "GEMINI_"
+    },
+    "github": {
+      "match": { "deps": ["npm:@octokit/*", "pypi:pygithub", "go:github.com/google/go-github*"], "hosts": ["api.github.com"] },
+      "config_hint": "GITHUB_"
+    },
+    "huggingface": {
+      "match": { "deps": ["npm:@huggingface/inference", "pypi:huggingface-hub"], "hosts": ["api-inference.huggingface.co", "huggingface.co"] },
+      "config_hint": "HF_"
+    },
+    "mailgun": {
+      "match": { "deps": ["npm:mailgun.js", "go:github.com/mailgun/mailgun-go*"], "hosts": ["api.mailgun.net"] },
+      "config_hint": "MAILGUN_"
+    },
+    "mixpanel": {
+      "match": { "deps": ["npm:mixpanel", "npm:mixpanel-browser", "pypi:mixpanel"], "hosts": ["api.mixpanel.com"] },
+      "config_hint": "MIXPANEL_"
+    },
+    "openai": {
+      "match": { "deps": ["npm:openai", "pypi:openai", "go:github.com/sashabaranov/go-openai", "go:github.com/openai/openai-go*"], "hosts": ["api.openai.com"] },
+      "config_hint": "OPENAI_",
+      "endpoints": [
+        { "method": "POST", "path": "/v1/chat/completions", "sdk": ["chat.completions.create"] },
+        { "method": "POST", "path": "/v1/embeddings", "sdk": ["embeddings.create"] }
+      ]
+    },
+    "paypal": {
+      "match": { "deps": ["npm:@paypal/*", "pypi:paypalrestsdk"], "hosts": ["api-m.paypal.com"] },
+      "config_hint": "PAYPAL_"
+    },
+    "plaid": {
+      "match": { "deps": ["npm:plaid", "pypi:plaid-python", "go:github.com/plaid/plaid-go*"], "hosts": ["*.plaid.com"] },
+      "config_hint": "PLAID_"
+    },
+    "posthog": {
+      "match": { "deps": ["npm:posthog-js", "npm:posthog-node", "pypi:posthog", "go:github.com/posthog/posthog-go"], "hosts": ["*.posthog.com"] },
+      "config_hint": "POSTHOG_"
+    },
+    "razorpay": {
+      "match": { "deps": ["npm:razorpay", "pypi:razorpay", "go:github.com/razorpay/razorpay-go"], "hosts": ["api.razorpay.com"] },
+      "config_hint": "RAZORPAY_"
+    },
+    "resend": {
+      "match": { "deps": ["npm:resend", "pypi:resend", "go:github.com/resend/resend-go*"], "hosts": ["api.resend.com"] },
+      "config_hint": "RESEND_"
+    },
+    "segment": {
+      "match": { "deps": ["npm:@segment/analytics-node", "npm:@segment/analytics-next", "pypi:segment-analytics-python", "go:github.com/segmentio/analytics-go*"], "hosts": ["api.segment.io"] },
+      "config_hint": "SEGMENT_"
+    },
+    "sendgrid": {
+      "match": { "deps": ["npm:@sendgrid/mail", "pypi:sendgrid", "go:github.com/sendgrid/sendgrid-go"], "hosts": ["api.sendgrid.com"] },
+      "config_hint": "SENDGRID_"
+    },
+    "sentry": {
+      "match": { "deps": ["npm:@sentry/*", "pypi:sentry-sdk", "go:github.com/getsentry/sentry-go"], "hosts": ["*.sentry.io"] },
+      "config_hint": "SENTRY_"
+    },
+    "slack": {
+      "match": { "deps": ["npm:@slack/web-api", "npm:@slack/bolt", "pypi:slack-sdk", "go:github.com/slack-go/slack"], "hosts": ["slack.com"] },
+      "config_hint": "SLACK_"
+    },
+    "stripe": {
+      "match": { "deps": ["npm:stripe", "pypi:stripe", "go:github.com/stripe/stripe-go*", "maven:com.stripe:stripe-java", "nuget:Stripe.net"], "hosts": ["api.stripe.com"] },
+      "config_hint": "STRIPE_"
+    },
+    "supabase": {
+      "match": { "deps": ["npm:@supabase/supabase-js", "pypi:supabase"], "hosts": ["*.supabase.co"] },
+      "config_hint": "SUPABASE_"
+    },
+    "twilio": {
+      "match": { "deps": ["npm:twilio", "pypi:twilio", "go:github.com/twilio/twilio-go", "maven:com.twilio.sdk:twilio"], "hosts": ["api.twilio.com"] },
+      "config_hint": "TWILIO_"
+    }
+  }
+}
