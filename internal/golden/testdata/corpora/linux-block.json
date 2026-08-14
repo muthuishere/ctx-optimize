@@ -2,8 +2,8 @@
   "repo": "linux",
   "ref": "v6.9",
   "gather_subdir": "block",
-  "min_nodes": 8162,
-  "_floor_note": "8163→8162 on 2026-08-14 (ADR 2026-08-13 D7 importresolve): the module://../blk.h placeholder is pruned because its one edge (partitions/check.h imports ../blk.h) now rewrites to the real blk.h file node, EXTRACTED. Edges held at 12258 — a dead-end node became a real join, nothing was lost.",
+  "min_nodes": 8160,
+  "_floor_note": "8163→8162→8160 on 2026-08-14, two independent corrections. (1) ADR 2026-08-13 D7 importresolve: the module://../blk.h placeholder is pruned because its one edge (partitions/check.h imports ../blk.h) now rewrites to the real blk.h file node, EXTRACTED — a dead-end node became a real join, nothing lost. (2) CALIBRATION FIX: 8163 and 8162 were both measured against a DIRTY clone — gathering writes AGENTS.md + CLAUDE.md into the corpus and those two litter `document` nodes were being counted in the floor, so the floor only passed while the litter survived and following the documented cleanup rule would have broken it. 8160 is measured litter-free. Edges held at 12258 throughout. Clean before measuring: rm -rf <corpus>/block/{.ctxoptimize,AGENTS.md,CLAUDE.md} — note the litter lands in the GATHER SUBDIR (depth 3), so a -maxdepth 2 sweep from the corpora root misses it.",
   "min_edges": 12007,
   "must_nodes": [
     {
