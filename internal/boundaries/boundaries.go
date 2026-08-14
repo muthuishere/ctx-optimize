@@ -362,6 +362,11 @@ func applyRule(r *Rule, rel string, content []byte, nodes map[string]schema.Node
 				tier = schema.Ambiguous
 				meta["resolved"] = "dynamic"
 			}
+			raw := ident
+			ident = Normalize(r.Transport, ident)
+			if ident == "" {
+				continue
+			}
 			sig := ">"
 			if r.Direction == "provides" {
 				sig = "<"
@@ -372,19 +377,24 @@ func applyRule(r *Rule, rel string, content []byte, nodes map[string]schema.Node
 				nm := map[string]string{
 					"direction": r.Direction, "transport": r.Transport, "identifier": ident,
 				}
+				if raw != ident {
+					nm["raw"] = raw // the pre-fold spelling stays recoverable
+				}
 				for k, v := range meta {
 					nm[k] = v
 				}
 				for k, v := range r.Metadata {
-					nm[k] = strings.ReplaceAll(v, "$identifier", ident)
+					// $identifier keeps the SOURCE spelling — otel.http.route
+					// is the framework's template, not our join key.
+					nm[k] = strings.ReplaceAll(v, "$identifier", raw)
 				}
-				if r.flag != nil && r.flag.MatchString(ident) {
+				if r.flag != nil && r.flag.MatchString(raw) {
 					for k, v := range r.Flag.Set {
 						nm[k] = v
 					}
 				}
 				n = schema.Node{
-					ID: id, Label: ident, Kind: "port", FileType: "boundary",
+					ID: id, Label: raw, Kind: "port", FileType: "boundary",
 					Source: "port://" + r.Transport + "/" + ident, Metadata: nm,
 				}
 				nodes[id] = n

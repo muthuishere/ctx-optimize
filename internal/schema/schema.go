@@ -178,6 +178,7 @@ func portReason(n Node) string {
 var portReserved = map[string]bool{
 	"direction": true, "transport": true, "identifier": true, "scope": true,
 	"sensitive": true, "resolved": true,
+	"raw":      true, // pre-normalization spelling (D6), kept recoverable
 	"producer": true, // stamped by the store on merge, not by producers
 }
 

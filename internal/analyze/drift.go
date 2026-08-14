@@ -10,17 +10,17 @@
 // config.env provides port exists); otherwise a missing declaration means
 // nobody taught the store about declarations, not that the code is wrong.
 //
-// Identifiers are compared through a NORMALIZED form ({id} ≡ :id ≡ <id>,
-// trailing slash, case) so near-joins are visible today. Normalization is
-// comparison-only here; the emit-time half of D6 (stamping normalized
-// identifiers in internal/boundaries) is a separate slice — once it lands,
-// the would-join observations below become silent joins.
+// Identifiers are compared through boundaries.Normalize — the SAME fold the
+// producer applies at emit, so drift and the emitter can never disagree.
+// Boundary-produced ports arrive pre-normalized (their would-joins became
+// silent joins at emit); ports injected raw through the --json door still
+// get folded here for comparison, surfacing as would-join observations.
 package analyze
 
 import (
 	"sort"
-	"strings"
 
+	"github.com/muthuishere/ctx-optimize/internal/boundaries"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
@@ -92,7 +92,7 @@ func Drift(nodes []schema.Node, edges []schema.Edge) *DriftReport {
 
 	groups := map[string]*driftGroup{}
 	grp := func(transport, raw string) *driftGroup {
-		k := transport + "\x00" + normalizeIdentifier(transport, raw)
+		k := transport + "\x00" + boundaries.Normalize(transport, raw)
 		g := groups[k]
 		if g == nil {
 			g = &driftGroup{transport: transport, raws: map[string]bool{},
@@ -167,29 +167,6 @@ func Drift(nodes []schema.Node, edges []schema.Edge) *DriftReport {
 	sortFindings(r.Findings)
 	sortFindings(r.Observations)
 	return r
-}
-
-// normalizeIdentifier folds the spellings D6 names as equivalent: case,
-// trailing slash, and `{id}` ≡ `:id` ≡ `<id>` path parameters (all become
-// `*`). Comparison-only — stored identifiers are untouched.
-func normalizeIdentifier(transport, raw string) string {
-	s := strings.ToLower(strings.TrimSpace(raw))
-	if !strings.HasPrefix(transport, "network.") {
-		return s
-	}
-	s = strings.TrimRight(s, "/")
-	segs := strings.Split(s, "/")
-	for i, seg := range segs {
-		if seg == "" {
-			continue
-		}
-		if strings.HasPrefix(seg, ":") ||
-			(strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}")) ||
-			(strings.HasPrefix(seg, "<") && strings.HasSuffix(seg, ">")) {
-			segs[i] = "*"
-		}
-	}
-	return strings.Join(segs, "/")
 }
 
 func anyExtracted(sites []DriftSite) bool {

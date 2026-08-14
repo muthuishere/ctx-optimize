@@ -176,16 +176,20 @@ def list_items(): pass
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Identifiers are normalized at emit (D6): path params fold to `*` so
+	// express `:id` and fastapi `{id}` join; the source spelling survives in
+	// `raw` and in otel.http.route (the framework's own template).
 	for _, id := range []string{
-		"port:network.http:</users", "port:network.http:</users/:id", "port:network.http:</items",
+		"port:network.http:</users", "port:network.http:</users/*", "port:network.http:</items",
 	} {
 		n := find(b, id)
 		if n == nil || n.Metadata["direction"] != "provides" {
 			t.Fatalf("provides port missing or misdirected: %s → %+v", id, n)
 		}
-		if n.Metadata["otel.http.route"] != n.Metadata["identifier"] {
-			t.Fatalf("otel.http.route not stamped: %+v", n)
-		}
+	}
+	param := find(b, "port:network.http:</users/*")
+	if param.Metadata["raw"] != "/users/:id" || param.Metadata["otel.http.route"] != "/users/:id" {
+		t.Fatalf("raw spelling not recoverable after normalization: %+v", param)
 	}
 	for _, e := range b.Edges {
 		if e.Relation != "provides" {

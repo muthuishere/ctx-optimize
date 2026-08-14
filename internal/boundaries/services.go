@@ -252,7 +252,7 @@ func compileSDKMatchers(services map[string]Service) []sdkMatcher {
 // its id. Reuse matters: the URL-literal rule may already have made this node.
 func ensureServicePort(nodes map[string]schema.Node, svcID string, s Service) string {
 	transport := serviceTransport(s)
-	ident := serviceIdentifier(svcID, s)
+	ident := Normalize(transport, serviceIdentifier(svcID, s))
 	id := "port:" + transport + ":>" + ident
 	n, ok := nodes[id]
 	if !ok {
