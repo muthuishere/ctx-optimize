@@ -85,6 +85,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdAdapters(rest, stdout)
 	case "query", "ask": // `ask` — same verb graphify users reach for
 		err = cmdQuery(rest, stdout)
+	case "search": // cross-OS literal sweep — same RE2 + file set as boundary rules (ADR 2026-08-13)
+		err = cmdSearch(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
 	case "store":
@@ -3425,6 +3427,12 @@ commands:
         [--where k=v] [--select f1,f2] [--json|--ndjson]
                               list/filter graph EDGES natively — no jq.
                               e.g. edges --relation resolves_to
+  search <regex>              literal sweep of the SOURCE TREE (not the graph):
+        [--ext .go,.ts] [--path dir/] [--count] [--files] [--json]
+                              cross-OS (no rg/grep assumed), Go RE2, and the
+                              SAME file set as the extractor — gitignore +
+                              skip-dirs + size cap — so counts line up with
+                              what gather saw. file:line:text by default
   deps [--scope runtime|dev|peer|...] [--importers] [--json|--ndjson]
                               dependencies with scope; --importers adds the
                               files that import each (one command, no jq join)
