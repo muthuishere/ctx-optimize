@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/muthuishere/ctx-optimize/internal/boundaries"
 	"github.com/muthuishere/ctx-optimize/internal/extract/code"
 	"github.com/muthuishere/ctx-optimize/internal/extract/deplink"
 	"github.com/muthuishere/ctx-optimize/internal/extract/githistory"
@@ -799,6 +800,20 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	batches = append(batches, dl)
 	if len(dl.Edges) > 0 {
 		fmt.Fprintf(out, "deplink: %d resolves_to edges\n", len(dl.Edges))
+	}
+	// Boundary lane (ADR 2026-08-13-boundary-model-and-defaults): declarative
+	// boundaries.json rules → port nodes + provides/consumes edges. Always
+	// Replace, same emptied-module reasoning — deleting the code that read an
+	// env var must prune its port, never keep it silently.
+	bb, berr := gatherMerged(base, dirs, excludes, boundaries.ExtractExcluding)
+	if bb == nil {
+		bb = &schema.Batch{Producer: boundaries.Producer}
+	}
+	if lane("boundaries", berr) {
+		batches = append(batches, bb)
+		if len(bb.Nodes) > 0 {
+			fmt.Fprintf(out, "boundaries: %d ports, %d edges\n", len(bb.Nodes), len(bb.Edges))
+		}
 	}
 	// Co-change lane: edges only, best-effort (non-repo → empty batch).
 	// Always Replace, same reasoning as the code batch — an empty history

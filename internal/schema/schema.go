@@ -102,6 +102,11 @@ func (b *Batch) Validate() error {
 		if strings.TrimSpace(n.Source) == "" {
 			return fmt.Errorf("node %s: source is required", n.ID)
 		}
+		if n.Kind == "port" {
+			if r := portReason(n); r != "" {
+				return fmt.Errorf("node %s: %s", n.ID, r)
+			}
+		}
 	}
 	for i, e := range b.Edges {
 		if strings.TrimSpace(e.Source) == "" || strings.TrimSpace(e.Target) == "" {
@@ -133,7 +138,47 @@ func nodeReason(n Node) string {
 	case strings.TrimSpace(n.Source) == "":
 		return "source is required"
 	}
+	if n.Kind == "port" {
+		return portReason(n)
+	}
 	return ""
+}
+
+// portReason enforces the `port` reserved-metadata contract (ADR 2026-08-13
+// boundary-model-and-defaults, D1) — fail-closed like everything else at this
+// door. Open metadata must be NAMESPACED (`otel.*`, `pack.*`, `org.*`): an
+// un-namespaced unknown key is rejected, because two producers inventing
+// `http` vs `HTTP` vs `network.http` is how a vocabulary rots past querying.
+func portReason(n Node) string {
+	d := n.Metadata["direction"]
+	if d != "provides" && d != "consumes" {
+		return "port: metadata.direction must be provides|consumes"
+	}
+	t := n.Metadata["transport"]
+	if t == "" || strings.ToLower(t) != t {
+		return "port: metadata.transport must be lowercase dotted (e.g. network.http)"
+	}
+	if strings.TrimSpace(n.Metadata["identifier"]) == "" {
+		return "port: metadata.identifier is required"
+	}
+	if s, ok := n.Metadata["scope"]; ok && s != "internal" && s != "external" {
+		return "port: metadata.scope must be internal|external"
+	}
+	for k := range n.Metadata {
+		if portReserved[k] || strings.Contains(k, ".") {
+			continue
+		}
+		return fmt.Sprintf("port: metadata key %q is neither reserved nor namespaced (use otel.*/pack.*/org.*)", k)
+	}
+	return ""
+}
+
+// portReserved: the closed core the binary's own verbs may depend on.
+// Everything else rides a namespace.
+var portReserved = map[string]bool{
+	"direction": true, "transport": true, "identifier": true, "scope": true,
+	"sensitive": true, "resolved": true,
+	"producer": true, // stamped by the store on merge, not by producers
 }
 
 func edgeReason(e Edge) string {

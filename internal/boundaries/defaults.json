@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "boundaries": [
+    {
+      "id": "env-go",
+      "transport": "config.env",
+      "direction": "consumes",
+      "when": { "ext": [".go"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "os\\.Getenv\\(\\s*\"([A-Z][A-Z0-9_]{2,})\"", "identifier": 1 }],
+      "flag": { "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW", "set": { "sensitive": "true" } }
+    },
+    {
+      "id": "env-js",
+      "transport": "config.env",
+      "direction": "consumes",
+      "when": { "ext": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "(?:process\\.env|import\\.meta\\.env)\\.([A-Z][A-Z0-9_]{2,})", "identifier": 1 }],
+      "flag": { "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW", "set": { "sensitive": "true" } }
+    },
+    {
+      "id": "env-py",
+      "transport": "config.env",
+      "direction": "consumes",
+      "when": { "ext": [".py"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "os\\.environ(?:\\.get)?[\\[(]\\s*['\"]([A-Z][A-Z0-9_]{2,})['\"]", "identifier": 1 }],
+      "flag": { "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW", "set": { "sensitive": "true" } }
+    },
+    {
+      "id": "process-go",
+      "transport": "process.exec",
+      "direction": "consumes",
+      "when": { "ext": [".go"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "exec\\.Command(?:Context)?\\(\\s*(?:ctx,\\s*)?\"([^\"]{1,60})\"", "identifier": 1 }]
+    },
+    {
+      "id": "process-js",
+      "transport": "process.exec",
+      "direction": "consumes",
+      "when": { "ext": [".ts", ".js", ".mjs", ".cjs"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "child_process\\.(?:spawn|exec|execFile|execSync)\\(\\s*[`'\"]([^`'\"]{1,60})", "identifier": 1 }]
+    },
+    {
+      "id": "process-py",
+      "transport": "process.exec",
+      "direction": "consumes",
+      "when": { "ext": [".py"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "subprocess\\.(?:run|Popen|call|check_output)\\(\\s*\\[\\s*['\"]([^'\"]{1,60})", "identifier": 1 }]
+    },
+    {
+      "id": "http-url-literal",
+      "transport": "network.http",
+      "direction": "consumes",
+      "when": { "ext": [".go", ".ts", ".tsx", ".js", ".jsx", ".py", ".java", ".cs", ".kt", ".swift", ".rb"] },
+      "exclude": { "path": ["testdata/", "benchmarks/", "docs/", "site/"] },
+      "match": [{ "re": "[\"'`]https?://([a-zA-Z0-9][a-zA-Z0-9.-]*\\.[a-z]{2,})[\"'`/]", "identifier": 1 }],
+      "metadata": { "otel.server.address": "$identifier" },
+      "tier": "INFERRED"
+    },
+    {
+      "id": "webstorage",
+      "transport": "storage.local",
+      "direction": "consumes",
+      "when": { "ext": [".ts", ".tsx", ".js", ".jsx"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "(?:localStorage|sessionStorage)\\.(?:getItem|setItem|removeItem)\\(\\s*[`'\"]([^`'\"]{1,80})", "identifier": 1 }]
+    },
+    {
+      "id": "websocket-js",
+      "transport": "network.ws",
+      "direction": "consumes",
+      "when": { "ext": [".ts", ".tsx", ".js", ".jsx"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "new\\s+(?:WebSocket|EventSource)\\(\\s*[`'\"]([^`'\"]{1,120})", "identifier": 1 }]
+    }
+  ]
+}
