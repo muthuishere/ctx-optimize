@@ -1,6 +1,15 @@
 # ADR 7 — boundaries on the AST: retire the regex lane
 
-Status: ACCEPTED 2026-08-14 (owner: "no work on performance fixes first without
+Status: IMPLEMENTED 2026-08-15 in 21d83a0 (AST lane) + 45087a6 (symbol cache)
++ 7d748dc (store.ReplaceAll) + 775c594 (rune-safe truncation).
+FINAL RESULT, best-of-3 on a quiet machine vs the pre-session baseline
+0a2b192: go-kubernetes 13.74s -> 6.88s (-50%), java-spring 6.05s -> 2.93s
+(-52%), Newtonsoft 0.74s -> 0.56s (-24%), kubernetes touch-one-file 12.77s ->
+6.69s (-48%). The budget was "restore <=+5%"; the pipeline is now 2x FASTER
+than before the boundary lane existed.
+The last 15% was not the boundary lane at all: store.Replace ran once per
+producer, each a full read-sort-write of the whole graph.
+ACCEPTED 2026-08-14 (owner: "no work on performance fixes first without
 that there is no point"). Performance is a functional requirement here, not a
 non-functional one — the lane ships fixed or it does not ship.
 Owner directive: *"we need to make the boundaries better and also incremental
