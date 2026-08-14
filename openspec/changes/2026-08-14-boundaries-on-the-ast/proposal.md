@@ -1,6 +1,8 @@
 # ADR 7 — boundaries on the AST: retire the regex lane
 
-Status: DRAFT — owner review pending 2026-08-14. No product code until agreed.
+Status: ACCEPTED 2026-08-14 (owner: "no work on performance fixes first without
+that there is no point"). Performance is a functional requirement here, not a
+non-functional one — the lane ships fixed or it does not ship.
 Owner directive: *"we need to make the boundaries better and also incremental
 better and never regex kind of."*
 Supersedes ADR 6's D2 (regex alternation) — a faster regex is the wrong fix.
