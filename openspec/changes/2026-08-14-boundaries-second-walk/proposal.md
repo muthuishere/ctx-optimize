@@ -32,6 +32,19 @@ median of 3 runs each:
 It does not amortize — it gets **worse** with file density, which is the wrong
 direction for a tool whose pitch is "seconds on a big repo".
 
+⚠️ **Error bars on these wall-clock numbers.** They are medians of 3, but they
+were taken on a machine running several heavy agents concurrently. A later
+profiling pass re-ran the same kubernetes A/B twice and got **+16.8% then
++4.9%** — the base swung 10% and the new build 19% between runs. **Treat
+anything under ~20% measured by CLI wall-clock that day as noise.**
+
+The DIRECTION is not in doubt, because two measurements immune to machine load
+agree with it: (a) the bisect below is monotonic across five builds, and (b)
+the ADR 7 spike measured the regex/read split **inside a single process** —
+5.29s of regex against 330ms of walk+read on kubernetes, a ratio no amount of
+CPU contention can invert. The magnitude has error bars; the diagnosis does
+not.
+
 Bisected on go-kubernetes, and the attribution is unambiguous:
 
 | build | time | attribution |
