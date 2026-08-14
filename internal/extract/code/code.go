@@ -379,6 +379,10 @@ func extractAll(base string, roots []string, exclude []string) (*schema.Batch, *
 	// Symbol tables once per engine+language (read-only after this).
 	symTab := map[string]map[int][]string{}
 	loadSyms := func(key string, langs []Lang) error {
+		if m, ok := cachedSymbols(key); ok {
+			symTab[key] = m
+			return nil
+		}
 		eng, err := getEngine(key)
 		if err != nil {
 			return err
@@ -396,6 +400,7 @@ func extractAll(base string, roots []string, exclude []string) (*schema.Batch, *
 			}
 			m[l.ID] = names
 		}
+		storeSymbols(key, m)
 		symTab[key] = m
 		return nil
 	}
