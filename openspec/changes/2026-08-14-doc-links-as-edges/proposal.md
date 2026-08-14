@@ -90,11 +90,9 @@ Link damage is currently **0** in both repos — but only by luck of the narrow
 extraction (D2–D4) without D0 converts a zero into a live false-positive
 source, since fences are exactly where example links live.
 
-This is a **correctness defect in shipped output**, not a missing feature — and it hits us hardest precisely where we document
-ourselves: every `# comment` in every shell example in every README is a
-candidate phantom section. It also means widening link extraction (D2–D4)
-*without* fixing fences would multiply the fabrication, since fences are where
-example links live.
+This is a **correctness defect in shipped output**, not a missing feature, and
+it hits hardest exactly where a project documents itself: every `# comment` in
+every shell example in every README is a candidate phantom section.
 
 Fixing this is mandatory and lands first.
 
