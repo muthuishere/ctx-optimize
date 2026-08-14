@@ -33,7 +33,16 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search 'os\\.Getenv\\(' --ext .go --count  # corpora: go-kubernetes, go-gin, ctx-optimize"
+          "cmd": "search 'os\\.Getenv\\(' --ext .go --count  # corpora: go-kubernetes, go-gin, ctx-optimize",
+          "re": "os\\.Getenv\\(",
+          "ext": [
+            ".go"
+          ],
+          "corpora": [
+            "go-kubernetes",
+            "go-gin",
+            "ctx-optimize"
+          ]
         },
         "expected": 179,
         "matched": 145,
@@ -88,7 +97,18 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '(process\\.env|import\\.meta\\.env)[.\\[]' --ext .ts,.tsx,.js,.mjs --count  # corpora: ts-typescript, ts-hono"
+          "cmd": "search '(process\\.env|import\\.meta\\.env)[.\\[]' --ext .ts,.tsx,.js,.mjs --count  # corpora: ts-typescript, ts-hono",
+          "re": "(process\\.env|import\\.meta\\.env)[.\\[]",
+          "ext": [
+            ".ts",
+            ".tsx",
+            ".js",
+            ".mjs"
+          ],
+          "corpora": [
+            "ts-typescript",
+            "ts-hono"
+          ]
         },
         "expected": 39,
         "matched": 37,
@@ -134,7 +154,15 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search 'os\\.environ(\\.get|\\.setdefault|\\.pop)?[\\[(]' --ext .py --count  # corpora: py-django, py-flask"
+          "cmd": "search 'os\\.environ(\\.get|\\.setdefault|\\.pop)?[\\[(]' --ext .py --count  # corpora: py-django, py-flask",
+          "re": "os\\.environ(\\.get|\\.setdefault|\\.pop)?[\\[(]",
+          "ext": [
+            ".py"
+          ],
+          "corpora": [
+            "py-django",
+            "py-flask"
+          ]
         },
         "expected": 65,
         "matched": 53,
@@ -174,7 +202,15 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search 'exec\\.Command(Context)?\\(' --ext .go --count  # corpora: go-kubernetes, ctx-optimize"
+          "cmd": "search 'exec\\.Command(Context)?\\(' --ext .go --count  # corpora: go-kubernetes, ctx-optimize",
+          "re": "exec\\.Command(Context)?\\(",
+          "ext": [
+            ".go"
+          ],
+          "corpora": [
+            "go-kubernetes",
+            "ctx-optimize"
+          ]
         },
         "expected": 251,
         "matched": 163,
@@ -216,7 +252,18 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search 'child_process\\.(spawn|exec|execFile|execSync)\\(' --ext .ts,.js,.mjs,.cjs --count  # corpora: ts-typescript, ts-hono — ZERO sites"
+          "cmd": "search 'child_process\\.(spawn|exec|execFile|execSync)\\(' --ext .ts,.js,.mjs,.cjs --count  # corpora: ts-typescript, ts-hono — ZERO sites",
+          "re": "child_process\\.(spawn|exec|execFile|execSync)\\(",
+          "ext": [
+            ".ts",
+            ".js",
+            ".mjs",
+            ".cjs"
+          ],
+          "corpora": [
+            "ts-typescript",
+            "ts-hono"
+          ]
         },
         "expected": 0,
         "matched": 0,
@@ -254,7 +301,15 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search 'subprocess\\.(run|Popen|call|check_output)\\(' --ext .py --count  # corpora: py-django, py-flask"
+          "cmd": "search 'subprocess\\.(run|Popen|call|check_output)\\(' --ext .py --count  # corpora: py-django, py-flask",
+          "re": "subprocess\\.(run|Popen|call|check_output)\\(",
+          "ext": [
+            ".py"
+          ],
+          "corpora": [
+            "py-django",
+            "py-flask"
+          ]
         },
         "expected": 14,
         "matched": 0,
@@ -307,7 +362,21 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '[\"'`]https?://' --ext .go,.ts,.tsx,.js,.py --count  # corpora: ts-typescript, py-django, go-kubernetes, ctx-optimize"
+          "cmd": "search '[\"'`]https?://' --ext .go,.ts,.tsx,.js,.py --count  # corpora: ts-typescript, py-django, go-kubernetes, ctx-optimize",
+          "re": "[\"'`]https?://",
+          "ext": [
+            ".go",
+            ".ts",
+            ".tsx",
+            ".js",
+            ".py"
+          ],
+          "corpora": [
+            "ts-typescript",
+            "py-django",
+            "go-kubernetes",
+            "ctx-optimize"
+          ]
         },
         "expected": 2776,
         "matched": 2432,
@@ -356,7 +425,15 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '\\.(get|post|put|delete|patch)\\(\\s*['\"]/' --ext .ts,.js --count  # corpus: ts-hono (express-shaped API)"
+          "cmd": "search '\\.(get|post|put|delete|patch)\\(\\s*['\"]/' --ext .ts,.js --count  # corpus: ts-hono (express-shaped API)",
+          "re": "\\.(get|post|put|delete|patch)\\(\\s*['\"]/",
+          "ext": [
+            ".ts",
+            ".js"
+          ],
+          "corpora": [
+            "ts-hono"
+          ]
         },
         "expected": 689,
         "matched": 524,
@@ -407,7 +484,14 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '\\.(GET|POST|PUT|DELETE|PATCH|Handle|HandleFunc|Get|Post|Put|Delete|Patch)\\(\\s*\"/' --ext .go --count  # corpus: go-gin"
+          "cmd": "search '\\.(GET|POST|PUT|DELETE|PATCH|Handle|HandleFunc|Get|Post|Put|Delete|Patch)\\(\\s*\"/' --ext .go --count  # corpus: go-gin",
+          "re": "\\.(GET|POST|PUT|DELETE|PATCH|Handle|HandleFunc|Get|Post|Put|Delete|Patch)\\(\\s*\"/",
+          "ext": [
+            ".go"
+          ],
+          "corpora": [
+            "go-gin"
+          ]
         },
         "expected": 182,
         "matched": 182,
@@ -450,7 +534,14 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '@(Get|Post|Put|Delete|Patch|Request)Mapping\\(' --ext .java --count  # corpus: java-spring"
+          "cmd": "search '@(Get|Post|Put|Delete|Patch|Request)Mapping\\(' --ext .java --count  # corpus: java-spring",
+          "re": "@(Get|Post|Put|Delete|Patch|Request)Mapping\\(",
+          "ext": [
+            ".java"
+          ],
+          "corpora": [
+            "java-spring"
+          ]
         },
         "expected": 668,
         "matched": 490,
@@ -498,7 +589,15 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(' --ext .cs --count  # corpora: csharp-efcore, csharp-newtonsoft — ZERO sites"
+          "cmd": "search '\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(' --ext .cs --count  # corpora: csharp-efcore, csharp-newtonsoft — ZERO sites",
+          "re": "\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(",
+          "ext": [
+            ".cs"
+          ],
+          "corpora": [
+            "csharp-efcore",
+            "csharp-newtonsoft"
+          ]
         },
         "expected": 0,
         "matched": 0,
@@ -538,7 +637,14 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '@\\w[\\w.]*\\.(get|post|put|delete|patch|route)\\(' --ext .py --count  # corpus: py-flask"
+          "cmd": "search '@\\w[\\w.]*\\.(get|post|put|delete|patch|route)\\(' --ext .py --count  # corpus: py-flask",
+          "re": "@\\w[\\w.]*\\.(get|post|put|delete|patch|route)\\(",
+          "ext": [
+            ".py"
+          ],
+          "corpora": [
+            "py-flask"
+          ]
         },
         "expected": 306,
         "matched": 303,
@@ -581,7 +687,17 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono — ZERO sites"
+          "cmd": "search '(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono — ZERO sites",
+          "re": "(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(",
+          "ext": [
+            ".ts",
+            ".tsx",
+            ".js"
+          ],
+          "corpora": [
+            "ts-typescript",
+            "ts-hono"
+          ]
         },
         "expected": 0,
         "matched": 0,
@@ -621,7 +737,17 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search 'new\\s+(WebSocket|EventSource)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono"
+          "cmd": "search 'new\\s+(WebSocket|EventSource)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono",
+          "re": "new\\s+(WebSocket|EventSource)\\(",
+          "ext": [
+            ".ts",
+            ".tsx",
+            ".js"
+          ],
+          "corpora": [
+            "ts-typescript",
+            "ts-hono"
+          ]
         },
         "expected": 2,
         "matched": 1,

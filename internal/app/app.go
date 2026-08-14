@@ -89,6 +89,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdSearch(rest, stdout)
 	case "services": // D5 services registry — the dependency IS the boundary (ADR 2026-08-13)
 		err = cmdServices(rest, stdout)
+	case "boundaries": // D3 hold every rule to its own evidence (ADR 2026-08-13-boundary-authoring)
+		err = cmdBoundaries(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
 	case "store":
@@ -3448,6 +3450,14 @@ commands:
   services add <file|url>     validate + install a registry file into
                               ~/ctxoptimize/services/ (network only on this
                               explicit command)
+  boundaries verify [--json] [--strict] [--record]
+                              hold every boundary rule to its own evidence:
+                              re-runs each rule's recorded ground truth against
+                              THIS repo and reports local recall vs the floor in
+                              .ctxoptimize/boundaries-baseline.json (--record
+                              writes it). A rule with no sites here is reported
+                              unexercised, never passed. --strict exits nonzero
+                              on a drop, so CI holds the surface still
   deps [--scope runtime|dev|peer|...] [--importers] [--json|--ndjson]
                               dependencies with scope; --importers adds the
                               files that import each (one command, no jq join)

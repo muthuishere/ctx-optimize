@@ -55,6 +55,34 @@ func Run(root string, re *regexp.Regexp, o Options) ([]Match, error) {
 	if err != nil {
 		return nil, err
 	}
+	files, err := files(absRoot, o)
+	if err != nil {
+		return nil, err
+	}
+	var out []Match
+	for _, f := range files {
+		matches, merr := sweepFile(absRoot, f, re)
+		if merr != nil {
+			continue // unreadable mid-walk: skip, same as the extractor
+		}
+		out = append(out, matches...)
+	}
+	return out, nil
+}
+
+// Files is the walk without the sweep: the exact file set Run would read,
+// as absolute paths, sorted. Exported so a caller that must measure ITSELF
+// against a search count (boundaries verify) reads the same files by
+// construction rather than by a second walk that could drift.
+func Files(root string, o Options) ([]string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	return files(absRoot, o)
+}
+
+func files(absRoot string, o Options) ([]string, error) {
 	extOK := func(name string) bool {
 		if len(o.Exts) == 0 {
 			return true
@@ -68,8 +96,8 @@ func Run(root string, re *regexp.Regexp, o Options) ([]Match, error) {
 	}
 	ignored := ignore.New(absRoot) // .gitignore semantics via git itself; nil = no git
 
-	var files []string
-	err = filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
+	var out []string
+	err := filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -103,22 +131,13 @@ func Run(root string, re *regexp.Regexp, o Options) ([]Match, error) {
 		if info, ierr := d.Info(); ierr != nil || info.Size() > maxFileBytes || !info.Mode().IsRegular() {
 			return nil
 		}
-		files = append(files, path)
+		out = append(out, path)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(files)
-
-	var out []Match
-	for _, f := range files {
-		matches, merr := sweepFile(absRoot, f, re)
-		if merr != nil {
-			continue // unreadable mid-walk: skip, same as the extractor
-		}
-		out = append(out, matches...)
-	}
+	sort.Strings(out)
 	return out, nil
 }
 
