@@ -20,7 +20,7 @@ func ruleWithGT(t *testing.T, root, id, ruleRe, gtRe, ext string, extra string) 
 		`"known_misses":["fixture"]}`
 	body := `{"version":1,"boundaries":[{"id":"` + id + `","transport":"config.env",` +
 		`"direction":"consumes","when":{"ext":["` + ext + `"]},` + extra +
-		`"match":[{"re":` + mustJSON(t, ruleRe) + `,"identifier":1}],` +
+		`"scan":"raw","match":[{"re":` + mustJSON(t, ruleRe) + `,"identifier":1}],` +
 		`"tier":"INFERRED","verified":` + v + `}]}`
 	write(t, root, ".ctxoptimize/boundaries.json", body)
 }
@@ -111,7 +111,7 @@ func TestVerifyWithoutMachineGroundTruthIsUnverifiable(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, ".ctxoptimize/boundaries.json", `{"version":1,"boundaries":[
 	  {"id":"fx-nogt","transport":"config.env","direction":"consumes",
-	   "when":{"ext":[".go"]},"match":[{"re":"getenv\\(\"([A-Z_]+)\"\\)","identifier":1}],
+	   "when":{"ext":[".go"]},"scan":"raw","match":[{"re":"getenv\\(\"([A-Z_]+)\"\\)","identifier":1}],
 	   "verified":{"at":"2026-08-14","ground_truth":{"tool":"eyeball","cmd":"by hand"},
 	   "expected":1,"matched":1,"recall":1.0}}]}`)
 	write(t, root, "a.go", `x := getenv("ALPHA")`)

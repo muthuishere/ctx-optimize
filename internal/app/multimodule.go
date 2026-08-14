@@ -767,7 +767,11 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	}
 	// Code: ONE pass across all dirs (base-relative IDs) so calls resolve
 	// across a multi-path module's scattered folders (test→source).
-	cb, cerr := code.ExtractPaths(base, dirs, excludes)
+	// ONE walk produces both the code batch and the boundary batch (ADR
+	// 2026-08-14 D2). The boundary lane used to re-walk and re-read the whole
+	// tree to run regexes over the bytes — 90% of its cost — and now rides
+	// this parse instead.
+	cb, bb, cerr := code.ExtractPathsWithBoundaries(base, dirs, excludes)
 	if cb == nil {
 		cb = &schema.Batch{Producer: code.ProducerName}
 	}
@@ -805,9 +809,37 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	// boundaries.json rules → port nodes + provides/consumes edges. Always
 	// Replace, same emptied-module reasoning — deleting the code that read an
 	// env var must prune its port, never keep it silently.
-	bb, berr := gatherMerged(base, dirs, excludes, boundaries.ExtractExcluding)
+	// Raw-scan rules (the declared escape hatch for files no grammar parses)
+	// still need their own pass; it early-returns unless such a rule exists.
+	rawb, berr := gatherMerged(base, dirs, excludes, boundaries.ExtractExcluding)
 	if bb == nil {
 		bb = &schema.Batch{Producer: boundaries.Producer}
+	}
+	if rawb != nil {
+		// Dedup on merge: a raw escape-hatch rule and an AST rule can name the
+		// same port (a Kotlin grammar pack makes .kt parseable while the
+		// declared .kt regex rule still exists). Two nodes with one id would
+		// fail the schema door.
+		seenPort := make(map[string]bool, len(bb.Nodes))
+		for _, n := range bb.Nodes {
+			seenPort[n.ID] = true
+		}
+		for _, n := range rawb.Nodes {
+			if !seenPort[n.ID] {
+				seenPort[n.ID] = true
+				bb.Nodes = append(bb.Nodes, n)
+			}
+		}
+		seenEdge := make(map[string]bool, len(bb.Edges))
+		for _, e := range bb.Edges {
+			seenEdge[e.Source+"\x00"+e.Target] = true
+		}
+		for _, e := range rawb.Edges {
+			if k := e.Source + "\x00" + e.Target; !seenEdge[k] {
+				seenEdge[k] = true
+				bb.Edges = append(bb.Edges, e)
+			}
+		}
 	}
 	if lane("boundaries", berr) {
 		batches = append(batches, bb)

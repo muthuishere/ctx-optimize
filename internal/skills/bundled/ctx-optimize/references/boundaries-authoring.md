@@ -150,8 +150,8 @@ Rule plus evidence, in one committed diff a reviewer can read.
       "direction": "consumes",
       "when":    { "ext": [".go"] },
       "exclude": { "path": ["testdata/", "benchmarks/"] },
-      "match": [
-        { "re": "os\\.Getenv\\(\\s*\"([A-Z][A-Z0-9_]+)\"", "identifier": 1 }
+      "ast": [
+        { "shape": "call", "name": "Getenv", "receiver": "os", "arg": 0 }
       ],
       "flag": {
         "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW",
@@ -177,11 +177,73 @@ Rule plus evidence, in one committed diff a reviewer can read.
 }
 ```
 
+### Rules match the AST, not the bytes (ADR 2026-08-14)
+
+`ast` is the matcher. A rule names a node **shape**, and it is evaluated inside
+the code extractor's existing walk — the file is already parsed, so a rule
+costs a map probe rather than another pass over the bytes. Six shapes, and
+they were chosen by enumerating what the shipped rules actually need:
+
+```json
+{ "shape": "call",       "name": "Getenv",  "receiver": "os", "arg": 0 }
+{ "shape": "member",     "path": ["process", "env"] }
+{ "shape": "subscript",  "path": ["os", "environ"] }
+{ "shape": "annotation", "name": "GetMapping", "arg": 0, "named_arg": ["value", "path"] }
+{ "shape": "new",        "name": "WebSocket", "arg": 0 }
+{ "shape": "literal",    "url_scheme": ["http", "https"], "take": "host" }
+```
+
+**The rule that makes this worth doing:** an argument that is not a string
+literal is NOT a miss. `os.Getenv(name)` is a certain env read with an
+uncertain value, so it emits with `resolved: dynamic` at AMBIGUOUS instead of
+vanishing. A regex saw only text, so it saw nothing there — which is why
+`process-py` measured 0.00 and reported "this repo spawns nothing", a lie.
+
+Other `ast` fields: `receiver_any_of` / `receiver_suffix` (constrain the
+receiver — better precision than route packs, which key on the callee's last
+identifier only, so `os.Getenv` would also fire on a local `Getenv()`),
+`arg_in_list` (read the first element of a list argument, for
+`subprocess.run(["git"])`), `in_decorator` (a route is `@app.get("/x")`; the
+same call at runtime is not), and `identifier_prefix` (routes require `/`).
+
+### `scan: "raw"` — the declared escape hatch
+
+`match` (regex over raw bytes) still exists, and a rule that uses it MUST also
+declare `"scan": "raw"`. It is for boundaries in files **no grammar parses** —
+`.env`, `.txt`, and languages that ship as a grammar pack rather than embedded
+(a machine without the Kotlin pack cannot parse `.kt` at all, so
+`routes-kotlin` is a raw rule). This is the honest limit of an AST lane, and
+the ADR requires it be *declared* rather than silently empty.
+
+A raw rule in full — note `scan` and `match` together, and that the
+`known_misses` say plainly why it is not an `ast` rule:
+
+```json
+{
+  "id": "routes-kotlin",
+  "transport": "network.http",
+  "direction": "provides",
+  "when":    { "ext": [".kt"] },
+  "exclude": { "path": ["testdata/", "benchmarks/"] },
+  "scan": "raw",
+  "match": [
+    { "re": "@(?:Get|Post|Put|Delete|Patch|Request)Mapping\\(\\s*(?:value\\s*=\\s*)?\"(/[^\"]*)\"", "identifier": 1 }
+  ],
+  "metadata": { "otel.http.route": "$identifier" },
+  "tier": "INFERRED"
+}
+```
+
+Regex also still owns two jobs it is right for: the `search` verb, and
+`verified.ground_truth` — which **must** stay independent of the capture
+mechanism. An AST rule verified by an AST rule scores 1.00 by construction.
+
 Field notes that are easy to get wrong:
 
 - `exclude` is **top-level**, not inside `when`. `when` holds only `ext`.
-- `match[].identifier` is the **1-based capture group** holding the external
-  name. Group 0 is invalid.
+- Declare `ast` OR `match`+`scan:"raw"` — never both; the loader rejects it.
+- `ast[].arg` is a **0-based argument position**. (`match[].identifier`, the
+  raw lane's capture group, is 1-based — group 0 is invalid.)
 - `direction` is `provides` (this repo serves it) or `consumes` (this repo
   calls it). **`scope` is NOT yours to set** — the engine computes
   internal/external by JOIN: a consumed identifier is `internal` iff some

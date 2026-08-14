@@ -134,12 +134,44 @@ type Baseline struct {
 const unmatchedCap = 5
 
 // Verify measures every merged rule against root.
-func Verify(root string) (*Report, error) {
+// HitSource yields the boundary hits a gather would emit for root. The AST
+// lane lives in internal/extract/code (it needs the parser), and boundaries
+// cannot import it without a cycle, so the caller injects it. Nil means
+// raw-scan rules only — which is what a rule's own regex can measure.
+type HitSource func(root string) ([]Hit, error)
+
+// astHits is set by Verify's caller via VerifyWith.
+func Verify(root string) (*Report, error) { return VerifyWith(root, nil) }
+
+// VerifyWith measures each rule against its ground truth. AST rules are
+// measured from the sites they EMITTED (src), because re-running "the rule"
+// is meaningless once the rule is a node shape rather than a regex — that is
+// also stricter than the old path, which could credit a rule for a regex hit
+// it never turned into a port.
+func VerifyWith(root string, src HitSource) (*Report, error) {
 	rules, err := Load(root)
 	if err != nil {
 		return nil, err
 	}
 	rep := &Report{Root: root}
+
+	// Emitted sites, grouped by rule id. Collected ONCE for the whole report.
+	emitted := map[string]map[Site]bool{}
+	if src != nil {
+		hits, herr := src(root)
+		if herr != nil {
+			return nil, herr
+		}
+		for _, h := range hits {
+			if h.Rule == "" {
+				continue // an SDK hit belongs to a service, not a rule
+			}
+			if emitted[h.Rule] == nil {
+				emitted[h.Rule] = map[Site]bool{}
+			}
+			emitted[h.Rule][Site{File: h.File, Line: h.Line}] = true
+		}
+	}
 
 	base, basePath, err := loadBaseline(root)
 	if err != nil {
@@ -152,7 +184,7 @@ func Verify(root string) (*Report, error) {
 
 	for i := range rules {
 		r := &rules[i]
-		res := verifyRule(root, r)
+		res := verifyRule(root, r, emitted[r.ID])
 		if base != nil {
 			if b, ok := base.Rules[r.ID]; ok {
 				bb := b
@@ -181,7 +213,7 @@ func Verify(root string) (*Report, error) {
 	return rep, nil
 }
 
-func verifyRule(root string, r *Rule) RuleResult {
+func verifyRule(root string, r *Rule, emitted map[Site]bool) RuleResult {
 	res := RuleResult{Rule: r.ID, Transport: r.Transport, Tier: r.Tier}
 	if res.Tier == "" {
 		res.Tier = "EXTRACTED"
@@ -234,7 +266,7 @@ func verifyRule(root string, r *Rule) RuleResult {
 		gt[Site{File: m.File, Line: m.Line}] = m.Text
 	}
 
-	ruleSites, err := ruleSites(root, r)
+	ruleSites, err := sitesOf(root, r, emitted)
 	if err != nil {
 		res.Status = StatusUnverifiable
 		res.Note = "rule sweep failed: " + err.Error()
@@ -277,6 +309,19 @@ func verifyRule(root string, r *Rule) RuleResult {
 	}
 	res.Unmatched = unmatched
 	return res
+}
+
+// sitesOf returns the rule's own sites: for an AST rule the sites it EMITTED
+// (supplied by the caller, since only the parser can find them); for a
+// raw-scan rule, its regex re-run over the same walk `search` uses.
+func sitesOf(root string, r *Rule, emitted map[Site]bool) (map[Site]bool, error) {
+	if len(r.AST) > 0 {
+		if emitted == nil {
+			return map[Site]bool{}, nil
+		}
+		return emitted, nil
+	}
+	return ruleSites(root, r)
 }
 
 // ruleSites runs one rule over the same walk `search` uses and returns the

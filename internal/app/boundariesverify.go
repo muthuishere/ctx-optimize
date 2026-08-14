@@ -17,6 +17,7 @@ import (
 	"io"
 
 	"github.com/muthuishere/ctx-optimize/internal/boundaries"
+	"github.com/muthuishere/ctx-optimize/internal/extract/code"
 )
 
 func cmdBoundaries(args []string, stdout io.Writer) error {
@@ -33,7 +34,10 @@ func cmdBoundaries(args []string, stdout io.Writer) error {
 	if p := f.strs["path"]; p != "" {
 		root = p
 	}
-	rep, err := boundaries.Verify(root)
+	// AST rules are measured from the sites they emitted — only the parser can
+	// find those, so the code extractor is injected here (boundaries cannot
+	// import it without a cycle).
+	rep, err := boundaries.VerifyWith(root, code.BoundaryHits)
 	if err != nil {
 		return err
 	}

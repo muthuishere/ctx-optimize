@@ -61,7 +61,16 @@ type Rule struct {
 	Exclude struct {
 		Path []string `json:"path"`
 	} `json:"exclude"`
-	Match []Matcher `json:"match"`
+	// AST is the matcher (ADR 2026-08-14): node shapes evaluated inside the
+	// code extractor's existing walk. This is how every shipped rule works.
+	AST []ASTMatch `json:"ast,omitempty"`
+	// Match is the RAW-BYTE escape hatch, and it is opt-in: a rule that uses
+	// it must also declare `"scan": "raw"`. It exists for boundaries in files
+	// no grammar parses (.env, .txt, plain config) — the honest limit of an
+	// AST lane. Regex also still owns `search` and verify's ground truth,
+	// which must stay independent of the capture mechanism.
+	Match []Matcher `json:"match,omitempty"`
+	Scan  string    `json:"scan,omitempty"` // "" (ast) | "raw"
 	Flag  *struct {
 		WhenIdentifierMatches string            `json:"when_identifier_matches"`
 		Set                   map[string]string `json:"set"`
@@ -167,8 +176,22 @@ func compile(r *Rule) error {
 	default:
 		return fmt.Errorf("tier must be EXTRACTED|INFERRED|AMBIGUOUS, got %q", r.Tier)
 	}
-	if len(r.Match) == 0 {
-		return fmt.Errorf("no match patterns")
+	if len(r.AST) == 0 && len(r.Match) == 0 {
+		return fmt.Errorf("no matcher: declare `ast` (node shapes) or `match` with `scan:\"raw\"`")
+	}
+	if len(r.AST) > 0 && len(r.Match) > 0 {
+		return fmt.Errorf("declare either `ast` or `match`, not both")
+	}
+	if len(r.Match) > 0 && r.Scan != "raw" {
+		return fmt.Errorf("`match` is the raw-byte escape hatch and must declare `\"scan\": \"raw\"` (ADR 2026-08-14 D3)")
+	}
+	if len(r.AST) > 0 && r.Scan != "" {
+		return fmt.Errorf("`scan` applies to `match` rules only, got %q", r.Scan)
+	}
+	for i := range r.AST {
+		if err := validateAST(&r.AST[i]); err != nil {
+			return fmt.Errorf("ast[%d]: %w", i, err)
+		}
 	}
 	r.res = r.res[:0]
 	for _, m := range r.Match {
@@ -191,23 +214,46 @@ func compile(r *Rule) error {
 	return nil
 }
 
-// Extract runs the merged rule set over root.
-func Extract(root string) (*schema.Batch, error) { return ExtractExcluding(root, nil) }
+// Extract runs the raw-scan rules and the services join over root. It is the
+// STANDALONE entry (tests, tooling); the gather uses the code extractor's
+// ExtractPathsWithBoundaries for AST rules and ExtractRaw for this pass, so
+// the services join happens exactly once.
+func Extract(root string) (*schema.Batch, error) { return extractRaw(root, nil, true) }
 
-// ExtractExcluding is Extract with subtrees dropped — the multi-module fan-out
-// passes child-module dirs, same contract as every other producer.
+// ExtractExcluding is the gather's raw-scan pass: escape-hatch rules only,
+// NO services join (Assemble already did it — joining twice would emit the
+// same port node from two batches).
 func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
+	return extractRaw(root, exclude, false)
+}
+
+func extractRaw(root string, exclude []string, withServices bool) (*schema.Batch, error) {
 	batch := &schema.Batch{Producer: Producer}
 	rules, err := Load(root)
 	if err != nil {
 		return nil, err
 	}
+	// Only RAW-SCAN rules walk here (ADR 2026-08-14 D3). Every shipped rule
+	// is an `ast` rule and rides the code extractor's parse instead — that is
+	// the whole point, and it is why this walk normally visits nothing.
+	var raw []Rule
+	for _, r := range rules {
+		if r.Scan == "raw" {
+			raw = append(raw, r)
+		}
+	}
+	rules = raw
 	services, err := LoadServices(root)
 	if err != nil {
 		return nil, err
 	}
-	sdk := compileSDKMatchers(services)
-	if len(rules) == 0 && len(services) == 0 {
+	// SDK call sites are found on the AST now (probeSDK); this pass keeps only
+	// the raw-byte escape hatch, so a repo with no such rule walks nothing.
+	var sdk []sdkMatcher
+	if withServices {
+		sdk = compileSDKMatchers(services)
+	}
+	if len(rules) == 0 && len(sdk) == 0 {
 		return batch, nil
 	}
 
@@ -300,10 +346,24 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := joinServices(root, exclude, services, nodes, edges); err != nil {
+	if err := finish(root, exclude, withServices, batch, nodes, edges); err != nil {
 		return nil, err
 	}
+	return batch, nil
+}
 
+// finish is the shared tail: the services join, deterministic ordering, and
+// scope-by-join. Both lanes end here so their output cannot drift apart.
+func finish(root string, exclude []string, withServices bool, batch *schema.Batch, nodes map[string]schema.Node, edges map[edgeKey]schema.Edge) error {
+	if withServices {
+		services, err := LoadServices(root)
+		if err != nil {
+			return err
+		}
+		if err := joinServices(root, exclude, services, nodes, edges); err != nil {
+			return err
+		}
+	}
 	ids := make([]string, 0, len(nodes))
 	for id := range nodes {
 		ids = append(ids, id)
@@ -326,7 +386,7 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 		batch.Edges = append(batch.Edges, edges[k])
 	}
 	markScope(batch)
-	return batch, nil
+	return nil
 }
 
 func excludedPath(rel string, prefixes []string) bool {
@@ -351,73 +411,116 @@ func applyRule(r *Rule, rel string, content []byte, nodes map[string]schema.Node
 			if ident == "" {
 				continue
 			}
-			tier := r.Tier
-			if tier == "" {
-				tier = schema.Extracted
-			}
-			meta := map[string]string{}
-			// A computed identifier is an admission, not a fact: the graph
-			// reports it AMBIGUOUS and keeps the template shape.
-			if strings.Contains(ident, "${") || strings.Contains(ident, "%s") || strings.Contains(ident, "%d") {
-				tier = schema.Ambiguous
-				meta["resolved"] = "dynamic"
-			}
-			raw := ident
-			ident = Normalize(r.Transport, ident)
-			if ident == "" {
-				continue
-			}
-			sig := ">"
-			if r.Direction == "provides" {
-				sig = "<"
-			}
-			id := "port:" + r.Transport + ":" + sig + ident
-			n, ok := nodes[id]
-			if !ok {
-				nm := map[string]string{
-					"direction": r.Direction, "transport": r.Transport, "identifier": ident,
-				}
-				if raw != ident {
-					nm["raw"] = raw // the pre-fold spelling stays recoverable
-				}
-				for k, v := range meta {
-					nm[k] = v
-				}
-				for k, v := range r.Metadata {
-					// $identifier keeps the SOURCE spelling — otel.http.route
-					// is the framework's template, not our join key.
-					nm[k] = strings.ReplaceAll(v, "$identifier", raw)
-				}
-				if r.flag != nil && r.flag.MatchString(raw) {
-					for k, v := range r.Flag.Set {
-						nm[k] = v
-					}
-				}
-				n = schema.Node{
-					ID: id, Label: raw, Kind: "port", FileType: "boundary",
-					Source: "port://" + r.Transport + "/" + ident, Metadata: nm,
-				}
-				nodes[id] = n
-			}
-			k := edgeKey{rel, id}
-			if e, exists := edges[k]; exists {
-				// Keep the strongest tier seen for this file→port pair.
-				if e.Confidence == schema.Ambiguous && tier != schema.Ambiguous {
-					e.Confidence = tier
-					edges[k] = e
-				}
-				continue
-			}
 			line := 1 + bytes.Count(content[:m[0]], []byte{'\n'})
-			edges[k] = schema.Edge{
-				Source: rel, Target: id, Relation: r.Direction, Confidence: tier,
-				Metadata: map[string]string{
-					"synthesized_by": "boundaries", "rule": r.ID,
-					"site": fmt.Sprintf("%s:L%d", rel, line),
-				},
-			}
+			emit(r, Hit{Rule: r.ID, File: rel, Line: line, Identifier: ident}, nodes, edges)
 		}
 	}
+}
+
+// emit turns one site into its port node and provides/consumes edge. Every
+// lane funnels through here — the AST matcher and the raw escape hatch emit
+// byte-identical facts because they share this one function.
+func emit(r *Rule, s Hit, nodes map[string]schema.Node, edges map[edgeKey]schema.Edge) {
+	ident := s.Identifier
+	if ident == "" {
+		return
+	}
+	tier := r.Tier
+	if tier == "" {
+		tier = schema.Extracted
+	}
+	meta := map[string]string{}
+	// A computed identifier is an admission, not a fact: the graph reports it
+	// AMBIGUOUS and keeps the template shape. The matcher marks a non-literal
+	// argument dynamic; a literal that still carries a template marker is
+	// caught here.
+	if s.Dynamic || strings.Contains(ident, "${") || strings.Contains(ident, "%s") || strings.Contains(ident, "%d") {
+		tier = schema.Ambiguous
+		meta["resolved"] = "dynamic"
+	}
+	raw := ident
+	ident = Normalize(r.Transport, ident)
+	if ident == "" {
+		return
+	}
+	sig := ">"
+	if r.Direction == "provides" {
+		sig = "<"
+	}
+	id := "port:" + r.Transport + ":" + sig + ident
+	if _, ok := nodes[id]; !ok {
+		nm := map[string]string{
+			"direction": r.Direction, "transport": r.Transport, "identifier": ident,
+		}
+		if raw != ident {
+			nm["raw"] = raw // the pre-fold spelling stays recoverable
+		}
+		for k, v := range meta {
+			nm[k] = v
+		}
+		for k, v := range r.Metadata {
+			// $identifier keeps the SOURCE spelling — otel.http.route is the
+			// framework's template, not our join key.
+			nm[k] = strings.ReplaceAll(v, "$identifier", raw)
+		}
+		if r.flag != nil && r.flag.MatchString(raw) {
+			for k, v := range r.Flag.Set {
+				nm[k] = v
+			}
+		}
+		nodes[id] = schema.Node{
+			ID: id, Label: raw, Kind: "port", FileType: "boundary",
+			Source: "port://" + r.Transport + "/" + ident, Metadata: nm,
+		}
+	}
+	k := edgeKey{s.File, id}
+	if e, exists := edges[k]; exists {
+		// Keep the strongest tier seen for this file→port pair.
+		if e.Confidence == schema.Ambiguous && tier != schema.Ambiguous {
+			e.Confidence = tier
+			edges[k] = e
+		}
+		return
+	}
+	edges[k] = schema.Edge{
+		Source: s.File, Target: id, Relation: r.Direction, Confidence: tier,
+		Metadata: map[string]string{
+			"synthesized_by": "boundaries", "rule": r.ID,
+			"site": fmt.Sprintf("%s:L%d", s.File, s.Line),
+		},
+	}
+}
+
+// Assemble turns AST sites (found during the code extractor's walk) into the
+// boundary batch: port nodes, provides/consumes edges, the services join and
+// scope-by-join. Sites are sorted first so the first-writer-wins node spelling
+// is a function of the source, not of worker scheduling.
+func Assemble(root string, exclude []string, rules []Rule, sites []Hit) (*schema.Batch, error) {
+	batch := &schema.Batch{Producer: Producer}
+	byID := make(map[string]*Rule, len(rules))
+	for i := range rules {
+		byID[rules[i].ID] = &rules[i]
+	}
+	nodes := map[string]schema.Node{}
+	edges := map[edgeKey]schema.Edge{}
+	SortHits(sites)
+	services, serr := LoadServices(root)
+	if serr != nil {
+		return nil, serr
+	}
+	for _, s := range sites {
+		if s.SvcID != "" {
+			emitSDK(services, s, nodes, edges)
+			continue
+		}
+		if r := byID[s.Rule]; r != nil {
+			emit(r, s, nodes, edges)
+		}
+	}
+	if err := finish(root, exclude, true, batch, nodes, edges); err != nil {
+		return nil, err
+	}
+	return batch, nil
 }
 
 // markScope computes scope BY JOIN (ADR D1): a consumes port is internal iff

@@ -219,7 +219,13 @@ type sdkMatcher struct {
 // precision failure, same list the default rules carry.
 var sdkExcludes = []string{"testdata/", "benchmarks/"}
 
+// SDKExcluded reports whether a path is out of bounds for SDK call sites.
+func SDKExcluded(rel string) bool { return excludedPath(rel, sdkExcludes) }
+
 // sdkSourceExts bounds the call-site scan — same idea as rule ext-bounding.
+// SDKSourceExts exposes the call-site extension bound to the AST index.
+func SDKSourceExts() map[string]bool { return sdkSourceExts }
+
 var sdkSourceExts = map[string]bool{
 	".go": true, ".js": true, ".jsx": true, ".ts": true, ".tsx": true,
 	".mjs": true, ".cjs": true, ".py": true, ".java": true, ".kt": true,
@@ -408,4 +414,48 @@ func joinServices(root string, exclude []string, services map[string]Service,
 		}
 	}
 	return nil
+}
+
+// emitSDK records one SDK call site found on the AST. Same facts the raw
+// scanner produced — a call site outranks a dep declaration or a URL literal,
+// so it claims EXTRACTED and the endpoint travels as otel.* metadata.
+func emitSDK(services map[string]Service, h Hit, nodes map[string]schema.Node, edges map[edgeKey]schema.Edge) {
+	svc, ok := services[h.SvcID]
+	if !ok {
+		return
+	}
+	var ep Endpoint
+	found := false
+	for _, e := range svc.Endpoints {
+		for _, sym := range e.SDK {
+			if sym == h.Sym {
+				ep, found = e, true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return
+	}
+	pid := ensureServicePort(nodes, h.SvcID, svc)
+	k := edgeKey{h.File, pid}
+	if e, exists := edges[k]; exists {
+		if e.Confidence != schema.Extracted {
+			e.Confidence = schema.Extracted
+			edges[k] = e
+		}
+		return
+	}
+	edges[k] = schema.Edge{
+		Source: h.File, Target: pid, Relation: "consumes", Confidence: schema.Extracted,
+		Metadata: map[string]string{
+			"synthesized_by": "boundaries", "rule": "service:" + h.SvcID,
+			"site":                     fmt.Sprintf("%s:L%d", h.File, h.Line),
+			"otel.http.request.method": ep.Method,
+			"otel.url.path":            ep.Path,
+		},
+	}
 }

@@ -28,10 +28,10 @@ func TestNormalizationJoinsSpellingsAtEmit(t *testing.T) {
 	hermetic(t)
 	root := t.TempDir()
 	write(t, root, ".ctxoptimize/boundaries.json", `{"version":1,"boundaries":[
-	  {"id":"prov-x","transport":"network.http","direction":"provides",
+	  {"id":"prov-x","transport":"network.http","direction":"provides","scan":"raw",
 	   "when":{"ext":[".py"]},
 	   "match":[{"re":"@app\\.get\\(\"([^\"]+)\"","identifier":1}]},
-	  {"id":"cons-x","transport":"network.http","direction":"consumes",
+	  {"id":"cons-x","transport":"network.http","direction":"consumes","scan":"raw",
 	   "when":{"ext":[".ts"]},
 	   "match":[{"re":"fetch\\('([^']+)'","identifier":1}]}]}`)
 	write(t, root, "api.py", "@app.get(\"/users/{user_id}\")\ndef get_user(): pass\n")

@@ -16,12 +16,6 @@
           "benchmarks/"
         ]
       },
-      "match": [
-        {
-          "re": "os\\.Getenv\\(\\s*\"([A-Z][A-Z0-9_]+)\"",
-          "identifier": 1
-        }
-      ],
       "flag": {
         "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW",
         "set": {
@@ -51,10 +45,24 @@
         "confirmed": 10,
         "precision": 1.0,
         "known_misses": [
-          "os.Getenv(varName) — name is a variable (k8s: 31 sites)",
+          "os.Getenv(varName) \u2014 name is a variable (k8s: 31 sites)",
           "lowercase or 1-char names excluded by the [A-Z][A-Z0-9_]+ shape"
         ]
-      }
+      },
+      "ast": [
+        {
+          "shape": "call",
+          "name": "Getenv",
+          "receiver": "os",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "LookupEnv",
+          "receiver": "os",
+          "arg": 0
+        }
+      ]
     },
     {
       "id": "env-js",
@@ -76,16 +84,6 @@
           "benchmarks/"
         ]
       },
-      "match": [
-        {
-          "re": "(?:process\\.env|import\\.meta\\.env)\\.([A-Z][A-Z0-9_]+)\\b",
-          "identifier": 1
-        },
-        {
-          "re": "(?:process\\.env|import\\.meta\\.env)\\[\\s*['\"`]([A-Z][A-Z0-9_]+)",
-          "identifier": 1
-        }
-      ],
       "flag": {
         "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW",
         "set": {
@@ -117,10 +115,42 @@
         "confirmed": 8,
         "precision": 1.0,
         "known_misses": [
-          "process.env[varName] — key is a variable",
+          "process.env[varName] \u2014 key is a variable",
           "lowercase names (npm_config_*)"
         ]
-      }
+      },
+      "ast": [
+        {
+          "shape": "member",
+          "path": [
+            "process",
+            "env"
+          ]
+        },
+        {
+          "shape": "member",
+          "path": [
+            "import",
+            "meta",
+            "env"
+          ]
+        },
+        {
+          "shape": "subscript",
+          "path": [
+            "process",
+            "env"
+          ]
+        },
+        {
+          "shape": "subscript",
+          "path": [
+            "import",
+            "meta",
+            "env"
+          ]
+        }
+      ]
     },
     {
       "id": "env-py",
@@ -137,12 +167,6 @@
           "benchmarks/"
         ]
       },
-      "match": [
-        {
-          "re": "os\\.environ(?:\\.get|\\.setdefault|\\.pop)?[\\[(]\\s*['\"]([A-Z][A-Z0-9_]+)['\"]",
-          "identifier": 1
-        }
-      ],
       "flag": {
         "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW",
         "set": {
@@ -171,155 +195,43 @@
         "confirmed": 10,
         "precision": 1.0,
         "known_misses": [
-          "os.environ[key] — key is a variable",
+          "os.environ[key] \u2014 key is a variable",
           "bare os.environ passed or copied whole (no key at the site)"
         ]
-      }
-    },
-    {
-      "id": "process-go",
-      "transport": "process.exec",
-      "direction": "consumes",
-      "when": {
-        "ext": [
-          ".go"
-        ]
       },
-      "exclude": {
-        "path": [
-          "testdata/",
-          "benchmarks/"
-        ]
-      },
-      "match": [
+      "ast": [
         {
-          "re": "exec\\.Command(?:Context)?\\(\\s*(?:ctx,\\s*)?\"([^\"]{1,60})\"",
-          "identifier": 1
-        }
-      ],
-      "tier": "AMBIGUOUS",
-      "verified": {
-        "at": "2026-08-14",
-        "ground_truth": {
-          "tool": "ctx-optimize search",
-          "cmd": "search 'exec\\.Command(Context)?\\(' --ext .go --count  # corpora: go-kubernetes, ctx-optimize",
-          "re": "exec\\.Command(Context)?\\(",
-          "ext": [
-            ".go"
-          ],
-          "corpora": [
-            "go-kubernetes",
-            "ctx-optimize"
+          "shape": "subscript",
+          "path": [
+            "os",
+            "environ"
           ]
         },
-        "expected": 251,
-        "matched": 163,
-        "recall": 0.65,
-        "sampled": 10,
-        "confirmed": 10,
-        "precision": 1.0,
-        "known_misses": [
-          "exec.Command(binVar, args...) — binary is a variable (k8s: 73, self: 15); statically unknowable, no widening recovers it without misfiring on argument literals"
-        ]
-      }
-    },
-    {
-      "id": "process-js",
-      "transport": "process.exec",
-      "direction": "consumes",
-      "when": {
-        "ext": [
-          ".ts",
-          ".js",
-          ".mjs",
-          ".cjs"
-        ]
-      },
-      "exclude": {
-        "path": [
-          "testdata/",
-          "benchmarks/"
-        ]
-      },
-      "match": [
         {
-          "re": "child_process\\.(?:spawn|exec|execFile|execSync)\\(\\s*[`'\"]([^`'\"]{1,60})",
-          "identifier": 1
-        }
-      ],
-      "tier": "AMBIGUOUS",
-      "verified": {
-        "at": "2026-08-14",
-        "ground_truth": {
-          "tool": "ctx-optimize search",
-          "cmd": "search 'child_process\\.(spawn|exec|execFile|execSync)\\(' --ext .ts,.js,.mjs,.cjs --count  # corpora: ts-typescript, ts-hono — ZERO sites",
-          "re": "child_process\\.(spawn|exec|execFile|execSync)\\(",
-          "ext": [
-            ".ts",
-            ".js",
-            ".mjs",
-            ".cjs"
-          ],
-          "corpora": [
-            "ts-typescript",
-            "ts-hono"
-          ]
+          "shape": "call",
+          "name": "get",
+          "receiver": "environ",
+          "arg": 0
         },
-        "expected": 0,
-        "matched": 0,
-        "sampled": 0,
-        "confirmed": 0,
-        "known_misses": [
-          "no corpus sites available — tier set by family evidence (process-go 0.65, process-py 0.00), not measurement",
-          "destructured `spawn(` via import {spawn} — receiver-less form unmatched"
-        ]
-      }
-    },
-    {
-      "id": "process-py",
-      "transport": "process.exec",
-      "direction": "consumes",
-      "when": {
-        "ext": [
-          ".py"
-        ]
-      },
-      "exclude": {
-        "path": [
-          "testdata/",
-          "benchmarks/"
-        ]
-      },
-      "match": [
         {
-          "re": "subprocess\\.(?:run|Popen|call|check_output)\\(\\s*\\[\\s*['\"]([^'\"]{1,60})",
-          "identifier": 1
-        }
-      ],
-      "tier": "AMBIGUOUS",
-      "verified": {
-        "at": "2026-08-14",
-        "ground_truth": {
-          "tool": "ctx-optimize search",
-          "cmd": "search 'subprocess\\.(run|Popen|call|check_output)\\(' --ext .py --count  # corpora: py-django, py-flask",
-          "re": "subprocess\\.(run|Popen|call|check_output)\\(",
-          "ext": [
-            ".py"
-          ],
-          "corpora": [
-            "py-django",
-            "py-flask"
-          ]
+          "shape": "call",
+          "name": "setdefault",
+          "receiver": "environ",
+          "arg": 0
         },
-        "expected": 14,
-        "matched": 0,
-        "recall": 0.0,
-        "sampled": 0,
-        "confirmed": 0,
-        "known_misses": [
-          "subprocess.run(argsVar) — argv is a variable at every django site; the literal-list form this rule reads did not occur once"
-        ]
-      }
+        {
+          "shape": "call",
+          "name": "pop",
+          "receiver": "environ",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "getenv",
+          "receiver": "os",
+          "arg": 0
+        }
+      ]
     },
     {
       "id": "http-url-literal",
@@ -334,10 +246,7 @@
           ".jsx",
           ".py",
           ".java",
-          ".cs",
-          ".kt",
-          ".swift",
-          ".rb"
+          ".cs"
         ]
       },
       "exclude": {
@@ -348,12 +257,6 @@
           "site/"
         ]
       },
-      "match": [
-        {
-          "re": "[\"'`]https?://([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::\\d+)?[\"'`/:?]",
-          "identifier": 1
-        }
-      ],
       "metadata": {
         "otel.server.address": "$identifier"
       },
@@ -385,11 +288,392 @@
         "confirmed": 10,
         "precision": 1.0,
         "known_misses": [
-          "template hosts — f\"https://{host}\", %s, ${} (the AMBIGUOUS lane needs the literal to match first)",
+          "template hosts \u2014 f\"https://{host}\", %s, ${} (the AMBIGUOUS lane needs the literal to match first)",
           "URLs assembled by concatenation",
           "bare scheme strings (\"https://\")"
         ]
+      },
+      "ast": [
+        {
+          "shape": "literal",
+          "url_scheme": [
+            "http",
+            "https"
+          ],
+          "take": "host"
+        }
+      ]
+    },
+    {
+      "id": "http-url-literal-unparsed",
+      "transport": "network.http",
+      "direction": "consumes",
+      "when": {
+        "ext": [
+          ".kt",
+          ".swift",
+          ".rb"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "scan": "raw",
+      "match": [
+        {
+          "re": "[\"'`]https?://([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::\\d+)?[\"'`/:?]",
+          "identifier": 1
+        }
+      ],
+      "metadata": {
+        "otel.server.address": "$identifier"
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '[\\x22\\x27\\x60]https?://' --ext .kt --ext .swift --ext .rb --count  # corpus: java-spring",
+          "re": "[\\x22\\x27\\x60]https?://",
+          "ext": [
+            ".kt",
+            ".swift",
+            ".rb"
+          ],
+          "corpora": [
+            "java-spring"
+          ]
+        },
+        "_note": "DECLARED raw-byte escape hatch (ADR 2026-08-14 D3): these languages have no embedded tree-sitter grammar, so the AST lane cannot see them at all. If a grammar pack for one lands, move its extension to http-url-literal.",
+        "expected": 65,
+        "matched": 65,
+        "recall": 1.0,
+        "sampled": 0,
+        "confirmed": 0,
+        "precision": null,
+        "known_misses": [
+          "URLs inside a LARGER literal (HTML/template fixtures) \u2014 the pattern scans raw bytes so it finds them; the AST lane deliberately does not",
+          "template hosts, concatenation \u2014 same as http-url-literal",
+          "precision NOT independently sampled here \u2014 pattern is http-url-literal's verbatim (sampled 10/10 there)"
+        ]
       }
+    },
+    {
+      "id": "process-go",
+      "transport": "process.exec",
+      "direction": "consumes",
+      "when": {
+        "ext": [
+          ".go"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "tier": "AMBIGUOUS",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'exec\\.Command(Context)?\\(' --ext .go --count  # corpora: go-kubernetes, ctx-optimize",
+          "re": "exec\\.Command(Context)?\\(",
+          "ext": [
+            ".go"
+          ],
+          "corpora": [
+            "go-kubernetes",
+            "ctx-optimize"
+          ]
+        },
+        "expected": 251,
+        "matched": 163,
+        "recall": 0.65,
+        "sampled": 10,
+        "confirmed": 10,
+        "precision": 1.0,
+        "known_misses": [
+          "exec.Command(binVar, args...) \u2014 binary is a variable (k8s: 73, self: 15); statically unknowable, no widening recovers it without misfiring on argument literals"
+        ]
+      },
+      "ast": [
+        {
+          "shape": "call",
+          "name": "Command",
+          "receiver": "exec",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "CommandContext",
+          "receiver": "exec",
+          "arg": 1
+        }
+      ]
+    },
+    {
+      "id": "process-js",
+      "transport": "process.exec",
+      "direction": "consumes",
+      "when": {
+        "ext": [
+          ".ts",
+          ".js",
+          ".mjs",
+          ".cjs"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "tier": "AMBIGUOUS",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'child_process\\.(spawn|exec|execFile|execSync)\\(' --ext .ts,.js,.mjs,.cjs --count  # corpora: ts-typescript, ts-hono \u2014 ZERO sites",
+          "re": "child_process\\.(spawn|exec|execFile|execSync)\\(",
+          "ext": [
+            ".ts",
+            ".js",
+            ".mjs",
+            ".cjs"
+          ],
+          "corpora": [
+            "ts-typescript",
+            "ts-hono"
+          ]
+        },
+        "expected": 0,
+        "matched": 0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "no corpus sites available \u2014 tier set by family evidence (process-go 0.65, process-py 0.00), not measurement",
+          "destructured `spawn(` via import {spawn} \u2014 receiver-less form unmatched"
+        ]
+      },
+      "ast": [
+        {
+          "shape": "call",
+          "name": "spawn",
+          "receiver": "child_process",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "exec",
+          "receiver": "child_process",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "execFile",
+          "receiver": "child_process",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "execSync",
+          "receiver": "child_process",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "spawnSync",
+          "receiver": "child_process",
+          "arg": 0
+        }
+      ]
+    },
+    {
+      "id": "process-py",
+      "transport": "process.exec",
+      "direction": "consumes",
+      "when": {
+        "ext": [
+          ".py"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "tier": "AMBIGUOUS",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'subprocess\\.(run|Popen|call|check_output)\\(' --ext .py --count  # corpora: py-django, py-flask",
+          "re": "subprocess\\.(run|Popen|call|check_output)\\(",
+          "ext": [
+            ".py"
+          ],
+          "corpora": [
+            "py-django",
+            "py-flask"
+          ]
+        },
+        "expected": 14,
+        "matched": 0,
+        "recall": 0.0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "subprocess.run(argsVar) \u2014 argv is a variable at every django site; the literal-list form this rule reads did not occur once"
+        ]
+      },
+      "ast": [
+        {
+          "shape": "call",
+          "name": "run",
+          "receiver": "subprocess",
+          "arg": 0,
+          "arg_in_list": true
+        },
+        {
+          "shape": "call",
+          "name": "Popen",
+          "receiver": "subprocess",
+          "arg": 0,
+          "arg_in_list": true
+        },
+        {
+          "shape": "call",
+          "name": "call",
+          "receiver": "subprocess",
+          "arg": 0,
+          "arg_in_list": true
+        },
+        {
+          "shape": "call",
+          "name": "check_output",
+          "receiver": "subprocess",
+          "arg": 0,
+          "arg_in_list": true
+        },
+        {
+          "shape": "call",
+          "name": "check_call",
+          "receiver": "subprocess",
+          "arg": 0,
+          "arg_in_list": true
+        }
+      ]
+    },
+    {
+      "id": "routes-cs",
+      "transport": "network.http",
+      "direction": "provides",
+      "when": {
+        "ext": [
+          ".cs"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "metadata": {
+        "otel.http.route": "$identifier"
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(' --ext .cs --count  # corpora: csharp-efcore, csharp-newtonsoft \u2014 ZERO sites",
+          "re": "\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(",
+          "ext": [
+            ".cs"
+          ],
+          "corpora": [
+            "csharp-efcore",
+            "csharp-newtonsoft"
+          ]
+        },
+        "expected": 0,
+        "matched": 0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "no corpus sites available \u2014 fixture-verified only; needs an aspnet corpus"
+        ]
+      },
+      "ast": [
+        {
+          "shape": "annotation",
+          "name": "HttpGet",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "annotation",
+          "name": "HttpPost",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "annotation",
+          "name": "HttpPut",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "annotation",
+          "name": "HttpDelete",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "annotation",
+          "name": "HttpPatch",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "MapGet",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "MapPost",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "MapPut",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "MapDelete",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "MapPatch",
+          "arg": 0,
+          "identifier_prefix": "/"
+        }
+      ]
     },
     {
       "id": "routes-express",
@@ -411,12 +695,6 @@
           "benchmarks/"
         ]
       },
-      "match": [
-        {
-          "re": "\\b(?:app|router|[A-Za-z_][A-Za-z0-9_]*Router)\\.(?:get|post|put|delete|patch)\\(\\s*['\"](/[^'\"]*)['\"]\\s*,",
-          "identifier": 1
-        }
-      ],
       "metadata": {
         "otel.http.route": "$identifier"
       },
@@ -445,7 +723,64 @@
           "chained .get('/x', h) with no receiver on the line",
           "single-argument registrations without the trailing comma"
         ]
-      }
+      },
+      "ast": [
+        {
+          "shape": "call",
+          "name": "get",
+          "receiver_any_of": [
+            "app",
+            "router"
+          ],
+          "receiver_suffix": "Router",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "post",
+          "receiver_any_of": [
+            "app",
+            "router"
+          ],
+          "receiver_suffix": "Router",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "put",
+          "receiver_any_of": [
+            "app",
+            "router"
+          ],
+          "receiver_suffix": "Router",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "delete",
+          "receiver_any_of": [
+            "app",
+            "router"
+          ],
+          "receiver_suffix": "Router",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "patch",
+          "receiver_any_of": [
+            "app",
+            "router"
+          ],
+          "receiver_suffix": "Router",
+          "arg": 0,
+          "identifier_prefix": "/"
+        }
+      ]
     },
     {
       "id": "routes-go",
@@ -462,20 +797,6 @@
           "benchmarks/"
         ]
       },
-      "match": [
-        {
-          "re": "\\.Handle(?:Func)?\\(\\s*\"(/[^\"]*)\"",
-          "identifier": 1
-        },
-        {
-          "re": "\\.(?:GET|POST|PUT|DELETE|PATCH)\\(\\s*\"(/[^\"]*)\"",
-          "identifier": 1
-        },
-        {
-          "re": "\\.(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"\\s*,",
-          "identifier": 1
-        }
-      ],
       "metadata": {
         "otel.http.route": "$identifier"
       },
@@ -500,9 +821,83 @@
         "confirmed": 3,
         "precision": 1.0,
         "known_misses": [
-          "measured 1.00/1.00 but tier CAPPED at INFERRED per D3: regex without AST never claims EXTRACTED — the AST recognizers own route truth"
+          "measured 1.00/1.00 but tier CAPPED at INFERRED per D3: regex without AST never claims EXTRACTED \u2014 the AST recognizers own route truth"
         ]
-      }
+      },
+      "ast": [
+        {
+          "shape": "call",
+          "name": "Handle",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "HandleFunc",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "GET",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "POST",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "PUT",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "DELETE",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "PATCH",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "Get",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "Post",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "Put",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "Delete",
+          "arg": 0,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "Patch",
+          "arg": 0,
+          "identifier_prefix": "/"
+        }
+      ]
     },
     {
       "id": "routes-java",
@@ -510,8 +905,7 @@
       "direction": "provides",
       "when": {
         "ext": [
-          ".java",
-          ".kt"
+          ".java"
         ]
       },
       "exclude": {
@@ -520,12 +914,6 @@
           "benchmarks/"
         ]
       },
-      "match": [
-        {
-          "re": "@(?:Get|Post|Put|Delete|Patch|Request)Mapping\\(\\s*(?:value\\s*=\\s*)?\"(/[^\"]*)\"",
-          "identifier": 1
-        }
-      ],
       "metadata": {
         "otel.http.route": "$identifier"
       },
@@ -550,19 +938,81 @@
         "confirmed": 9,
         "precision": 0.9,
         "known_misses": [
-          "@RequestMapping(path=…/name=…) attribute forms",
+          "@RequestMapping(path=\u2026/name=\u2026) attribute forms",
           "literals not starting with /",
-          "javadoc {@code @PostMapping(\"/home\")} matches — the one sampled false positive"
+          "javadoc {@code @PostMapping(\"/home\")} matches \u2014 the one sampled false positive"
         ]
-      }
+      },
+      "ast": [
+        {
+          "shape": "annotation",
+          "name": "GetMapping",
+          "arg": 0,
+          "named_arg": [
+            "value",
+            "path"
+          ],
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "annotation",
+          "name": "PostMapping",
+          "arg": 0,
+          "named_arg": [
+            "value",
+            "path"
+          ],
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "annotation",
+          "name": "PutMapping",
+          "arg": 0,
+          "named_arg": [
+            "value",
+            "path"
+          ],
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "annotation",
+          "name": "DeleteMapping",
+          "arg": 0,
+          "named_arg": [
+            "value",
+            "path"
+          ],
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "annotation",
+          "name": "PatchMapping",
+          "arg": 0,
+          "named_arg": [
+            "value",
+            "path"
+          ],
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "annotation",
+          "name": "RequestMapping",
+          "arg": 0,
+          "named_arg": [
+            "value",
+            "path"
+          ],
+          "identifier_prefix": "/"
+        }
+      ]
     },
     {
-      "id": "routes-cs",
+      "id": "routes-kotlin",
       "transport": "network.http",
       "direction": "provides",
       "when": {
         "ext": [
-          ".cs"
+          ".kt"
         ]
       },
       "exclude": {
@@ -571,13 +1021,10 @@
           "benchmarks/"
         ]
       },
+      "scan": "raw",
       "match": [
         {
-          "re": "\\[Http(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"",
-          "identifier": 1
-        },
-        {
-          "re": "\\.Map(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"",
+          "re": "@(?:Get|Post|Put|Delete|Patch|Request)Mapping\\(\\s*(?:value\\s*=\\s*)?\"(/[^\"]*)\"",
           "identifier": 1
         }
       ],
@@ -589,22 +1036,26 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(' --ext .cs --count  # corpora: csharp-efcore, csharp-newtonsoft — ZERO sites",
-          "re": "\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(",
+          "cmd": "search '@(Get|Post|Put|Delete|Patch|Request)Mapping\\(' --ext .kt --count  # corpus: java-spring",
+          "re": "@(Get|Post|Put|Delete|Patch|Request)Mapping\\(",
           "ext": [
-            ".cs"
+            ".kt"
           ],
           "corpora": [
-            "csharp-efcore",
-            "csharp-newtonsoft"
+            "java-spring"
           ]
         },
-        "expected": 0,
-        "matched": 0,
+        "_note": "DECLARED raw-byte escape hatch (ADR 2026-08-14 D3). Kotlin ships as a grammar PACK, not an embedded grammar, so a machine without that pack cannot parse .kt at all and the AST lane would report an empty controller \u2014 which reads as 'no routes here'. Regex keeps the coverage and says so.",
+        "expected": 24,
+        "matched": 24,
+        "recall": 1.0,
         "sampled": 0,
         "confirmed": 0,
+        "precision": null,
         "known_misses": [
-          "no corpus sites available — fixture-verified only; needs an aspnet corpus"
+          "@RequestMapping(path=\u2026/name=\u2026) attribute forms \u2014 same shape gap as routes-java",
+          "measured 1.00/24 sites on java-spring, but tier stays INFERRED per ADR 1 D3: regex never claims EXTRACTED",
+          "precision NOT independently sampled here \u2014 the pattern is routes-java's verbatim, whose sampling measured 0.90 (one javadoc false positive)"
         ]
       }
     },
@@ -623,12 +1074,6 @@
           "benchmarks/"
         ]
       },
-      "match": [
-        {
-          "re": "@\\w[\\w.]*\\.(?:get|post|put|delete|patch|route)\\(\\s*['\"](/[^'\"]*)['\"]",
-          "identifier": 1
-        }
-      ],
       "metadata": {
         "otel.http.route": "$identifier"
       },
@@ -656,57 +1101,51 @@
           "app.add_url_rule(...) programmatic registration",
           "multi-line decorators; tier capped at INFERRED per D3 (regex, not AST)"
         ]
-      }
-    },
-    {
-      "id": "webstorage",
-      "transport": "storage.local",
-      "direction": "consumes",
-      "when": {
-        "ext": [
-          ".ts",
-          ".tsx",
-          ".js",
-          ".jsx"
-        ]
       },
-      "exclude": {
-        "path": [
-          "testdata/",
-          "benchmarks/"
-        ]
-      },
-      "match": [
+      "ast": [
         {
-          "re": "(?:localStorage|sessionStorage)\\.(?:getItem|setItem|removeItem)\\(\\s*[`'\"]([^`'\"]{1,80})",
-          "identifier": 1
-        }
-      ],
-      "tier": "INFERRED",
-      "verified": {
-        "at": "2026-08-14",
-        "ground_truth": {
-          "tool": "ctx-optimize search",
-          "cmd": "search '(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono — ZERO sites",
-          "re": "(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(",
-          "ext": [
-            ".ts",
-            ".tsx",
-            ".js"
-          ],
-          "corpora": [
-            "ts-typescript",
-            "ts-hono"
-          ]
+          "shape": "call",
+          "name": "get",
+          "arg": 0,
+          "in_decorator": true,
+          "identifier_prefix": "/"
         },
-        "expected": 0,
-        "matched": 0,
-        "sampled": 0,
-        "confirmed": 0,
-        "known_misses": [
-          "no corpus sites available — fixture-verified only; unmeasured never claims EXTRACTED, tier capped at INFERRED"
-        ]
-      }
+        {
+          "shape": "call",
+          "name": "post",
+          "arg": 0,
+          "in_decorator": true,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "put",
+          "arg": 0,
+          "in_decorator": true,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "delete",
+          "arg": 0,
+          "in_decorator": true,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "patch",
+          "arg": 0,
+          "in_decorator": true,
+          "identifier_prefix": "/"
+        },
+        {
+          "shape": "call",
+          "name": "route",
+          "arg": 0,
+          "in_decorator": true,
+          "identifier_prefix": "/"
+        }
+      ]
     },
     {
       "id": "websocket-js",
@@ -726,12 +1165,6 @@
           "benchmarks/"
         ]
       },
-      "match": [
-        {
-          "re": "new\\s+(?:WebSocket|EventSource)\\(\\s*[`'\"]([^`'\"]{1,120})",
-          "identifier": 1
-        }
-      ],
       "tier": "INFERRED",
       "verified": {
         "at": "2026-08-14",
@@ -756,10 +1189,104 @@
         "confirmed": 1,
         "precision": 1.0,
         "known_misses": [
-          "new WebSocket(urlVar) — url is a variable",
+          "new WebSocket(urlVar) \u2014 url is a variable",
           "n=2 is too small to derive a tier mechanically; capped at INFERRED pending a ws-heavy corpus"
         ]
-      }
+      },
+      "ast": [
+        {
+          "shape": "new",
+          "name": "WebSocket",
+          "arg": 0
+        },
+        {
+          "shape": "new",
+          "name": "EventSource",
+          "arg": 0
+        }
+      ]
+    },
+    {
+      "id": "webstorage",
+      "transport": "storage.local",
+      "direction": "consumes",
+      "when": {
+        "ext": [
+          ".ts",
+          ".tsx",
+          ".js",
+          ".jsx"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-14",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono \u2014 ZERO sites",
+          "re": "(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(",
+          "ext": [
+            ".ts",
+            ".tsx",
+            ".js"
+          ],
+          "corpora": [
+            "ts-typescript",
+            "ts-hono"
+          ]
+        },
+        "expected": 0,
+        "matched": 0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "no corpus sites available \u2014 fixture-verified only; unmeasured never claims EXTRACTED, tier capped at INFERRED"
+        ]
+      },
+      "ast": [
+        {
+          "shape": "call",
+          "name": "getItem",
+          "receiver": "localStorage",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "setItem",
+          "receiver": "localStorage",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "removeItem",
+          "receiver": "localStorage",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "getItem",
+          "receiver": "sessionStorage",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "setItem",
+          "receiver": "sessionStorage",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "removeItem",
+          "receiver": "sessionStorage",
+          "arg": 0
+        }
+      ]
     }
   ]
 }

@@ -33,6 +33,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/muthuishere/ctx-optimize/internal/boundaries"
 	"github.com/muthuishere/ctx-optimize/internal/extract/ignore"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
@@ -135,6 +136,7 @@ type fileResult struct {
 	calls  []callSite
 	decls  []declRef
 	routes []routeSite
+	bhits  []boundaries.Hit // boundary lane (ADR 2026-08-14): rides this walk
 	// scopeNames maps a declaration id to the type-shaped names written
 	// INSIDE it — the evidence receiverTies needs to accept `e.Add(1)` after
 	// `var e = new Engine()` without ever guessing. Deliberately narrow: see
@@ -207,7 +209,35 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 // with file paths recorded relative to base (the repo root) so the folders
 // can't collide. Single-path callers pass base==root and roots==[root], which
 // is byte-identical to the old single-root behavior.
+// extractHits runs the walk purely for boundary sites (verify's HitSource).
+func extractHits(root string, out *[]boundaries.Hit) error {
+	_, _, hits, err := extractAll(root, []string{root}, nil)
+	if err != nil {
+		return err
+	}
+	*out = hits
+	return nil
+}
+
+// ExtractPaths returns the code batch alone — the boundary batch it also
+// produces is discarded. Callers that want both (the gather) use
+// ExtractPathsWithBoundaries and pay for ONE walk instead of two.
 func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch, error) {
+	b, _, err := ExtractPathsWithBoundaries(base, roots, exclude)
+	return b, err
+}
+
+// ExtractPathsWithBoundaries parses the tree ONCE and returns both the code
+// batch and the boundary batch (ADR 2026-08-14 D2). The boundary lane used to
+// re-walk and re-read every file to run regexes over the bytes; here its rules
+// are probed against the node stream this walk already produced, so it costs a
+// map lookup per candidate node rather than 90% of the gather.
+func ExtractPathsWithBoundaries(base string, roots []string, exclude []string) (*schema.Batch, *schema.Batch, error) {
+	cb, bb, _, err := extractAll(base, roots, exclude)
+	return cb, bb, err
+}
+
+func extractAll(base string, roots []string, exclude []string) (*schema.Batch, *schema.Batch, []boundaries.Hit, error) {
 	ctx := context.Background()
 	skip := map[string]bool{}
 	for _, e := range exclude {
@@ -218,20 +248,33 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 
 	packs, err := LoadPacks(base)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	// Route packs (routepacks.go): declarative call-shaped route rules,
 	// discovered like grammar packs. Malformed packs fail the add loudly.
 	routePacks, err := LoadRoutePacks(base)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	packRules := compileRoutePacks(routePacks)
+	// Boundary rules (ADR 2026-08-14): loaded here so the ladder is resolved
+	// once per gather and the matcher rides this walk. A malformed rule file
+	// fails the add loudly, exactly like a malformed route pack.
+	bndRules, err := boundaries.Load(base)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	bndIx := boundaries.BuildIndex(bndRules)
+	bndSvcs, err := boundaries.LoadServices(base)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	bndIx.IndexServices(bndSvcs)
 	// Declared resolutions (resolutions.go): the repo's own answers to what the
 	// extractor refuses to decide. Malformed = hard error, like the packs.
 	decl, err := LoadResolutions(base)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	external := newExternalSet(decl)
 	// A pack extension beats the embedded set — users can override built-ins.
@@ -328,7 +371,7 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 	}
 	sort.Strings(files) // deterministic output regardless of walk order
@@ -358,12 +401,12 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 	}
 	if len(files) > 0 {
 		if err := loadSyms("", Languages); err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 	}
 	for i := range packs {
 		if err := loadSyms(packs[i].WasmPath, []Lang{packs[i].Lang}); err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -403,7 +446,7 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 					}
 					instances[r.engineKey] = inst
 				}
-				results <- extractFile(ctx, inst, r.lang, symTab[r.engineKey], base, path, packRules)
+				results <- extractFile(ctx, inst, r.lang, symTab[r.engineKey], base, path, packRules, bndIx)
 			}
 		}()
 	}
@@ -422,6 +465,7 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 	var calls []callSite
 	var decls []declRef
 	var routes []routeSite
+	var bhits []boundaries.Hit
 	for res := range results {
 		if res.err != nil {
 			// One unparseable file must not kill the gather — skip loudly.
@@ -452,6 +496,7 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 			}
 		}
 		routes = append(routes, res.routes...)
+		bhits = append(bhits, res.bhits...)
 	}
 
 	// Call resolution: same-FILE unique match wins (self.audit resolves in
@@ -621,10 +666,14 @@ func ExtractPaths(base string, roots []string, exclude []string) (*schema.Batch,
 	// resolves_to. External/unknown specifiers stay untouched.
 	resolveImports(base, roots, batch)
 	sortBatch(batch)
-	return batch, nil
+	bnd, berr := boundaries.Assemble(base, exclude, bndRules, bhits)
+	if berr != nil {
+		return nil, nil, nil, berr
+	}
+	return batch, bnd, bhits, nil
 }
 
-func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int][]string, root, path string, packRules map[string][]packRule) fileResult {
+func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int][]string, root, path string, packRules map[string][]packRule, bndIx *boundaries.Index) fileResult {
 	res := fileResult{path: path, scopeNames: map[string]map[string]bool{}}
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -667,6 +716,17 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 		ID: fileID, Label: filepath.Base(rel), Kind: "file", FileType: "code",
 		Source: rel, Metadata: map[string]string{"lang": lang.Name},
 	})
+
+	// Boundary lane (ADR 2026-08-14-boundaries-on-the-ast): declarative node
+	// shapes probed against the stream we already have. nil whenever no rule
+	// wants this file, so a repo the rules do not cover pays one comparison.
+	var bnd *bndCtx
+	if ext := strings.ToLower(filepath.Ext(rel)); bndIx.Applies(ext) {
+		bnd = &bndCtx{ix: bndIx, rel: rel, ext: ext, hits: &res.bhits,
+			raw: raw, src: src, class: shapeClassesFor(lang.ID, syms),
+			mask:   bndIx.MaskFor(ext),
+			typeOf: typeOf, text: text}
+	}
 
 	// declName finds a declaration's identifier. Default: the SHALLOWEST
 	// name-typed node in the subtree (first at that depth) — a Go method's
@@ -975,6 +1035,21 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 			continue
 		}
 
+		if bnd != nil {
+			switch bnd.classAt(i) {
+			case clsString:
+				bnd.probeLiteral(i)
+			case clsMember:
+				bnd.probeMember(i)
+			case clsSubscript:
+				bnd.probeSubscript(i)
+			case clsAnnotation:
+				bnd.probeAnnotation(i)
+			case clsNew:
+				bnd.probeNew(i)
+			}
+		}
+
 		if lang.Calls[t] {
 			if isJSFam {
 				if site, ok := expressRoute(raw, i, typeOf, text, rel, lang.Name); ok {
@@ -983,6 +1058,9 @@ func extractFile(ctx context.Context, inst *Instance, lang *Lang, symTab map[int
 				res.routes = append(res.routes, frontendRouterRoutes(raw, i, typeOf, text, rel, lang.Name)...)
 			}
 			if recv, callee, ok := calleeName(i); ok && callee != "" {
+				if bnd != nil {
+					bnd.probeCall(i, recv, callee)
+				}
 				if rules := packRules[callee]; len(rules) > 0 {
 					res.routes = append(res.routes, packRouteSites(raw, i, typeOf, text, rel, lang.Name, rules)...)
 				}

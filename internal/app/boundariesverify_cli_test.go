@@ -21,7 +21,7 @@ func TestBoundariesVerifyCLI(t *testing.T) {
 		".ctxoptimize/boundaries.json": `{"version":1,"boundaries":[
 		  {"id":"fx-cli","transport":"config.env","direction":"consumes",
 		   "when":{"ext":[".go"]},
-		   "match":[{"re":"getenv\\(\"([A-Z_]+)\"\\)","identifier":1}],
+		   "scan":"raw","match":[{"re":"getenv\\(\"([A-Z_]+)\"\\)","identifier":1}],
 		   "tier":"INFERRED",
 		   "verified":{"at":"2026-08-14",
 		     "ground_truth":{"tool":"ctx-optimize search","cmd":"search 'getenv\\(' --ext .go --count",
