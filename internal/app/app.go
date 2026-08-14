@@ -113,6 +113,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdChangePlan(rest, stdout)
 	case "hubs":
 		err = cmdHubs(rest, stdout)
+	case "drift": // D6 boundary-surface disagreements — EXTRACTED×EXTRACTED findings only (ADR 2026-08-13)
+		err = cmdDrift(rest, stdout)
 	case "report":
 		err = cmdReport(rest, stdout)
 	case "wiki":
@@ -3367,6 +3369,12 @@ commands:
                               Claims: node-id | exact-label | file:L10-L20.
                               Exit 0 only when ALL claims hold  [--json]
   hubs                        most-connected nodes (god nodes)  [--top N] [--json]
+  drift                       where the boundary surface disagrees: dead
+                              contracts (provided, never consumed), env keys
+                              read but declared nowhere. FINDINGS only when
+                              every leg is EXTRACTED; softer evidence and
+                              spelling near-joins are OBSERVED — listed, never
+                              accused  [--json] [--strict exits 1 on findings]
   report                      ONE artifact for "explain this repo": subsystems,
                               hubs, the seams BETWEEN subsystems, and — uniquely —
                               what the graph could NOT resolve (unattributed call
