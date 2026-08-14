@@ -314,3 +314,26 @@ func TestDeterministicAcrossRuns(t *testing.T) {
 		}
 	}
 }
+
+// A link into a tree no producer walks (hidden dirs, dist/, node_modules/)
+// must not mint an edge, even though the file sits right there on disk. D1
+// says "exists in the walk": a node id under .github/ can never be created,
+// so an edge naming one dangles forever.
+func TestLinkIntoUnwalkedTreeIsDropped(t *testing.T) {
+	b := extract(t, map[string]string{
+		".github/workflows/benchmark.yml": "on: push\n",
+		"dist/generated.md":               "# Generated\n",
+		"real.md":                         "# Real\n",
+		"README.md": "# Doc\n\nSee [ci](.github/workflows/benchmark.yml), " +
+			"[gen](dist/generated.md) and [ok](real.md).\n",
+	})
+	got := refTargets(b)
+	for target := range got {
+		if strings.HasPrefix(target, ".github/") || strings.HasPrefix(target, "dist/") {
+			t.Errorf("edge minted into an unwalked tree: -> %s", target)
+		}
+	}
+	if _, ok := got["real.md"]; !ok {
+		t.Fatalf("the walkable sibling link was dropped too — the gate is over-eager: %v", got)
+	}
+}

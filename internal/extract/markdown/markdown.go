@@ -53,13 +53,34 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 	}
 	ignored := ignore.New(root) // .gitignore semantics via git itself; nil = no git
 	b := &schema.Batch{Producer: ProducerName}
+	// walkable answers "would ANY producer's walk reach this path?" — the same
+	// question the WalkDir below answers for its own files, asked of a link
+	// target. D1 says a link resolves only if its target "exists in the walk";
+	// checking the disk instead let links into skipped trees (.github/, dist/,
+	// node_modules/) mint edges to node ids that can never be created.
+	walkable := func(rel string) bool {
+		if ignored != nil && ignored(rel) {
+			return false
+		}
+		for _, seg := range strings.Split(path.Dir(rel), "/") {
+			if seg == "." || seg == "" {
+				continue
+			}
+			if strings.HasPrefix(seg, ".") || seg == "node_modules" || seg == "vendor" ||
+				seg == "target" || seg == "dist" || seg == "build" || strings.HasSuffix(seg, "-out") {
+				return false
+			}
+		}
+		return true
+	}
 	// One parser per Extract call, never a package-level singleton: producers
 	// run in parallel across modules in a multi-module gather.
 	ex := &docExtractor{
-		root:  root,
-		b:     b,
-		md:    goldmark.New(),
-		slugs: map[string]map[string]bool{},
+		root:     root,
+		b:        b,
+		md:       goldmark.New(),
+		slugs:    map[string]map[string]bool{},
+		walkable: walkable,
 	}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -135,7 +156,10 @@ type docExtractor struct {
 	b       *schema.Batch
 	md      goldmark.Markdown
 	slugs   map[string]map[string]bool // rel -> set of emitted section slugs
-	pending []pendingRef
+	// walkable reports whether a link target lies inside the tree any producer
+	// walks. Disk existence is not enough — see D1 and the walkable closure.
+	walkable func(rel string) bool
+	pending  []pendingRef
 }
 
 // pendingRef is a link seen but not yet resolvable.
@@ -200,11 +224,17 @@ func (ex *docExtractor) resolve(p pendingRef) (string, map[string]string, bool) 
 	if target == ".." || strings.HasPrefix(target, "../") {
 		return "", nil, false // escaped the repo; no node can exist for it
 	}
-	// The precision gate: the path must be a real FILE on disk. This is what
-	// keeps the 84 dead `/private/tmp/...` links in our own proof/ transcripts
-	// out of the graph, and directory links (which have no node) with them.
+	// The precision gate, in two halves. The path must be a real FILE on disk —
+	// this is what keeps the 84 dead `/private/tmp/...` links in our own proof/
+	// transcripts out of the graph, and directory links (which have no node)
+	// with them. It must ALSO lie inside the walked tree: `.github/…` and
+	// `dist/…` exist on disk but no producer ever reaches them, so an edge
+	// there names a node id that can never be created.
 	st, err := os.Stat(filepath.Join(ex.root, filepath.FromSlash(target)))
 	if err != nil || st.IsDir() {
+		return "", nil, false
+	}
+	if ex.walkable != nil && !ex.walkable(target) {
 		return "", nil, false
 	}
 	// D3: a fragment on a markdown file retargets to that file's section node
