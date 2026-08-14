@@ -1,6 +1,7 @@
 # ADR 4 — the markdown producer: fence correctness first, then doc links
 
-Status: ACCEPTED 2026-08-14 (owner: "happy to send ast goldmark and all stuff
+Status: IMPLEMENTED 2026-08-14 in a3e743b…f75b669 (D0/D0b/D1-D4; D5 HTML deferred by its own terms).
+ACCEPTED 2026-08-14 (owner: "happy to send ast goldmark and all stuff
 … if there is something better thats okay as well"). Alternative checked on the
 same fixture: `gomarkdown/markdown` parses it equally correctly with zero
 transitive deps, but goldmark keeps the decision on two grounds — full
