@@ -1,9 +1,14 @@
 # ADR 6 — the boundaries lane costs a second walk, 12–24× its budget
 
 Status: SUPERSEDED 2026-08-14 by ADR 7 (`2026-08-14-boundaries-on-the-ast`).
-The measurements here stand and are the evidence ADR 7 is built on; only the
-proposed FIX is superseded — the owner ruled out a faster regex ("never regex
-kind of"), so D2's alternation is dead and the lane moves to the AST instead.
+The regression measurements below stand and are the evidence ADR 7 is built on.
+**Both fixes proposed here are wrong, and ADR 7's spike proved it with
+numbers:** the second READ is only 6-10% of the lane's cost (k8s 330ms of
+5.6s; ts 1.36s of 13.8s), so D1 walk fusion could never have reached the ≤+5%
+budget; and D2's regex alternation optimises the right 90% while keeping every
+accuracy defect the owner ruled out ("never regex kind of"). Kept unedited as
+the record of a diagnosis that was right about the cost and wrong about the
+cure.
 Scope: `internal/boundaries` (how rules are applied), possibly
 `internal/extract/code` (walk fusion). No change to the rule schema, the port
 model, or any emitted fact — this is purely HOW the same output is produced.

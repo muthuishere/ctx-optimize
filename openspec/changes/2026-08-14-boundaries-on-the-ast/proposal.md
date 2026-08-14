@@ -85,6 +85,47 @@ needs a second pattern kind (`{"member": "env", "receiver": "process"}`).
 Enumerate the shapes actually required by the shipped rules before designing
 the schema — do not invent a general pattern language.
 
+## Spike results (2026-08-14) — they changed the plan
+
+**The cost is the regex, not the second read.** Measured directly, separating
+the walk+read from the rule scanning:
+
+| corpus | files / MB | walk + read | **regex** | regex share | ports found |
+|---|---|---|---|---|---|
+| go-kubernetes | 17,858 / 128 MB | 330 ms | **5.29 s** | **94%** | 349 |
+| ts-typescript | 71,585 / 268 MB | 1.36 s | **12.43 s** | **90%** | 42 |
+| java-spring | 10,033 / 52 MB | 192 ms | **2.48 s** | **93%** | 386 |
+
+**This kills ADR 6 outright.** Its preferred fix (D1 walk fusion) removes only
+the read — 6–10% — and would have missed the ≤5% budget while taking on
+concurrency risk. Its D2 (regex alternation) optimises the right 90% but keeps
+every accuracy defect. Both were aimed at the wrong problem.
+
+The line to remember: **TypeScript spends 12.4 seconds of regex to produce 42
+ports.** Each file is scanned 10–11 times (7 rule regexes + 4 SDK matchers).
+Under AST-riding the marginal cost is a map probe per call node on a parse
+already paid for, so essentially *all* of both columns disappears.
+
+**Query API: available, but not needed.** The shim exports only
+`co_alloc/co_free/co_parse/co_symbols` (`internal/extract/code/wasm.go:125`),
+returning a flat preorder record stream — no `ts_query`. But the query engine
+is already compiled into `treesitter.wasm` (`build.sh:61` pulls in
+`lib/src/lib.c`, which includes `query.c`; the artifact carries 130 `ts_query*`
+symbols). Exposing S-expression queries would cost ~40 lines of `shim.c` plus a
+wasm rebuild — **and we should not**, because routepacks' technique already
+works over the flat stream with no wasm change at all.
+
+**Rule shapes: five, not one.** `routepacks`' `{"call": …}` is insufficient.
+The shipped rules actually need: **call** (`os.Getenv`, `exec.Command`,
+`localStorage.setItem`), **member** (`process.env.X`, `import.meta.env.X`),
+**subscript** (`os.environ["X"]`), **decorator/annotation** (`@GetMapping("/x")`,
+`@app.get`, `[HttpGet]`), **new-expression** (`new WebSocket(url)`), and **bare
+string literal** (`http-url-literal`). Design the schema around exactly these;
+do not invent a general pattern language.
+
+**Precision bonus is real but small — do not headline it.** Measured on 5,776
+k8s Go files, quoted-URL hits were 406 in code vs **5 in comments (1.2%)**.
+
 ## D2 — one walk, by construction
 
 Rules evaluate inside `internal/extract/code`'s existing AST visit, at the
@@ -108,15 +149,65 @@ a file with no grammar (plain `.env`, `.txt`).
 That last one is the honest limit: **an AST lane only covers parseable files.**
 Rules for unparsed formats must be declared as such, not silently dropped.
 
+## D3b — SITE recall and VALUE recall are different numbers
+
+The spike split the misses, and only one half is recoverable. Say so plainly
+rather than promising a clean sweep.
+
+**Fully recovered — regex shape brittleness.** `env-go`'s `[A-Z][A-Z0-9_]+`
+excluded lowercase and 1-char names; `env-js` missed `npm_config_*`;
+`routes-express` missed receiver-less chained `.get`; `routes-java` missed
+`@RequestMapping(path=…)`; `routes-py` missed multi-line decorators. An AST
+reads the literal with no shape assumption and does not care about lines. For
+these, **the tier can honestly rise to EXTRACTED — and D3's cap on
+`routes-go`/`routes-py` (measured 1.00 and 0.99 but pinned at INFERRED because
+"regex without AST never claims EXTRACTED") loses its stated reason.**
+
+**Site recovered, value NOT — the honest ceiling.** `os.Getenv(varName)` (31
+k8s sites), `exec.Command(binVar)` (**73 k8s sites**), `subprocess.run(argsVar)`
+(**every django site — the 0.00**), `new WebSocket(urlVar)`. The AST makes
+these *visible but AMBIGUOUS* with `resolved: dynamic`. That is a real and
+large gain — `process-py` stops reporting "this repo spawns nothing", which is
+a lie, and starts reporting "spawns at N sites, arguments dynamic" — but
+**no 1.00 is promised on values.** Resolving them needs constant propagation:
+trivial for an in-file `const x = "FOO"`, impossible across modules or
+reflection.
+
+**Neither recovers:** `os.environ` copied wholesale, URLs built by
+concatenation (partially foldable), aliasing (`getenv := os.Getenv`),
+reflection.
+
+**Precision can EXCEED routepacks.** Its matcher keys on the callee's *last*
+identifier, so a rule for `os.Getenv` would also fire on a local `Getenv()`.
+The AST holds the receiver, so boundary rules should match it — better, not
+merely equal.
+
 ## D4 — incremental, made real
 
-Separate from the walk fix, and the owner asked for it directly. Pending the
-mechanical findings of the in-flight audit, the target is: a one-file change
-should cost one file of work, not a whole-tree re-extract. Today lever 1 is a
-whole-tree stat signature — it answers "did anything change", not "what
-changed". A per-file cache keyed on **content hash** (the store already keeps a
-content-hash manifest) would let an unchanged file's nodes/edges be reused.
-This is drafted as a direction, not a decision; the numbers land first.
+The owner asked for this directly, and the spike found the mechanism.
+
+**Today incremental is all-or-nothing per module.** `treeSignature`
+(`internal/app/multimodule.go:601`) hashes sorted `rel\0mtimeNano\0size` over
+the module; lever 1 (`:732`) is binary — signature matches, skip everything;
+one byte differs, re-extract everything. `.ctxoptimize/` is deliberately inside
+the signature (`:626`) so rule changes correctly invalidate.
+
+Consequence, stated bluntly: **touch one file in kubernetes and you pay the
+full 5.3 s of regex re-scanning all 17,858 files.** The earlier audit's
+"incremental is unaffected" is true only for the zero-change case.
+
+**Do NOT build a boundaries-specific per-file cache.** It would layer
+bookkeeping over a cost that ADR 7 deletes. The spike's three subtleties are
+recorded for whoever does build one: node creation is first-writer-wins
+(`boundaries.go:375`) so replay must be in sorted-`rel` order or output
+changes; the cache key needs the ruleset AND services-registry hash, not just
+content; and most entries are *negative* (17,858 files → 349 ports), so
+"produced nothing" must be cached or every miss re-scans.
+
+**The right incremental work is bigger and belongs in its own ADR:** cache the
+whole `extractFile` result — code + routes + boundaries together — keyed on
+content hash, making lever 1 per-file instead of per-module for *every*
+producer. That is where a one-file change genuinely costs one file of work.
 
 ## Migration, gates, kill criterion
 
