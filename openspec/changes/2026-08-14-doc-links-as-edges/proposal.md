@@ -5,9 +5,10 @@ Scope: `internal/extract/markdown` only. No schema change, no new node kind,
 no new producer. HTML is explicitly deferred (D5).
 
 **Headline: this started as a link-coverage feature and measurement turned it
-into a bug fix.** 9.4% of reqsume's section nodes are fabricated from inside
-code fences (D0). The link work (D2–D4) is the smaller half and must not land
-first.
+into a bug fix, then into a parser swap.** 9.4% of reqsume's section nodes are
+fabricated from inside code fences (D0); the fix is to stop hand-rolling a
+markdown parser and adopt goldmark (D0b). The link work (D2–D4) is the smaller
+half and must not land first.
 
 ## Context — what the markdown producer does today
 
@@ -96,43 +97,82 @@ every shell example in every README is a candidate phantom section.
 
 Fixing this is mandatory and lands first.
 
-## D0b — a byte scanner, not regex, and not tree-sitter
+## D0b — parse with goldmark (a real CommonMark AST), not regex, not a
+## hand scanner, not tree-sitter
 
-The obvious question is why markdown does not ride the tree-sitter/WASI lane
-that `internal/extract/code` uses. Two reasons, one of them measured.
+An earlier draft of this ADR proposed a hand-written byte scanner with a fence
+bool. **That was wrong, and the measurement says so.** Recorded here with the
+evidence, because the reasoning generalizes: a scanner fixes the bug you just
+found, a parser fixes the class.
 
-**Measured — regex is 4.4× slower than a hand scanner on our own corpus.**
-Benchmarked over this repo's 316 markdown files (~3.5 MB), same work
-(headings + link candidates), Go 1.22, `-benchtime 3x`:
+**Why the scanner loses.** It was chosen on speed. Benchmarked over this repo's
+316 markdown files (~3.5 MB), same extraction work, `-benchtime 3x`:
 
-| approach | throughput | per-pass |
-|---|---|---|
-| today's 3 regexes per line | 347 MB/s | 10.2 ms |
-| plain byte scanner | **1535 MB/s** | **2.3 ms** |
+| approach | throughput | per-pass | correctness |
+|---|---|---|---|
+| today's 3 regexes per line | 347 MB/s | 10.2 ms | fences ✗ setext ✗ ref-links ✗ |
+| hand byte scanner | 1489 MB/s | 2.4 ms | fences ✓ setext ✗ ref-links ✗ |
+| **goldmark AST walk** | 147 MB/s | **24.1 ms** | **all ✓** |
 
-Worth stating precisely, because "regex is slow" is not quite the finding: Go's
-`regexp` is RE2, so it is *linear* — no catastrophic backtracking, which is
-exactly why the `search` verb uses it and should keep using it. The cost here is
-constant-factor, and in absolute terms markdown extraction is ~10 ms of a
-multi-second gather. **Regex is not the bottleneck. It is simply beaten on both
-axes** — the scanner is 4.4× faster *and* fence state is trivial to carry in a
-scanner (one bool, toggled on ` ``` `) whereas a per-line regex fundamentally
-cannot see block context. Correctness is the reason to switch; the speed is
-change we get back.
+goldmark is the slowest — 2.4× slower than today's regex — and it does not
+matter. The absolute number is **24 ms for 3.5 MB of markdown**, against
+multi-second gathers; the scanner's win is 8 ms of a run that takes seconds.
+Buying a permanent correctness class for 14 ms is not a trade, it is a gift.
+(The RE2 note still holds and still matters elsewhere: Go's `regexp` is linear,
+no catastrophic backtracking, which is why the `search` verb keeps it.)
 
-**Tree-sitter is the wrong tool for this specific grammar.** `markdown` is not
-in `internal/grammar/registry.go` at all, and adding it is not the usual pack
-drop: upstream `tree-sitter-markdown` is a **split grammar** — block structure
-and inline content (links, emphasis) are two separate parsers, and links live in
-the *inline* one. Our lane embeds one grammar per language with one node-type
-mapping, so markdown would be the first language needing two parsers chained.
-That is real integration work plus WASM weight, to land somewhere between the
-scanner and the current regex on speed. ⚠️ Verify the split-grammar shape at
-build time before anyone acts on this paragraph — it is the current upstream
-layout, not a measurement of ours.
+**Why the scanner loses on the axis that counts.** The hand-rolled surface does
+not end at fences. Measured across both repos:
 
-⇒ Rewrite the producer's line loop as a byte scanner with fence state. Keep
-regex where it earns its place (the `search` verb's RE2 sweep, boundary rules).
+| construct | today | scanner-with-fence-bool | goldmark |
+|---|---|---|---|
+| fenced phantoms (618) | ✗ | ✓ | ✓ |
+| indented-code phantoms (3) | ✗ | ✗ | ✓ |
+| setext headings (16, false NEGATIVES) | ✗ | ✗ | ✓ |
+| reference links `[t][r]` (21) | ✗ | ✗ | ✓ |
+| link definitions `[r]: dest` (15) | ✗ | ✗ | ✓ |
+| autolinks `<https://…>` | ✗ | ✗ | ✓ |
+
+Verified on one fixture containing every row at once: goldmark skipped all three
+phantom headings (```bash fence, ```markdown fence, 4-space indented block),
+caught the setext heading, and **resolved `[ref link][r]` through its
+`[r]: docs/cli.md` definition elsewhere in the file** — a scanner would need its
+own definition table, which is the point at which we are writing a markdown
+parser badly instead of importing one written well.
+
+The long tail is honestly small *on our two repos* — ~40 facts against 618 from
+fences alone. But **this tool runs on other people's repositories**, and our
+corpus is not representative of theirs: reference-style links and setext
+headings are ordinary in doc cultures we do not write in. The scanner's bug list
+is the list we happen to have hit; the parser's is bounded by a spec with a
+conformance suite.
+
+**Cost, measured, against this repo's dependency doctrine.** The main binary
+today pulls exactly three modules — `wazero`, `xz`, `x/sys`; every DB driver
+lives in the `ctx-optimize-adapters` companion. goldmark would be the fourth:
+
+- **+1.19 MB** on a 46.66 MB binary (**+2.5%**), measured by building with and without
+- **zero transitive dependencies** (`go list -m all` = the module and nothing else), pure Go, no cgo
+- **zero init cost** — a parser, not a client; this is precisely what separates it from `minio-go`, which was banned for a 15 ms init, not for existing
+
+**Tree-sitter is the wrong tool for this one grammar.** `markdown` is not in
+`internal/grammar/registry.go`, and it is not a normal pack drop: upstream
+`tree-sitter-markdown` is a **split grammar** — block structure and inline
+content are separate parsers and links live in the *inline* one, so markdown
+would be the first language in our lane needing two chained parsers, for more
+WASM weight than goldmark's 1.19 MB. ⚠️ Confirm that split at build time before
+anyone acts on this paragraph; it is upstream's current layout, not our
+measurement.
+
+⇒ **Replace the line loop with a goldmark AST walk.** Headings come from
+`ast.Heading` with `Lines().At(0).Start` mapped to a line number by counting
+newlines in the prefix (verified working). Links/images/autolinks come from
+`ast.Link`/`ast.Image`/`ast.AutoLink` with destinations already resolved.
+
+**One thing goldmark does not give us: `[[wikilinks]]` are not CommonMark.**
+Keep that regex, but apply it to AST *text* nodes rather than raw lines — which
+is strictly better than today, since text nodes exclude fenced and indented code
+by construction, fixing wikilinks' share of the fence bug for free.
 
 ## D1 — resolve-or-drop (the precision gate)
 
@@ -206,10 +246,15 @@ templates). Not this ADR.
 
 ## Perf, gates, kill criterion
 
-- Cost: the scanner rewrite (D0b) is expected to make markdown extraction
-  **faster in absolute terms** even with D1–D4 added — 4.4× headroom against
-  one existence check per link, on a file set already walked. Budget: markdown
-  extraction must not get slower than today's 10.2 ms/3.5 MB baseline.
+- Cost: goldmark makes markdown extraction ~2.4× slower in relative terms and
+  **+14 ms in absolute terms** on 3.5 MB (10.2 → 24.1 ms), plus one existence
+  check per link. Budget: markdown extraction stays **under 50 ms per 3.5 MB**
+  and total gather time must not move measurably on this repo or reqsume. If a
+  doc-heavy corpus ever makes this visible, the fix is caching by content hash
+  (the manifest already exists), not a hand-rolled parser.
+- Dependency: goldmark becomes the main binary's 4th module (+1.19 MB, +2.5%,
+  zero transitive deps, zero init cost). `task ci` must confirm the adapters
+  companion is unaffected and that no DB driver leaks into main.
 - Gates: hermetic tests beside the code; `task ci`; `task golden` including the
   corpus tier. **Two separate expected snapshot movements, reviewed
   independently:** D0 REMOVES phantom sections/edges minted inside fences
