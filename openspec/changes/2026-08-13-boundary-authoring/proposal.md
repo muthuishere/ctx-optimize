@@ -1,6 +1,8 @@
 # ADR 2 — generating boundaries: measured or invalid
 
-Status: DRAFT — owner review pending 2026-08-13. No product code until agreed.
+Status: IMPLEMENTED 2026-08-14 in bd5223d (D3 verify verb) + d568584 (D4 authoring skill).
+D1/D2 ride in the shipped rules' verified blocks (ADR 1, commit e4c26fe).
+ACCEPTED 2026-08-14 (owner: "what about others boundary authoring").
 Part 2 of 3. Depends on ADR 1 (`2026-08-13-boundary-model-and-defaults`) for
 the `port` kind, `boundaries.json`, and the `search` verb. ADR 3 renders it.
 
