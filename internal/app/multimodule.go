@@ -887,15 +887,21 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 		}
 	}
 	totalN, totalPruned := 0, 0
-	for _, b := range batches {
-		// Same containment at commit time: one producer tripping the shrink
-		// guard must not stop the others from landing.
-		n, pruned, rerr := s.Replace(b, force)
-		if !lane("commit "+b.Producer, rerr) {
+	// ONE read-merge-write for every producer (ADR 2026-08-14): committing them
+	// in a loop meant N full passes over the graph — N reads, N sorts of every
+	// node and edge, N whole-file writes — so each new producer re-paid the cost
+	// of all the others. Same containment as before: one producer tripping the
+	// shrink guard must not stop the others from landing.
+	results, rerr := s.ReplaceAll(batches, force)
+	if rerr != nil {
+		lane("commit", rerr)
+	}
+	for _, r := range results {
+		if !lane("commit "+r.Producer, r.Err) {
 			continue
 		}
-		totalN += n
-		totalPruned += pruned
+		totalN += r.Added
+		totalPruned += r.Pruned
 	}
 	// Incremental: the wiki is a pure function of the graph. If Replace changed
 	// nothing (0 added, 0 pruned) and a wiki already exists, it is byte-

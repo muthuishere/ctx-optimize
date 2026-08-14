@@ -293,12 +293,171 @@ func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error) {
 	return nodesAdded, edgesAdded, nil
 }
 
+// ReplaceResult is one batch's outcome inside ReplaceAll. Err is per-producer
+// on purpose: one producer tripping the shrink guard must not stop the others
+// from landing, which is the containment the caller already relied on when it
+// looped over Replace.
+type ReplaceResult struct {
+	Producer string
+	Added    int
+	Pruned   int
+	Err      error
+}
+
+// ReplaceAll applies every batch in ONE read-merge-write cycle.
+//
+// Replace is producer-scoped, so committing N producers used to mean N full
+// passes over the graph: N reads of nodes.ndjson + edges.ndjson, N sorts of
+// every node and edge, N whole-file writes. The work grows in the wrong
+// variable — adding a producer re-reads and rewrites everything the others
+// already wrote. Profiled on java-spring (~200k nodes), store.Replace was 3.86s
+// of a 7.5s gather, and simply ADDING the boundaries producer cost +0.8s of
+// pure re-read/re-write for ~400 new ports.
+//
+// The semantics are identical to calling Replace in a loop, deliberately so:
+// batches are applied IN ORDER against the running state, each pruning only
+// its own producer's artifacts, so a later batch sees an earlier one's nodes
+// exactly as it would have on disk. Output bytes are unchanged.
+func (s *Store) ReplaceAll(batches []*schema.Batch, force bool) ([]ReplaceResult, error) {
+	nodes, err := s.Nodes()
+	if err != nil {
+		return nil, err
+	}
+	oldEdges, err := s.Edges()
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]schema.Node, len(nodes))
+	prevIDs := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		byID[n.ID] = n
+		prevIDs[n.ID] = true
+	}
+	byKey := make(map[string]schema.Edge, len(oldEdges))
+	for _, e := range oldEdges {
+		byKey[edgeMergeKey(e)] = e
+	}
+
+	results := make([]ReplaceResult, 0, len(batches))
+	changed := false
+	for _, b := range batches {
+		res := ReplaceResult{Producer: b.Producer}
+		accepted, quarantined, verr := b.PartitionValidate(nil)
+		if verr != nil {
+			res.Err = fmt.Errorf("reject batch: %w", verr)
+			results = append(results, res)
+			continue
+		}
+		nodeDrops := len(b.Nodes) - len(accepted.Nodes)
+		if total := len(b.Nodes); total > 0 && float64(nodeDrops)/float64(total) > 0.05 {
+			res.Err = fmt.Errorf("reject batch: %d/%d nodes invalid (>5%%) — producer likely broken; first: %q (%s)", nodeDrops, total, quarantined[0].ID, quarantined[0].Reason)
+			results = append(results, res)
+			continue
+		}
+		if len(quarantined) > 0 {
+			fmt.Fprintf(os.Stderr, "ctx-optimize: quarantined %d invalid item(s), committing %d valid nodes (e.g. %q: %s)\n", len(quarantined), len(accepted.Nodes), quarantined[0].ID, quarantined[0].Reason)
+		}
+		acc := accepted
+
+		prev := 0
+		for _, n := range byID {
+			if n.Metadata["producer"] == b.Producer {
+				prev++
+			}
+		}
+		if prev > 0 && len(acc.Nodes)*2 < prev && !force {
+			res.Err = fmt.Errorf("refusing to shrink producer %q from %d to %d nodes — pass --force if this is a real deletion", b.Producer, prev, len(acc.Nodes))
+			results = append(results, res)
+			continue
+		}
+
+		newIDs := make(map[string]bool, len(acc.Nodes))
+		for _, n := range acc.Nodes {
+			newIDs[n.ID] = true
+		}
+		// This producer's previous artifacts leave: the ones it no longer emits
+		// are pruned, the ones it re-emits are restated below with fresh content.
+		for id, n := range byID {
+			if n.Metadata["producer"] != b.Producer {
+				continue
+			}
+			if !newIDs[id] {
+				res.Pruned++
+			}
+			delete(byID, id)
+		}
+		for _, n := range acc.Nodes {
+			if n.Metadata == nil {
+				n.Metadata = map[string]string{}
+			}
+			if n.Metadata["producer"] == "" {
+				n.Metadata["producer"] = b.Producer
+			}
+			if !prevIDs[n.ID] {
+				res.Added++
+			}
+			byID[n.ID] = n
+		}
+		for _, n := range acc.Nodes {
+			prevIDs[n.ID] = true
+		}
+
+		for k, e := range byKey {
+			if e.Metadata["producer"] == b.Producer {
+				delete(byKey, k) // fully re-stated by the batch
+			}
+		}
+		for _, e := range acc.Edges {
+			if e.Metadata == nil {
+				e.Metadata = map[string]string{}
+			}
+			if e.Metadata["producer"] == "" {
+				e.Metadata["producer"] = b.Producer
+			}
+			byKey[edgeMergeKey(e)] = e
+		}
+		changed = true
+		results = append(results, res)
+	}
+	if !changed {
+		return results, nil
+	}
+
+	out := make([]schema.Node, 0, len(byID))
+	for _, n := range byID {
+		out = append(out, n)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	edges := make([]schema.Edge, 0, len(byKey))
+	for _, e := range byKey {
+		edges = append(edges, e)
+	}
+	sort.Slice(edges, func(i, j int) bool { return edgeMergeKey(edges[i]) < edgeMergeKey(edges[j]) })
+
+	if err := writeNDJSON(s.nodesPath(), len(out), func(i int) any { return out[i] }); err != nil {
+		return results, err
+	}
+	if err := writeNDJSON(s.edgesPath(), len(edges), func(i int) any { return edges[i] }); err != nil {
+		return results, err
+	}
+	return results, nil
+}
+
+// edgeMergeKey identifies an edge for replacement/dedup. Shared by Replace and
+// ReplaceAll so the two can never disagree about what "the same edge" means.
+func edgeMergeKey(e schema.Edge) string {
+	return e.Source + "\x00" + e.Target + "\x00" + e.Relation
+}
+
 // Replace is producer-scoped replacement: the batch becomes the producer's
 // ENTIRE truth — nodes/edges previously from this producer that it no longer
 // emits are pruned (files deleted from the repo leave the graph). Other
 // producers' artifacts are untouched. Shrink guard (graphify-proven): a
 // re-gather emitting less than half the producer's previous nodes is more
 // likely a broken run than a huge refactor — refuse unless forced.
+//
+// Prefer ReplaceAll when committing several producers at once — this does a
+// full read+sort+write per call.
 func (s *Store) Replace(b *schema.Batch, force bool) (added, pruned int, err error) {
 	existing, err := s.Nodes()
 	if err != nil {
