@@ -18,12 +18,19 @@ Intro text with a [[Wiki Target]] link.
 ## Section One
 
 Body referencing [other](other.md).
+And a [dead one](nope.md) that must NOT become an edge.
 
 ## Section Two
 
 More.
 `
 	if err := os.WriteFile(filepath.Join(dir, "doc.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// other.md must EXIST: since ADR 4 D1 a link is an edge only if it resolves
+	// to a real file, so a fixture that never created its own link target was
+	// asserting pre-D1 behavior.
+	if err := os.WriteFile(filepath.Join(dir, "other.md"), []byte("# Other\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "ignore.go"), []byte("package x"), 0o644); err != nil {
@@ -53,7 +60,7 @@ More.
 		t.Fatalf("section node malformed: %+v", sec)
 	}
 
-	var contains, wikiRefs, mdRefs int
+	var contains, wikiRefs, mdRefs, deadRefs int
 	for _, e := range b.Edges {
 		switch {
 		case e.Relation == "contains":
@@ -62,6 +69,8 @@ More.
 			wikiRefs++
 		case e.Relation == "references" && e.Target == "other.md":
 			mdRefs++
+		case e.Relation == "references" && strings.Contains(e.Target, "nope"):
+			deadRefs++
 		}
 	}
 	if contains < 3 { // title + two sections
@@ -69,6 +78,9 @@ More.
 	}
 	if wikiRefs != 1 || mdRefs != 1 {
 		t.Fatalf("reference edges wrong: wiki=%d md=%d", wikiRefs, mdRefs)
+	}
+	if deadRefs != 0 {
+		t.Fatalf("D1: a link to a nonexistent file must be dropped, got %d edges", deadRefs)
 	}
 }
 

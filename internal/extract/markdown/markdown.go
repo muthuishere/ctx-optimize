@@ -7,24 +7,34 @@
 package markdown
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/muthuishere/ctx-optimize/internal/extract/ignore"
 	"github.com/muthuishere/ctx-optimize/internal/schema"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
 )
 
 const ProducerName = "markdown"
 
-var (
-	headingRe  = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
-	wikilinkRe = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
-	mdLinkRe   = regexp.MustCompile(`\]\(([^)#]+\.md)[^)]*\)`)
-)
+// wikilinkRe is the ONE regex left in the markdown path. `[[target]]` is not
+// CommonMark, so goldmark cannot see it — and it is not even a single inline
+// node: goldmark tokenizes `[[Wiki Target]]` into four Text nodes
+// ("Intro with a [", "[", "Wiki Target]", "] link."), because the brackets are
+// literal text once no link definition matches. So this runs over a BLOCK's raw
+// source lines, never over inline text nodes. Running it per block (rather than
+// per file line, as before) is what excludes fenced and indented code, since
+// code blocks are skipped by kind.
+var wikilinkRe = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 
 // Extract walks root and emits one batch covering every .md/.txt file.
 // Node IDs are root-relative paths (path-qualified — the lesson from
@@ -43,6 +53,14 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 	}
 	ignored := ignore.New(root) // .gitignore semantics via git itself; nil = no git
 	b := &schema.Batch{Producer: ProducerName}
+	// One parser per Extract call, never a package-level singleton: producers
+	// run in parallel across modules in a multi-module gather.
+	ex := &docExtractor{
+		root:  root,
+		b:     b,
+		md:    goldmark.New(),
+		slugs: map[string]map[string]bool{},
+	}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -97,13 +115,118 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 			}
 			return nil
 		}
-		extractFile(b, rel, string(data), ext == ".md")
+		ex.extractFile(rel, string(data), ext == ".md")
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	// Link targets resolve only once every file's headings are known: a link
+	// may point at a section of a document the walk has not reached yet.
+	ex.flushRefs()
 	return b, nil
+}
+
+// docExtractor carries the state a single-pass walk cannot: the per-file
+// section slug index (for cross-file `#anchor` targets, D3) and the link edges
+// deferred until that index is complete.
+type docExtractor struct {
+	root    string
+	b       *schema.Batch
+	md      goldmark.Markdown
+	slugs   map[string]map[string]bool // rel -> set of emitted section slugs
+	pending []pendingRef
+}
+
+// pendingRef is a link seen but not yet resolvable.
+type pendingRef struct {
+	source  string // node id of the section (or document) the link sits in
+	rel     string // the LINKING file, so relative targets resolve from its dir
+	dest    string // raw destination, exactly as written
+	isImage bool
+}
+
+// flushRefs resolves every deferred link and appends the surviving edges.
+// Deterministic: pending order is walk order, which is filepath.WalkDir's
+// lexical order, and resolution is pure.
+func (ex *docExtractor) flushRefs() {
+	for _, p := range ex.pending {
+		target, meta, ok := ex.resolve(p)
+		if !ok {
+			continue // D1: resolve-or-drop. A miss is honest; a guess is not.
+		}
+		ex.b.Edges = append(ex.b.Edges, schema.Edge{
+			Source: p.source, Target: target, Relation: "references",
+			Confidence: schema.Extracted, Metadata: meta,
+		})
+	}
+}
+
+// resolve implements D1-D4: where a link points, and whether it points anywhere
+// real. Returns ok=false for everything that does not land on a node we have —
+// external URLs, dead paths, directories, and anything escaping the repo root.
+func (ex *docExtractor) resolve(p pendingRef) (string, map[string]string, bool) {
+	dest := strings.TrimSpace(p.dest)
+	if dest == "" {
+		return "", nil, false
+	}
+	// External destinations get no edge and no node (ADR 4 context: all 141
+	// doc URLs measured across two repos were bibliography, not architecture).
+	if strings.Contains(dest, "://") || strings.HasPrefix(dest, "mailto:") ||
+		strings.HasPrefix(dest, "//") {
+		return "", nil, false
+	}
+	rawPath, frag := dest, ""
+	if i := strings.IndexByte(dest, '#'); i >= 0 {
+		rawPath, frag = dest[:i], dest[i+1:]
+	}
+	meta := map[string]string{}
+	if p.isImage {
+		meta["link"] = "image" // D4: NOT uses_image — docker/k8s owns that relation.
+	}
+
+	// A bare `#anchor` targets a section of the linking document itself.
+	if rawPath == "" {
+		if s := slug(frag); s != "" && ex.slugs[p.rel][s] {
+			return p.rel + "::" + s, orNil(meta), true
+		}
+		return "", nil, false
+	}
+
+	if filepath.IsAbs(rawPath) || strings.HasPrefix(rawPath, "~") {
+		return "", nil, false // absolute paths are not repo-relative, by construction
+	}
+	target := path.Join(path.Dir(p.rel), rawPath)
+	if target == ".." || strings.HasPrefix(target, "../") {
+		return "", nil, false // escaped the repo; no node can exist for it
+	}
+	// The precision gate: the path must be a real FILE on disk. This is what
+	// keeps the 84 dead `/private/tmp/...` links in our own proof/ transcripts
+	// out of the graph, and directory links (which have no node) with them.
+	st, err := os.Stat(filepath.Join(ex.root, filepath.FromSlash(target)))
+	if err != nil || st.IsDir() {
+		return "", nil, false
+	}
+	// D3: a fragment on a markdown file retargets to that file's section node
+	// when the section exists; otherwise the file node keeps the edge and the
+	// fragment is preserved as evidence rather than silently dropped (D2).
+	if frag != "" {
+		if s := slug(frag); s != "" && ex.slugs[target][s] {
+			return target + "::" + s, orNil(meta), true
+		}
+		meta["anchor"] = frag
+	}
+	return target, orNil(meta), true
+}
+
+// orNil keeps edges byte-identical to the pre-ADR shape when there is nothing
+// to say: an empty map would serialize as `"metadata":{}` and churn every
+// existing snapshot line.
+func orNil(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 const maxConfigBytes = 256 * 1024
@@ -302,7 +425,16 @@ func blockScalarHeader(val string) bool {
 // `declares` edges anchored on the file path and no node of its own, so this is
 // the only node backing every python dependency edge — and PartitionValidate
 // does not quarantine absent endpoints, so dropping it would dangle silently.
-func extractFile(b *schema.Batch, rel, content string, markdown bool) {
+// The parse is a real CommonMark AST (goldmark) rather than per-line regexes.
+// That is not a style preference: a line regex cannot see block context, so
+// every `# comment` inside a ```bash example was emitted as a real section —
+// 67 phantom sections in this repo and 551 in reqsume (9.4% of all sections),
+// each one queryable and citable, each one a lie with a true file:line on it.
+// Fenced AND indented code blocks are now excluded by construction, and the
+// same parse yields setext headings, reference links and autolinks the regexes
+// never saw. Cost: ~24ms per 3.5MB, against multi-second gathers.
+func (ex *docExtractor) extractFile(rel, content string, markdown bool) {
+	b := ex.b
 	docID := rel
 	b.Nodes = append(b.Nodes, schema.Node{
 		ID: docID, Label: filepath.Base(rel), Kind: "document",
@@ -312,10 +444,20 @@ func extractFile(b *schema.Batch, rel, content string, markdown bool) {
 		return
 	}
 
+	// Normalize CRLF before parsing. Line COUNTS are unaffected (every \r\n
+	// becomes exactly one \n), so offsets still map to the right line, and the
+	// CR can no longer ride into a label — the chromium defect splitLines fixed.
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	src := []byte(content)
+	blankFrontmatter(src)
 	lines := splitLines(content)
+	lineAt := newLineIndex(src)
+
 	var stack []openSection
 	sectionStart := map[string]int{}
 	usedSlugs := map[string]int{} // repeated headings ("Files changed") get -2, -3…
+	slugSet := map[string]bool{}
+	ex.slugs[rel] = slugSet
 
 	closeTo := func(level, endLine int) {
 		for len(stack) > 0 && stack[len(stack)-1].level >= level {
@@ -329,24 +471,27 @@ func extractFile(b *schema.Batch, rel, content string, markdown bool) {
 			}
 		}
 	}
+	scope := func() string { return currentScope(stack, docID) }
 
-	for i, line := range lines {
-		lineNo := i + 1
-		if m := headingRe.FindStringSubmatch(line); m != nil {
-			level := len(m[1])
-			title := strings.TrimSpace(m[2])
-			// A heading with no text is not a section: there is no name to
-			// cite and no slug to build an id from. Emitting one produced a
-			// node with an empty label, which the schema correctly refuses —
-			// better to never emit it than to have Validate quarantine it.
-			if title == "" || slug(title) == "" {
-				continue
+	doc := ex.md.Parser().Parse(text.NewReader(src))
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch v := n.(type) {
+		case *ast.Heading:
+			title, lineNo, ok := headingText(v, src, lineAt)
+			// A heading with no text is not a section: no name to cite, no slug
+			// to build an id from. Skipping BEFORE closeTo also preserves the
+			// old behavior that an empty heading does not close open sections.
+			if !ok || slug(title) == "" {
+				break
 			}
-			closeTo(level, lineNo-1)
+			closeTo(v.Level, lineNo-1)
 			s := slug(title)
 			usedSlugs[s]++
-			if n := usedSlugs[s]; n > 1 {
-				s = fmt.Sprintf("%s-%d", s, n)
+			if k := usedSlugs[s]; k > 1 {
+				s = fmt.Sprintf("%s-%d", s, k)
 			}
 			secID := fmt.Sprintf("%s::%s", rel, s)
 			parent := docID
@@ -360,27 +505,127 @@ func extractFile(b *schema.Batch, rel, content string, markdown bool) {
 			b.Edges = append(b.Edges, schema.Edge{
 				Source: parent, Target: secID, Relation: "contains", Confidence: schema.Extracted,
 			})
-			stack = append(stack, openSection{id: secID, level: level})
+			stack = append(stack, openSection{id: secID, level: v.Level})
 			sectionStart[secID] = lineNo
+			slugSet[s] = true
+		case *ast.Link:
+			ex.pending = append(ex.pending, pendingRef{scope(), rel, string(v.Destination), false})
+		case *ast.Image:
+			ex.pending = append(ex.pending, pendingRef{scope(), rel, string(v.Destination), true})
 		}
-		// Links become reference edges. Targets may resolve to nodes from
-		// other batches (or nothing yet) — cross-batch linking is the point.
-		for _, m := range wikilinkRe.FindAllStringSubmatch(line, -1) {
-			b.Edges = append(b.Edges, schema.Edge{
-				Source: currentScope(stack, docID), Target: strings.TrimSpace(m[1]),
-				Relation: "references", Confidence: schema.Inferred,
-			})
+		// Wikilinks ride the block's RAW source: goldmark shreds `[[x]]` across
+		// several Text nodes, so only the unparsed line still holds the shape.
+		// Code blocks are skipped by kind — that is the fence fix for wikilinks.
+		if n.Type() == ast.TypeBlock && !isCodeBlock(n) {
+			if segs := n.Lines(); segs != nil {
+				for i := 0; i < segs.Len(); i++ {
+					seg := segs.At(i)
+					for _, m := range wikilinkRe.FindAllStringSubmatch(string(src[seg.Start:seg.Stop]), -1) {
+						b.Edges = append(b.Edges, schema.Edge{
+							Source: scope(), Target: strings.TrimSpace(m[1]),
+							Relation: "references", Confidence: schema.Inferred,
+						})
+					}
+				}
+			}
 		}
-		for _, m := range mdLinkRe.FindAllStringSubmatch(line, -1) {
-			target := filepath.ToSlash(filepath.Join(filepath.Dir(rel), m[1]))
-			b.Edges = append(b.Edges, schema.Edge{
-				Source: currentScope(stack, docID), Target: target,
-				Relation: "references", Confidence: schema.Extracted,
-			})
-		}
-	}
+		return ast.WalkContinue, nil
+	})
 	closeTo(1, len(lines))
 }
+
+// headingText returns a heading's raw source text and its 1-based line.
+// RAW, not rendered: `## The ` + "`code`" + ` bit` must keep its backticks so
+// labels and slugs stay byte-identical to what the regex produced.
+func headingText(h *ast.Heading, src []byte, lineAt lineIndex) (string, int, bool) {
+	segs := h.Lines()
+	if segs == nil || segs.Len() == 0 {
+		return "", 0, false // a bare `#` — no text, no section
+	}
+	first := segs.At(0)
+	var parts []string
+	for i := 0; i < segs.Len(); i++ { // a setext heading may span lines
+		s := segs.At(i)
+		parts = append(parts, strings.TrimSpace(string(src[s.Start:s.Stop])))
+	}
+	title := strings.TrimSpace(strings.Join(parts, " "))
+	if title == "" {
+		return "", 0, false
+	}
+	return title, lineAt.of(first.Start), true
+}
+
+// blankFrontmatter overwrites a leading YAML (`---`) or TOML (`+++`) metadata
+// block with spaces, IN PLACE, so every byte offset — and therefore every line
+// number — is untouched while the region parses as blank lines.
+//
+// This exists because CommonMark is right and we want something else: a `---`
+// line closing frontmatter directly follows text, which by the spec makes the
+// whole block a setext H2. Measured on this repo: bundled/ctx-optimize/SKILL.md
+// turned its entire frontmatter into ONE section whose label was the full
+// description paragraph — a 2,000-character heading. Frontmatter is metadata,
+// not prose, and the pre-goldmark regex never saw it; blanking keeps that true.
+// A file whose FIRST line is a thematic break is left alone (no closing
+// delimiter is found), so genuine `---` rules are unaffected.
+func blankFrontmatter(src []byte) {
+	if len(src) < 4 {
+		return
+	}
+	var delim string
+	switch {
+	case bytes.HasPrefix(src, []byte("---\n")):
+		delim = "---"
+	case bytes.HasPrefix(src, []byte("+++\n")):
+		delim = "+++"
+	default:
+		return
+	}
+	end := -1
+	for off := 4; off < len(src); {
+		nl := bytes.IndexByte(src[off:], '\n')
+		lineEnd := len(src)
+		if nl >= 0 {
+			lineEnd = off + nl
+		}
+		switch strings.TrimRight(string(src[off:lineEnd]), " \t") {
+		case delim, "...": // `...` also closes a YAML document
+			end = lineEnd
+		}
+		if end >= 0 || nl < 0 {
+			break
+		}
+		off = lineEnd + 1
+	}
+	if end < 0 {
+		return // unterminated: not frontmatter, leave the document as written
+	}
+	for i := 0; i < end; i++ {
+		if src[i] != '\n' {
+			src[i] = ' '
+		}
+	}
+}
+
+func isCodeBlock(n ast.Node) bool {
+	k := n.Kind()
+	return k == ast.KindFencedCodeBlock || k == ast.KindCodeBlock
+}
+
+// lineIndex maps a byte offset to a 1-based line number in O(log n), so a file
+// with many headings does not become O(bytes x headings).
+type lineIndex []int
+
+func newLineIndex(src []byte) lineIndex {
+	var li lineIndex
+	for i, c := range src {
+		if c == '\n' {
+			li = append(li, i)
+		}
+	}
+	return li
+}
+
+func (li lineIndex) of(off int) int { return sort.SearchInts(li, off) + 1 }
 
 type openSection struct {
 	id    string

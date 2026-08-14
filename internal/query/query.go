@@ -316,10 +316,14 @@ func intentAdjust(n *schema.Node, s float64, wantsImports, wantsTests, wantsDocs
 	}
 	// Prose repeats a question's words far more often than code does, so on a
 	// docs-heavy repo lexical scoring hands "where is X implemented" the ADR
-	// ABOUT X. Measured on this repo: doc nodes are 40% of the graph (1,315
-	// section + 278 document of 3,963) and took 15 of 30 top-3 slots across 10
+	// ABOUT X. Measured on this repo: doc nodes are 39% of the graph (1,502
+	// section + 304 document of 4,650) and took 15 of 30 top-3 slots across 10
 	// code-intent queries, holding #1 for 5 of 10 — README.md above the
-	// function being asked about. Same shape as the test/module demotes above:
+	// function being asked about. (Re-measured 2026-08-14 after ADR 4 swapped
+	// the markdown producer to a goldmark AST; the earlier 1,315/278 of 3,963
+	// counted 66 phantom sections parsed out of code fences, so the ratio was
+	// right but the numbers were not reproducible.) Same shape as the
+	// test/module demotes above:
 	// a doc node still wins when it is genuinely the best answer, and asking
 	// about docs turns the demote off entirely.
 	if !wantsDocs && (n.Kind == "section" || n.Kind == "document") {

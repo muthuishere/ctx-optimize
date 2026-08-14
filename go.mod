@@ -12,6 +12,7 @@ require (
 	github.com/twmb/franz-go v1.21.5
 	github.com/twmb/franz-go/pkg/kmsg v1.13.1
 	github.com/ulikunitz/xz v0.5.15
+	github.com/yuin/goldmark v1.8.5
 	go.mongodb.org/mongo-driver/v2 v2.8.0
 )
 
