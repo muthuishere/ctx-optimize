@@ -63,6 +63,63 @@
       "tier": "INFERRED"
     },
     {
+      "id": "routes-express",
+      "transport": "network.http",
+      "direction": "provides",
+      "when": { "ext": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "\\b(?:app|router|[A-Za-z_][A-Za-z0-9_]*Router)\\.(?:get|post|put|delete|patch)\\(\\s*['\"](/[^'\"]*)['\"]\\s*,", "identifier": 1 }],
+      "metadata": { "otel.http.route": "$identifier" },
+      "tier": "INFERRED"
+    },
+    {
+      "id": "routes-go",
+      "transport": "network.http",
+      "direction": "provides",
+      "when": { "ext": [".go"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [
+        { "re": "\\.Handle(?:Func)?\\(\\s*\"(/[^\"]*)\"", "identifier": 1 },
+        { "re": "\\.(?:GET|POST|PUT|DELETE|PATCH)\\(\\s*\"(/[^\"]*)\"", "identifier": 1 },
+        { "re": "\\.(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"\\s*,", "identifier": 1 }
+      ],
+      "metadata": { "otel.http.route": "$identifier" },
+      "tier": "INFERRED"
+    },
+    {
+      "id": "routes-java",
+      "transport": "network.http",
+      "direction": "provides",
+      "when": { "ext": [".java", ".kt"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "@(?:Get|Post|Put|Delete|Patch|Request)Mapping\\(\\s*(?:value\\s*=\\s*)?\"(/[^\"]*)\"", "identifier": 1 }],
+      "metadata": { "otel.http.route": "$identifier" },
+      "tier": "INFERRED"
+    },
+    {
+      "id": "routes-cs",
+      "transport": "network.http",
+      "direction": "provides",
+      "when": { "ext": [".cs"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [
+        { "re": "\\[Http(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"", "identifier": 1 },
+        { "re": "\\.Map(?:Get|Post|Put|Delete|Patch)\\(\\s*\"(/[^\"]*)\"", "identifier": 1 }
+      ],
+      "metadata": { "otel.http.route": "$identifier" },
+      "tier": "INFERRED"
+    },
+    {
+      "id": "routes-py",
+      "transport": "network.http",
+      "direction": "provides",
+      "when": { "ext": [".py"] },
+      "exclude": { "path": ["testdata/", "benchmarks/"] },
+      "match": [{ "re": "@\\w[\\w.]*\\.(?:get|post|put|delete|patch|route)\\(\\s*['\"](/[^'\"]*)['\"]", "identifier": 1 }],
+      "metadata": { "otel.http.route": "$identifier" },
+      "tier": "INFERRED"
+    },
+    {
       "id": "webstorage",
       "transport": "storage.local",
       "direction": "consumes",

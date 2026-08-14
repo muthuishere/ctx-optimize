@@ -3,6 +3,7 @@ package boundaries
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/muthuishere/ctx-optimize/internal/schema"
@@ -154,6 +155,72 @@ func TestVendoredTreesExcluded(t *testing.T) {
 	}
 	if find(b, "port:config.env:>REAL_VAR") == nil {
 		t.Fatal("real file missed")
+	}
+}
+
+// The routes-* rules are the PROVIDES side of D3 — additive port coverage.
+// The AST recognizers in internal/extract/code remain the EXTRACTED route
+// truth (kind=route + handles edges); these rules ship INFERRED and never
+// touch that surface (pinned by the byte-match evidence in the ADR).
+func TestRouteRulesEmitProvidesPorts(t *testing.T) {
+	hermetic(t)
+	root := t.TempDir()
+	write(t, root, "server.js", `const app = express();
+app.get('/users', listUsers);
+router.delete('/users/:id', h);
+`)
+	write(t, root, "api.py", `@app.get("/items")
+def list_items(): pass
+`)
+	b, err := Extract(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{
+		"port:network.http:</users", "port:network.http:</users/:id", "port:network.http:</items",
+	} {
+		n := find(b, id)
+		if n == nil || n.Metadata["direction"] != "provides" {
+			t.Fatalf("provides port missing or misdirected: %s → %+v", id, n)
+		}
+		if n.Metadata["otel.http.route"] != n.Metadata["identifier"] {
+			t.Fatalf("otel.http.route not stamped: %+v", n)
+		}
+	}
+	for _, e := range b.Edges {
+		if e.Relation != "provides" {
+			continue
+		}
+		if e.Confidence != schema.Inferred {
+			t.Fatalf("route rules are regex-tier and must ship INFERRED: %+v", e)
+		}
+		if !strings.HasPrefix(e.Metadata["rule"], "routes-") {
+			t.Fatalf("provides edge missing routes-* provenance: %+v", e)
+		}
+	}
+}
+
+func TestRouteRuleSkipsLookalikesAndComposedFrameworks(t *testing.T) {
+	hermetic(t)
+	root := t.TempDir()
+	// cache.get: wrong receiver. /noargs: no second argument. f-string: not a
+	// literal. Nest + JSX: composed paths a line-regex would get WRONG — no
+	// rule ships for them; the AST recognizers own that ground.
+	write(t, root, "a.js", `cache.get('/users', fallback);
+app.get('/noargs');
+`)
+	write(t, root, "b.py", "@app.get(f\"/dyn/{x}\")\ndef dyn(): pass\n")
+	write(t, root, "c.ts", `@Controller('users')
+export class C { @Get(':id') one() {} }
+`)
+	b, err := Extract(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range b.Nodes {
+		if n.Metadata["direction"] == "provides" {
+			t.Fatalf("no provides port should survive these fixtures: %+v", n)
+		}
 	}
 }
 
