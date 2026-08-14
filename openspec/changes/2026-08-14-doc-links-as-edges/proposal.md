@@ -97,8 +97,7 @@ every shell example in every README is a candidate phantom section.
 
 Fixing this is mandatory and lands first.
 
-## D0b — parse with goldmark (a real CommonMark AST), not regex, not a
-## hand scanner, not tree-sitter
+## D0b — parse with goldmark: a real CommonMark AST
 
 An earlier draft of this ADR proposed a hand-written byte scanner with a fence
 bool. **That was wrong, and the measurement says so.** Recorded here with the
