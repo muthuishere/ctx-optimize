@@ -1,6 +1,9 @@
 # ADR 6 — the boundaries lane costs a second walk, 12–24× its budget
 
-Status: DRAFT — owner review pending 2026-08-14. No product code until agreed.
+Status: SUPERSEDED 2026-08-14 by ADR 7 (`2026-08-14-boundaries-on-the-ast`).
+The measurements here stand and are the evidence ADR 7 is built on; only the
+proposed FIX is superseded — the owner ruled out a faster regex ("never regex
+kind of"), so D2's alternation is dead and the lane moves to the AST instead.
 Scope: `internal/boundaries` (how rules are applied), possibly
 `internal/extract/code` (walk fusion). No change to the rule schema, the port
 model, or any emitted fact — this is purely HOW the same output is produced.
