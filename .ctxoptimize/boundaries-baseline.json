@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "note": "LOCAL recall floor for `ctx-optimize boundaries verify` (ADR 2026-08-13-boundary-authoring D3). Measured against THIS repo, not the corpora behind each rule's shipped verified block. Governed like the golden net: recall may move up freely; lowering a floor is a reviewed diff.",
+  "rules": {
+    "env-go": 0.9210526315789473,
+    "env-js": 1,
+    "env-py": 1,
+    "http-url-literal": 0.7727272727272727,
+    "process-go": 0.5675675675675675,
+    "process-py": 0.6666666666666666,
+    "routes-go": 1
+  }
+}
