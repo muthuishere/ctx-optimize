@@ -1,6 +1,12 @@
 # ADR 4 — the markdown producer: fence correctness first, then doc links
 
-Status: DRAFT — owner review pending 2026-08-14. No product code until agreed.
+Status: ACCEPTED 2026-08-14 (owner: "happy to send ast goldmark and all stuff
+… if there is something better thats okay as well"). Alternative checked on the
+same fixture: `gomarkdown/markdown` parses it equally correctly with zero
+transitive deps, but goldmark keeps the decision on two grounds — full
+CommonMark spec compliance with a conformance suite, and clean source positions
+(`Lines().At(0).Start`), which our `section` nodes need for `L#-L#` and
+gomarkdown does not expose as reliably.
 Scope: `internal/extract/markdown` only. No schema change, no new node kind,
 no new producer. HTML is explicitly deferred (D5).
 
