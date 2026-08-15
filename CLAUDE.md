@@ -53,6 +53,38 @@ connector), everything else via adapter scripts through the validated
   (`git clone --depth 1 --branch v6.9 …linux`, `--branch 13.0.3
   …Newtonsoft.Json`; `CTX_OPTIMIZE_GOLDEN_CORPORA=<dir> task golden`).
   Score and speed may only move UP; raising a floor is a reviewed diff.
+- **Benchmarks: REUSE the arena, never build a parallel one.** The field, the
+  corpora and the competitor numbers already exist — recreating them is how the
+  2026-07-24 run became unreproducible (a scratch script that was never
+  committed; see `~/ctx-bench-arena/AUDIT.md`).
+  - `benchmarks/suite/tools.json` — THE field manifest and single source of
+    truth: every tool we benchmark AND every tool we deliberately do not, with
+    the reason (competitors = the agent-context graph tools graphify /
+    codegraph / gitnexus / codegraphcontext; gtags / Zoekt / ripgrep / SCIP are
+    ADJACENT CATEGORIES, not competitors). Need a new per-tool field? Add it
+    here — do not fork the file.
+  - `benchmarks/suite/setup.py` — builds `~/ctx-bench-arena` with shallow AND
+    pinned clones, writing `versions.json` (resolved SHA, whether the pin held,
+    build success, entry point). A floating version must never be reported as a
+    pinned one.
+  - `~/ctx-bench-arena/` already contains BUILT competitors (`tools/`), 12
+    pinned multilang corpora (`multilang/corpora/`), and prior results
+    (`results-multi.json`, `RUN-NOTES.md`, `AUDIT.md`). Take corpus paths and
+    entry points from there; extend the recorded results rather than starting a
+    parallel record.
+  - `benchmarks/bench.py` / `bench_multi.py` — single-pass runners (cold/warm).
+    `benchmarks/session/session.py` — the MULTI-PASS session runner (cold build
+    → queries → scripted edit → incremental → queries + staleness probes), which
+    is the metric an agent actually pays.
+  - Measuring: always `CTX_OPTIMIZE_STORE=<temp>`, best-of-3, and record the
+    `uptime` load average — a loaded box swung the same A/B +16.8% then +4.9%.
+    Pick a one-file-edit victim from the GRAPH, not from `find`: `treeSignature`
+    skips `build`/`dist`/`vendor`/`node_modules`/`target`/`*-out`/dotdirs, so an
+    edit there silently short-circuits and reads as a fake 0.25s.
+  - ⚠️ Gather writes `AGENTS.md`/`CLAUDE.md`/`.ctxoptimize/` into whatever it
+    gathers, at the GATHER SUBDIR (depth 3 — a `-maxdepth 2` sweep misses them).
+    Clean them from CORPORA only. They are TRACKED files in this repo and in
+    reqsume — deleting them there is data loss.
 
 <!-- ctx-optimize:begin -->
 <ctx-optimize>
