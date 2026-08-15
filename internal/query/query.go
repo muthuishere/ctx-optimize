@@ -128,6 +128,37 @@ var callableKind = map[string]bool{
 	"section": true, "topic": true,
 }
 
+// normalizeExact is the ONLY normalization an exact match gets: trim and
+// case-fold. Deliberately not more — no punctuation stripping, no stemming, no
+// distance. An "exact" match that needed cleverness to be exact is a guess, and
+// this tier exists precisely because it is the one case carrying certainty.
+func normalizeExact(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+// exactMatch reports whether the query names this node outright — its id, its
+// label, or the external name a boundary port binds to.
+//
+// metadata.identifier is what makes this reach the boundary graph: a port's
+// identifier IS the host / env var / binary being named (ADR 2026-08-13 D1),
+// so `query "api.openai.com"` and `query "OPENAI_API_KEY"` become exact hits
+// rather than token soup.
+//
+// Node ids are module-prefixed in a federated store (apps/api/port:…), so id
+// equality alone would miss in a monorepo — label and identifier stay clean,
+// which is why all three are checked.
+// EqualFold, not ToLower: this runs once per node, and on the linux store that
+// is 2.85M nodes x 3 fields. Lower-casing each field would allocate ~8.5M
+// strings to answer a boolean — measured at +3.6% query latency before this
+// was folded. EqualFold compares in place.
+func exactMatch(n *schema.Node, normQ string) bool {
+	if normQ == "" {
+		return false
+	}
+	if strings.EqualFold(n.Label, normQ) || strings.EqualFold(n.ID, normQ) {
+		return true
+	}
+	return strings.EqualFold(n.Metadata["identifier"], normQ)
+}
+
 // Run scores every node against the question and returns the top hits with
 // their 1-hop neighborhoods, truncated to ~budget tokens (chars/4).
 func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) *Result {
@@ -182,10 +213,17 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 	}
 	total := float64(len(nodes)) + 1
 
+	// tier 0 = the query NAMES this node (id/label/identifier); tier 1 = scored
+	// lexically. A separate tier rather than a big score bonus because the bonus
+	// has to out-weigh an unbounded sum of IDF terms to be correct, and "provably
+	// larger than any future corpus" is not a thing you can assert — whereas an
+	// ordering key is correct by construction. See ADR 2026-08-15-exact-match.
 	type scored struct {
 		idx   int
+		tier  int
 		score float64
 	}
+	normQ := normalizeExact(question)
 	wantsTests, wantsImports := testIntent(qTokens), importIntent(qTokens)
 	wantsDocs := docIntent(qTokens)
 	shardCand := make([][]scored, workers)
@@ -205,9 +243,20 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 			memo := map[string]map[string]bool{}
 			for i := lo; i < hi; i++ {
 				s := scoreNode(nodes, nodeTokens, qTokens, df, total, memo, i)
+				exact := exactMatch(&nodes[i], normQ)
 				if s > 0 {
 					s = intentAdjust(&nodes[i], s, wantsImports, wantsTests, wantsDocs)
-					local = append(local, scored{i, s})
+				}
+				// An exact match is a candidate even at score 0: the lexical pass
+				// can zero it out (a label of nothing but stopwords, a node whose
+				// tokens all sit in every document). Naming a node is evidence on
+				// its own and must not depend on the token pass agreeing.
+				if s > 0 || exact {
+					t := 1
+					if exact {
+						t = 0
+					}
+					local = append(local, scored{i, t, s})
 				}
 			}
 			shardCand[w] = local
@@ -219,11 +268,32 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 		candidates = append(candidates, local...)
 	}
 	sort.Slice(candidates, func(a, b int) bool {
+		if candidates[a].tier != candidates[b].tier {
+			return candidates[a].tier < candidates[b].tier // named beats scored
+		}
 		if candidates[a].score != candidates[b].score {
 			return candidates[a].score > candidates[b].score
 		}
 		return nodes[candidates[a].idx].ID < nodes[candidates[b].idx].ID // deterministic ties
 	})
+	// Lift exact matches above the lexical range for DISPLAY, so the printed
+	// score stays monotonic with rank. Without this a reader sees a 0.30 sitting
+	// above a 7.35 and reasonably concludes the ranking is broken. The offset is
+	// derived from the data (max observed + 1), never a constant, and it is
+	// applied after sorting so it cannot affect the order.
+	if len(candidates) > 0 && candidates[0].tier == 0 {
+		maxLex := 0.0
+		for _, c := range candidates {
+			if c.tier == 1 && c.score > maxLex {
+				maxLex = c.score
+			}
+		}
+		for i := range candidates {
+			if candidates[i].tier == 0 {
+				candidates[i].score += maxLex + 1
+			}
+		}
+	}
 
 	// Adjacency for neighborhoods.
 	out := map[string][]Neighbor{}
@@ -267,27 +337,49 @@ func scoreNode(nodes []schema.Node, nodeTokens []map[string]bool, qTokens []stri
 			continue
 		}
 		// Prefix tier: "refund" ⇢ "refunds" — weaker than an exact hit.
-		matched := false
-		for nt := range nodeTokens[i] {
-			if len(qt) >= 3 && (strings.HasPrefix(nt, qt) || strings.HasPrefix(qt, nt)) {
-				s += 0.7 * (0.1 + math.Log(total/(1+float64(df[nt]))))
-				matched = true
-				break
+		//
+		// Scan ALL matches and take the rarest; do NOT break on the first.
+		// `for nt := range map` is randomized in Go, so breaking early made the
+		// score depend on map iteration order whenever a node had two matching
+		// tokens — measured: identical query, identical store, 17 hits on 8 runs
+		// of 20 and 18 on the other 12. That is the ADR 5 lesson (an undefined
+		// tie-break is a silent non-determinism) applied to ranking.
+		//
+		// Rarest = lowest df = the token that discriminates most, so the
+		// deterministic choice is also the better answer. Ties on df fall back
+		// to the token string, which is unique within the set.
+		best, haveBest := "", false
+		if len(qt) >= 3 {
+			for nt := range nodeTokens[i] {
+				if !strings.HasPrefix(nt, qt) && !strings.HasPrefix(qt, nt) {
+					continue
+				}
+				if !haveBest || df[nt] < df[best] || (df[nt] == df[best] && nt < best) {
+					best, haveBest = nt, true
+				}
 			}
 		}
-		if matched || len(qt) < 5 {
+		if haveBest {
+			s += 0.7 * (0.1 + math.Log(total/(1+float64(df[best]))))
 			continue
 		}
-		// Trigram tier: typos and infix matches. Weakest tier.
+		if len(qt) < 5 {
+			continue
+		}
+		// Trigram tier: typos and infix matches. Weakest tier. Same rule —
+		// rarest match wins, never "whichever the map yielded first".
 		qt3 := trigrams(qt, memo)
+		best, haveBest = "", false
 		for nt := range nodeTokens[i] {
-			if len(nt) < 5 {
+			if len(nt) < 5 || dice(qt3, trigrams(nt, memo)) < 0.5 {
 				continue
 			}
-			if dice(qt3, trigrams(nt, memo)) >= 0.5 {
-				s += 0.4 * (0.1 + math.Log(total/(1+float64(df[nt]))))
-				break
+			if !haveBest || df[nt] < df[best] || (df[nt] == df[best] && nt < best) {
+				best, haveBest = nt, true
 			}
+		}
+		if haveBest {
+			s += 0.4 * (0.1 + math.Log(total/(1+float64(df[best]))))
 		}
 	}
 	if s > 0 && strings.ContainsRune(nodes[i].Label, '.') && !callableKind[nodes[i].Kind] {
@@ -303,6 +395,7 @@ func scoreNode(nodes []schema.Node, nodeTokens []map[string]bool, qTokens []stri
 //     judge 0.66). Downranked UNLESS the question is about imports/modules.
 //   - test files out-token the definition ("url_for" appears more in test
 //     names than in helpers.py) — demoted UNLESS the question mentions tests.
+//
 // docDemote scales prose nodes when the question is not about prose. Measured,
 // not guessed — see the sweep in TestDocDemoteChosenByMeasurement.
 var docDemote = 0.5
