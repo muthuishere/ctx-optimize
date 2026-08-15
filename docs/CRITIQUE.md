@@ -53,6 +53,15 @@ legacy/hostile code" as a published-benchmark secondary claim.
    "fastest of the agent graph tools we tested" and name them. Leaving it
    absolute invites a "what about gtags?" objection that costs more
    credibility than the sentence buys.
+7a. **Every scored question is a code-locate question** (found 2026-08-15).
+   All 14 competitor-quality questions and all 20 judged questions per corpus
+   ask "where is this symbol/implementation". NOTHING scores boundaries
+   (external APIs, env vars, spawned processes), routes, doc→code links, or
+   transport shape — i.e. we measure ourselves only on the axis where we are
+   third (0.804 vs codegraph 0.86) and not at all on the axes where we are the
+   only tool that answers. The engineering cost is worse than the marketing
+   one: **an unmeasured capability has no regression net**, so a boundary rule
+   could silently stop matching and no score would move. See ADR 13.
 7. **The judged scoreboard is self-authored, self-graded and self-floored** —
    20 questions per corpus, written by us, marked by us, against floors we
    set. It is genuinely useful as a regression net and worth ~nothing as
