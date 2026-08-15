@@ -760,25 +760,28 @@ func CardFor(n *schema.Node, via string, edges []schema.Edge, opts ...Option) *C
 func RenderCard(c *CardData) string {
 	var sb strings.Builder
 	n := c.Node
-	fmt.Fprintf(&sb, "%s  [%s]  %s", n.Label, n.Kind, n.Source)
+	// Every value below comes from the repo and is therefore untrusted terminal
+	// input — see safetext.go. Composed lines get SafeLine (a newline in a label
+	// would forge an output row); the body keeps its own newlines and tabs.
+	fmt.Fprintf(&sb, "%s  [%s]  %s", SafeLine(n.Label), SafeLine(n.Kind), SafeLine(n.Source))
 	if n.Location != "" {
-		fmt.Fprintf(&sb, " %s", n.Location)
+		fmt.Fprintf(&sb, " %s", SafeLine(n.Location))
 	}
 	sb.WriteString("\n")
 	if c.Signature != "" {
-		fmt.Fprintf(&sb, "  sig: %s\n", c.Signature)
+		fmt.Fprintf(&sb, "  sig: %s\n", SafeLine(c.Signature))
 	}
 	if c.Doc != "" {
 		for _, line := range strings.Split(c.Doc, "\n") {
-			fmt.Fprintf(&sb, "  doc: %s\n", line)
+			fmt.Fprintf(&sb, "  doc: %s\n", SafeLine(line))
 		}
 	}
 	if c.Parent != "" {
-		fmt.Fprintf(&sb, "  in: %s\n", c.Parent)
+		fmt.Fprintf(&sb, "  in: %s\n", SafeLine(c.Parent))
 	}
 	if c.Body != "" {
 		sb.WriteString("  body:\n")
-		for _, line := range strings.Split(c.Body, "\n") {
+		for _, line := range strings.Split(SafeBlock(c.Body), "\n") {
 			fmt.Fprintf(&sb, "    %s\n", line)
 		}
 	}
@@ -792,7 +795,7 @@ func RenderCard(c *CardData) string {
 				fmt.Fprintf(&sb, "    … %d more\n", len(ids)-cap)
 				break
 			}
-			fmt.Fprintf(&sb, "    %s\n", id)
+			fmt.Fprintf(&sb, "    %s\n", SafeLine(id))
 		}
 	}
 	writeList("contains", c.Contains, 15)

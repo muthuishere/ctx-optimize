@@ -131,9 +131,13 @@ func printBoundaryEntry(w io.Writer, e analyze.BoundaryEntry) {
 	if e.Sites > 1 {
 		cite = fmt.Sprintf("%s (+%d sites)", cite, e.Sites-1)
 	}
-	fmt.Fprintf(w, "      %-38s %-10s%s  %s\n", trunc(e.Identifier, 38), tier, marks, cite)
+	// Identifier and cite are repo-derived: a hostname or env-var name comes
+	// from source, and a control byte there could overwrite this line
+	// (safetext.go). Sanitize AFTER trunc so the width math sees real runes.
+	fmt.Fprintf(w, "      %-38s %-10s%s  %s\n",
+		analyze.SafeLine(trunc(e.Identifier, 38)), tier, marks, analyze.SafeLine(cite))
 	if len(e.Modules) > 1 {
-		fmt.Fprintf(w, "          modules: %s\n", strings.Join(e.Modules, ", "))
+		fmt.Fprintf(w, "          modules: %s\n", analyze.SafeLine(strings.Join(e.Modules, ", ")))
 	}
 	// semconv keys ride to JSON always, but only print the ones that ADD
 	// information: otel.server.address on an http port is the identifier

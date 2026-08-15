@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/muthuishere/ctx-optimize/internal/analyze"
 	"io"
 	"time"
 
@@ -172,7 +173,8 @@ func emitNodes(w io.Writer, ns []schema.Node, fields []string, ndjson, jsonArr b
 			if n.Location != "" {
 				loc = "  " + n.Location
 			}
-			fmt.Fprintf(w, "%s  [%s]  %s%s\n", n.Label, n.Kind, n.ID, loc)
+			// Repo-derived; a newline in a label would forge a row (safetext.go).
+			fmt.Fprintf(w, "%s  [%s]  %s%s\n", analyze.SafeLine(n.Label), analyze.SafeLine(n.Kind), analyze.SafeLine(n.ID), loc)
 		}
 		fmt.Fprintf(w, "(%d nodes)\n", len(ns))
 		return nil

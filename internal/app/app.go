@@ -59,6 +59,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	// the companion's own build) always win over the bridge.
 	sources.ArmExecBridge()
 	cmd, rest := args[0], args[1:]
+	// A mistyped flag used to be ignored in silence, exit 0 — so
+	// `boundaries --sensitve` printed everything while the reader believed they
+	// were seeing only secrets. Reject it here, before any work, with the same
+	// exit 2 an unknown VERB already returns. See flagcheck.go.
+	if ferr := checkFlags(cmd, rest); ferr != nil {
+		fmt.Fprintf(stderr, "ctx-optimize: %v\n", ferr)
+		return 2
+	}
 	// Lever 3 — lazy autosync (ADR 2026-07-24-lazy-autosync): a read verb on a
 	// stale store either resyncs inline (block) or spawns a detached child and
 	// answers now (lazy). Config-gated, default off — a no-op unless opted in.
@@ -177,6 +185,21 @@ type flags struct {
 	args  []string
 }
 
+// set stores a string flag, JOINING a repeatable one rather than overwriting.
+// The map used to keep only the last value, so
+// `--where transport=network.http --where sensitive=true` silently discarded
+// the transport condition and answered as if only the second had been asked —
+// a plausible answer, which is worse than an error. graphfilter already reads a
+// comma as AND, so joining is the semantics the reader already expects; every
+// other repeat is rejected up front by checkFlags.
+func (f *flags) set(name, val string) {
+	if prev, ok := f.strs[name]; ok && repeatableFlags[name] && prev != "" && val != "" {
+		f.strs[name] = prev + "," + val
+		return
+	}
+	f.strs[name] = val
+}
+
 func parseFlags(args []string) *flags {
 	f := &flags{strs: map[string]string{}, bools: map[string]bool{}}
 	for i := 0; i < len(args); i++ {
@@ -187,11 +210,11 @@ func parseFlags(args []string) *flags {
 		}
 		name := strings.TrimPrefix(a, "--")
 		if eq := strings.IndexByte(name, '='); eq >= 0 {
-			f.strs[name[:eq]] = name[eq+1:]
+			f.set(name[:eq], name[eq+1:])
 			continue
 		}
 		if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-			f.strs[name] = args[i+1]
+			f.set(name, args[i+1])
 			i++
 		} else {
 			f.bools[name] = true
