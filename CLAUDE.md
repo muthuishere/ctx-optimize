@@ -67,11 +67,19 @@ connector), everything else via adapter scripts through the validated
     pinned clones, writing `versions.json` (resolved SHA, whether the pin held,
     build success, entry point). A floating version must never be reported as a
     pinned one.
+  - ⚠️ **The arena on this machine PREDATES `setup.py` and has no
+    `versions.json`** (verified 2026-08-15) — it was built by the scratch
+    process setup.py exists to replace. So **no recorded competitor number is
+    pin-verified**; provenance is only `RUN-NOTES.md` plus each result file's
+    `versions` key. Re-run `setup.py` before publishing any competitor
+    comparison, and say "unpinned" until then.
   - `~/ctx-bench-arena/` already contains BUILT competitors (`tools/`), 12
-    pinned multilang corpora (`multilang/corpora/`), and prior results
+    multilang corpora (`multilang/corpora/`), and prior results
     (`results-multi.json`, `RUN-NOTES.md`, `AUDIT.md`). Take corpus paths and
     entry points from there; extend the recorded results rather than starting a
-    parallel record.
+    parallel record. Check what a recorded row actually covers before comparing
+    to it — the k8s row is `/pkg` only (3,125 files), not the whole repo
+    (15,309), and merging the two would be a silent methodology error.
   - `benchmarks/bench.py` / `bench_multi.py` — single-pass runners (cold/warm).
     `benchmarks/session/session.py` — the MULTI-PASS session runner (cold build
     → queries → scripted edit → incremental → queries + staleness probes), which
@@ -81,10 +89,15 @@ connector), everything else via adapter scripts through the validated
     Pick a one-file-edit victim from the GRAPH, not from `find`: `treeSignature`
     skips `build`/`dist`/`vendor`/`node_modules`/`target`/`*-out`/dotdirs, so an
     edit there silently short-circuits and reads as a fake 0.25s.
-  - ⚠️ Gather writes `AGENTS.md`/`CLAUDE.md`/`.ctxoptimize/` into whatever it
-    gathers, at the GATHER SUBDIR (depth 3 — a `-maxdepth 2` sweep misses them).
-    Clean them from CORPORA only. They are TRACKED files in this repo and in
-    reqsume — deleting them there is data loss.
+  - ⚠️ `init` writes `AGENTS.md`/`CLAUDE.md`/`.ctxoptimize/` into whatever it
+    scaffolds, at the GATHER SUBDIR (depth 3 — a `-maxdepth 2` sweep misses
+    them). Clean them from CORPORA only, and **only after a whole run, never
+    between phases**: those files are themselves gathered, so deleting them
+    drops the markdown producer to 0 nodes, trips the >50%-shrink guard, and
+    leaves a PARTIAL STORE — every timing after that measures a recovery, not
+    an incremental. (Verified 2026-08-15; it is the likely explanation for a
+    77s "first re-gather" seen on linux.) They are TRACKED files in this repo
+    and in reqsume — deleting them there is data loss.
 
 <!-- ctx-optimize:begin -->
 <ctx-optimize>
