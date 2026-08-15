@@ -156,17 +156,17 @@
     {
       "name": "gnu-global (gtags)",
       "gatherable": false,
-      "why_not": "NOT YET MEASURED \u2014 a real omission, not a reasoned exclusion (docs/CRITIQUE.md #6). Classic C-based symbol indexer that tracks DEFINITIONS AND REFERENCES, so 'who calls this' is partly in scope. Claims ~37M lines/minute; if that holds it is far faster than us at building. GPL, decades old, frequently already installed. It belongs in the speed cohort; until it is measured, no 'faster than the next tool' claim should be made."
+      "why_not": "ADJACENT CATEGORY, not a competitor (owner call 2026-08-15). Classic C symbol indexer for a HUMAN in an editor doing jump-to-definition: no agent interface, no structured output, no cross-language graph, no docs/config/deps in one artifact, no 'what breaks if I change X'. Nobody evaluating ctx-optimize is choosing between it and gtags. Listed so the field is complete and so 'why isn't gtags here' is answered in the repo. Its ~37M lines/min build speed is real and is why our speed claim must NAME its cohort (agent graph tools) rather than say 'the next tool'."
     },
     {
       "name": "zoekt",
       "gatherable": false,
-      "why_not": "NOT YET MEASURED \u2014 a real omission (docs/CRITIQUE.md #6). Trigram index; reported kernel index in ~160s single-threaded with sub-50ms queries. Different artifact (regex/text search, no symbol graph) so it cannot share a question-quality row, but it CAN and should share a build-speed row."
+      "why_not": "ADJACENT CATEGORY, not a competitor (owner call 2026-08-15). Trigram TEXT search \u2014 a search box, not a symbol graph. Cannot answer 'who calls this' and does not claim to. Same role as ripgrep in this field: a speed reference from a different category, listed for completeness."
     },
     {
       "name": "scip indexers (scip-go, scip-typescript, ...)",
       "gatherable": false,
-      "why_not": "NOT YET MEASURED. Compiler/type-checker precise \u2014 strictly more accurate edges than our heuristic INFERRED/AMBIGUOUS tiers. Requires a working build per language, which is exactly our cost/coverage argument, but the accuracy comparison must be stated honestly rather than avoided."
+      "why_not": "ADJACENT CATEGORY, not a competitor in the agent-context market (owner call 2026-08-15), though the closest in KIND: compiler-precise edges, strictly more accurate than our heuristic tiers, at the cost of a working build per language. Relevant to docs/CRITIQUE.md #8 (we have a cost/coverage argument against SCIP, never an accuracy one), not to the benchmark cohort."
     }
   ]
 }

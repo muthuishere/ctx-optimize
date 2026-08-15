@@ -40,18 +40,19 @@ legacy/hostile code" as a published-benchmark secondary claim.
    be absorbed natively within quarters.
 5. **Proof-matrix methodology** — Codex/Devin token reporting isn't comparable
    out of the box; our credibility weapon has a methodology dependency.
-6. **"2.5x faster than the next tool" names a cohort that excludes the fast
-   competitors** (added 2026-08-14, competitive research). README:19 makes the
-   claim against `benchmarks/suite/tools.json`, whose own `_doc` promises
-   "every tool we benchmark AND every tool we deliberately do not — with the
-   reason". It lists neither **GNU Global (gtags)**, **Zoekt**, nor **SCIP**.
-   That is not a small omission: gtags claims ~37M lines/minute and indexes
-   symbol *references*, so "who calls this" is partly in its scope, from a
-   decades-old tool many people already have installed; Zoekt indexes the
-   kernel in roughly 160s single-threaded with sub-50ms queries. Until they
-   are measured, the honest forms are "fastest of the graph-building agent
-   tools we tested" or naming the cohort inline. **Either measure them or
-   narrow the claim — do not leave it as it stands.**
+6. **"2.5x faster than the next tool" does not name its cohort** (2026-08-14;
+   scope corrected 2026-08-15). The claim at README:19 is measured against the
+   agent-context graph tools in `benchmarks/suite/tools.json` — graphify,
+   codegraph, gitnexus, codegraphcontext — and within that field it holds.
+   The defect is that it reads as absolute. **GNU Global (gtags)** builds far
+   faster (~37M lines/min claimed) and **Zoekt** indexes the kernel in ~160s;
+   both are now listed in the manifest as ADJACENT CATEGORIES with reasons —
+   gtags serves a human doing jump-to-definition, Zoekt is a text search box,
+   and neither answers "what breaks if I change X". They are not competitors,
+   the same way ripgrep is not. **Fix the wording, not the cohort:** say
+   "fastest of the agent graph tools we tested" and name them. Leaving it
+   absolute invites a "what about gtags?" objection that costs more
+   credibility than the sentence buys.
 7. **The judged scoreboard is self-authored, self-graded and self-floored** —
    20 questions per corpus, written by us, marked by us, against floors we
    set. It is genuinely useful as a regression net and worth ~nothing as
