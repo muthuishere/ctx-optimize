@@ -103,6 +103,15 @@ becoming **byte-for-byte reproducible** for the first time.
   **process-wide** budget, so the bill no longer multiplies by module count.
   Full throttle on a laptop is unchanged.
 
+  **Where the cap stops working, measured:** it bounds wasm instances, not the
+  graph. On a 7-module monorepo it is a 5.3× lever (0.69GB at `GOMAXPROCS=2`
+  vs 3.69GB at 18) and on kubernetes 2.4× — but on the **full linux kernel**
+  (2.85M nodes / 5.54M edges) it is 14.36GB vs 14.65GB, i.e. **no cap at all**,
+  because at that size the resident cost IS the graph. Treat ~14GB as a floor
+  for kernel-scale trees: a 16GB machine is marginal and an 8GB machine cannot
+  gather it. Peak RSS also varies run to run at that scale (14.65 → 16.76GB on
+  identical input).
+
 - **Markdown is parsed with a real CommonMark AST** (goldmark) instead of
   per-line regexes. See *Fixed* for what that corrected.
 
