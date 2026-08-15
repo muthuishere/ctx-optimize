@@ -1,0 +1,115 @@
+/* ───────────────────────────────────────────────────────────────
+   ctx-optimize docs theme
+   Carried over from the hand-written site it replaces: near-black
+   charcoal, a single green accent, Inter + JetBrains Mono. The
+   palette is the old site/index.html :root block, so the marketing
+   pages and the docs stay one product visually.
+   ─────────────────────────────────────────────────────────────── */
+
+:root {
+	--sl-font: 'Inter Variable', 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
+		'Segoe UI', Roboto, sans-serif;
+	--sl-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Consolas,
+		'Liberation Mono', Menlo, monospace;
+	/* Wide content column: this project's pages are full of benchmark tables and
+	   terminal transcripts, both of which read badly when they have to scroll. */
+	--sl-content-width: 58rem;
+}
+
+/* ── Dark (default) ── */
+:root {
+	--sl-color-accent-low: #103324;
+	--sl-color-accent: #4ade80;
+	--sl-color-accent-high: #bbf7d0;
+
+	--sl-color-white: #e8edf4;
+	--sl-color-gray-1: #dbe2ea;
+	--sl-color-gray-2: #b3bdc9;
+	--sl-color-gray-3: #94a3b8;
+	--sl-color-gray-4: #64748b;
+	--sl-color-gray-5: #2b3644;
+	--sl-color-gray-6: #141a22;
+	--sl-color-black: #0a0c10;
+
+	--sl-color-bg: #0a0c10;
+	--sl-color-bg-nav: #0f1319;
+	--sl-color-bg-sidebar: #0f1319;
+	--sl-color-bg-inline-code: #141a22;
+	--sl-color-hairline: #1f2833;
+	--sl-color-hairline-light: #1f2833;
+	--sl-color-text-accent: #4ade80;
+}
+
+/* ── Light ── */
+:root[data-theme='light'] {
+	--sl-color-accent-low: #d1fae5;
+	--sl-color-accent: #059669;
+	--sl-color-accent-high: #064e3b;
+
+	--sl-color-white: #0f172a;
+	--sl-color-gray-1: #1e293b;
+	--sl-color-gray-2: #334155;
+	--sl-color-gray-3: #64748b;
+	--sl-color-gray-4: #94a3b8;
+	--sl-color-gray-5: #e2e8f0;
+	--sl-color-gray-6: #f1f5f9;
+	--sl-color-gray-7: #f8fafc;
+	--sl-color-black: #ffffff;
+
+	--sl-color-bg: #ffffff;
+	--sl-color-bg-nav: #f8fafc;
+	--sl-color-bg-sidebar: #f8fafc;
+	--sl-color-bg-inline-code: #f1f5f9;
+	--sl-color-hairline: #e2e8f0;
+	--sl-color-hairline-light: #e2e8f0;
+	--sl-color-text-accent: #047857;
+}
+
+/* The site logo is a wordmark, not an image. */
+.site-title {
+	font-weight: 700;
+	letter-spacing: -0.01em;
+}
+
+/* Tables: this project publishes a lot of them, and a benchmark table that
+   silently clips is a benchmark table that lies. Scroll inside its own box. */
+.sl-markdown-content table {
+	display: block;
+	overflow-x: auto;
+	white-space: nowrap;
+	font-size: 0.9rem;
+}
+.sl-markdown-content table :is(th, td) {
+	white-space: normal;
+}
+.sl-markdown-content th {
+	font-size: 0.78rem;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--sl-color-gray-3);
+	font-weight: 500;
+}
+
+/* A measured number should read as one. */
+.sl-markdown-content td code {
+	font-size: 0.88em;
+}
+
+/* Terminal transcripts sit tighter than prose code samples. */
+.sl-markdown-content pre {
+	font-size: 0.85rem;
+	line-height: 1.7;
+}
+
+/* Splash hero: keep the tagline readable rather than stretched edge to edge. */
+.hero .stack {
+	max-width: 46rem;
+}
+.hero h1 {
+	letter-spacing: -0.025em;
+}
+
+/* Cards used on the homepage for the "answers you can't grep for" grid. */
+.card {
+	border-color: var(--sl-color-hairline);
+}

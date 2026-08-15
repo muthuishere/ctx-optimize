@@ -1,0 +1,132 @@
+---
+title: ctx-optimize
+description: A deterministic code knowledge graph for coding agents. Ask who calls this, what breaks if I change it, and what this system talks to — every answer a resolved symbol with its real file:line. One binary, no LLM, no database, no MCP.
+template: splash
+hero:
+  tagline: Your agent is guessing at line numbers. Give it a graph instead — one binary, no LLM, no database, no MCP.
+  actions:
+    - text: Quick start
+      link: /ctx-optimize/quickstart/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/muthuishere/ctx-optimize
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+```bash
+npm install -g @muthuishere/ctx-optimize   # v0.14.0 · one static binary per platform
+cd your-repo && ctx-optimize up            # one verb: bootstrap, gather, or pull
+```
+
+## It grepped. It found the right files. It named zero callers.
+
+This is a recorded transcript, not a scenario we imagined. We asked a grep-armed agent
+*which functions call `requestWithVars`*. It searched, got matching **lines**, and answered
+*"mux.go at line 4, test_helpers.go at line 3"* — **the ordinal positions in grep's own
+output**. The real call sites are `mux.go:209` and `test_helpers.go:18`, inside
+`Router.ServeHTTP` and `SetURLVars`. Neither was named; both line numbers were invented.
+Scored 0/2 by a deterministic grader that never saw which tool produced the answer.
+
+<Tabs>
+<TabItem label="shell + ripgrep — 0/2">
+```text
+$ grep -r 'requestWithVars' .        → 189 bytes of matching LINES
+
+The functions that call `requestWithVars` are:
+ 1. In `mux.go` at line 4: `req = requestWithVars(req, match.Vars)`
+ 2. In `test_helpers.go` at line 3: `return requestWithVars(r, val)`
+
+✗ no caller named · line numbers fabricated
+```
+</TabItem>
+<TabItem label="ctx-optimize — 2/2">
+```text
+$ ctx-optimize affected requestWithVars
+
+The following functions call `requestWithVars`:
+ 1. Router.ServeHTTP    — mux.go, lines 188-229
+ 2. SetURLVars          — test_helpers.go, lines 17-19
+ 3. ExampleSetURLVars   — mux_test.go, lines 2549-2556
+
+✓ one call · resolved symbols · real ranges
+```
+</TabItem>
+</Tabs>
+
+Grep hands over lines. The store hands over resolved symbols. Every line handed over is
+another read, another grep, another round trip — and that is what the rest of these
+numbers are made of.
+
+## The graded run
+
+Corpus **gorilla/mux** — small, modern, well-named Go, the terrain where plain grep is
+already strong. Three arms, one clone each, twelve hand-verified questions,
+**3 runs, n = 36 answers per arm**, model `gpt-4o-mini`, deterministic grading.
+
+| | shell (ripgrep) | ctx-optimize | graphify |
+|---|---|---|---|
+| Correct on "who calls / what breaks" | 29% | **79%** | — |
+| Overall correctness | 35% | **67%** | 40% |
+| Tool calls per run | 42.7 | **15.0** | — |
+| Wall seconds per run | 65.5 s | **40.1 s** | — |
+| Empty answers | 4 | **0** | — |
+
+[The full graded run →](/ctx-optimize/benchmarks/)
+
+## Now the part that cuts the other way
+
+**ripgrep is faster than us on every single call** — 1.59 s to our 3.70 s on the Linux
+kernel — and **grep wins the "where is X" questions outright, 47% to our 42%**. Both true,
+both ours to report. The point is not that grep is slow; it is that per-call latency is not
+the unit. An agent answering one real question makes dozens of calls, and the question is
+what gets scored.
+
+[Everything we do not claim →](/ctx-optimize/limits/)
+
+## Answers you cannot grep for
+
+<CardGrid>
+	<Card title="What breaks if I change this?">
+		`affected` walks reverse dependencies across the whole graph. `change-plan` composes
+		the whole edit briefing — signature, callers, blast radius, and which tests to run —
+		into one call.
+	</Card>
+	<Card title="What does this system talk to?">
+		`boundaries` splits CONSUMES from PROVIDES, groups by transport, and flags credentials
+		**by name**. Sixteen rules ship built in, each carrying its own measured recall.
+	</Card>
+	<Card title="How are these two connected?">
+		`path` returns the shortest chain of real edges between two symbols — not a guess, and
+		not a similarity score.
+	</Card>
+	<Card title="What is this symbol?">
+		`card` returns signature, doc comment, location, callers and callees in one shot. On the
+		Linux kernel it answers in under 20 ms.
+	</Card>
+</CardGrid>
+
+## Four decisions, and they are the whole product
+
+<CardGrid>
+	<Card title="Tree-sitter, compiled to WASM">
+		Real grammars, real ASTs — hosted by wazero inside the binary and fanned across every
+		core. No toolchain, no language server, no runtime to install. 12 languages embedded;
+		anything else is a one-command grammar pack.
+	</Card>
+	<Card title="Plain ndjson. No database.">
+		The store is sorted, atomically written newline-delimited JSON — no SQLite, no Neo4j,
+		no daemon. It diffs in git, greps in a pinch, and you can read it with your eyes.
+	</Card>
+	<Card title="Producer-scoped replace">
+		Every node records which producer emitted it, so a re-gather replaces only that
+		producer's slice and prunes what went stale. Re-sync after a change is sub-second.
+	</Card>
+	<Card title="No LLM. No embeddings. No MCP.">
+		The binary never calls a model and holds no credentials at rest. Same input, same
+		graph, byte for byte. Your agent supplies the intelligence; the store supplies exact
+		recall with `file:line`.
+	</Card>
+</CardGrid>

@@ -1,7 +1,13 @@
 name: pages
 
-# Publishes the static marketing site under site/ to GitHub Pages.
+# Publishes the docs + marketing site under site/ to GitHub Pages.
 # Source of truth is this repo; URL is https://muthuishere.github.io/ctx-optimize/.
+#
+# The site is Astro + Starlight (markdown-authored). It replaced six hand-written
+# HTML pages, each carrying its own copy of the same 180-line <style> block, whose
+# evidence links dead-ended in raw .md — `.nojekyll` is on, so Pages served those
+# as plain text and never rendered them. Node runs HERE only; the Go binary and
+# `task ci` still need no toolchain.
 on:
   push:
     branches: [main]
@@ -18,16 +24,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
       - id: deployment
         uses: actions/deploy-pages@v4
