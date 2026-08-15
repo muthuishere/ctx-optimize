@@ -417,7 +417,15 @@ func extractAll(base string, roots []string, exclude []string) (*schema.Batch, *
 		}
 	}
 
-	workers := runtime.NumCPU() - 1
+	// GOMAXPROCS, never NumCPU. Each worker builds its own wazero instance whose
+	// linear memory starts at 64 MB, so this number IS the memory budget:
+	// modules-in-flight x workers x 64 MB. NumCPU ignores cgroup CPU quotas and
+	// reports the HOST's cores, so a container limited to 2 CPUs on a 64-core
+	// box would spawn 63 instances and OOM despite its quota. GOMAXPROCS is
+	// container-aware as of Go 1.25 (we require 1.26), is identical to NumCPU on
+	// a bare machine — full throttle on a laptop, unchanged — and finally makes
+	// GOMAXPROCS=n a working cap for anyone who needs one.
+	workers := runtime.GOMAXPROCS(0) - 1
 	if workers < 1 {
 		workers = 1
 	}

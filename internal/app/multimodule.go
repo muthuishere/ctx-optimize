@@ -1027,7 +1027,10 @@ func runMultiAdd(sc *scope, f *flags, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	jobs := min(runtime.NumCPU(), 8)
+	// GOMAXPROCS, not NumCPU: this multiplies the code producer's per-module
+	// worker pool, so it is the outer half of the memory budget. See the note at
+	// internal/extract/code/code.go's workers.
+	jobs := min(runtime.GOMAXPROCS(0), 8)
 	if v, ok := f.strs["jobs"]; ok {
 		j, err := strconv.Atoi(v)
 		if err != nil || j < 1 {

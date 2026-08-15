@@ -175,7 +175,7 @@ func parseNDJSONParallel[T any](path string) ([]T, error) {
 		}
 	}
 	out := make([]T, len(lines))
-	workers := runtime.NumCPU()
+	workers := runtime.GOMAXPROCS(0) // container-aware; NumCPU ignores cgroup quotas
 	if workers > len(lines) {
 		workers = len(lines)
 	}

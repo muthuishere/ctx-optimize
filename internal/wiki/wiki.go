@@ -131,7 +131,7 @@ func Generate(s *store.Store) (int, error) {
 // and stops the rest — a half-written wiki must fail the gather, not be
 // reported as N pages.
 func writePagesParallel(dir string, g *graph, nodes []schema.Node, page map[string]string, pageOf map[string]string) error {
-	workers := runtime.NumCPU()
+	workers := runtime.GOMAXPROCS(0) // container-aware; NumCPU ignores cgroup quotas
 	if workers > len(nodes) {
 		workers = len(nodes)
 	}

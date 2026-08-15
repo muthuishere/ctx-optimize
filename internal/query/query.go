@@ -142,7 +142,7 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 	// Document frequency over node token sets → IDF. Rare tokens decide.
 	// Tokenizing 275k nodes single-threaded measured ~500ms — shard it.
 	nodeTokens := make([]map[string]bool, len(nodes))
-	workers := runtime.NumCPU()
+	workers := runtime.GOMAXPROCS(0) // container-aware; NumCPU ignores cgroup quotas
 	shardDF := make([]map[string]int, workers)
 	var wg sync.WaitGroup
 	chunk := (len(nodes) + workers - 1) / workers
