@@ -6,6 +6,35 @@ cache in `internal/extract/code`. No schema change, no emitted-fact change.
 Written from a working spike, not a design sketch — the numbers below are
 measured on a prototype that runs.
 
+## The business case, measured 2026-08-15 — our positioning is not yet earned
+
+The multi-pass session benchmark (`benchmarks/session/`) exists to argue that a
+graph tool wins over an agent SESSION even when it loses the cold build,
+because incremental re-index amortizes it away. Measured on go-kubernetes at
+HEAD, that argument does not currently hold for us:
+
+| scenario | wall | vs cold |
+|---|---|---|
+| cold build | 7.79s | — |
+| **one file edited, re-gather** | **7.10s** | **saves 9%** |
+| nothing changed | 0.25s | saves 97% |
+
+The zero-change short-circuit is excellent and is what earlier measurements
+(and an earlier audit's "incremental is unaffected") were actually reporting.
+But the case an agent lives in — *I changed one file, tell me what that
+means* — costs **91% of a full rebuild**. There is nothing to amortize, so the
+multi-pass thesis is currently a claim our own benchmark does not support.
+
+⇒ **This ADR is not a performance nicety. It is the work that makes the
+product's positioning true.** Ship it before publishing any multi-pass
+comparison.
+
+(Measurement note: a first attempt showed a suspicious 0.25s for the one-file
+case. The edit had landed in a directory `treeSignature` skips — `build`,
+`dist`, `node_modules`, `vendor`, `target`, `*-out`, dotdirs. Re-run against a
+file *proven* to be a node in the store, it is 7.10s. Any future measurement
+must pick its victim file from the graph, not from `find`.)
+
 ## The goal
 
 A one-file edit should cost roughly one file of work. Today lever 1
