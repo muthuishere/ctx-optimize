@@ -30,6 +30,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -1194,8 +1195,109 @@ func importTarget(raw []RawNode, i int, typeOf func(RawNode) string, text func(R
 	return t
 }
 
+// nodeLess is a TOTAL order over nodes (ADR 5 D1). Sorting on the id alone is
+// only a PARTIAL order: distinct declarations can collapse to one id (C
+// function-locals, C# overloads, several Go init()s in a file), and for two
+// such nodes the comparator says "neither is less" — so sort.Slice, which is
+// documented as NOT stable, leaves their relative order to pdqsort. The dedup
+// below keeps the first of each id run, so which copy survived varied per run
+// and a citation's line moved between gathers. Tie-breaking on the remaining
+// fields makes the choice deterministic regardless of sort algorithm or input
+// order (sort.SliceStable would NOT do: it preserves input order, which is
+// itself parallel-worker dependent).
+// Takes POINTERS deliberately: schema.Node is 7 strings plus a map header, and
+// a by-value comparator copies both operands on every one of the ~n log n
+// calls. Measured on 334k nodes: by-value 179ms, by-pointer 89ms, and the old
+// id-only comparator 68ms — so the total order costs ~30%, not ~160%.
+// (slices.SortFunc cannot help here: its comparator takes elements by value,
+// so it pays the same copy — 141ms in the same benchmark.)
+func nodeLess(a, c *schema.Node) bool {
+	if a.ID != c.ID {
+		return a.ID < c.ID
+	}
+	// WIDEST SPAN FIRST, then earliest start. When several nodes share an id,
+	// one of them is usually the real declaration and the rest are references
+	// to it — in C, `struct bfq_queue {…}` spans L246-L318 while 44 field
+	// declarations `struct bfq_queue *p;` are one line each. Ordering by the
+	// raw Location STRING picks "L1049" over "L246" (byte order: '1' < '2'), so
+	// dedup kept a field and `card bfq_queue` cited the wrong line. Comparing
+	// the span numerically makes the definition win.
+	if as, ae, aok := spanOf(a.Location); aok {
+		if cs, ce, cok := spanOf(c.Location); cok {
+			if aw, cw := ae-as, ce-cs; aw != cw {
+				return aw > cw
+			}
+			if as != cs {
+				return as < cs
+			}
+		}
+	}
+	if a.Location != c.Location {
+		return a.Location < c.Location
+	}
+	if a.Kind != c.Kind {
+		return a.Kind < c.Kind
+	}
+	if a.Source != c.Source {
+		return a.Source < c.Source
+	}
+	if a.Label != c.Label {
+		return a.Label < c.Label
+	}
+	// Two copies can still agree on every field above and differ only in
+	// metadata — `bio.c::bio_split.bio` in the kernel is one node carrying the
+	// function's doc comment and one without. RICHER WINS: more metadata sorts
+	// first, so dedup keeps the informative copy rather than a coin flip. Below
+	// that, a sorted key/value walk finishes the total order.
+	if len(a.Metadata) != len(c.Metadata) {
+		return len(a.Metadata) > len(c.Metadata)
+	}
+	return metaKey(a.Metadata) < metaKey(c.Metadata)
+}
+
+// spanOf parses the "L<start>-L<end>" location this producer emits. ok=false
+// for any other shape (adapters may emit anything), so the caller falls back
+// to a plain string compare rather than guessing.
+func spanOf(loc string) (start, end int, ok bool) {
+	if len(loc) < 2 || loc[0] != 'L' {
+		return 0, 0, false
+	}
+	dash := strings.Index(loc, "-L")
+	if dash < 0 {
+		return 0, 0, false
+	}
+	s, err1 := strconv.Atoi(loc[1:dash])
+	e, err2 := strconv.Atoi(loc[dash+2:])
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return s, e, true
+}
+
+// metaKey renders metadata as a deterministic string. Only called when two
+// nodes tie on every other field, which is rare — the cost never lands on the
+// common path.
+func metaKey(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte(0)
+		b.WriteString(m[k])
+		b.WriteByte(0)
+	}
+	return b.String()
+}
+
 func sortBatch(b *schema.Batch) {
-	sort.Slice(b.Nodes, func(i, j int) bool { return b.Nodes[i].ID < b.Nodes[j].ID })
+	sort.Slice(b.Nodes, func(i, j int) bool { return nodeLess(&b.Nodes[i], &b.Nodes[j]) })
 	sort.Slice(b.Edges, func(i, j int) bool {
 		a, c := b.Edges[i], b.Edges[j]
 		if a.Source != c.Source {
