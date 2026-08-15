@@ -159,11 +159,38 @@ becoming **byte-for-byte reproducible** for the first time.
   from their *default branch* and then overwrote `grammars.lock` with whatever
   it got, so the lock recorded history instead of pinning it.
 
+- **A repeated `--where` silently kept only the last value.** `--where
+  transport=network.http --where sensitive=true` threw the transport condition
+  away and returned **1 node where the correct answer is 0** — a *plausible*
+  wrong answer, which is worse than an error, and that spaced form is what our
+  own skill router documents. `where` is now repeatable and comma-joined, which
+  is the AND the filter already parses.
+
+- **A URL's userinfo was reported as its host.** `https://user:pw@host/x`
+  produced a port identified as `user`. The password was never captured — but a
+  fabricated hostname is a lie, and the confidence tiers exist to prevent
+  exactly that.
+
+- **Terminal control bytes reached stdout unescaped**, so a hostile source file
+  could rewrite our own output: a label containing `\r` renders as whatever
+  follows it. Control bytes are now escaped as visible Go literals — disclosed,
+  not silently dropped.
+
 ### Behaviour changes to expect
 
-Nothing breaks and the **store format is compatible in both directions**
-(verified: 0.13.0 reads 0.14.0 stores and vice versa). But re-gathering an
-existing repo will move some numbers, all deliberately:
+The **store format is compatible in both directions** (verified: 0.13.0 reads
+0.14.0 stores and vice versa), no verb or flag was removed, and every flag
+documented in 0.13.0 is still accepted. One change can fail a script that
+worked before:
+
+- **An unknown flag is now an error (exit 2) instead of being ignored.** It was
+  silently dropped repo-wide at exit 0, so `boundaries --sensitve` printed the
+  full unfiltered list — the failure always errs toward showing MORE than was
+  asked for, worst on the flag whose job is to narrow output to credentials. A
+  script passing a flag that never existed now fails loudly, with a
+  did-you-mean. That is the intended trade.
+
+Re-gathering an existing repo will also move some numbers, all deliberately:
 
 - **Node counts drop slightly** where markdown fixture/example headings were
   being counted as real sections.
