@@ -1,6 +1,16 @@
 package app
 
-// cmdBoundaries — `ctx-optimize boundaries verify` (ADR 2026-08-13
+// cmdBoundaries dispatches the `boundaries` namespace:
+//
+//	boundaries          the system-context summary (ADR 2026-08-15, see
+//	                    boundariesreport.go) — what this system calls out to
+//	                    and exposes. The bare verb means the ANSWER.
+//	boundaries verify   the standing rule check, below.
+//
+// Same shape as store/routes/manifests: a namespace whose bare form is the
+// thing you most often want.
+//
+// cmdBoundariesVerify — `ctx-optimize boundaries verify` (ADR 2026-08-13
 // boundary-authoring, D3): the standing check that holds every boundary rule
 // to its own evidence.
 //
@@ -22,12 +32,11 @@ import (
 
 func cmdBoundaries(args []string, stdout io.Writer) error {
 	f := parseFlags(args)
-	sub := "verify"
-	if len(f.args) > 0 {
-		sub = f.args[0]
+	if len(f.args) == 0 {
+		return cmdBoundariesReport(f, stdout)
 	}
-	if sub != "verify" {
-		return fmt.Errorf("usage: boundaries verify [--json] [--strict] [--record]")
+	if f.args[0] != "verify" {
+		return fmt.Errorf("usage: boundaries [--direction D] [--transport T] [--external] [--sensitive] [--all] [--json]\n       boundaries verify [--json] [--strict] [--record]")
 	}
 
 	root := "."

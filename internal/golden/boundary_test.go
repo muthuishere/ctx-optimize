@@ -157,6 +157,36 @@ func TestGoldenBoundaryRepo(t *testing.T) {
 			t.Errorf("retrieval: %q did not surface %s in top-3, got %v", probe.q, probe.want, top)
 		}
 	}
+
+	// The `boundaries` verb (ADR 2026-08-15) is the surface a user actually
+	// meets, so the fixture gates the ANSWER and not only the facts behind it.
+	// A rule can keep emitting correct ports while the summary stops showing
+	// them — grouping, the direction split, the secret flag and the citation
+	// are each their own failure mode.
+	summary := runCLI(t, "boundaries", "--path", repo, "--store", storeRoot)
+	for _, want := range []struct{ class, text string }{
+		{"direction-split", "CONSUMES"},
+		{"direction-split", "PROVIDES"},
+		{"boundary/config", "PAYMENTS_API_KEY"},
+		{"boundary/config", "SECRET"},
+		{"boundary/egress", "api.weather.example"},
+		{"boundary/egress", "api.openai.com"},
+		{"boundary/process", "git"},
+		{"boundary/storage", "session_token"},
+		{"api-surface", "/orders"},
+	} {
+		if !strings.Contains(summary, want.text) {
+			t.Errorf("%s: `boundaries` summary is missing %q — the facts may still be in the graph, but the answer stopped showing them\n%s",
+				want.class, want.text, summary)
+		}
+	}
+	// The negative case, same as the port facts: a plain env var must not be
+	// dressed as a secret in the rendered answer either.
+	for _, line := range strings.Split(summary, "\n") {
+		if strings.Contains(line, "SERVICE_TIER") && strings.Contains(line, "SECRET") {
+			t.Errorf("boundary/config: plain env var rendered as SECRET: %q", line)
+		}
+	}
 }
 
 // portFact is the closed set of reserved metadata a port must carry. Empty

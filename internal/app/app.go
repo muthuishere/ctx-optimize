@@ -89,7 +89,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdSearch(rest, stdout)
 	case "services": // D5 services registry — the dependency IS the boundary (ADR 2026-08-13)
 		err = cmdServices(rest, stdout)
-	case "boundaries": // D3 hold every rule to its own evidence (ADR 2026-08-13-boundary-authoring)
+	case "boundaries": // bare = the system-context answer (ADR 2026-08-15); `verify` = hold every rule to its evidence (ADR 2026-08-13)
 		err = cmdBoundaries(rest, stdout)
 	case "status":
 		err = cmdStatus(rest, stdout)
@@ -3450,6 +3450,16 @@ commands:
   services add <file|url>     validate + install a registry file into
                               ~/ctxoptimize/services/ (network only on this
                               explicit command)
+  boundaries [--direction consumes|provides] [--transport T] [--external]
+             [--sensitive] [--all] [--json]
+                              the system-context answer: what this codebase
+                              CALLS OUT TO and what it EXPOSES, grouped by
+                              transport, with scope (internal partners live in
+                              this workspace), the SECRET flag, tier and a
+                              file:line on every line. Dynamic identifiers
+                              (os.Getenv(varName)) are counted, not listed —
+                              --all lists them. Env var NAMES only, never a
+                              value. Replaces: nodes --kind port
   boundaries verify [--json] [--strict] [--record]
                               hold every boundary rule to its own evidence:
                               re-runs each rule's recorded ground truth against
