@@ -105,6 +105,32 @@ section is not the class you asked for. Decide (3) deliberately. Where we land
 after that is where we land: codegraph scores 0.86 by printing 18KB per answer
 against our 7KB, and that trade is theirs to make, not a gap we owe anyone.
 
+## STATUS 2026-08-15 — what shipped since this was written
+
+| item | state |
+|---|---|
+| P0 memory | **DONE** — ADR 12 D0 (GOMAXPROCS) + D1 (process-wide worker budget): reqsume 12.4GB → 3.42GB, 0.73GB at GOMAXPROCS=2 |
+| P1 quality re-measure | **DONE** — query 0.804 / card 0.786; still behind codegraph 0.86, and that is accepted |
+| P1 card defects | **DONE** — candidates carry L#-L#, a declaration outranks a mention; four questions up, none down, efficiency flat |
+| P2 incremental store | **DONE (D1)** — the cost was SORTING not parsing; merge into the sorted file, −40% on ReplaceAll, one-file re-gather 98.3% → 86.6% of cold |
+| boundary golden gate | **DONE** — ADR 13 D4, 11 ports, 7 proven-red gates |
+| external yardstick | **DONE** — Loc-Bench harness; retrieval tier only, and the flattering slice score is withheld as biased |
+| ADR 15 boundaries verb | in flight |
+| ADR 14 exact-match | in flight |
+| ADR 13 question classes | in flight |
+
+Two findings that changed the plan, both worth remembering:
+
+1. **The perf gate could not fail.** It recorded its own measurement before
+   checking against it, and shared a switch with the scoreboard so the tight
+   gate never ran. The baseline drifted UP twice under commits captioned
+   "ratchets down". Fixed with a separate switch and a rise ratchet — and every
+   gate added since has been proven red before being trusted.
+2. **The boundary graph is not reachable by `query`** (ADR 14). We built,
+   gated and uniquely own a capability that the verb our own instructions
+   recommend cannot retrieve. That is why ADR 15 (a verb) comes before more
+   extraction work.
+
 ## P2 — the two speed axes we lose
 
 3. **Query index** (ADR 12 D3). `card` went 1.8s → 22ms with a lookup index;
