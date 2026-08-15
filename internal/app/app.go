@@ -67,6 +67,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "ctx-optimize: %v\n", ferr)
 		return 2
 	}
+	// `--help` was in the common allowlist and then ignored by every handler, so
+	// `install --help` INSTALLED and `uninstall --help` uninstalled. Answer the
+	// question here, before dispatch and before autosync, and touch nothing. See
+	// wantsHelp in flagcheck.go.
+	if wantsHelp(rest) {
+		verbHelp(stdout, cmd)
+		return 0
+	}
 	// Lever 3 — lazy autosync (ADR 2026-07-24-lazy-autosync): a read verb on a
 	// stale store either resyncs inline (block) or spawns a detached child and
 	// answers now (lazy). Config-gated, default off — a no-op unless opted in.
@@ -1405,10 +1413,15 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		remoteLine = "pull declared (no push)"
 	}
 	reports, overall := freshnessReports(s)
+	// The lookup index is an optimization that fails safe, so a dead one is
+	// invisible — `card` just runs 270x slower (ADR 18 D3). One word here is
+	// what makes it visible.
+	indexState := s.IndexState()
 	st := map[string]any{
 		"store": s.Dir, "nodes": len(nodes), "edges": len(edges),
 		"remote":    remoteLine,
 		"freshness": reports, "fresh": string(overall),
+		"index": indexState,
 	}
 	if stamps, err := sources.SourceStamps(s.Dir); err == nil && len(stamps) > 0 {
 		st["sources"] = stamps // id → last-captured unix (sanitized ids only)
@@ -1428,6 +1441,7 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "store:  %s\nnodes:  %d\nedges:  %d\nremote: %s", s.Dir, len(nodes), len(edges), orNone(remoteLine))
 	fmt.Fprintf(stdout, "\nfresh:  %s\n", freshnessLine(reports, overall))
+	fmt.Fprintf(stdout, "index:  %s\n", indexLine(indexState))
 	if !wikiStale.IsZero() {
 		fmt.Fprintf(stdout, "wiki:   NOT refreshed since %s — the graph is newer\n", wikiStale.Format("2006-01-02"))
 		fmt.Fprintf(stdout, "        rebuild: ctx-optimize wiki  ·  remove: ctx-optimize wiki --delete\n")
@@ -1441,6 +1455,19 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "served: %d answers · ~%d tokens saved (~$%.2f)\n", sum.Total, sum.EstSaved, sum.EstUSD)
 	}
 	return nil
+}
+
+// indexLine renders the index state, saying what a non-current index COSTS —
+// "stale" alone reads like a warning about correctness, and it is not one.
+func indexLine(state string) string {
+	switch state {
+	case "current":
+		return "✓ lookups use the index"
+	case "stale":
+		return "stale — lookups fall back to a full scan; rebuild: ctx-optimize add ."
+	default:
+		return "absent — lookups fall back to a full scan; build: ctx-optimize add ."
+	}
 }
 
 // wikiStaleness reports when a wiki is sitting on disk that gathers no longer
@@ -3301,8 +3328,12 @@ func orNone(s string) string {
 	return s
 }
 
-func usage(w io.Writer) {
-	fmt.Fprint(w, `ctx-optimize — gather once, refresh cheaply, answer from the store.
+func usage(w io.Writer) { fmt.Fprint(w, usageText()) }
+
+// usageText is the one command list. `<verb> --help` slices its own block out
+// of this text (flagcheck.go: usageBlock), so the two can never disagree.
+func usageText() string {
+	return `ctx-optimize — gather once, refresh cheaply, answer from the store.
 
 usage: ctx-optimize <command> [flags]
 
@@ -3563,5 +3594,5 @@ at run time (values are never written or printed).
 
 The binary is deterministic: no LLM, no DB, and network ONLY when you ask —
 your remote (push/pull), update (releases), grammar build (zig, once).
-`)
+`
 }

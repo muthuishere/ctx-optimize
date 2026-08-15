@@ -749,13 +749,20 @@ func createTemp(path string) (*os.File, error) {
 	return os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 }
 
+// writeNDJSON writes records to a temp file and renames it over path, and
+// records the content hash of what it wrote under graph/index/ (ADR 18). The hash is
+// taken from the same bytes on their way to disk, so it costs one pass over an
+// already-hot buffer and no extra read; it is what lets the lookup index tell
+// "rewritten" from "changed" — a gather that produced identical bytes must not
+// invalidate the index.
 func writeNDJSON(path string, n int, item func(int) any) error {
 	f, err := createTemp(path)
 	if err != nil {
 		return err
 	}
 	tmp := f.Name()
-	w := bufio.NewWriter(f)
+	h := sha256.New()
+	w := bufio.NewWriter(io.MultiWriter(f, h))
 	enc := json.NewEncoder(w)
 	for i := 0; i < n; i++ {
 		if err := enc.Encode(item(i)); err != nil {
@@ -773,9 +780,25 @@ func writeNDJSON(path string, n int, item func(int) any) error {
 		os.Remove(tmp)
 		return err
 	}
+	// Stat the TEMP inode, before the rename. rename(2) carries the inode's
+	// size+mtime across, so this describes exactly the bytes we hashed — while
+	// stat-ing the destination after the rename could pick up a concurrent
+	// writer's file and pair its mtime with our hash, which is the one way a
+	// sidecar could ever validate a lie.
+	st, serr := os.Stat(tmp)
 	if err := os.Rename(tmp, path); err != nil { // atomic swap: readers never see a half-written graph
 		os.Remove(tmp)
 		return err
+	}
+	if serr == nil {
+		// Best-effort: no stamp means the index reads as stale and lookups fall
+		// back to the full scan. Slower, never wrong — so it must not fail a
+		// gather that has already landed. It lands under graph/index/, which is
+		// machine-local and excluded from the manifest, so the store's
+		// transported artifact set is byte-for-byte what it was.
+		_ = writeContentStamp(path, contentStamp{
+			Size: st.Size(), MTime: st.ModTime().UnixNano(), Hash: hex.EncodeToString(h.Sum(nil)),
+		})
 	}
 	return nil
 }

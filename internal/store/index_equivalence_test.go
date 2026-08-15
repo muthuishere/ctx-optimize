@@ -88,14 +88,23 @@ func buildGroundTruth(nodes []schema.Node, edges []schema.Edge) *groundTruth {
 		// one rule: store must not import analyze, and a ground truth that
 		// called the code it audits would prove nothing.
 		hit, seen := g.byLowerLbl[k]
+		// Four tiers, not three: a DECLARATION also beats a plain node that is
+		// neither prose nor a dependency (a port, a config key, a mention). That
+		// tier is the Flask lesson written into store.labelRankNode, and this
+		// copy had not been updated for it — so the ground truth broke ties by
+		// smallest ID where the implementation preferred the declaration, and
+		// the big-store run reported 40/2001 "wrong node" on labels like
+		// `description`. The implementation was right; the auditor was stale.
 		rank := func(x *schema.Node) int {
 			switch {
 			case isImportStubID(x.ID), x.Kind == "dependency", strings.HasPrefix(x.ID, "dep://"):
-				return 2
+				return 3
 			case x.Kind == "section" || x.Kind == "document":
-				return 1
-			default:
+				return 2
+			case declKindsIdx[x.Kind]:
 				return 0
+			default:
+				return 1
 			}
 		}
 		switch {

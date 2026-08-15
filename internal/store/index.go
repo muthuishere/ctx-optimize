@@ -14,11 +14,12 @@ package store
 //
 // Two rules make it safe, and both are load-bearing:
 //
-//   - FAIL SAFE. The header records the source file's size and modtime. On any
-//     mismatch — absent, stale, truncated, garbage — the caller falls back to
-//     the full scan. The index can make an answer FAST; it can never make one
-//     WRONG. Same discipline as the wiki work in 0.12.0: we may say "slower",
-//     never "wrong".
+//   - FAIL SAFE. The header records the source file's CONTENT hash (see
+//     contenthash.go; it was size+modtime until ADR 18). On any mismatch —
+//     absent, stale, truncated, garbage — the caller falls back to the full
+//     scan. The index can make an answer FAST; it can never make one WRONG.
+//     Same discipline as the wiki work in 0.12.0: we may say "slower", never
+//     "wrong".
 //   - SETS, NEVER FIRST HITS. A key maps to every matching offset. 20.3% of
 //     linux records sit under a non-unique label ("description" alone has
 //     14,989), so a one-offset index would silently under-report while looking
@@ -40,7 +41,12 @@ import (
 // indexVersion is bumped whenever the on-disk format changes; a mismatched
 // version fails the header check and falls back, so an old index is never read
 // with new assumptions.
-const indexVersion = 1
+//
+// v2 switched the header from size+mtime to the graph's content hash (ADR 18):
+// a v1 index is not readable under the new rule, fails the header check, and is
+// rebuilt by the next gather — which now also repairs a stale index even when
+// the node set did not move.
+const indexVersion = 2
 
 const (
 	labelsIndex = "labels.idx"
@@ -129,14 +135,34 @@ func scanOffsets(path string, fn func(line []byte, off int64)) error {
 	return nil
 }
 
-// stamp is the fail-safe header: the source file's size and modtime at build
-// time. Cheap to verify, and any edit to the graph changes at least one.
-func stamp(path string) (string, error) {
-	st, err := os.Stat(path)
+func indexHeader(hash string) string { return fmt.Sprintf("#ctxidx v%d sha256=%s", indexVersion, hash) }
+
+// buildStamp is the fail-safe header written at BUILD time: the content hash of
+// the graph file. It may compute the hash (a graph written by an older binary
+// has no sidecar yet) — acceptable here, because the build is already reading
+// the whole file.
+//
+// It is keyed on CONTENT and not on size+mtime because the store rewrites the
+// graph on every gather whether or not anything moved: mtime answered
+// "rewritten", the rebuild guard answered "changed", and the two can never
+// agree. See contenthash.go for the measurement that forced this.
+func buildStamp(path string) (string, error) {
+	c, err := ensureContentStamp(path)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("#ctxidx v%d size=%d mtime=%d", indexVersion, st.Size(), st.ModTime().UnixNano()), nil
+	return indexHeader(c.Hash), nil
+}
+
+// readStamp is the same header at READ time, and it NEVER hashes — it trusts
+// the sidecar only as far as a stat can prove it, and refuses otherwise, so the
+// caller falls back to the full scan.
+func readStamp(path string) (string, bool) {
+	c, ok := readContentStamp(path)
+	if !ok {
+		return "", false
+	}
+	return indexHeader(c.Hash), true
 }
 
 // writeIndex serializes key -> offsets as sorted plain text, atomically.
@@ -199,7 +225,7 @@ func (s *Store) BuildIndex() error {
 	}
 
 	if _, err := os.Stat(s.nodesPath()); err == nil {
-		hdr, err := stamp(s.nodesPath())
+		hdr, err := buildStamp(s.nodesPath())
 		if err != nil {
 			return err
 		}
@@ -229,7 +255,7 @@ func (s *Store) BuildIndex() error {
 	}
 
 	if _, err := os.Stat(s.edgesPath()); err == nil {
-		hdr, err := stamp(s.edgesPath())
+		hdr, err := buildStamp(s.edgesPath())
 		if err != nil {
 			return err
 		}
@@ -265,8 +291,8 @@ func (s *Store) BuildIndex() error {
 // spike's 0.0001s. A lookup must touch kilobytes, not the whole index — so the
 // file stays open and binary search reads small windows with ReadAt.
 func openIndex(idxPath, srcPath string) (f *os.File, body, size int64, ok bool) {
-	want, err := stamp(srcPath)
-	if err != nil {
+	want, ok := readStamp(srcPath)
+	if !ok {
 		return nil, 0, 0, false
 	}
 	fh, err := os.Open(idxPath)
@@ -538,6 +564,26 @@ func (s *Store) IndexCurrent() bool {
 		}
 	}
 	return true
+}
+
+// IndexState names the lookup index in one word, for `status` to print (ADR 18
+// D3): "current" (lookups take the fast path), "stale" (index files exist but
+// do not match the graph, so every lookup falls back to a full scan), "absent"
+// (never built).
+//
+// The fallback is silent by design — it costs speed, never correctness — which
+// is exactly how a 270x regression shipped unnoticed. Being able to SEE it is
+// the whole point of this function.
+func (s *Store) IndexState() string {
+	if s.IndexCurrent() {
+		return "current"
+	}
+	for _, n := range []string{labelsIndex, idsIndex, edgesBySrc, edgesByTgt} {
+		if _, err := os.Stat(filepath.Join(s.indexDir(), n)); err == nil {
+			return "stale"
+		}
+	}
+	return "absent"
 }
 
 // NodeByID returns the node with exactly this id (case-sensitive), if any.

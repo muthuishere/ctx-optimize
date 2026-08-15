@@ -204,7 +204,28 @@ func compile(r *Rule) error {
 		}
 		r.res = append(r.res, re)
 	}
+	// A rule's own metadata is applied to the port node AFTER the engine has
+	// filled the reserved fields, so an engine-owned key there does not add a
+	// fact — it REPLACES one. `metadata: {"direction": "provides"}` on a
+	// `consumes` rule shipped the port under PROVIDES, inverting the headline
+	// split of the `boundaries` verb and the input to the scope join. Reject at
+	// LOAD, with the other malformed shapes, rather than skipping silently: the
+	// schema door already fails closed on a bare un-namespaced key, and the
+	// engine-owned keys were the hole in that fence (ADR
+	// 2026-08-15-authoring-loop-unenforced, D1). `flag.set` writes into the same
+	// map and had the same hole. Namespaced metadata (`otel.*`/`pack.*`/`org.*`)
+	// and the author-owned `sensitive` are untouched.
+	for _, k := range sortedKeys(r.Metadata) {
+		if schema.PortMetadataEngineOwned(k) {
+			return fmt.Errorf("metadata key %q is set by the engine and a rule may not overwrite it (namespaced keys — otel.*/pack.*/org.* — are open)", k)
+		}
+	}
 	if r.Flag != nil {
+		for _, k := range sortedKeys(r.Flag.Set) {
+			if schema.PortMetadataEngineOwned(k) {
+				return fmt.Errorf("flag.set key %q is set by the engine and a rule may not overwrite it", k)
+			}
+		}
 		re, err := regexp.Compile(r.Flag.WhenIdentifierMatches)
 		if err != nil {
 			return fmt.Errorf("flag pattern: %w", err)
@@ -212,6 +233,17 @@ func compile(r *Rule) error {
 		r.flag = re
 	}
 	return nil
+}
+
+// sortedKeys keeps the rejection message deterministic when a rule carries more
+// than one bad key — otherwise the error text changes between runs.
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Extract runs the raw-scan rules and the services join over root. It is the

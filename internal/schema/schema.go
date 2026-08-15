@@ -182,6 +182,23 @@ var portReserved = map[string]bool{
 	"producer": true, // stamped by the store on merge, not by producers
 }
 
+// portEngineOwned is the subset of portReserved that a PRODUCER computes and no
+// author may supply. The distinction matters because the reserved core is not
+// uniform: `sensitive` is reserved *for* authors — the shipped env rules set it
+// through `flag.set`, and the engine never computes it — while everything else
+// here is derived from the rule and the site. Letting an author write one of
+// these does not add a fact, it OVERWRITES one, and `direction` overwritten is
+// a port filed under the wrong half of the CONSUMES/PROVIDES split (ADR
+// 2026-08-15-authoring-loop-unenforced, D1).
+var portEngineOwned = map[string]bool{
+	"direction": true, "transport": true, "identifier": true,
+	"scope": true, "resolved": true, "raw": true, "producer": true,
+}
+
+// PortMetadataEngineOwned reports whether k is a `port` metadata key the engine
+// computes. Rule loaders reject an author-supplied value for one of these.
+func PortMetadataEngineOwned(k string) bool { return portEngineOwned[k] }
+
 func edgeReason(e Edge) string {
 	switch {
 	case strings.TrimSpace(e.Source) == "" || strings.TrimSpace(e.Target) == "":
@@ -196,7 +213,7 @@ func edgeReason(e Edge) string {
 
 // Quarantine is one dropped node/edge with the reason it failed validation.
 type Quarantine struct {
-	ID     string `json:"id"`     // node id, or "src->tgt" for an edge
+	ID     string `json:"id"` // node id, or "src->tgt" for an edge
 	Reason string `json:"reason"`
 }
 

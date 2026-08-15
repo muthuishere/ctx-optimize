@@ -926,7 +926,14 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	// a build failure must degrade speed, never correctness or the gather. A
 	// missing or stale index is detected by its header and the reader falls
 	// back to the full scan.
-	if graphChanged || force {
+	//
+	// `!IndexCurrent()` is the third arm and it is the one ADR 18 added: a
+	// gather that changed nothing used to leave a store with a dead index and
+	// nothing that would ever repair it (add, sync and up all declined; only
+	// `add --force` rebuilt). The check is four stats and a 512-byte read, so an
+	// already-current index costs nothing, and a v1 index from an older binary
+	// heals on the next gather instead of never.
+	if graphChanged || force || !s.IndexCurrent() {
 		if ierr := s.BuildIndex(); ierr != nil {
 			fmt.Fprintf(out, "index: not rebuilt (%v) — lookups fall back to a full scan\n", ierr)
 		}

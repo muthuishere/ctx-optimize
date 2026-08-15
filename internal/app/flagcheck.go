@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 )
@@ -108,6 +109,82 @@ var verbFlags = map[string][]string{
 	"hook-context": {"format"},
 	"adapters":     {"force", "all"},
 	"__autosync":   {"dir", "lock"},
+}
+
+// wantsHelp reports whether args ask for usage rather than for the verb's
+// effect. `--help` was ACCEPTED by every verb (it is in commonFlags) and then
+// IGNORED by every verb's handler, so `install --help` performed the install —
+// skills written for four agents and a global rule added to the user's home —
+// and `uninstall --help` removed them again. Same class as the unknown flag
+// that was silently dropped: a flag that reads as a QUESTION was answered with
+// an ACTION. `--help` is the flag someone types when they are not sure they
+// want the effect, so it must be handled before dispatch, for every verb (ADR
+// 2026-08-15-skills-on-by-default, D2).
+//
+// A value never starts with `--` in this parser, so any `--help` token is a
+// flag and never someone's argument.
+func wantsHelp(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "--help", "--h", "-h":
+			return true
+		case "--": // everything after the separator is literal
+			return false
+		}
+	}
+	return false
+}
+
+// verbHelp prints what the verb does and what it accepts, and writes nothing
+// else anywhere. The description is lifted from the same usage() text the bare
+// `help` verb prints, so the two can never drift; when no block matches (an
+// alias or an undocumented verb) the accepted-flag list still answers the
+// question that was asked.
+func verbHelp(w io.Writer, verb string) {
+	if block := usageBlock(verb); block != "" {
+		fmt.Fprint(w, block)
+	} else {
+		fmt.Fprintf(w, "ctx-optimize %s\n", verb)
+	}
+	if allowed, known := verbFlags[verb]; known {
+		ok := map[string]bool{}
+		for _, n := range commonFlags {
+			ok[n] = true
+		}
+		for _, n := range allowed {
+			ok[n] = true
+		}
+		fmt.Fprintf(w, "\naccepted flags: %s\n", flagList(ok))
+	}
+	fmt.Fprintln(w, "\n`ctx-optimize help` lists every command.")
+}
+
+// usageBlock returns the lines of usage() that document verb: the entry whose
+// first token matches (aliases are written `query|ask`, so the token is split
+// on `|`) plus its indented continuation lines.
+func usageBlock(verb string) string {
+	var buf strings.Builder
+	in := false
+	for _, line := range strings.Split(usageText(), "\n") {
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   ") {
+			head := strings.Fields(strings.TrimSpace(line))
+			in = false
+			if len(head) > 0 {
+				for _, alias := range strings.Split(head[0], "|") {
+					if alias == verb {
+						in = true
+					}
+				}
+			}
+		} else if strings.TrimSpace(line) == "" {
+			in = false
+		}
+		if in {
+			buf.WriteString(line)
+			buf.WriteString("\n")
+		}
+	}
+	return buf.String()
 }
 
 // checkFlags rejects a flag the verb does not accept. Returns a usage error, so

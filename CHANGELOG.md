@@ -10,6 +10,16 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+- **The lookup index no longer dies on a gather that changed nothing.** Its
+  fail-safe header is keyed on the graph's CONTENT hash instead of the file's
+  size+mtime, so a rewrite that produced identical bytes keeps the index alive —
+  and any gather now also repairs an index that is missing or stale, which
+  previously only `add --force` did. Measured on the linux kernel: `card
+  bio_split` stays at **6 ms** across an incremental gather where it used to
+  fall back to **1,629 ms**, silently, forever after. `status` now reports the
+  index as current / stale / absent, because a 270x fallback that says nothing
+  is how this shipped (ADR 2026-08-15-index-dies-on-a-noop-gather).
+
 ## [0.14.0] — 2026-08-15
 
 The release the boundary lane was for. A repo's **external surface** — what it
