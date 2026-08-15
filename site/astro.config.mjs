@@ -39,10 +39,10 @@ export default defineConfig({
 			],
 			customCss: ['@fontsource-variable/inter', './src/styles/ctx.css'],
 			components: {
-				// Adds top-level nav links beside the wordmark — the splash
+				// Puts top-level nav at the right end of the header. The splash
 				// homepage has no sidebar, so without these the docs are
 				// reachable only from the hero button.
-				SiteTitle: './src/components/SiteTitle.astro',
+				Header: './src/components/Header.astro',
 			},
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/muthuishere/ctx-optimize' },
@@ -62,6 +62,13 @@ export default defineConfig({
 						{ label: 'Cookbook', slug: 'cookbook' },
 						{ label: 'Use cases', slug: 'use-cases' },
 						{ label: 'Boundaries — the external surface', slug: 'boundaries' },
+						{ label: 'The dashboard — serve', slug: 'dashboard' },
+					],
+				},
+				{
+					label: 'Under the hood',
+					items: [
+						{ label: 'How it works', slug: 'how-it-works' },
 					],
 				},
 				{
