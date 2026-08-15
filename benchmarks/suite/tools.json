@@ -1,7 +1,7 @@
 {
   "_doc": [
     "The field, as a committed manifest. Every tool we benchmark AND every tool we",
-    "deliberately do not \u2014 with the reason, so 'why isn't X here' is answered in the",
+    "deliberately do not — with the reason, so 'why isn't X here' is answered in the",
     "repo instead of in someone's head.",
     "",
     "gatherable=true means the tool has a local CLI that builds a persistent index we",
@@ -11,13 +11,13 @@
     "",
     "ref: pinned commit. Fetched shallow (git fetch --depth 1 origin <sha>), so the",
     "clone stays small AND the version is exact. setup.py records whether the pin",
-    "took or it fell back to the default branch \u2014 a floating version must never be",
+    "took or it fell back to the default branch — a floating version must never be",
     "reported as a pinned one.",
     "",
     "SESSION FIELDS (added 2026-08-15 for benchmarks/session/session.py, the",
     "multi-pass runner). The one-pass runner measures a cold build; the session",
     "runner measures build -> query -> edit -> re-index -> query, which is what an",
-    "agent actually costs. Both read THIS manifest \u2014 one field, one source of",
+    "agent actually costs. Both read THIS manifest — one field, one source of",
     "truth.",
     "  incremental      argv/list-of-argv run after an edit. Absent means the tool",
     "                   has no incremental path and the session runner will re-run",
@@ -29,18 +29,48 @@
     "  session_query    argv template; {corpus} {index} {query} expand.",
     "  query_by_class   per-question-class override (locate/relate/staleness).",
     "  query_field      which question field feeds the command; search tools take",
-    "                   `q_literal` (the exact symbol) \u2014 deliberately their best case.",
+    "                   `q_literal` (the exact symbol) — deliberately their best case.",
     "  answers_classes  classes the tool can answer AT ALL. A class not listed is",
     "                   reported n/a and EXCLUDED from that score. Scoring a line",
     "                   matcher 0/10 on 'who calls this' is a rigged test, not a",
     "                   finding.",
     "",
     "EXTERNAL YARDSTICK: benchmarks/locbench/ scores ctx-optimize on Loc-Bench",
-    "(czlll/Loc-Bench_V1, LocAgent ACL 2025) \u2014 somebody else's ground truth and",
+    "(czlll/Loc-Bench_V1, LocAgent ACL 2025) — somebody else's ground truth and",
     "baselines. We enter its RETRIEVAL tier (no LLM), whose published peers are",
     "BM25 38.69% / CodeRankEmbed 52.55% file Acc@5; LocAgent's 84.59% is the",
     "agentic tier and is NOT our comparison. Competitors here could take the same",
-    "ranked-list protocol \u2014 that is the next step toward an external comparison."
+    "ranked-list protocol — that is the next step toward an external comparison.",
+    "",
+    "BOUNDARY CLASSES (added 2026-08-15, ADR 13). Every scored question used to be",
+    "code-locate, so the boundary lane / routes / doc links had no regression net:",
+    "a rule could stop matching and no number would move. These classes exist to",
+    "make that visible, NOT to raise our score — we are alone in several of them,",
+    "which makes a comparative number meaningless there. Per-class always, never",
+    "blended; a tool that does not claim a class is n/a, never 0; breadth is the",
+    "capability matrix, not an average.",
+    "  boundary/egress   what external services does this call",
+    "  boundary/config   which env vars does it read / which are credentials",
+    "  boundary/process  what command-line tools does it run",
+    "  api-surface       what endpoints does it expose",
+    "  transport-shape   how does it reach a peer (transport in the ANSWER)",
+    "  doc-to-code       where is this documented — scores 0 today, see below",
+    "",
+    "query_as: lets one CLASS use more than one command (both config questions are",
+    "boundary/config, but the credentials one needs the sensitive filter). What is",
+    "measured stays separate from how a tool answers it.",
+    "",
+    "KNOWN ZERO, DELIBERATELY NOT HIDDEN: doc-to-code scores 0/1. ADR 10 (doc",
+    "citations) is DRAFT and section->code edges measure ZERO in the store, so the",
+    "capability does not exist yet. It is pointed at `query` rather than marked",
+    "n/a because n/a would read as 'not our category' when the truth is 'not built",
+    "yet'. It should go 0 -> 1 when ADR 10 lands; if it does not, that is a bug.",
+    "",
+    "ALSO KNOWN: `query` cannot reach boundary facts at all (ADR 14 — querying",
+    "api.openai.com does not return the node whose id IS api.openai.com). So the",
+    "boundary classes are answered by `nodes --kind port --where ...`, the verb",
+    "that works today. The natural-language path scoring ~0 is recorded in the",
+    "session results as natural_query_gap rather than quietly routed around."
   ],
   "tools": [
     {
@@ -112,12 +142,96 @@
           "{corpus}",
           "--store",
           "{index}"
+        ],
+        "boundary/egress": [
+          "bin/ctx-optimize",
+          "nodes",
+          "--kind",
+          "port",
+          "--where",
+          "direction=consumes",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ],
+        "boundary/config": [
+          "bin/ctx-optimize",
+          "nodes",
+          "--kind",
+          "port",
+          "--where",
+          "transport=config.env",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ],
+        "boundary/secret": [
+          "bin/ctx-optimize",
+          "nodes",
+          "--kind",
+          "port",
+          "--where",
+          "sensitive=true",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ],
+        "boundary/process": [
+          "bin/ctx-optimize",
+          "nodes",
+          "--kind",
+          "port",
+          "--where",
+          "transport=process.exec",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ],
+        "api-surface": [
+          "bin/ctx-optimize",
+          "nodes",
+          "--kind",
+          "port",
+          "--where",
+          "direction=provides",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ],
+        "transport-shape": [
+          "bin/ctx-optimize",
+          "card",
+          "{query}",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ],
+        "doc-to-code": [
+          "bin/ctx-optimize",
+          "card",
+          "{query}",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
         ]
       },
       "answers_classes": [
         "locate",
         "relate",
-        "staleness"
+        "staleness",
+        "boundary/egress",
+        "boundary/config",
+        "boundary/process",
+        "api-surface",
+        "transport-shape",
+        "doc-to-code"
       ]
     },
     {
@@ -136,7 +250,7 @@
       "llm": false,
       "embeddings": false,
       "serving": "CLI + agent skill",
-      "note": "PyPI package is 'graphifyy', binary is 'graphify'. The repo appears to have moved from safishamsi/ to Graphify-Labs/ since the 2026-07-24 run; setup tries the pinned URL first, then repo_alt, and records which resolved. Queries hard-cap at 512MB of graph.json (GRAPHIFY_MAX_GRAPH_BYTES) \u2014 on linux it builds a 1.2GB graph it then refuses to read, so the suite sets the cap explicitly and records that it did."
+      "note": "PyPI package is 'graphifyy', binary is 'graphify'. The repo appears to have moved from safishamsi/ to Graphify-Labs/ since the 2026-07-24 run; setup tries the pinned URL first, then repo_alt, and records which resolved. Queries hard-cap at 512MB of graph.json (GRAPHIFY_MAX_GRAPH_BYTES) — on linux it builds a 1.2GB graph it then refuses to read, so the suite sets the cap explicitly and records that it did."
     },
     {
       "name": "codegraph",
@@ -193,12 +307,12 @@
       "llm": false,
       "embeddings": false,
       "serving": "MCP",
-      "note": "added 2026-08-05, not in the 2026-07-24 run. ref null = default branch; setup records the resolved SHA so the run is still reproducible after the fact. May require a graph backend \u2014 if it does, it drops to gatherable=false with the reason recorded rather than being quietly skipped."
+      "note": "added 2026-08-05, not in the 2026-07-24 run. ref null = default branch; setup records the resolved SHA so the run is still reproducible after the fact. May require a graph backend — if it does, it drops to gatherable=false with the reason recorded rather than being quietly skipped."
     },
     {
       "name": "ast-grep",
       "gatherable": false,
-      "gatherable_reason": "no index \u2014 it scans the tree on every query, so it has no cold-gather row to occupy",
+      "gatherable_reason": "no index — it scans the tree on every query, so it has no cold-gather row to occupy",
       "kind": "scanner",
       "entry": "ast-grep",
       "query": "run -p <pattern> -l <lang> <path>",
@@ -210,7 +324,7 @@
     {
       "name": "repomix",
       "gatherable": false,
-      "gatherable_reason": "packs a repo into one LLM-ready file rather than building a queryable graph \u2014 no query verb to time",
+      "gatherable_reason": "packs a repo into one LLM-ready file rather than building a queryable graph — no query verb to time",
       "kind": "context-packer",
       "npm": "repomix",
       "llm": false,
@@ -221,7 +335,7 @@
     {
       "name": "serena",
       "gatherable": false,
-      "gatherable_reason": "LSP-over-MCP with no persistent graph \u2014 nothing to build, nothing to size",
+      "gatherable_reason": "LSP-over-MCP with no persistent graph — nothing to build, nothing to size",
       "kind": "lsp",
       "llm": false,
       "embeddings": false,
@@ -240,7 +354,7 @@
     {
       "name": "augment / cody / greptile / deepwiki",
       "gatherable": false,
-      "gatherable_reason": "SaaS or cloud-indexed \u2014 no single-machine deterministic path, and code egress makes them a different product category",
+      "gatherable_reason": "SaaS or cloud-indexed — no single-machine deterministic path, and code egress makes them a different product category",
       "kind": "commercial",
       "embeddings": true,
       "serving": "SaaS/MCP"
@@ -253,7 +367,7 @@
     {
       "name": "zoekt",
       "gatherable": false,
-      "why_not": "ADJACENT CATEGORY, not a competitor (owner call 2026-08-15). Trigram TEXT search \u2014 a search box, not a symbol graph. Cannot answer 'who calls this' and does not claim to. Same role as ripgrep in this field: a speed reference from a different category, listed for completeness."
+      "why_not": "ADJACENT CATEGORY, not a competitor (owner call 2026-08-15). Trigram TEXT search — a search box, not a symbol graph. Cannot answer 'who calls this' and does not claim to. Same role as ripgrep in this field: a speed reference from a different category, listed for completeness."
     },
     {
       "name": "scip indexers (scip-go, scip-typescript, ...)",
@@ -265,7 +379,7 @@
       "gatherable": false,
       "kind": "search",
       "local": true,
-      "why_not": "ADJACENT CATEGORY, not a competitor \u2014 an on-the-fly regex matcher with no index and no symbol graph. Included in the SESSION runner as the honest floor: it is indexless (build and incremental are a true 0s) and can never be stale, which are real advantages a build-time-only benchmark hides. It is excluded from `relate` because no line matcher can answer 'what breaks if I change this'.",
+      "why_not": "ADJACENT CATEGORY, not a competitor — an on-the-fly regex matcher with no index and no symbol graph. Included in the SESSION runner as the honest floor: it is indexless (build and incremental are a true 0s) and can never be stale, which are real advantages a build-time-only benchmark hides. It is excluded from `relate` because no line matcher can answer 'what breaks if I change this'.",
       "session_query": [
         "rg",
         "--no-heading",

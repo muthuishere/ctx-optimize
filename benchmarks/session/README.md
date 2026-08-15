@@ -126,3 +126,54 @@ not; that run is the next step, not a claim yet.
    touch; until then the number is explained rather than hidden.
 7. **No cross-machine comparability.** Everything here is one machine; the
    numbers are ratios between tools on the same box, never absolutes.
+
+## Boundary classes (ADR 13)
+
+Added 2026-08-15. Until then every scored question in this repo — all 14
+competitor-quality questions and all 20 judged questions per corpus — was
+code-locate ("where is symbol X defined"). The boundary lane, routes and doc
+links had unit tests and **no number**: a rule could stop matching, the
+services registry could lose a vendor, and no score would move.
+
+These classes are a **regression net, not a scoreboard play**. We are alone in
+most of them, which makes a comparative score meaningless; the number that
+matters is our own, over time.
+
+| class | the developer's question |
+|---|---|
+| `boundary/egress` | what external services does this call? |
+| `boundary/config` | which env vars does it read / which are credentials? |
+| `boundary/process` | what command-line tools does it shell out to? |
+| `api-surface` | what endpoints does it expose? |
+| `transport-shape` | how does it reach a peer? (transport in the ANSWER) |
+| `doc-to-code` | which source files does this doc point to? |
+
+Run: `python3 session.py --session sessions/boundaries-k8s.json --tool ctx-optimize --rounds 1`
+
+### Rules these inherit
+
+* **Per class, never blended.** A single number would hide both that ripgrep
+  beats us on `locate` and that nobody else enters `boundary`.
+* **`n/a`, never 0** for a tool that does not claim a class.
+* **Breadth is the capability matrix, not an average.** We do not fold classes
+  we are alone in into a score we then win.
+* **Developer phrasing (D5).** "What command line tools does this run", never
+  "list nodes where transport=process.exec". The schema belongs in the answer.
+* **Mechanical ground truth (D2).** Every expectation was verified with
+  `ctx-optimize search` — the same independent sweep `boundaries verify` uses —
+  before it entered a question file.
+
+### Two things this run deliberately does NOT hide
+
+**`doc-to-code` scores 0/1, and should.** ADR 10 (doc citations) is DRAFT and
+section→code edges measure zero. The k8s `sample-controller/README.md` really
+does cite a real, resolvable `.go` file, so the fact exists — we just cannot
+answer it yet. It must go 0 → 1 when ADR 10 lands.
+
+**`query` scores 0/4 on these questions.** The classes are answered by
+`nodes --kind port --where …`, the verb that works. Asking the same questions
+through `query` — the verb our own instructions tell agents to reach for —
+returns token noise (`toExternalServiceOrError` for "what external services do
+we call"). Recorded in the session file as `natural_query_gap` rather than
+routed around, because picking the verb that works would hide the user-facing
+defect. ADR 14 has the diagnosis, ADR 15 the proposed fix.

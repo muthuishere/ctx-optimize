@@ -281,8 +281,14 @@ class Tool:
         argv = self.spec["session_query"]
         # A tool may declare a different command per question class (e.g. we use
         # `query` to locate and `affected` to relate).
+        #
+        # `query_as` lets ONE class use more than one command without inventing
+        # a class to carry it: "which env vars does this read" and "which of
+        # them are credentials" are both boundary/config, but the second needs
+        # the sensitive filter. The class (what is being measured) stays
+        # separate from the command (how this tool answers it).
         per_class = self.spec.get("query_by_class", {})
-        argv = per_class.get(question["class"], argv)
+        argv = per_class.get(question.get("query_as", question["class"]), argv)
         # Search tools get the LITERAL symbol, not the natural-language terms —
         # deliberately the most generous input for them. Handing ripgrep
         # "where are requests hashed" and scoring it 0 would be a rigged test;
@@ -304,20 +310,57 @@ class Tool:
 
 # --------------------------------------------------------------------- grading
 #
-# Grading is exact substring match against `expect_any` / `expect_absent`, on
-# the tool's own stdout. No LLM, no rubric, no judgement. The cost of that
-# rigour is that a question must name something textually unambiguous, which is
-# why the question sets are small and hand-checked.
+# Grading is exact substring match against `expect_any` / `expect_all` /
+# `expect_absent`, on the tool's own stdout. No LLM, no rubric, no judgement.
+# The cost of that rigour is that a question must name something textually
+# unambiguous, which is why the question sets are small and hand-checked.
+#
+# ADR 13 D2 holds the new boundary classes to exactly this bar: an env var at a
+# real file:line, a host in a real literal, a route confirmable — every
+# expectation below was verified with `ctx-optimize search` (the same
+# independent sweep `boundaries verify` uses) before it entered a question set.
+
+
+def _wordish(ch):
+    return ch.isalnum() or ch == "_"
+
+
+def _found(needle, output):
+    """Word-boundary match, but only at edges that ARE word characters.
+
+    A bare `\\b` is wrong for expectations that start or end with punctuation.
+    `\\b/healthz\\b` requires a WORD character immediately before the slash, so
+    it never matched `port:network.http:</healthz` — the route was right there
+    and the grader scored it 0. Measured: api-surface read 0/1 on a route that
+    `nodes` was printing.
+
+    A grader lies in both directions, so this is deliberately the narrow fix:
+    identifiers still get real boundaries (`Merge` must not match `Merged`),
+    while `/healthz` and `ws://x` fall back to substring at the punctuation end.
+    """
+    left = r"(?<!\w)" if _wordish(needle[0]) else ""
+    right = r"(?!\w)" if _wordish(needle[-1]) else ""
+    return re.search(left + re.escape(needle) + right, output) is not None
 
 
 def grade(question, output):
     """Return (scored: bool, correct: bool, detail: str)."""
     if "expect_absent" in question:
         absent = question["expect_absent"]
-        hit = re.search(r"\b%s\b" % re.escape(absent), output)
-        return True, hit is None, ("stale: still reports %s" % absent) if hit else "ok"
+        hit = _found(absent, output)
+        return True, not hit, ("stale: still reports %s" % absent) if hit else "ok"
+    # expect_all: EVERY term must appear. This is what makes `transport-shape`
+    # gradeable without asking a schema question (ADR 13 D5) — we ask "how does
+    # X reach Y", and require the ANSWER to carry both the peer AND the
+    # transport. An expect_any there would pass on the host alone and prove
+    # nothing about whether we know it is HTTP.
+    if "expect_all" in question:
+        missing = [w for w in question["expect_all"] if not _found(w, output)]
+        if missing:
+            return True, False, "missing: " + ", ".join(missing)
+        return True, True, "all of: " + ", ".join(question["expect_all"])
     for want in question["expect_any"]:
-        if re.search(r"\b%s\b" % re.escape(want), output):
+        if _found(want, output):
             return True, True, want
     return True, False, "no expected symbol in output"
 
@@ -418,21 +461,53 @@ def report(session, results, out=sys.stdout):
         w(f"{r['tool']:<16}{build_s:>12}{human_bytes(b['index_bytes']):>10}"
           f"{human_bytes(b['rss']):>11}{inc_med:>13.2f}s{total:>14.2f}s\n")
 
-    w("\nQUALITY — a tool that cannot answer a class is n/a, never 0\n")
-    w(f"{'tool':<16}{'locate (cold)':>15}{'locate (warm)':>15}"
-      f"{'relate (cold)':>15}{'relate (warm)':>15}{'staleness':>12}\n")
+    # Classes are discovered from the session, never hardcoded — ADR 13 adds
+    # boundary/egress, boundary/config, boundary/process, api-surface,
+    # transport-shape and doc-to-code, and a hardcoded locate/relate table
+    # would silently drop every one of them.
+    classes = []
+    for q in session["questions"] + [p for r in session["rounds"]
+                                     for p in r.get("probes", [])]:
+        if q["class"] not in classes:
+            classes.append(q["class"])
+
+    w("\nQUALITY — per class, NEVER blended. A tool that cannot answer a class\n")
+    w("is n/a and EXCLUDED, never scored 0 (ADR 13 D1).\n\n")
+    w(f"{'class':<20}")
     for r in results:
-        cells = []
-        for cls in ("locate", "relate"):
-            c = score(r["cold_queries"]["queries"], cls)
+        w(f"{r['tool']:>18}")
+    w("\n")
+    for cls in classes:
+        w(f"{cls:<20}")
+        for r in results:
+            cold = score(r["cold_queries"]["queries"], cls)
             warm_rows = [q for ph in r["rounds"] for q in ph["queries"]]
             wm = score(warm_rows, cls)
-            cells.append(f"{c[0]}/{c[1]}" if c[0] is not None else "n/a")
-            cells.append(f"{wm[0]}/{wm[1]}" if wm[0] is not None else "n/a")
-        st = score([q for ph in r["rounds"] for q in ph["queries"]], "staleness")
-        stale = f"{st[0]}/{st[1]}" if st[0] is not None else "n/a"
-        w(f"{r['tool']:<16}{cells[0]:>15}{cells[1]:>15}"
-          f"{cells[2]:>15}{cells[3]:>15}{stale:>12}\n")
+            if cold[0] is None and wm[0] is None:
+                cell = "n/a"
+            else:
+                parts = []
+                if cold[0] is not None:
+                    parts.append(f"{cold[0]}/{cold[1]}")
+                if wm[0] is not None:
+                    parts.append(f"{wm[0]}/{wm[1]}w")
+                cell = " ".join(parts)
+            w(f"{cell:>18}")
+        w("\n")
+
+    # Breadth is a CAPABILITY STATEMENT, not a score (ADR 13 D1). We do not
+    # average our unique classes into a number we then win; we say plainly who
+    # answers what and let the reader draw the conclusion.
+    w("\nCAPABILITY MATRIX — which classes each tool answers AT ALL\n")
+    w(f"{'class':<20}")
+    for r in results:
+        w(f"{r['tool']:>18}")
+    w("\n")
+    for cls in classes:
+        w(f"{cls:<20}")
+        for r in results:
+            w(f"{('yes' if cls in r.get('answers_classes', []) else '—'):>18}")
+        w("\n")
 
     w("\nSTALENESS DETAIL — did the tool answer the NEW truth after the edit?\n")
     for r in results:

@@ -1,0 +1,170 @@
+{
+  "_doc": [
+    "BOUNDARY CLASSES on a boundary-rich corpus (ADR 13). Everything a skeptic",
+    "needs to reproduce or attack this run is in this file: the corpus commit,",
+    "the exact edit, the questions, and the expected answers.",
+    "",
+    "WHY THIS EXISTS, and it is not to raise our score: until now every scored",
+    "question in this repo was code-locate, so the boundary lane had unit tests",
+    "and no NUMBER. A rule could stop matching, the services registry could lose",
+    "a vendor, and nothing would move. These questions are a regression net. We",
+    "are alone in most of these classes, which makes a comparative score",
+    "meaningless — the number that matters is OUR OWN, over time.",
+    "",
+    "WHY KUBERNETES: linux has no HTTP egress and Newtonsoft has no routes, so",
+    "neither can host these classes. k8s carries 111 config.env, 205",
+    "network.http and 88 process.exec ports, and it is public and pinnable.",
+    "reqsume is richer (real vendors, real secrets) but PRIVATE, so a session",
+    "referencing it could not be reproduced by anyone else.",
+    "",
+    "PHRASING (ADR 13 D5): every question is one a developer would ask if this",
+    "tool did not exist. 'What command line tools does this run' — not 'list",
+    "nodes where transport=process.exec'. The schema appears in the ANSWER,",
+    "never in the question. That is what makes a competitor's inability to",
+    "answer a real capability gap rather than an artifact of our vocabulary.",
+    "",
+    "GROUND TRUTH (ADR 13 D2): every expectation below was verified with",
+    "`ctx-optimize search` — the same independent sweep `boundaries verify`",
+    "uses — before it entered this file. Hit counts at v1.30.2:",
+    "  KUBECONFIG 134 · BIND_ADDRESS 5 · AWS_SSH_KEY 2 · apparmor_parser 4",
+    "  accounts.google.com 6",
+    "Nothing here is graded by judgement; it is exact word-boundary match."
+  ],
+  "corpus": {
+    "name": "go-kubernetes",
+    "path": "~/ctx-bench-arena/multilang/corpora/go-kubernetes",
+    "ref": "v1.30.2 (39683505)",
+    "note": "public, pinned by tag. 111 config.env / 205 network.http / 88 process.exec ports measured at this pin."
+  },
+  "description": "Boundary classes — what this system calls, reads, runs and exposes.",
+  "questions": [
+    {
+      "id": "E01",
+      "class": "boundary/egress",
+      "q": "what external services does this project call over the network",
+      "q_literal": "accounts.google.com",
+      "expect_any": [
+        "accounts.google.com"
+      ],
+      "why": "A real third-party dependency: the OIDC authenticator reaches Google's token endpoint. Verified at staging/src/k8s.io/apiserver/plugin/pkg/authenticator/token/oidc/oidc.go (6 search hits). This is the question an on-call engineer asks before a network policy change, and no measured competitor models it."
+    },
+    {
+      "id": "C01",
+      "class": "boundary/config",
+      "q": "which environment variables does this read",
+      "q_literal": "BIND_ADDRESS",
+      "expect_any": [
+        "BIND_ADDRESS"
+      ],
+      "why": "5 search hits. Deliberately NOT KUBECONFIG (134 hits) — a term that common could match prose or a comment and pass for the wrong reason."
+    },
+    {
+      "id": "C02",
+      "class": "boundary/config",
+      "query_as": "boundary/secret",
+      "q": "which configuration values are credentials",
+      "q_literal": "AWS_SSH_KEY",
+      "expect_all": [
+        "AWS_SSH_KEY",
+        "AZURE_SSH_KEY"
+      ],
+      "why": "expect_all, so passing requires the sensitivity JUDGEMENT and not one lucky substring. Both are flagged sensitive by the KEY|TOKEN|SECRET|PASSWORD rule. NOTE: this asserts NAMES only — printing a secret's VALUE would be a doctrine violation, and the harness must never be the thing that starts doing it."
+    },
+    {
+      "id": "P01",
+      "class": "boundary/process",
+      "q": "what command line tools does this shell out to",
+      "q_literal": "apparmor_parser",
+      "expect_any": [
+        "apparmor_parser"
+      ],
+      "why": "4 search hits. A real subprocess dependency — the kubelet shells out to apparmor_parser, which is the kind of undeclared host requirement that breaks a container image."
+    },
+    {
+      "id": "A01",
+      "class": "api-surface",
+      "q": "what http endpoints does this expose",
+      "q_literal": "/healthz",
+      "expect_any": [
+        "/healthz",
+        "/metrics"
+      ],
+      "why": "Both are literal registered routes. expect_any because either is a correct answer to 'what does it expose' and pinning exactly one would grade presentation rather than knowledge."
+    },
+    {
+      "id": "T01",
+      "class": "transport-shape",
+      "q": "accounts.google.com",
+      "q_literal": "accounts.google.com",
+      "expect_all": [
+        "accounts.google.com",
+        "network.http"
+      ],
+      "why": "ADR 13 D5's hard case. The developer question is 'how does the apiserver reach Google's identity service' — over HTTP, or a library call? expect_all requires the answer to carry BOTH the peer and the transport, so naming the host alone fails. The transport is in the ANSWER; the question never mentions our schema."
+    },
+    {
+      "id": "D01",
+      "class": "doc-to-code",
+      "q": "staging/src/k8s.io/sample-controller/README.md",
+      "q_literal": "staging/src/k8s.io/sample-controller/README.md",
+      "expect_any": [
+        "zz_generated.deepcopy.go"
+      ],
+      "intent": "which source files does the sample-controller documentation point to?",
+      "why": "SCORES 0 AND SHOULD — this is a regression net entry for a capability that does not exist yet, not a defect. The README genuinely cites `pkg/apis/samplecontroller/v1alpha1/zz_generated.deepcopy.go`, and that file genuinely exists, so the fact is real and resolvable. But ADR 10 (doc citations) is DRAFT and section->code edges measure ZERO, so `card` on the README shows `contains` and nothing else. MUST go 0 -> 1 when ADR 10 lands; if it does not, ADR 10 did not work. An earlier version of this question expected merely 'README' and PASSED on a lexical hit against a doc section — a false pass that measured nothing. Kept as a warning: an expectation that any doc-shaped answer satisfies is not a test."
+    }
+  ],
+  "rounds": [
+    {
+      "name": "introduce a new external host and a new env var",
+      "edits": [
+        {
+          "op": "append_symbol",
+          "file": "cluster/gce/gci/mounter/mounter.go",
+          "symbol": "ctxbenchBoundaryProbe",
+          "text": "\n// ctxbench: appended by the boundary session, reverted in a finally block.\nfunc ctxbenchBoundaryProbe() (string, string) {\n\treturn os.Getenv(\"CTXBENCH_NEW_SETTING\"), \"https://ctxbench-new-host.example/v1\"\n}\n",
+          "why": "Adds ONE new env read and ONE new literal host to a file that is already a graph node. Both names are unique to this benchmark, so a probe cannot pass on a pre-existing fact."
+        }
+      ],
+      "probes": [
+        {
+          "id": "S01",
+          "class": "boundary/config",
+          "q": "which environment variables does this read",
+          "q_literal": "CTXBENCH_NEW_SETTING",
+          "expect_any": [
+            "CTXBENCH_NEW_SETTING"
+          ],
+          "why": "The boundary lane's INCREMENTAL correctness: a new env read must appear after re-index. An index that never updated fails here."
+        },
+        {
+          "id": "S02",
+          "class": "boundary/egress",
+          "q": "what external services does this project call over the network",
+          "q_literal": "ctxbench-new-host.example",
+          "expect_any": [
+            "ctxbench-new-host.example"
+          ],
+          "why": "Same, for egress. These are the boundary equivalent of the staleness probes: a tool that re-indexes in 0ms by doing nothing fails both."
+        }
+      ]
+    }
+  ],
+  "natural_query_gap": {
+    "measured": "2026-08-15, go-kubernetes v1.30.2",
+    "result": "query scores 0/4 on the boundary questions",
+    "detail": [
+      "The boundary classes above are answered by `nodes --kind port --where ...`,",
+      "which is the verb that works today. Asking the SAME questions through",
+      "`query` — the verb our own instructions tell an agent to reach for — scores",
+      "0/4: 'what external services does this call' returns toExternalServiceOrError",
+      "and WithExternalIPs, matching on the tokens 'external'/'services'.",
+      "",
+      "This is recorded here rather than routed around, because a benchmark that",
+      "quietly picks the verb that works would hide the actual user-facing defect.",
+      "ADR 14 has the diagnosis (an exact identifier match earns no ranking boost);",
+      "ADR 15 proposes the `boundaries` verb. When either lands, this number should",
+      "move and the query_by_class entries in tools.json become a one-line change."
+    ]
+  }
+}
