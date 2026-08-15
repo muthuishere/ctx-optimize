@@ -247,64 +247,51 @@ func runCorpus(t *testing.T, base, specPath string) {
 			t.Errorf("calls into *%s = %d, golden floor %d", m.TargetSuffix, n, m.Min)
 		}
 	}
-	// Determinism at corpus scale. ADR 2026-08-14-stable-node-identity blocks
-	// byte-identity here — same-name declarations collapse to one id and the
-	// surviving copy's LOCATION varies per run (354 nodes on linux/block, 229
-	// on Newtonsoft). The identity SET is what survives that bug and is still
-	// worth pinning: it catches a node or edge appearing/vanishing between
-	// runs, which is a different and worse failure than a line number moving.
-	// Promote this to storeDigest() byte-equality once ADR 5 lands.
+	// Determinism at corpus scale, BYTE-IDENTICAL. This was identity-SET only
+	// until ADR 2026-08-14-stable-node-identity landed: same-name declarations
+	// collapse to one node id, and with an id-only comparator the surviving
+	// copy's LOCATION varied per run (354 nodes on linux/block, 229 on
+	// Newtonsoft). The total order (id, widest span, earliest start, …) made
+	// two gathers agree exactly, so this tier now pins the strongest property
+	// there is: nothing moved, not even a line number.
+	//
+	// If this fails with identical node ids, suspect a new collision class and
+	// read nodeLess — an id-only tie is exactly what ADR 5 removed.
 	if !testing.Short() {
 		reStore, _ := timedGather()
-		reNodes := map[string]bool{}
-		reEdges := map[string]bool{}
-		for _, key := range storeKeys(t, reStore) {
-			st, err := store.Open(reStore, key)
-			if err != nil {
-				t.Fatal(err)
-			}
-			ns, err := st.Nodes()
-			if err != nil {
-				t.Fatal(err)
-			}
-			es, err := st.Edges()
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, n := range ns {
-				reNodes[n.ID] = true
-			}
-			for _, e := range es {
-				reEdges[e.Source+"\x00"+e.Relation+"\x00"+e.Target] = true
-			}
-		}
-		var missing, added int
-		for id := range nodeIndex {
-			if !reNodes[id] {
-				if missing++; missing <= 3 {
-					t.Errorf("node id present in run 1, absent in run 2: %s", id)
+		if got, want := storeDigest(t, reStore), storeDigest(t, storeRoot); got != want {
+			t.Errorf("two identical gathers produced different graph bytes\n  run1 %s\n  run2 %s", want, got)
+			// Narrow it for the reader: ids stable but bytes differing means a
+			// location or metadata moved, which is the ADR 5 failure shape.
+			reNodes := map[string]bool{}
+			for _, key := range storeKeys(t, reStore) {
+				st, err := store.Open(reStore, key)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ns, err := st.Nodes()
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, n := range ns {
+					reNodes[n.ID] = true
 				}
 			}
-		}
-		for id := range reNodes {
-			if _, ok := nodeIndex[id]; !ok {
-				if added++; added <= 3 {
-					t.Errorf("node id absent in run 1, present in run 2: %s", id)
+			var missing, added int
+			for id := range nodeIndex {
+				if !reNodes[id] {
+					missing++
 				}
 			}
-		}
-		if missing > 3 || added > 3 {
-			t.Errorf("identity set unstable across two gathers: %d missing, %d added (first 3 of each shown)", missing, added)
-		}
-		if len(reEdges) != len(allEdges) {
-			// Edge tuples are deduped into a set here; compare set sizes only
-			// after the same dedup, or a legitimate duplicate would read as drift.
-			seen := map[string]bool{}
-			for _, e := range allEdges {
-				seen[e.src+"\x00"+e.rel+"\x00"+e.dst] = true
+			for id := range reNodes {
+				if _, ok := nodeIndex[id]; !ok {
+					added++
+				}
 			}
-			if len(seen) != len(reEdges) {
-				t.Errorf("edge identity set unstable across two gathers: %d vs %d distinct tuples", len(seen), len(reEdges))
+			if missing == 0 && added == 0 {
+				t.Errorf("  node id sets are IDENTICAL — a location or metadata field moved (ADR 5 shape)")
+			} else {
+				t.Errorf("  node id sets differ: %d missing, %d added", missing, added)
 			}
 		}
 	}

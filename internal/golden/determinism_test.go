@@ -22,16 +22,9 @@ import (
 // collapse to one node id and `sort.Slice` is unstable when comparing ids
 // alone, so which copy survives varies per run.
 //
-// That bug is real, pre-existing, and NOT fixed here. This file pins the
-// property at the strongest level each tier can honestly hold today:
-//
-//   - hermetic fixtures  -> byte-identical (verified passing; they contain no
-//     colliding declarations, so there is nothing to be unstable about)
-//   - corpus tier        -> identity-SET equality (same node ids, same edge
-//     tuples), which is what survives ADR 5
-//
-// When ADR 5 lands, the corpus tier should be promoted to byte-identity and
-// this comment deleted.
+// ADR 5 landed on 2026-08-15 (total node order: id, widest span, earliest
+// start, ...), so BOTH tiers now assert byte-identity — hermetic here, corpus
+// in corpus_test.go. Two identical gathers must produce identical bytes.
 
 // storeDigest renders a store root as a digest per module, hashing the raw
 // graph files — the strictest possible statement of "nothing moved".
