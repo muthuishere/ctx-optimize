@@ -1,9 +1,9 @@
 ---
 title: ctx-optimize
-description: A deterministic code knowledge graph for coding agents. Ask who calls this, what breaks if I change it, and what this system talks to — every answer a resolved symbol with its real file:line. One binary, no LLM, no database, no MCP.
+description: A deterministic code knowledge graph for coding agents. 67% correct against a shell agent's 35%, on 15.0 tool calls against 42.7 — graded, 3 runs, n = 36 per arm. One binary, no LLM, no database, no MCP.
 template: splash
 hero:
-  tagline: Your agent is guessing at line numbers. Give it a graph instead — one binary, no LLM, no database, no MCP.
+  tagline: Better answers, a third of the round trips, and no model in the loop. A deterministic code graph your agent queries instead of guessing at line numbers.
   actions:
     - text: Quick start
       link: /ctx-optimize/quickstart/
@@ -16,22 +16,57 @@ hero:
 
 import { Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
 
-<video
-	class="ctx-video"
-	controls
-	playsinline
-	preload="metadata"
-	poster="/ctx-optimize/media/explainer-poster.jpg"
->
-	<source src="/ctx-optimize/media/explainer.mp4" type="video/mp4" />
-</video>
-
 ```bash
 npm install -g @muthuishere/ctx-optimize   # v0.14.0 · one static binary per platform
 cd your-repo && ctx-optimize up            # one verb: bootstrap, gather, or pull
 ```
 
-## It grepped. It found the right files. It named zero callers.
+## The scoreboard, before anything else
+
+One agent, three arms, same twelve hand-verified questions on **gorilla/mux** — small,
+modern, well-named Go, the terrain where plain grep is already strong. **3 runs, n = 36
+answers per arm**, model `gpt-4o-mini`, graded deterministically: no LLM judge, the same
+rule for every arm, and the grader never saw which tool produced the answer.
+
+| | shell (ripgrep) | ctx-optimize | graphify | proven at |
+|---|---|---|---|---|
+| Overall correctness | 35% | **67%** | 40% | [the graded run](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) |
+| Correct on "who calls this / what breaks if I change it" | 29% | **79%** | 42% | [the graded run](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) |
+| Correct on "where is X" | **47%** | 42% | 36% | [the loss we publish](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) |
+| Tool calls per run | 42.7 | **15.0** | 26.0 | [round trips and wall time](/ctx-optimize/benchmarks/#2-round-trips-tokens-and-wall-time) |
+| Wall seconds per run | 65.5 s | **40.1 s** | 43.1 s | [round trips and wall time](/ctx-optimize/benchmarks/#2-round-trips-tokens-and-wall-time) |
+| Empty answers · runs that hit the step cap | 4 · 3 | **0 · 0** | 0 · 0 | [the graded run](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) |
+
+**Grep wins "where is X"** — that is what a string search is for, and the row stays.
+
+### Tokens: it depends on the harness, and both halves are ours
+
+On a **small-model harness** — `gpt-4o-mini` via OpenRouter, tokens and cost taken from
+OpenRouter's own accounting rather than estimated — the store arm used **36% fewer tokens**
+(15,078 → 9,659) at **31% lower cost** ($0.0024 → $0.0016), in **4 steps against 11**. That
+is **4 questions, one run, one corpus, one model** — a far smaller sample than the
+correctness rows above, which are 12 questions over 3 runs, n = 36 per arm. Read it as
+directional, not as a rate.
+
+On **frontier harnesses it is parity**: the same store moved token usage by **−0.2% on
+Claude Code and +3.0% on Codex**.
+
+Both are true because of the mechanism. In a thin loop, retrieval *is* most of the context,
+so cutting 11 steps to 4 cuts tokens with it. On Claude Code and Codex the agent's own fixed
+costs — system prompt, reasoning, the answer itself — dominate, and no retrieval tool
+shrinks those. **What we will not claim is a universal token saving**, because we measured
+that and it is not there:
+[what we do not claim](/ctx-optimize/limits/#-saves-you-tokens-universally) ·
+[the token numbers, with their provenance](/ctx-optimize/benchmarks/#2-round-trips-tokens-and-wall-time).
+
+Under the answers, the index itself: v0.14.0 gathers the **Linux kernel in 55 s** (from
+124 s) and answers `card` on it in **under 20 ms**
+([gather and query](/ctx-optimize/benchmarks/#3-gather-and-query-v0140)). On 253–1,474-file
+corpora, in the first **pin-verified** cross-tool run, we lead cold gather, warm re-run,
+query latency and store size against CodeGraph, graphify and GitNexus
+([the pinned run](/ctx-optimize/compare/#2-re-run-2026-08-15--the-first-pin-verified-run)).
+
+## What 35% against 67% actually looks like
 
 This is a recorded transcript, not a scenario we imagined. We asked a grep-armed agent
 *which functions call `requestWithVars`*. It searched, got matching **lines**, and answered
@@ -67,24 +102,11 @@ The following functions call `requestWithVars`:
 </Tabs>
 
 Grep hands over lines. The store hands over resolved symbols. Every line handed over is
-another read, another grep, another round trip — and that is what the rest of these
-numbers are made of.
+another read, another grep, another round trip — which is what the 42.7-against-15.0 row is
+made of, and why the shell arm finished later out of individually faster calls.
 
-## The graded run
-
-Corpus **gorilla/mux** — small, modern, well-named Go, the terrain where plain grep is
-already strong. Three arms, one clone each, twelve hand-verified questions,
-**3 runs, n = 36 answers per arm**, model `gpt-4o-mini`, deterministic grading.
-
-| | shell (ripgrep) | ctx-optimize | graphify |
-|---|---|---|---|
-| Correct on "who calls / what breaks" | 29% | **79%** | — |
-| Overall correctness | 35% | **67%** | 40% |
-| Tool calls per run | 42.7 | **15.0** | — |
-| Wall seconds per run | 65.5 s | **40.1 s** | — |
-| Empty answers | 4 | **0** | — |
-
-[The full graded run →](/ctx-optimize/benchmarks/)
+Both transcripts in full, and every question in the set:
+[the graded run →](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run)
 
 ## One command for the external surface
 
@@ -113,11 +135,14 @@ never stored. [How it works, and its two honest limits →](/ctx-optimize/bounda
 ## Now the part that cuts the other way
 
 **ripgrep is faster than us on every single call** — 1.59 s to our 3.70 s on the Linux
-kernel — and **grep wins the "where is X" questions outright, 47% to our 42%**. Both true,
-both ours to report. The point is not that grep is slow; it is that per-call latency is not
-the unit. An agent answering one real question makes dozens of calls, and the question is
-what gets scored.
+kernel. **CodeGraph is faster still on kernel queries, 0.79 s to our 3.70 s.** And **grep
+wins the "where is X" questions outright, 47% to our 42%**. All three true, all three ours
+to report. The point is not that grep is slow; it is that per-call latency is not the unit.
+An agent answering one real question makes dozens of calls, and the question is what gets
+scored — on those same five kernel questions we were useful on 4 of 5 and CodeGraph on 0 of
+5, and we still got one wrong.
 
+[The kernel table, unpinned and labelled as such →](/ctx-optimize/compare/#3-measured-head-to-head--codegraph-gitnexus-graphify-ripgrep-2026-08-run) ·
 [Everything we do not claim →](/ctx-optimize/limits/)
 
 ## Answers you cannot grep for

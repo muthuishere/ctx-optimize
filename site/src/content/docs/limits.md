@@ -6,12 +6,29 @@ description: "The claims we killed, and why they are not coming back. Each was r
 Each of these was on this site or in our own docs at some point. Each was retired because a
 measurement said so — not because someone objected.
 
-## ✗ "Saves you tokens"
+## ✗ "Saves you tokens", universally
 
-Measured and killed. On frontier harnesses the store moved agent token usage by **−0.2% on
-Claude Code and +3.0% on Codex** — parity at equal quality. Agent fixed costs (system
-prompt, reasoning, the answer itself) do not shrink with a better tool. What *did* move in
-the graded run is **tool calls per run — 15.0 against 42.7**.
+The **universal** claim is dead; a **harness-specific** one survives, and we publish both
+because we measured both.
+
+**Where it does not hold — frontier harnesses.** On Claude Code the store moved agent token
+usage by **−0.2%**, and on Codex by **+3.0%**: parity at equal quality. Agent fixed costs
+(system prompt, reasoning, the answer itself) dominate that bill and do not shrink with a
+better retrieval tool. Record in
+[CRITIQUE.md](https://github.com/muthuishere/ctx-optimize/blob/main/docs/CRITIQUE.md).
+
+**Where it does hold — a thin small-model loop.** `gpt-4o-mini` via OpenRouter, tokens and
+cost from OpenRouter's own accounting rather than estimated: **15,078 → 9,659 tokens
+(−36%)**, **$0.0024 → $0.0016 (−31%)**, **11 → 4 steps**. Sample, stated inline because it
+matters: **4 questions, one run, one corpus, one model** — much smaller than the correctness
+study (12 questions, 3 runs, n = 36 per arm). Summary:
+[SUMMARY-gorilla-mux.md](https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/results/SUMMARY-gorilla-mux.md).
+
+The mechanism is why both are true: in a thin loop retrieval *is* most of the context, so
+cutting steps cuts tokens with them; on a frontier harness the agent's own overhead is the
+bill. So the sentence we will say is **"36% fewer tokens on a small-model harness, parity on
+Claude Code and Codex"** — never "saves you tokens" with no harness named. What moves on
+every harness we measured is **tool calls per run — 15.0 against 42.7**.
 
 ## ✗ "The fastest code graph"
 

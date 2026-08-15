@@ -113,14 +113,3 @@
 .card {
 	border-color: var(--sl-color-hairline);
 }
-
-/* Homepage explainer video: full-width inside the splash column, rounded to match
-   the cards it sits above. `height:auto` keeps it from letterboxing on mobile. */
-.ctx-video {
-	width: 100%;
-	height: auto;
-	margin: 1.5rem 0 2rem;
-	border: 1px solid var(--sl-color-hairline);
-	border-radius: 0.75rem;
-	background: var(--sl-color-black);
-}

@@ -178,31 +178,66 @@ Speed tables cannot tell you whether an answer was right, so there is a separate
 
 **The mechanism, in one pair of transcripts.** On *"which functions call `requestWithVars`?"* the shell arm ran one `grep -r`, got matching LINES, named the right files, **could not name a single caller**, and invented the line numbers (it printed "line 4" and "line 3" — grep's ordinal output positions; the real sites are `mux.go:209` and `test_helpers.go:18`). The store arm ran `affected requestWithVars` ONCE and returned `Router.ServeHTTP` (mux.go:188-229) and `SetURLVars` (test_helpers.go:17-19). Full transcripts: [RESULTS-QUALITY.md](https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/RESULTS-QUALITY.md).
 
-Caveats we print with it every time. **grep wins the locate questions** — 47% to our 42%; "where is X" is what a string search is for. **Part of the gap is cheap-model weakness, not a tool ceiling**: `gpt-4o-mini` flounders on long grep transcripts, ran `grep -r` without `-n`, and on one question burned 15 steps on malformed commands and returned nothing. And the cost row — $0.0040 against $0.0051 — is what *this* run cost on *this* corpus with *this* model. It is not a token-savings claim and never becomes one; see the note at the end of this section.
+Caveats we print with it every time. **grep wins the locate questions** — 47% to our 42%; "where is X" is what a string search is for. **Part of the gap is cheap-model weakness, not a tool ceiling**: `gpt-4o-mini` flounders on long grep transcripts, ran `grep -r` without `-n`, and on one question burned 15 steps on malformed commands and returned nothing. And the cost row — $0.0040 against $0.0051 — is what *this* run cost on *this* corpus with *this* model; it does not generalise to a frontier harness, where the same store measured parity. The full token picture, both halves of it, is in the note at the end of this section.
 
 **Two defects of ours the run surfaced, still open.** **(1)** Ambiguous method names collapse the call graph — `Match` is defined 8 times in mux, the AMBIGUOUS rule filters those edges out, and `affected "Route.Match"` returns *only the containing file*. **(2)** `query` ranking misfires on conceptual phrasing, which is why it loses locate questions to plain grep.
 
 potpie and Serena still have no measured row — different architectures (Neo4j + LLM-in-loop; LSP server) that need their own harness, and we won't fake a head-to-head we haven't run. Raw data behind ours: [proof/agent](proof/agent/) · [bench/results.json](bench/results.json) · [bench/results-multi.json](bench/results-multi.json). Note `results-multi.json` is the retired 2026-07-24 harness output — it contains the CodeGraph cells corrected above and is kept only as a record of the mistake.
 
 :::note
-**One claim we will never make again: token savings.** It was measured and killed — on frontier harnesses the store moved agent token usage by **−0.2% (Claude Code)** and **+3.0% (Codex)**, i.e. parity at equal quality. Agent fixed costs don't shrink with a better tool. The record is public in [CRITIQUE.md](https://github.com/muthuishere/ctx-optimize/blob/main/docs/CRITIQUE.md). What moved is **tool calls per run**, above.
+**Token savings: harness-dependent, and we name the harness every time.** On frontier harnesses it is parity — the store moved agent token usage by **−0.2% (Claude Code)** and **+3.0% (Codex)**, because agent fixed costs don't shrink with a better retrieval tool ([CRITIQUE.md](https://github.com/muthuishere/ctx-optimize/blob/main/docs/CRITIQUE.md)). On a thin small-model loop it does move: **15,078 → 9,659 tokens (−36%)** and **$0.0024 → $0.0016 (−31%)** on `gpt-4o-mini` via OpenRouter, billed by OpenRouter's own accounting — but that is **4 questions, one run, one corpus, one model**, not the n = 36 sample the correctness rows above come from ([SUMMARY-gorilla-mux.md](https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/results/SUMMARY-gorilla-mux.md)). The dead claim is the **universal** one. What moves on every harness we measured is **tool calls per run**, above.
 :::
 
 ## What each competitor is genuinely better at — and where we'd pick ourselves.
 
 ### [CodeGraph](https://github.com/colbymchenry/codegraph)
 
-********
+*~47K★ · MIT · SQLite + MCP · 38 languages*
+
+**Theirs.** The one to beat. MCP-native with 42 tools across 8 agent hosts, a VS Code
+extension, auto-sync on change, and framework-route + cross-language-bridge extraction we
+are only now matching. Easiest thing in the category to adopt.
+
+**Ours.** A SQLite file is still a store format; our single static binary has literally zero
+moving parts, and our pack doctrine lets a team add routes/manifests/languages without a
+fork. But today, honestly: they reach more agents than we do.
 
 ### [GitNexus](https://github.com/abhigyanpatwari/GitNexus)
 
+*~42K★ · noncommercial · zero-server DB · 16 MCP tools*
+
+**Theirs.** The deepest Claude Code integration going — 16 MCP tools including impact
+detection and PR triage, plus skills and hooks. Temporal / git-aware analysis is their
+strength.
+
+**Ours.** Their license is noncommercial, a real blocker for company use; we are MIT. And we
+ship git co-change edges in the same deterministic binary. Their MCP depth still beats our
+reach today.
+
 ### [graphify](https://graphify.com/)
 
-****``
+*~82K★ · open · Python · central store*
+
+**Theirs.** The star magnet and the idea's popularizer — community detection, the
+central-store layout, a big plugin ecosystem, huge mindshare.
+
+**Ours.** Its output is a static dump that goes stale silently, it leans on a model, and
+multi-repo merge is weak — the exact gaps we built fresh, determinism, and mirrored
+per-module stores against. We adopted its best idea (community subsystems) without the
+staleness.
 
 ### [potpie](https://github.com/potpie-ai/potpie) & [Serena](https://github.com/oraios/serena)
 
-********
+*potpie: funded, Neo4j · Serena: LSP-as-MCP*
+
+**Theirs.** potpie: a funded platform with task-specific agents on a real graph DB. Serena:
+language-server-exact symbol precision — genuinely more accurate call edges and
+rename-safety than any static index, ours included.
+
+**Ours.** potpie's Neo4j is infra we refuse to require; a single binary is the opposite bet.
+Serena has no persistent graph and no cross-language/route/dep view, and needs an LSP per
+language. Their precision is the thing we most want to close — exact call edges are on our
+roadmap.
 
 ## A single deterministic binary you extend, not a service you run.
 
@@ -224,4 +259,4 @@ Strip away the scoreboard and the difference is philosophical. Everyone else is 
 **The honest summary:** if you want the most-adopted, MCP-everywhere tool today, that's CodeGraph or GitNexus. If you want a company-safe license, avoid GitNexus. If you want symbol-exact refactors, add Serena. If you want **one zero-dependency binary that indexes code + routes + dependencies + infra deterministically and lets your team extend it without a fork**, delivered to your agent as a skill rather than an MCP server, on Claude Code / Codex / Copilot / Devin — that's us. We'd rather earn the comparison than hide from it.
 :::
 
-**[](/ctx-optimize/)[](/ctx-optimize/cli/)[](https://github.com/muthuishere/ctx-optimize)[](https://rywalker.com/research/code-intelligence-tools)[](https://www.knolli.ai/post/graphify-alternatives)
+Sources for the star counts and feature lists: [rywalker's code-intelligence survey](https://rywalker.com/research/code-intelligence-tools) and [knolli's graphify alternatives](https://www.knolli.ai/post/graphify-alternatives). Our own numbers are in [benchmarks](/ctx-optimize/benchmarks/); the CLI surface is in the [reference](/ctx-optimize/cli/).
