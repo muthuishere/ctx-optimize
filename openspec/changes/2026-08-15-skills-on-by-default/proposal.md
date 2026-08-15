@@ -76,6 +76,43 @@ that reads as a question is answered with an action. It should be fixed
 regardless of D1, and it becomes more important with D1, because auto-install
 makes the blast radius of "install ran when I did not mean it" larger.
 
+
+## D3 — the paste-a-prompt lane (owner's idea, 2026-08-15)
+
+Most people meeting this tool are already sitting in Claude Code or Codex. The
+lowest-friction onboarding is therefore not a README command at all: it is a
+block of text they paste into the agent they already have open, which then
+installs the CLI, gathers the graph, and wires up the skill on their behalf.
+
+```
+Install ctx-optimize for this repo:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install --skills
+Then answer my code questions with its verbs — query, card, change-plan,
+affected, boundaries — instead of grep-and-read, and cite the file:line it
+returns.
+```
+
+Two things make this worth treating as a first-class surface rather than a
+README curiosity:
+
+- **It routes at the moment of install.** The agent that runs the installer is
+  the same agent that will use the store, and it has just read what the verbs
+  are. That closes the adoption gap this ADR exists for, from the other end.
+- **D1 makes it shorter.** With first-run auto-install, step 3 disappears and
+  the prompt is two commands. The two changes compose; neither needs the other
+  to be useful.
+
+It also has to be honest about what it does to the user's machine. The prompt
+names the exact commands rather than piping a script, and every one of them is
+a command the user could have typed. **No `curl | sh`, and nothing hidden
+behind a shortener** — the whole point is that the reader can see what will
+run before an agent runs it.
+
+Where it goes: the quickstart page and the README, above the manual commands,
+because it is the path most readers will actually take.
+
 ## Gates
 
 - A test that runs a verb in a temp `$HOME` with no skill present, asserts the

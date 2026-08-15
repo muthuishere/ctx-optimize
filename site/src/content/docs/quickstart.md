@@ -3,6 +3,28 @@ title: Quick start
 description: "Install the binary, gather a repo, and ask the first question — three commands, no service to run."
 ---
 
+## The fastest way: paste this into your agent
+
+You are probably reading this with Claude Code, Codex or Copilot already open.
+Paste this in and it will do the whole setup:
+
+```text
+Install ctx-optimize for this repo:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install --skills
+
+Then answer my code questions with its verbs — query, card, change-plan,
+affected, boundaries — instead of grep-and-read, and cite the file:line it
+returns.
+```
+
+Every line is a command you could have typed yourself. There is no `curl | sh`
+and nothing behind a shortener, deliberately: you should be able to read what
+will run before an agent runs it.
+
+The three steps are explained below if you would rather do them by hand.
+
 ## Install
 
 ```bash

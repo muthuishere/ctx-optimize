@@ -109,6 +109,24 @@ useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
 
 ## Install
 
+**Already in Claude Code, Codex or Copilot? Paste this and it does the setup:**
+
+```text
+Install ctx-optimize for this repo:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install --skills
+
+Then answer my code questions with its verbs — query, card, change-plan,
+affected, boundaries — instead of grep-and-read, and cite the file:line it
+returns.
+```
+
+Every line is a command you could have typed. No `curl | sh`, nothing behind a
+shortener: you can read what will run before an agent runs it.
+
+By hand:
+
 ```sh
 npm install -g @muthuishere/ctx-optimize     # prebuilt binaries, macOS/Linux/Windows
 go install github.com/muthuishere/ctx-optimize/cmd/ctx-optimize@latest   # or from source
