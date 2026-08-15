@@ -1,0 +1,616 @@
+{
+  "session": {
+    "_doc": [
+      "A session on a pinned, public corpus. Everything a skeptic needs to",
+      "reproduce or attack this run is in this file: the corpus commit, the exact",
+      "edits, the questions, and the expected answers.",
+      "",
+      "QUESTION CLASSES",
+      "  locate     'where is X' \u2014 a line matcher CAN answer these, and does. We",
+      "             expect to draw or lose here on speed; that is the honest shape.",
+      "  relate     'who calls X / what breaks if I change X' \u2014 needs a call graph.",
+      "             Tools without one are marked n/a, never 0.",
+      "  staleness  asked ONLY after an edit. Two directions per rename:",
+      "               expect_absent  the OLD name must be gone   (stale index fails)",
+      "               expect_any     the NEW name must be found  (dead index fails)",
+      "             This is the check that stops 'incremental in 0ms by doing",
+      "             nothing' from looking like a win.",
+      "",
+      "GRADING is exact word-boundary match on the tool's own stdout. No LLM, no",
+      "rubric. The price of that rigour is that every expectation must be a symbol",
+      "that is textually unambiguous, which is why these sets are small and",
+      "hand-verified rather than generated."
+    ],
+    "corpus": {
+      "name": "Newtonsoft.Json",
+      "path": "~/ctx-golden-corpora/Newtonsoft.Json",
+      "ref": "13.0.3 (0a2e291)",
+      "note": "public, pinned by tag; the same corpus the golden judged tier uses"
+    },
+    "description": "Build once, ask, edit, re-index, ask again \u2014 2 rounds.",
+    "questions": [
+      {
+        "id": "L01",
+        "class": "locate",
+        "q": "deserialize json string object",
+        "q_literal": "DeserializeObject",
+        "expect_any": [
+          "DeserializeObject"
+        ],
+        "known_weakness": "scores 0.0 in our own judged tier (N01): test files outrank the source method. Kept deliberately \u2014 a question set with no losses in it is a sales deck."
+      },
+      {
+        "id": "L02",
+        "class": "locate",
+        "q": "read json token text reader",
+        "q_literal": "class JsonTextReader",
+        "expect_any": [
+          "JsonTextReader"
+        ]
+      },
+      {
+        "id": "L03",
+        "class": "locate",
+        "q": "linq json object parse",
+        "q_literal": "class JObject",
+        "expect_any": [
+          "JObject"
+        ]
+      },
+      {
+        "id": "L04",
+        "class": "locate",
+        "q": "iso date time converter",
+        "q_literal": "class IsoDateTimeConverter",
+        "expect_any": [
+          "IsoDateTimeConverter"
+        ]
+      },
+      {
+        "id": "L05",
+        "class": "locate",
+        "q": "contract resolver default",
+        "q_literal": "class DefaultContractResolver",
+        "expect_any": [
+          "DefaultContractResolver"
+        ]
+      },
+      {
+        "id": "R01",
+        "class": "relate",
+        "q": "Newtonsoft.ReadStringIntoBuffer",
+        "expect_any": [
+          "ParseString"
+        ],
+        "why": "declared JsonTextReader.cs:1136, called from ParseString (:157->:162) and ParseProperty. A call graph reaches them; a line matcher cannot. Uses the QUALIFIED label because `affected` correctly refuses to guess between ReadStringIntoBuffer / ...Async / FinishReadStringIntoBuffer."
+      },
+      {
+        "id": "R02",
+        "class": "relate",
+        "q": "Newtonsoft.JsonTextReader.ParseString",
+        "expect_any": [
+          "JsonTextReader",
+          "ParseValue",
+          "ParseProperty"
+        ],
+        "why": "blast radius of a private parser method \u2014 any real impact answer names its file or a caller."
+      }
+    ],
+    "rounds": [
+      {
+        "name": "rename a file-local method",
+        "edits": [
+          {
+            "op": "rename_symbol",
+            "file": "Src/Newtonsoft.Json/JsonTextReader.cs",
+            "old": "ReadStringIntoBuffer",
+            "new": "CtxbenchRenamedReader",
+            "expect_occurrences": 3,
+            "why": "Word-boundary safe: it does NOT touch FinishReadStringIntoBuffer or ReadStringIntoBufferAsync, which contain the name but not at a boundary. The harness verifies the count and aborts if the corpus drifted from the pin."
+          }
+        ],
+        "probes": [
+          {
+            "id": "S01",
+            "class": "staleness",
+            "q": "ReadStringIntoBuffer",
+            "q_literal": "ReadStringIntoBuffer",
+            "expect_absent": "ReadStringIntoBuffer",
+            "why": "the renamed-away symbol must no longer be reported; an index that never updated still returns it"
+          },
+          {
+            "id": "S02",
+            "class": "staleness",
+            "q": "CtxbenchRenamedReader",
+            "q_literal": "CtxbenchRenamedReader",
+            "expect_any": [
+              "CtxbenchRenamedReader"
+            ],
+            "why": "the new symbol must be findable; an index that never updated cannot see it"
+          }
+        ]
+      },
+      {
+        "name": "touch a widely-included file (mtime only, content identical)",
+        "edits": [
+          {
+            "op": "touch",
+            "file": "Src/Newtonsoft.Json/JsonSerializer.cs",
+            "why": "No semantic change. Measures whether a tool does needless work on a stat-level signal \u2014 a content-hash tool should be near-free here, an mtime tool re-indexes."
+          }
+        ],
+        "probes": []
+      }
+    ]
+  },
+  "machine": "macOS-26.4-arm64-arm-64bit-Mach-O",
+  "results": [
+    {
+      "tool": "ctx-optimize",
+      "rounds": [
+        {
+          "round": 1,
+          "edits": [
+            {
+              "op": "rename_symbol",
+              "file": "Src/Newtonsoft.Json/JsonTextReader.cs",
+              "occurrences": 3
+            }
+          ],
+          "incremental": {
+            "seconds": 0.5675776670104824,
+            "indexless": false,
+            "suspected_full_rebuild": true,
+            "note": "incremental 0.57s is >=90% of the cold build 0.60s \u2014 treat as a rebuild"
+          },
+          "phase": "warm-1",
+          "queries": [
+            {
+              "id": "L01",
+              "class": "locate",
+              "scored": true,
+              "correct": false,
+              "seconds": 0.03172591599286534,
+              "detail": "no expected symbol in output"
+            },
+            {
+              "id": "L02",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.03074208297766745,
+              "detail": "JsonTextReader"
+            },
+            {
+              "id": "L03",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.03143683300004341,
+              "detail": "JObject"
+            },
+            {
+              "id": "L04",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.030035875010071322,
+              "detail": "IsoDateTimeConverter"
+            },
+            {
+              "id": "L05",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.031154332973528653,
+              "detail": "DefaultContractResolver"
+            },
+            {
+              "id": "R01",
+              "class": "relate",
+              "scored": true,
+              "correct": false,
+              "seconds": 0.054657583008520305,
+              "detail": "no expected symbol in output"
+            },
+            {
+              "id": "R02",
+              "class": "relate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.02252800000132993,
+              "detail": "JsonTextReader"
+            },
+            {
+              "id": "S01",
+              "class": "staleness",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.030520041997078806,
+              "detail": "ok"
+            },
+            {
+              "id": "S02",
+              "class": "staleness",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.029863249976187944,
+              "detail": "CtxbenchRenamedReader"
+            }
+          ]
+        },
+        {
+          "round": 2,
+          "edits": [
+            {
+              "op": "touch",
+              "file": "Src/Newtonsoft.Json/JsonSerializer.cs"
+            }
+          ],
+          "incremental": {
+            "seconds": 0.5601262919954024,
+            "indexless": false,
+            "suspected_full_rebuild": true,
+            "note": "incremental 0.56s is >=90% of the cold build 0.60s \u2014 treat as a rebuild"
+          },
+          "phase": "warm-2",
+          "queries": [
+            {
+              "id": "L01",
+              "class": "locate",
+              "scored": true,
+              "correct": false,
+              "seconds": 0.03353074999176897,
+              "detail": "no expected symbol in output"
+            },
+            {
+              "id": "L02",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.03305808300501667,
+              "detail": "JsonTextReader"
+            },
+            {
+              "id": "L03",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.032451124978251755,
+              "detail": "JObject"
+            },
+            {
+              "id": "L04",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.031921375019010156,
+              "detail": "IsoDateTimeConverter"
+            },
+            {
+              "id": "L05",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.03136541700223461,
+              "detail": "DefaultContractResolver"
+            },
+            {
+              "id": "R01",
+              "class": "relate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.022407582990126684,
+              "detail": "ParseString"
+            },
+            {
+              "id": "R02",
+              "class": "relate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.023159709002356976,
+              "detail": "JsonTextReader"
+            }
+          ]
+        }
+      ],
+      "answers_classes": [
+        "locate",
+        "relate",
+        "staleness"
+      ],
+      "build": {
+        "seconds": 0.6003459999919869,
+        "rss": 2911191040,
+        "index_bytes": 14646899,
+        "indexless": false
+      },
+      "cold_queries": {
+        "phase": "cold",
+        "queries": [
+          {
+            "id": "L01",
+            "class": "locate",
+            "scored": true,
+            "correct": false,
+            "seconds": 0.031174959003692493,
+            "detail": "no expected symbol in output"
+          },
+          {
+            "id": "L02",
+            "class": "locate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.03057312499731779,
+            "detail": "JsonTextReader"
+          },
+          {
+            "id": "L03",
+            "class": "locate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.029977583995787427,
+            "detail": "JObject"
+          },
+          {
+            "id": "L04",
+            "class": "locate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.029226040991488844,
+            "detail": "IsoDateTimeConverter"
+          },
+          {
+            "id": "L05",
+            "class": "locate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.029530207975767553,
+            "detail": "DefaultContractResolver"
+          },
+          {
+            "id": "R01",
+            "class": "relate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.02219779198640026,
+            "detail": "ParseString"
+          },
+          {
+            "id": "R02",
+            "class": "relate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.021352500014472753,
+            "detail": "JsonTextReader"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "ripgrep",
+      "rounds": [
+        {
+          "round": 1,
+          "edits": [
+            {
+              "op": "rename_symbol",
+              "file": "Src/Newtonsoft.Json/JsonTextReader.cs",
+              "occurrences": 3
+            }
+          ],
+          "incremental": {
+            "seconds": 0.0,
+            "indexless": true
+          },
+          "phase": "warm-1",
+          "queries": [
+            {
+              "id": "L01",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.01925266601028852,
+              "detail": "DeserializeObject"
+            },
+            {
+              "id": "L02",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.01757083399570547,
+              "detail": "JsonTextReader"
+            },
+            {
+              "id": "L03",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.021018791012465954,
+              "detail": "JObject"
+            },
+            {
+              "id": "L04",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.01720854200539179,
+              "detail": "IsoDateTimeConverter"
+            },
+            {
+              "id": "L05",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.01745441698585637,
+              "detail": "DefaultContractResolver"
+            },
+            {
+              "id": "R01",
+              "class": "relate",
+              "scored": false,
+              "reason": "tool cannot answer this class"
+            },
+            {
+              "id": "R02",
+              "class": "relate",
+              "scored": false,
+              "reason": "tool cannot answer this class"
+            },
+            {
+              "id": "S01",
+              "class": "staleness",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.017454124987125397,
+              "detail": "ok"
+            },
+            {
+              "id": "S02",
+              "class": "staleness",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.018792249989928678,
+              "detail": "CtxbenchRenamedReader"
+            }
+          ]
+        },
+        {
+          "round": 2,
+          "edits": [
+            {
+              "op": "touch",
+              "file": "Src/Newtonsoft.Json/JsonSerializer.cs"
+            }
+          ],
+          "incremental": {
+            "seconds": 0.0,
+            "indexless": true
+          },
+          "phase": "warm-2",
+          "queries": [
+            {
+              "id": "L01",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.018706959002884105,
+              "detail": "DeserializeObject"
+            },
+            {
+              "id": "L02",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.017770958016626537,
+              "detail": "JsonTextReader"
+            },
+            {
+              "id": "L03",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.02060516702476889,
+              "detail": "JObject"
+            },
+            {
+              "id": "L04",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.019155999994836748,
+              "detail": "IsoDateTimeConverter"
+            },
+            {
+              "id": "L05",
+              "class": "locate",
+              "scored": true,
+              "correct": true,
+              "seconds": 0.01904958300292492,
+              "detail": "DefaultContractResolver"
+            },
+            {
+              "id": "R01",
+              "class": "relate",
+              "scored": false,
+              "reason": "tool cannot answer this class"
+            },
+            {
+              "id": "R02",
+              "class": "relate",
+              "scored": false,
+              "reason": "tool cannot answer this class"
+            }
+          ]
+        }
+      ],
+      "answers_classes": [
+        "locate",
+        "staleness"
+      ],
+      "build": {
+        "seconds": 0.0,
+        "rss": null,
+        "index_bytes": 0,
+        "indexless": true
+      },
+      "cold_queries": {
+        "phase": "cold",
+        "queries": [
+          {
+            "id": "L01",
+            "class": "locate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.023571708996314555,
+            "detail": "DeserializeObject"
+          },
+          {
+            "id": "L02",
+            "class": "locate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.019203958014259115,
+            "detail": "JsonTextReader"
+          },
+          {
+            "id": "L03",
+            "class": "locate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.01929854098125361,
+            "detail": "JObject"
+          },
+          {
+            "id": "L04",
+            "class": "locate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.019118249998427927,
+            "detail": "IsoDateTimeConverter"
+          },
+          {
+            "id": "L05",
+            "class": "locate",
+            "scored": true,
+            "correct": true,
+            "seconds": 0.019129292020807043,
+            "detail": "DefaultContractResolver"
+          },
+          {
+            "id": "R01",
+            "class": "relate",
+            "scored": false,
+            "reason": "tool cannot answer this class"
+          },
+          {
+            "id": "R02",
+            "class": "relate",
+            "scored": false,
+            "reason": "tool cannot answer this class"
+          }
+        ]
+      }
+    }
+  ]
+}

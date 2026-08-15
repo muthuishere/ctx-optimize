@@ -12,7 +12,28 @@
     "ref: pinned commit. Fetched shallow (git fetch --depth 1 origin <sha>), so the",
     "clone stays small AND the version is exact. setup.py records whether the pin",
     "took or it fell back to the default branch \u2014 a floating version must never be",
-    "reported as a pinned one."
+    "reported as a pinned one.",
+    "",
+    "SESSION FIELDS (added 2026-08-15 for benchmarks/session/session.py, the",
+    "multi-pass runner). The one-pass runner measures a cold build; the session",
+    "runner measures build -> query -> edit -> re-index -> query, which is what an",
+    "agent actually costs. Both read THIS manifest \u2014 one field, one source of",
+    "truth.",
+    "  incremental      argv/list-of-argv run after an edit. Absent means the tool",
+    "                   has no incremental path and the session runner will re-run",
+    "                   `build`, reporting it as a full rebuild rather than",
+    "                   quietly calling it 'warm' (the 2026-07-24 GitNexus bug in",
+    "                   AUDIT.md).",
+    "  session_build    argv/list, when the session runner needs a different shape",
+    "                   than the one-pass `gather` string (which is prose, not argv).",
+    "  session_query    argv template; {corpus} {index} {query} expand.",
+    "  query_by_class   per-question-class override (locate/relate/staleness).",
+    "  query_field      which question field feeds the command; search tools take",
+    "                   `q_literal` (the exact symbol) \u2014 deliberately their best case.",
+    "  answers_classes  classes the tool can answer AT ALL. A class not listed is",
+    "                   reported n/a and EXCLUDED from that score. Scoring a line",
+    "                   matcher 0/10 on 'who calls this' is a rigged test, not a",
+    "                   finding."
   ],
   "tools": [
     {
@@ -26,7 +47,71 @@
       "llm": false,
       "embeddings": false,
       "serving": "CLI + agent skill",
-      "note": "baseline. Wiki off by default since v0.12, so this column is NOT comparable to the 2026-07-24 run, which included wiki generation in the gather."
+      "note": "baseline. Wiki off by default since v0.12, so this column is NOT comparable to the 2026-07-24 run, which included wiki generation in the gather.",
+      "session_build": [
+        [
+          "bin/ctx-optimize",
+          "init",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ],
+        [
+          "bin/ctx-optimize",
+          "add",
+          "{corpus}",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ]
+      ],
+      "incremental": [
+        [
+          "bin/ctx-optimize",
+          "add",
+          "{corpus}",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ]
+      ],
+      "session_query": [
+        "bin/ctx-optimize",
+        "query",
+        "{query}",
+        "--path",
+        "{corpus}",
+        "--store",
+        "{index}"
+      ],
+      "query_by_class": {
+        "relate": [
+          "bin/ctx-optimize",
+          "affected",
+          "{query}",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ],
+        "staleness": [
+          "bin/ctx-optimize",
+          "query",
+          "{query}",
+          "--path",
+          "{corpus}",
+          "--store",
+          "{index}"
+        ]
+      },
+      "answers_classes": [
+        "locate",
+        "relate",
+        "staleness"
+      ]
     },
     {
       "name": "graphify",
@@ -167,6 +252,27 @@
       "name": "scip indexers (scip-go, scip-typescript, ...)",
       "gatherable": false,
       "why_not": "ADJACENT CATEGORY, not a competitor in the agent-context market (owner call 2026-08-15), though the closest in KIND: compiler-precise edges, strictly more accurate than our heuristic tiers, at the cost of a working build per language. Relevant to docs/CRITIQUE.md #8 (we have a cost/coverage argument against SCIP, never an accuracy one), not to the benchmark cohort."
+    },
+    {
+      "name": "ripgrep",
+      "gatherable": false,
+      "kind": "search",
+      "local": true,
+      "why_not": "ADJACENT CATEGORY, not a competitor \u2014 an on-the-fly regex matcher with no index and no symbol graph. Included in the SESSION runner as the honest floor: it is indexless (build and incremental are a true 0s) and can never be stale, which are real advantages a build-time-only benchmark hides. It is excluded from `relate` because no line matcher can answer 'what breaks if I change this'.",
+      "session_query": [
+        "rg",
+        "--no-heading",
+        "-n",
+        "{query}"
+      ],
+      "query_field": "q_literal",
+      "answers_classes": [
+        "locate",
+        "staleness"
+      ],
+      "llm": false,
+      "embeddings": false,
+      "serving": "CLI"
     }
   ]
 }

@@ -1,0 +1,144 @@
+{
+  "_doc": [
+    "A session on a pinned, public corpus. Everything a skeptic needs to",
+    "reproduce or attack this run is in this file: the corpus commit, the exact",
+    "edits, the questions, and the expected answers.",
+    "",
+    "QUESTION CLASSES",
+    "  locate     'where is X' \u2014 a line matcher CAN answer these, and does. We",
+    "             expect to draw or lose here on speed; that is the honest shape.",
+    "  relate     'who calls X / what breaks if I change X' \u2014 needs a call graph.",
+    "             Tools without one are marked n/a, never 0.",
+    "  staleness  asked ONLY after an edit. Two directions per rename:",
+    "               expect_absent  the OLD name must be gone   (stale index fails)",
+    "               expect_any     the NEW name must be found  (dead index fails)",
+    "             This is the check that stops 'incremental in 0ms by doing",
+    "             nothing' from looking like a win.",
+    "",
+    "GRADING is exact word-boundary match on the tool's own stdout. No LLM, no",
+    "rubric. The price of that rigour is that every expectation must be a symbol",
+    "that is textually unambiguous, which is why these sets are small and",
+    "hand-verified rather than generated."
+  ],
+  "corpus": {
+    "name": "Newtonsoft.Json",
+    "path": "~/ctx-golden-corpora/Newtonsoft.Json",
+    "ref": "13.0.3 (0a2e291)",
+    "note": "public, pinned by tag; the same corpus the golden judged tier uses"
+  },
+  "description": "Build once, ask, edit, re-index, ask again \u2014 2 rounds.",
+  "questions": [
+    {
+      "id": "L01",
+      "class": "locate",
+      "q": "deserialize json string object",
+      "q_literal": "DeserializeObject",
+      "expect_any": [
+        "DeserializeObject"
+      ],
+      "known_weakness": "scores 0.0 in our own judged tier (N01): test files outrank the source method. Kept deliberately \u2014 a question set with no losses in it is a sales deck."
+    },
+    {
+      "id": "L02",
+      "class": "locate",
+      "q": "read json token text reader",
+      "q_literal": "class JsonTextReader",
+      "expect_any": [
+        "JsonTextReader"
+      ]
+    },
+    {
+      "id": "L03",
+      "class": "locate",
+      "q": "linq json object parse",
+      "q_literal": "class JObject",
+      "expect_any": [
+        "JObject"
+      ]
+    },
+    {
+      "id": "L04",
+      "class": "locate",
+      "q": "iso date time converter",
+      "q_literal": "class IsoDateTimeConverter",
+      "expect_any": [
+        "IsoDateTimeConverter"
+      ]
+    },
+    {
+      "id": "L05",
+      "class": "locate",
+      "q": "contract resolver default",
+      "q_literal": "class DefaultContractResolver",
+      "expect_any": [
+        "DefaultContractResolver"
+      ]
+    },
+    {
+      "id": "R01",
+      "class": "relate",
+      "q": "Newtonsoft.ReadStringIntoBuffer",
+      "expect_any": [
+        "ParseString"
+      ],
+      "why": "declared JsonTextReader.cs:1136, called from ParseString (:157->:162) and ParseProperty. A call graph reaches them; a line matcher cannot. Uses the QUALIFIED label because `affected` correctly refuses to guess between ReadStringIntoBuffer / ...Async / FinishReadStringIntoBuffer."
+    },
+    {
+      "id": "R02",
+      "class": "relate",
+      "q": "Newtonsoft.JsonTextReader.ParseString",
+      "expect_any": [
+        "JsonTextReader",
+        "ParseValue",
+        "ParseProperty"
+      ],
+      "why": "blast radius of a private parser method \u2014 any real impact answer names its file or a caller."
+    }
+  ],
+  "rounds": [
+    {
+      "name": "rename a file-local method",
+      "edits": [
+        {
+          "op": "rename_symbol",
+          "file": "Src/Newtonsoft.Json/JsonTextReader.cs",
+          "old": "ReadStringIntoBuffer",
+          "new": "CtxbenchRenamedReader",
+          "expect_occurrences": 3,
+          "why": "Word-boundary safe: it does NOT touch FinishReadStringIntoBuffer or ReadStringIntoBufferAsync, which contain the name but not at a boundary. The harness verifies the count and aborts if the corpus drifted from the pin."
+        }
+      ],
+      "probes": [
+        {
+          "id": "S01",
+          "class": "staleness",
+          "q": "ReadStringIntoBuffer",
+          "q_literal": "ReadStringIntoBuffer",
+          "expect_absent": "ReadStringIntoBuffer",
+          "why": "the renamed-away symbol must no longer be reported; an index that never updated still returns it"
+        },
+        {
+          "id": "S02",
+          "class": "staleness",
+          "q": "CtxbenchRenamedReader",
+          "q_literal": "CtxbenchRenamedReader",
+          "expect_any": [
+            "CtxbenchRenamedReader"
+          ],
+          "why": "the new symbol must be findable; an index that never updated cannot see it"
+        }
+      ]
+    },
+    {
+      "name": "touch a widely-included file (mtime only, content identical)",
+      "edits": [
+        {
+          "op": "touch",
+          "file": "Src/Newtonsoft.Json/JsonSerializer.cs",
+          "why": "No semantic change. Measures whether a tool does needless work on a stat-level signal \u2014 a content-hash tool should be near-free here, an mtime tool re-indexes."
+        }
+      ],
+      "probes": []
+    }
+  ]
+}
