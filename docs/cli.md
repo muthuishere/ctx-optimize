@@ -155,6 +155,7 @@ what's registered; get the paste-ready setup card for a source scheme.
 | **Connection** | `path "A" "B"` | shortest path between two nodes |
 | **Orient** in a new repo | `hubs --top 10` | most-connected nodes; also read the generated `wiki/` |
 | **Explain** a node | `explain X` | plain-language node + neighborhood |
+| **Boundaries** — what does this call out to / expose | `boundaries` | CONSUMES/PROVIDES split, grouped by transport, secrets by NAME, `file:line` each. `query` cannot reach these |
 | **Check a citation** | `verify "file.go:L10-L20"` | node exists, file exists, range in bounds, drift vs gather-time HEAD; exit 0 only when ALL claims hold |
 
 Scope follows your cwd: inside a module dir you get that module (zero hits
@@ -211,6 +212,56 @@ matches no call site is reported on every gather, so the file cannot rot in
 silence.
 
 `init` scaffolds an inert `resolutions.json.sample`.
+
+### `boundaries` — what this system talks to
+
+**When**: "what external APIs do we call", "which env vars are secrets", "what
+does it shell out to", "what endpoints does it expose". A C4-style system
+context, read from `port` nodes the gather already produced.
+
+```sh
+ctx-optimize boundaries                                   # the whole surface
+ctx-optimize boundaries --sensitive                       # credential NAMES only
+ctx-optimize boundaries --transport network.http --direction consumes
+ctx-optimize boundaries --all                             # no budget cap
+ctx-optimize boundaries --json                            # otel.* under semconv names
+ctx-optimize boundaries verify [--strict] [--record]      # rule drift vs a local floor
+```
+
+```
+boundaries: 76 ports
+
+CONSUMES (what this system calls out to)
+  config.env     30 · 30 external · 1 SENSITIVE · 3 dynamic
+      OPENROUTER_API_KEY     INFERRED   SECRET  proof/agent/agent.mjs:L28 (+1 sites)
+  process.exec   12 · 12 external · 7 dynamic
+      git                    AMBIGUOUS   internal/app/githistory_cli_test.go:L28 (+13 sites)
+
+PROVIDES (what this system exposes)
+  network.http   17
+      /api/graph             INFERRED    internal/dashboard/dashboard.go:L119
+
+UNRESOLVED  10 port(s) carry a dynamic identifier — os.Getenv(varName) and
+            friends. The SITE is certain, the value is not; --all lists them.
+```
+
+Read it honestly:
+
+- **A port list is a floor, not a census.** Tiers differ by rule because the
+  evidence does: `config.env` is INFERRED and `process.exec` is AMBIGUOUS
+  because `os.Getenv(varName)` and `exec.Command(bin)` hide the value behind a
+  variable. We report the site and refuse to invent the name.
+- **Secrets are NAMES.** A value is never read, stored, or printed.
+- **`scope` is `external` on every consumed port today.** The join that would
+  mark one `internal` compares consumed hosts against provided route paths,
+  which cannot match — so `external` is not evidence that something is
+  third-party, and `--where scope=internal` matches nothing.
+- **`query` will not find these.** A hostname scores as prose; use this verb or
+  `nodes --kind port`.
+- Truncation is always stated (`… 15 more not shown (of 30)`), never silent.
+
+In a monorepo the summary federates: one entry per identifier, carrying the
+modules that reach it, rather than the same host counted once per module.
 
 ### `status` / `fresh`
 

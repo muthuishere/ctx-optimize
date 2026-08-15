@@ -113,14 +113,16 @@
     </route>
 
     <route id="ports" group="answer">
-      <when>what external APIs do we call, what is our egress footprint, which env vars or secrets does this service read, what processes do we spawn, what does this app expose, what queues/topics/storage keys do we touch, which third-party SDKs talk out</when>
-      <goal>Read BOUNDARY crossings from the graph — `port` nodes. Reserved metadata: `direction` (provides|consumes) · `transport` (`network.http` `network.ws` `config.env` `process.exec` `storage.*` `messaging.*` …) · `identifier` (the external name) · `scope` (internal|external, computed BY JOIN — a consumed identifier is internal iff some `provides` port in the workspace matches it) · `sensitive` · `resolved` · `raw` (pre-normalization spelling). Edges: `consumes` / `provides` from the code site, each carrying `rule` and `site` provenance.</goal>
-      <cmd>ctx-optimize nodes --kind port --json</cmd>
-      <cmd>ctx-optimize nodes --kind port --where scope=external      # the egress footprint</cmd>
-      <cmd>ctx-optimize nodes --kind port --where transport=config.env --where sensitive=true   # credential NAMES, never values</cmd>
+      <when>what external APIs do we call, what is our egress footprint, which env vars or secrets does this service read, what does it shell out to, what processes do we spawn, what external services does this call, which config values are credentials, what endpoints does it expose, how does this service talk out, what queues/topics/storage keys do we touch, which third-party SDKs talk out, is this call http or grpc, what transport does X use</when>
+      <goal>Answer BOUNDARY questions — what this system calls out to and what it exposes. `ctx-optimize boundaries` is the ANSWER-shaped verb: CONSUMES/PROVIDES split, grouped by transport, secrets flagged by NAME, dynamic identifiers summarised, `file:line` on every line. Drop to `nodes --kind port` when you want raw rows to filter. Port metadata: `direction` (provides|consumes) · `transport` (`network.http` `network.ws` `config.env` `process.exec` `storage.*` `messaging.*` …) · `identifier` (the external name) · `scope` · `sensitive` · `resolved` · `raw` (pre-normalization spelling). Edges: `consumes` / `provides` from the code site, each carrying `rule` and `site` provenance.</goal>
+      <cmd>ctx-optimize boundaries                     # the whole surface: what we call out to, what we expose</cmd>
+      <cmd>ctx-optimize boundaries --sensitive         # credential NAMES only — never a value</cmd>
+      <cmd>ctx-optimize boundaries --transport network.http --direction consumes   # just the egress</cmd>
+      <cmd>ctx-optimize boundaries --json              # otel.* keys pass through under their semconv names</cmd>
+      <cmd>ctx-optimize nodes --kind port --where transport=config.env --where sensitive=true   # raw rows to filter</cmd>
       <cmd>ctx-optimize card "api.openai.com" --json                  # who consumes it, at which file:line</cmd>
       <cmd>ctx-optimize services            # the SDK-mediated egress registry (firebase/stripe/openai…): the dependency IS the boundary</cmd>
-      <note>A port's TIER is honest and varies by rule: `config.env` reads are INFERRED (a variable name is unmatchable) and `process.exec` is AMBIGUOUS (argv is usually a variable), so a port list is a FLOOR, not a census. `resolved: dynamic` means the identifier was a template (`${…}`, `%s`) and the engine refused to assert it. Secrets appear by NAME only — never read, print, or ask for a value.</note>
+      <note>A port's TIER is honest and varies by rule: `config.env` reads are INFERRED (a variable name is unmatchable) and `process.exec` is AMBIGUOUS (argv is usually a variable), so a port list is a FLOOR, not a census. `resolved: dynamic` means the identifier was a template (`${…}`, `%s`) and the engine refused to assert it. Secrets appear by NAME only — never read, print, or ask for a value. **`scope` is currently `external` on every consumed port**: the join that would mark one `internal` compares consumed HOSTS against provided ROUTE PATHS, which can never match, so do not read `external` as evidence that something is third-party. Do not filter on `--where scope=internal`; it matches nothing.</note>
       <ref>references/boundaries-authoring.md</ref>
     </route>
 

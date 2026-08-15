@@ -55,7 +55,42 @@ useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
    kept: **impact-answer correctness**, onboarding traces, wall time. What we
    measured and dropped: token savings — Claude Code −0.2%, Codex +3.0%, so we
    don't claim it ([CRITIQUE.md](docs/CRITIQUE.md)).
-6. **Your infrastructure goes in the graph too** — databases, buckets, queues
+6. **It maps the edges of the system, which no other tool we benchmarked does** —
+   `boundaries` answers "what does this call out to, and what does it expose"
+   in one command: external hosts, env vars with credentials flagged **by name**,
+   spawned binaries, exposed routes — each with `file:line`. graphify, CodeGraph
+   and GitNexus model none of it.
+
+   ```
+   $ ctx-optimize boundaries
+   boundaries: 76 ports
+
+   CONSUMES (what this system calls out to)
+     config.env     30 · 30 external · 1 SENSITIVE · 3 dynamic
+         OPENROUTER_API_KEY     INFERRED   SECRET  proof/agent/agent.mjs:L28 (+1 sites)
+     network.http   17 · 17 external
+         api.github.com         INFERRED    internal/app/app.go:L3149
+     process.exec   12 · 12 external · 7 dynamic
+         git                    AMBIGUOUS   internal/app/githistory_cli_test.go:L28 (+13 sites)
+
+   PROVIDES (what this system exposes)
+     network.http   17
+         /api/graph             INFERRED    internal/dashboard/dashboard.go:L119
+
+   UNRESOLVED  10 port(s) carry a dynamic identifier — os.Getenv(varName) and
+               friends. The SITE is certain, the value is not.
+   ```
+
+   Read the tiers: a port list is a **floor, not a census**. `config.env` is
+   INFERRED and `process.exec` is AMBIGUOUS because `os.Getenv(varName)` and
+   `exec.Command(bin)` hide the value behind a variable — we report the site and
+   refuse to invent the name. Two more limits worth stating: `scope` says
+   `external` on every consumed port today (the internal/external join compares
+   hosts against route paths and never matches), and `query` cannot retrieve
+   these — use `boundaries` or `nodes --kind port`. `--json` carries the
+   `otel.*` keys under their OpenTelemetry semconv names, so a static boundary
+   joins a runtime trace on the same key.
+7. **Your infrastructure goes in the graph too** — databases, buckets, queues
    and APIs enter by env-var **name**; the value is a URL and its scheme picks
    the connector. Nine of them: **postgres · mysql · mongodb · redis · kafka ·
    nats · s3 · mssql · openapi**. The secret value is never read into config,
@@ -65,7 +100,7 @@ useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
    export BILLING_DB_URL='postgres://reader:$PG_PASS@db.internal:5432/billing'
    ctx-optimize add BILLING_DB_URL      # same door for s3, kafka, mongo, redis, nats, mssql, openapi
    ```
-7. **Extensible without a fork** — languages are drop-in tree-sitter
+8. **Extensible without a fork** — languages are drop-in tree-sitter
    [grammar packs](docs/languages-packs.md) (12 embedded, `languages add` builds
    any other), external systems are [dropped scripts](docs/adapters.md) through
    one validated JSON door, and the [remote is your script](docs/remote-github.md).
@@ -103,6 +138,7 @@ ctx-optimize serve                     # → 127.0.0.1:4747, embedded dashboard,
 | how are these two connected | `path <a> <b>` |
 | why does this node exist / where from | `explain <node>` |
 | the load-bearing symbols | `hubs` |
+| what this calls out to & exposes — hosts, env vars, secrets, spawned binaries, routes | `boundaries` |
 | list & filter without jq | `nodes --kind K` · `edges --relation R` · `deps --scope dev` |
 | add a database / bucket / queue / API | `add BILLING_DB_URL` |
 | feed anything else in | `<your-script> \| add --json -` |

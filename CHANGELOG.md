@@ -10,6 +10,184 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-08-15
+
+The release the boundary lane was for. A repo's **external surface** — what it
+calls, what it exposes, which config values are credentials — is now a first
+class answer, and the machinery underneath got roughly **twice as fast** while
+becoming **byte-for-byte reproducible** for the first time.
+
+### Added
+
+- **`boundaries` — one command for "what does this system talk to?"** Not a node
+  dump: a C4-style system-context summary. CONSUMES and PROVIDES are split
+  (different questions, previously interleaved), grouped by transport with
+  counts, credentials flagged by **NAME** (never a value), and every line
+  citable at `file:line` with a `(+N sites)` roll-up.
+
+  ```
+  boundaries: 6 modules, 339 ports
+
+  CONSUMES (what this system calls out to)
+    config.env    84 · 84 external · 22 SENSITIVE
+        CONFIG_ENCRYPTION_KEY  INFERRED  SECRET  src/storage/secrets.go:L45
+    network.http  46 · 46 external
+        api.openai.com         INFERRED  src/ai/providers/openai.go:L14 (+2 sites)
+            modules: apps/api, apps/ui
+  UNRESOLVED  10 ports carry a dynamic identifier — the SITE is certain,
+              the value is not
+  ```
+
+  Monorepo federation is the payoff: a host reached from two modules folds into
+  **one** entry carrying both, rather than being counted twice. `--json` passes
+  `otel.*` metadata through under its **OpenTelemetry semantic-convention**
+  names (`otel.server.address`, `otel.http.route`), so a static boundary joins a
+  runtime trace on the same key — no invented vocabulary. Output is budgeted
+  like `query` and **always states how many entries were withheld**; silent
+  truncation reads as "that is everything". `boundaries verify` is unchanged as
+  its subcommand.
+
+- **The boundary lane itself** — `port` nodes with
+  `direction`/`transport`/`identifier`/`scope`/`sensitive`, produced by
+  declarative rules (data, never code) merged repo > machine > embedded by rule
+  ID, every edge citing its rule and `file:line`. Ships env, process, HTTP-URL,
+  web-storage and websocket rules for Go/JS/Python plus server-route rules for
+  express, fastapi/flask, net-http/gin/echo/chi, Spring and ASP.NET.
+
+- **`services`** — a 30-vendor registry for SDK-mediated egress, where the
+  *dependency is the boundary*: `firebase`, `stripe`, `openai` and friends
+  produce a port from a manifest declaration even when no host literal exists
+  anywhere in the source. `services add <file|url>` installs one validated
+  registry file (the only command that touches the network).
+
+- **`drift`** — reports where `provides`, `consumes` and *declared* disagree:
+  dead contracts, env read but never declared. Findings require
+  EXTRACTED-by-EXTRACTED evidence; anything weaker is demoted to an observation
+  and **listed, never accused**. `--strict` is the CI gate.
+
+- **`search`** — a cross-OS literal sweep over the extractor's own file set
+  (same gitignore, same skip-dirs, same size cap), so a vendored tree the
+  extractor never reads can no longer pollute a ground-truth count. `grep` does
+  not exist on Windows, and Windows is a release target: the binary carries its
+  own sweep.
+
+- **Import specifiers resolve.** Relative and tsconfig-alias imports now rewrite
+  to the real file node, and Go module imports (including local-path `replace`
+  directives) gain `resolves_to` edges. On the Kubernetes corpus, traversable
+  imports went **1.8% → 60.5%** of 73,386 edges.
+
+### Changed
+
+- **Gathers are roughly 2× faster than 0.13.0.** Linux **124s → 55s**,
+  Kubernetes **14.6s → 7.3s**, java-spring **6.1s → 2.9s**. Most of it was not
+  where anyone assumed: `store.Replace` ran **once per producer**, each a full
+  read-sort-write of the entire graph; and the store's own cost turned out to be
+  **sorting, not parsing** (1,375ms of 2,624ms on Kubernetes) — we were
+  re-sorting a file we had written sorted ourselves. A one-file re-gather went
+  from 98% of a cold build to **86%**.
+
+- **Boundary rules moved from regex to the AST**, riding the code extractor's
+  existing walk. The lane's own cost went from 5.29s to noise on Kubernetes and
+  **12.43s → 0.06s** on the TypeScript compiler — which had been spending 12.4
+  seconds of regex to produce 42 ports. Accuracy improved with it: a dynamic
+  site like `exec.Command(binVar)` is now **visible as AMBIGUOUS** instead of
+  invisible, so a repo that spawns processes stops reporting that it spawns
+  none. Rules for unparsed languages (e.g. Kotlin without its grammar pack) are
+  **declared** as raw-scan rather than silently producing nothing.
+
+- **Memory on monorepos: 12.4GB → 3.42GB** on a 7-module repo, and `GOMAXPROCS`
+  is now a **working memory cap** (0.73GB at `GOMAXPROCS=2`). Worker pools keyed
+  on `runtime.NumCPU()`, which ignores cgroup quotas — a container limited to 2
+  CPUs on a 64-core host spawned 63 wasm instances and OOMed despite its quota.
+  Pools now key on `GOMAXPROCS` (container-aware since Go 1.25) and draw from a
+  **process-wide** budget, so the bill no longer multiplies by module count.
+  Full throttle on a laptop is unchanged.
+
+- **Markdown is parsed with a real CommonMark AST** (goldmark) instead of
+  per-line regexes. See *Fixed* for what that corrected.
+
+- **`card` cites line numbers on ambiguous candidates**, and a declaration now
+  outranks a mention: `card Flask` returned a README heading while the class sat
+  in `src/flask/app.py`. It still **refuses to guess** — adding locations is not
+  picking a winner.
+
+- **`query` ranks an exact match first.** Naming a node did not find it: the
+  match was not merely un-boosted but actively **penalised**, because a
+  dotted-label downrank written for child declarations fires on every hostname.
+
+### Fixed
+
+- **Two identical gathers now produce byte-identical stores.** They did not
+  before: 360 node locations drifted on linux/block and 223 on Newtonsoft,
+  because same-name declarations collapse to one id and the sort was unstable.
+  Fixing only the sort would have frozen a **wrong** answer — `card bfq_queue`
+  on the kernel cited a struct *member* instead of the type — so the comparator
+  now prefers the **widest span**: a declaration spans many lines, a reference
+  spans one. Citations got *better*, not merely stable (linux: 60 wider, **0
+  narrower**).
+
+- **`query` was never deterministic.** Map-iteration order decided which token's
+  IDF counted, so the same query on the same store returned different results
+  across runs (20 runs → two distinct outputs). Now one.
+
+- **618 phantom `section` nodes removed** — headings *inside code fences* were
+  being extracted as real, citable graph nodes. 9.4% of one repo's sections were
+  fabricated from shell examples, and a `query` could return one with a real
+  `file:line` that lands the reader inside a code sample.
+
+- **Concurrent gathers no longer corrupt each other's store** — writers shared a
+  fixed temp filename, so two `add` runs could eat each other's swap.
+
+- **Markdown links resolve against the walk, not the disk**, so a link into a
+  tree no producer reads (`.github/`, `dist/`) no longer mints an edge to a node
+  that can never exist.
+
+- **Invalid UTF-8 could reach the store** — doc and signature truncation sliced
+  at byte offsets, cutting multi-byte runes in half. Exposed, not caused, by the
+  store rewrite: the redundant passes had been healing it via JSON round-trip.
+
+- **A `wasm` rebuild no longer drifts.** `scripts/wasm/build.sh` cloned grammars
+  from their *default branch* and then overwrote `grammars.lock` with whatever
+  it got, so the lock recorded history instead of pinning it.
+
+### Behaviour changes to expect
+
+Nothing breaks and the **store format is compatible in both directions**
+(verified: 0.13.0 reads 0.14.0 stores and vice versa). But re-gathering an
+existing repo will move some numbers, all deliberately:
+
+- **Node counts drop slightly** where markdown fixture/example headings were
+  being counted as real sections.
+- **Some citations move to wider, more correct ranges** — a symbol that pointed
+  at a 2-line prototype may now point at its 72-line body.
+- **New `port` nodes appear**, which is the boundary lane.
+- **`scope` on consumed ports is always `external` today.** The internal/external
+  join compares hostnames against route paths and can never match; it is
+  documented in `openspec/changes/2026-08-15-scope-join-broken/` rather than
+  quietly left to look like a computation.
+
+### Added — testing
+
+- **The golden net gained gates that can actually fail.** The gather perf gate
+  could not: it recorded its own measurement *before* checking against it, and
+  shared a switch with the scoreboard, so the tight comparison never ran and the
+  baseline silently drifted **up** twice under commits captioned "ratchets
+  down". It now has its own switch and refuses to raise a baseline without an
+  explicit override.
+- **Byte-identity determinism is asserted on both tiers**, hermetic and corpus.
+- **A hermetic boundary fixture** pins 11 ports and 12 edges by class, and every
+  assertion was **proven red** by deliberately breaking what it guards —
+  including by narrowing a *rule*, which proves it catches producer regressions
+  and not merely rendering ones.
+- **A multi-pass session benchmark** (`benchmarks/session/`) that models what an
+  agent actually pays: build once, query, edit, re-index, query again. It
+  includes a **staleness probe** missing from every benchmark surveyed — after a
+  rename, the old name must vanish *and* the new one appear, so a tool that
+  "re-indexes instantly" by doing nothing scores as wrong rather than fastest.
+- **A Loc-Bench harness** (`benchmarks/locbench/`) — an external yardstick we do
+  not control. We enter only its **retrieval** tier, because answering its
+  issues end-to-end requires reasoning this binary refuses to do.
+
 ## [0.13.0] — 2026-08-05
 
 ### Added

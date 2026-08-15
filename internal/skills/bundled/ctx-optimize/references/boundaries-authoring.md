@@ -245,9 +245,13 @@ Field notes that are easy to get wrong:
 - `ast[].arg` is a **0-based argument position**. (`match[].identifier`, the
   raw lane's capture group, is 1-based — group 0 is invalid.)
 - `direction` is `provides` (this repo serves it) or `consumes` (this repo
-  calls it). **`scope` is NOT yours to set** — the engine computes
-  internal/external by JOIN: a consumed identifier is `internal` iff some
-  `provides` port in the workspace matches it.
+  calls it). **`scope` is NOT yours to set** — the engine computes it. Be aware
+  of what it currently produces: the join intends `internal` when a consumed
+  identifier matches a `provides` port in the workspace, but consumed
+  identifiers are HOSTS and provided ones are ROUTE PATHS, so nothing matches
+  and **every consumed port is `external` today**. Do not design a rule around
+  `scope`, and do not report `external` as evidence that a call is
+  third-party.
 - `metadata` values may interpolate `$identifier`. Open metadata keys must be
   **namespaced** (`otel.*`, `pack.*`, `org.*`) — the schema door rejects a bare
   unknown key fail-closed. Reserved keys: `direction`, `transport`,
