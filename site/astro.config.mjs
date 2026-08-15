@@ -38,6 +38,12 @@ export default defineConfig({
 				}),
 			],
 			customCss: ['@fontsource-variable/inter', './src/styles/ctx.css'],
+			components: {
+				// Adds top-level nav links beside the wordmark — the splash
+				// homepage has no sidebar, so without these the docs are
+				// reachable only from the hero button.
+				SiteTitle: './src/components/SiteTitle.astro',
+			},
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/muthuishere/ctx-optimize' },
 			],

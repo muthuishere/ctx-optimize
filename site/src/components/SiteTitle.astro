@@ -1,0 +1,61 @@
+---
+// Overrides Starlight's SiteTitle to put top-level nav links beside the wordmark.
+//
+// The homepage uses `template: splash`, which renders NO sidebar — so on the
+// page most visitors land on, the only route into the docs was the single
+// "Quick start" hero button. These links give the docs, the evidence and the
+// differentiated capability a permanent home in the header on every page.
+import type { Props } from '@astrojs/starlight/props';
+import Default from '@astrojs/starlight/components/SiteTitle.astro';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const links = [
+	{ label: 'Docs', href: `${base}/quickstart/` },
+	{ label: 'Boundaries', href: `${base}/boundaries/` },
+	{ label: 'Benchmarks', href: `${base}/benchmarks/` },
+	{ label: 'Compare', href: `${base}/compare/` },
+];
+const here = Astro.url.pathname;
+---
+
+<Default {...Astro.props}><slot /></Default>
+
+<nav class="ctx-nav" aria-label="Main">
+	{
+		links.map((l) => (
+			<a href={l.href} aria-current={here.startsWith(l.href) ? 'page' : undefined}>
+				{l.label}
+			</a>
+		))
+	}
+</nav>
+
+<style>
+	.ctx-nav {
+		display: none;
+		gap: 1.25rem;
+		margin-inline-start: 1.5rem;
+		align-items: center;
+		white-space: nowrap;
+	}
+	/* Only once there is room: below this the header already carries the title,
+	   search, GitHub and the theme select, and Starlight moves nav to the
+	   sidebar drawer. */
+	@media (min-width: 72rem) {
+		.ctx-nav {
+			display: flex;
+		}
+	}
+	.ctx-nav a {
+		color: var(--sl-color-gray-2);
+		text-decoration: none;
+		font-size: var(--sl-text-sm);
+		font-weight: 500;
+	}
+	.ctx-nav a:hover {
+		color: var(--sl-color-white);
+	}
+	.ctx-nav a[aria-current='page'] {
+		color: var(--sl-color-text-accent);
+	}
+</style>
