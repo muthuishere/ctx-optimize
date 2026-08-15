@@ -1,0 +1,638 @@
+{
+  "name": "gorilla-mux-graded",
+  "measured_utc": "2026-08-15T16:45:38Z",
+  "harness": "proof/agent/run-quality.sh + agent.mjs + grade.mjs (deterministic, no LLM judge)",
+  "corpus": "github.com/gorilla/mux @ HEAD, shallow clone, 56 files \u2014 one clone per arm",
+  "model": "openai/gpt-4o-mini via OpenRouter, temperature 0, usage.include=true",
+  "questions": 12,
+  "runs": 3,
+  "n_answers_per_arm": 36,
+  "max_steps_per_question": 12,
+  "runs_meta": [
+    {
+      "started_utc": "2026-08-15T16:45:38Z",
+      "finished_utc": "2026-08-15T16:50:00Z",
+      "wall_s": 262,
+      "model": "openai/gpt-4o-mini",
+      "arms": "a b c d e f",
+      "questions": "questions-graded-mux.json",
+      "ctx_optimize_version": "ctx-optimize v0.14.0-8-ga8ce095-dirty (a8ce095, 2026-08-15T16:44:18Z)",
+      "load_average_start": "4.49 2.88 2.73",
+      "load_average_end": "1.66 2.32 2.52",
+      "host": "Darwin 25.4.0 arm64"
+    },
+    {
+      "started_utc": "2026-08-15T16:50:01Z",
+      "finished_utc": "2026-08-15T16:54:09Z",
+      "wall_s": 248,
+      "model": "openai/gpt-4o-mini",
+      "arms": "a b c d e f",
+      "questions": "questions-graded-mux.json",
+      "ctx_optimize_version": "ctx-optimize v0.14.0-8-ga8ce095-dirty (a8ce095, 2026-08-15T16:44:18Z)",
+      "load_average_start": "1.66 2.32 2.52",
+      "load_average_end": "1.46 2.02 2.35",
+      "host": "Darwin 25.4.0 arm64"
+    },
+    {
+      "started_utc": "2026-08-15T16:54:10Z",
+      "finished_utc": "2026-08-15T16:58:29Z",
+      "wall_s": 259,
+      "model": "openai/gpt-4o-mini",
+      "arms": "a b c d e f",
+      "questions": "questions-graded-mux.json",
+      "ctx_optimize_version": "ctx-optimize v0.14.0-8-ga8ce095-dirty (a8ce095, 2026-08-15T16:44:18Z)",
+      "load_average_start": "1.46 2.02 2.35",
+      "load_average_end": "3.19 2.49 2.44",
+      "host": "Darwin 25.4.0 arm64"
+    }
+  ],
+  "provenance": {
+    "graphify": {
+      "resolved_sha": "2fa6cd3d5548577f8c5f591b713f0bf80c1af183",
+      "pinned": true,
+      "entry": "/Users/muthuishere/ctx-bench-arena/tools/graphify/.venv/bin/graphify",
+      "repo": "https://github.com/safishamsi/graphify.git",
+      "local": false
+    },
+    "codegraph": {
+      "resolved_sha": "572d22bfbe82602080e457bec655f72e3314f9ef",
+      "pinned": true,
+      "entry": "/Users/muthuishere/ctx-bench-arena/tools/codegraph/dist/bin/codegraph.js",
+      "repo": "https://github.com/colbymchenry/codegraph.git",
+      "local": false
+    },
+    "gitnexus": {
+      "resolved_sha": "91b22676ceaa66ce7941fcb146ffc68ff9a144e6",
+      "pinned": true,
+      "entry": "/Users/muthuishere/ctx-bench-arena/tools/gitnexus/gitnexus/dist/cli/index.js",
+      "repo": "https://github.com/abhigyanpatwari/GitNexus.git",
+      "local": false
+    },
+    "codegraphcontext": {
+      "resolved_sha": "810ea8a9f04fddb2b298b61d752a5e619e19245a",
+      "pinned": false,
+      "entry": "/Users/muthuishere/ctx-bench-arena/tools/codegraphcontext/.venv/bin/cgc",
+      "repo": "https://github.com/Shashankss1205/CodeGraphContext.git",
+      "local": false
+    },
+    "ctx-optimize": {
+      "resolved_sha": "a8ce095eb06873ae13ceecfa6bec940f29d9e93f",
+      "pinned": true,
+      "version_string": "ctx-optimize v0.14.0-8-ga8ce095-dirty (a8ce095, 2026-08-15T16:44:18Z)",
+      "entry": "/Users/muthuishere/muthu/gitworkspace/ctx-optimize/bin/ctx-optimize",
+      "repo": "this repo",
+      "local": true,
+      "built_with": "task build (ldflags-stamped); a bare `go build` yields 0.0.0-dev, which is the defect this re-run fixes",
+      "binary_built_at_local": "2026-08-15 22:14 IST",
+      "working_tree_dirty_at_build": true,
+      "dirty_paths_at_build": [
+        "M proof/agent/agent.mjs",
+        "M proof/agent/grade.mjs",
+        "M proof/agent/run-quality.sh",
+        "?? proof/agent/RESULTS-QUALITY-6ARM.md",
+        "?? proof/agent/results-quality-6arm-2026-08-15.json"
+      ],
+      "dirty_affects_binary": false,
+      "dirty_proof": "At build time, `go build -trimpath -buildvcs=false` with identical ldflags produced a BYTE-IDENTICAL binary from this working tree and from a clean `git worktree` of a8ce095 (sha256 f8c1ca6f2fc1a6cb3c1efbc97668a2f5b34fb130d6cc3cb1bea2b090ab0ad100). The only difference without -buildvcs=false is Go's own vcs.modified=true stamp, which is metadata, not code. Every dirty path at build time was under proof/agent/ \u2014 no .go file, no go.mod, no embedded asset.",
+      "concurrent_session_note": "ANOTHER SESSION was working in this repo during the run. It committed 00ae46c (openspec docs only \u2014 `git diff a8ce095..00ae46c -- '*.go' go.mod go.sum` is empty, so the Go source is identical at both commits) and, at 22:28 IST, added an untracked internal/store/contenthash.go. The benchmarked binary has mtime 22:14 IST and was never rebuilt, so that file CANNOT be in it \u2014 confirmed by the fact that a rebuild after 22:28 no longer reproduces f8c1ca6f. Arm b measured a8ce095's Go code."
+    }
+  },
+  "arms": {
+    "a": {
+      "tool": "shell",
+      "answers": 36,
+      "byClass": {
+        "impact": 0.2708,
+        "locate": 0.5
+      },
+      "false_claims": 0,
+      "empty_answers": 4,
+      "hit_step_cap": 4,
+      "tool_errors": 53,
+      "failed_runs": 0,
+      "correctness": 0.3472,
+      "wall_s_per_run": 63.3,
+      "tokens_per_run": 28405,
+      "cost_usd_per_run": 0.0048,
+      "tool_calls_per_run": 43,
+      "tool_calls_per_question": 3.58
+    },
+    "b": {
+      "tool": "ctx-optimize",
+      "answers": 36,
+      "byClass": {
+        "impact": 0.75,
+        "locate": 0.4167
+      },
+      "false_claims": 0,
+      "empty_answers": 0,
+      "hit_step_cap": 0,
+      "tool_errors": 0,
+      "failed_runs": 0,
+      "correctness": 0.6389,
+      "wall_s_per_run": 30,
+      "tokens_per_run": 24471,
+      "cost_usd_per_run": 0.0036,
+      "tool_calls_per_run": 12,
+      "tool_calls_per_question": 1
+    },
+    "c": {
+      "tool": "graphify",
+      "answers": 36,
+      "byClass": {
+        "impact": 0.6042,
+        "locate": 0.0833
+      },
+      "false_claims": 6,
+      "empty_answers": 0,
+      "hit_step_cap": 0,
+      "tool_errors": 0,
+      "failed_runs": 0,
+      "correctness": 0.4306,
+      "wall_s_per_run": 40.9,
+      "tokens_per_run": 51770,
+      "cost_usd_per_run": 0.0059,
+      "tool_calls_per_run": 22.3,
+      "tool_calls_per_question": 1.86
+    },
+    "d": {
+      "tool": "codegraph",
+      "answers": 36,
+      "byClass": {
+        "impact": 0.6563,
+        "locate": 0.3333
+      },
+      "false_claims": 0,
+      "empty_answers": 0,
+      "hit_step_cap": 0,
+      "tool_errors": 0,
+      "failed_runs": 0,
+      "correctness": 0.5486,
+      "wall_s_per_run": 33.6,
+      "tokens_per_run": 14599,
+      "cost_usd_per_run": 0.0026,
+      "tool_calls_per_run": 17.7,
+      "tool_calls_per_question": 1.47
+    },
+    "e": {
+      "tool": "gitnexus",
+      "answers": 36,
+      "byClass": {
+        "impact": 0.5521,
+        "locate": 0.6667
+      },
+      "false_claims": 0,
+      "empty_answers": 0,
+      "hit_step_cap": 0,
+      "tool_errors": 0,
+      "failed_runs": 0,
+      "correctness": 0.5903,
+      "wall_s_per_run": 43,
+      "tokens_per_run": 23556,
+      "cost_usd_per_run": 0.0038,
+      "tool_calls_per_run": 15.7,
+      "tool_calls_per_question": 1.31
+    },
+    "f": {
+      "tool": "codegraphcontext",
+      "answers": 36,
+      "byClass": {
+        "impact": 0.5,
+        "locate": 0.2639
+      },
+      "false_claims": 3,
+      "empty_answers": 0,
+      "hit_step_cap": 0,
+      "tool_errors": 0,
+      "failed_runs": 0,
+      "correctness": 0.4213,
+      "wall_s_per_run": 41.4,
+      "tokens_per_run": 19625,
+      "cost_usd_per_run": 0.0032,
+      "tool_calls_per_run": 17.3,
+      "tool_calls_per_question": 1.44
+    }
+  },
+  "per_question": {
+    "i1": {
+      "class": "impact",
+      "arms": {
+        "shell": [
+          0,
+          0,
+          0
+        ],
+        "ctx-optimize": [
+          1,
+          1,
+          1
+        ],
+        "graphify": [
+          0.5,
+          1,
+          1
+        ],
+        "codegraph": [
+          0.75,
+          0.75,
+          0.75
+        ],
+        "gitnexus": [
+          0.25,
+          0.25,
+          0.25
+        ],
+        "codegraphcontext": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "i2": {
+      "class": "impact",
+      "arms": {
+        "shell": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "ctx-optimize": [
+          1,
+          1,
+          1
+        ],
+        "graphify": [
+          1,
+          1,
+          1
+        ],
+        "codegraph": [
+          1,
+          1,
+          1
+        ],
+        "gitnexus": [
+          1,
+          1,
+          1
+        ],
+        "codegraphcontext": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    "i3": {
+      "class": "impact",
+      "arms": {
+        "shell": [
+          0,
+          0,
+          0
+        ],
+        "ctx-optimize": [
+          1,
+          1,
+          1
+        ],
+        "graphify": [
+          0,
+          0,
+          0
+        ],
+        "codegraph": [
+          0,
+          0,
+          0
+        ],
+        "gitnexus": [
+          0,
+          0,
+          0
+        ],
+        "codegraphcontext": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "i4": {
+      "class": "impact",
+      "arms": {
+        "shell": [
+          0,
+          0,
+          0
+        ],
+        "ctx-optimize": [
+          1,
+          1,
+          1
+        ],
+        "graphify": [
+          1,
+          1,
+          1
+        ],
+        "codegraph": [
+          1,
+          1,
+          1
+        ],
+        "gitnexus": [
+          1,
+          1,
+          1
+        ],
+        "codegraphcontext": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    "i5": {
+      "class": "impact",
+      "arms": {
+        "shell": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "ctx-optimize": [
+          0,
+          0,
+          0
+        ],
+        "graphify": [
+          0,
+          0,
+          0
+        ],
+        "codegraph": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "gitnexus": [
+          0,
+          0,
+          0
+        ],
+        "codegraphcontext": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "i6": {
+      "class": "impact",
+      "arms": {
+        "shell": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "ctx-optimize": [
+          1,
+          1,
+          1
+        ],
+        "graphify": [
+          1,
+          1,
+          1
+        ],
+        "codegraph": [
+          1,
+          1,
+          1
+        ],
+        "gitnexus": [
+          1,
+          1,
+          1
+        ],
+        "codegraphcontext": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    "i7": {
+      "class": "impact",
+      "arms": {
+        "shell": [
+          0,
+          0,
+          0.5
+        ],
+        "ctx-optimize": [
+          0,
+          0,
+          0
+        ],
+        "graphify": [
+          0,
+          0,
+          0
+        ],
+        "codegraph": [
+          0,
+          0,
+          0
+        ],
+        "gitnexus": [
+          0,
+          0,
+          0.5
+        ],
+        "codegraphcontext": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "i8": {
+      "class": "impact",
+      "arms": {
+        "shell": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "ctx-optimize": [
+          1,
+          1,
+          1
+        ],
+        "graphify": [
+          1,
+          1,
+          1
+        ],
+        "codegraph": [
+          1,
+          1,
+          1
+        ],
+        "gitnexus": [
+          1,
+          1,
+          1
+        ],
+        "codegraphcontext": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    "l1": {
+      "class": "locate",
+      "arms": {
+        "shell": [
+          1,
+          1,
+          1
+        ],
+        "ctx-optimize": [
+          0,
+          0,
+          0
+        ],
+        "graphify": [
+          0,
+          0,
+          0
+        ],
+        "codegraph": [
+          0,
+          0,
+          0
+        ],
+        "gitnexus": [
+          1,
+          1,
+          1
+        ],
+        "codegraphcontext": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "l2": {
+      "class": "locate",
+      "arms": {
+        "shell": [
+          1,
+          0,
+          1
+        ],
+        "ctx-optimize": [
+          1,
+          1,
+          1
+        ],
+        "graphify": [
+          0,
+          0,
+          0
+        ],
+        "codegraph": [
+          1,
+          1,
+          1
+        ],
+        "gitnexus": [
+          1,
+          1,
+          1
+        ],
+        "codegraphcontext": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      }
+    },
+    "l3": {
+      "class": "locate",
+      "arms": {
+        "shell": [
+          0,
+          0,
+          0
+        ],
+        "ctx-optimize": [
+          0,
+          0,
+          0
+        ],
+        "graphify": [
+          0,
+          0,
+          0
+        ],
+        "codegraph": [
+          0,
+          0,
+          0
+        ],
+        "gitnexus": [
+          0.3333,
+          0.3333,
+          0.3333
+        ],
+        "codegraphcontext": [
+          0.3333,
+          0.3333,
+          0.3333
+        ]
+      }
+    },
+    "l4": {
+      "class": "locate",
+      "arms": {
+        "shell": [
+          0.3333,
+          0.6667,
+          0
+        ],
+        "ctx-optimize": [
+          0.6667,
+          0.6667,
+          0.6667
+        ],
+        "graphify": [
+          0.3333,
+          0.3333,
+          0.3333
+        ],
+        "codegraph": [
+          0.3333,
+          0.3333,
+          0.3333
+        ],
+        "gitnexus": [
+          0.3333,
+          0.3333,
+          0.3333
+        ],
+        "codegraphcontext": [
+          0.3333,
+          0,
+          0.3333
+        ]
+      }
+    }
+  }
+}

@@ -6,6 +6,9 @@
 //   arm a — shell only (grep/rg/find/sed/cat) — the agent everyone has
 //   arm b — ctx-optimize store first, shell only to fill gaps
 //   arm c — graphify store first, shell only to fill gaps  (the competitor)
+//   arm d — codegraph store first          (competitor, pinned arena build)
+//   arm e — gitnexus store first           (competitor, pinned arena build)
+//   arm f — codegraphcontext store first   (competitor, arena build)
 // and report, per arm: wall seconds, prompt/completion tokens, dollar cost
 // (OpenRouter's own accounting), and tool-call count (steps). Token and cost
 // numbers come from OpenRouter's `usage` block with `usage.include=true`, so
@@ -20,7 +23,7 @@
 // Prints one JSON record to stdout. The key is read from the environment only
 // (never logged). Deterministic-ish: temperature 0.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -30,6 +33,14 @@ if (!KEY) { die("OPENROUTER_API_KEY not set in environment"); }
 const REPO = path.resolve(args.repo || die("--repo required"));
 const BIN = args.bin || "ctx-optimize";
 const GBIN = args["graphify-bin"] || "graphify";
+// Competitor arms take their ENTRY POINT from the arena's versions.json (passed
+// in by run-quality.sh), never from PATH — an unpinned build must not be able to
+// masquerade as the pinned one.
+const CGRAPH_ENTRY = args["codegraph-entry"] || "";
+const GNEXUS_ENTRY = args["gitnexus-entry"] || "";
+const GNEXUS_HOME = args["gitnexus-home"] || "";   // isolated registry per arm
+const CGC_BIN = args["cgc-bin"] || "";
+const CGC_DB = args["cgc-db"] || "";
 const ARM = args.arm || "b";
 const Q = args.q || die("--q required");
 const MODEL = args.model || "openai/gpt-4o-mini";
@@ -66,13 +77,66 @@ const SYS_C =
   "graph leaves. Reply concisely with function/type names and file:line " +
   "citations. Do not modify anything. Stop as soon as you can answer.";
 
+// Competitor prompts are the SAME SHAPE as SYS_B/SYS_C — same instructions, same
+// discipline, same closing sentence; only the tool name and its verb list differ.
+// An arm with a better-written prompt is not a comparison.
+const SYS_D =
+  "You answer questions about the code in the current repository. A codegraph " +
+  "knowledge graph for this repo is ALREADY BUILT. Prefer it over reading files:\n" +
+  "  query \"<term>\"    -> ranked symbol hits with signatures + file:line\n" +
+  "  node <symbol>     -> a symbol's source and caller/callee trail (no file read)\n" +
+  "  callers <symbol>  -> every function that calls it\n" +
+  "  callees <symbol>  -> everything it calls\n" +
+  "  impact <symbol>   -> what depends on it (blast radius)\n" +
+  "Call the codegraph tool FIRST. Use run_shell only to fill a specific gap the " +
+  "graph leaves. Reply concisely with function/type names and file:line " +
+  "citations. Do not modify anything. Stop as soon as you can answer.";
+
+const SYS_E =
+  "You answer questions about the code in the current repository. A gitnexus " +
+  "knowledge graph for this repo is ALREADY BUILT. Prefer it over reading files:\n" +
+  "  query \"<terms>\"   -> ranked symbol hits with file:line + execution flows\n" +
+  "  context <symbol>  -> a symbol with its callers and callees (no file read)\n" +
+  "  impact <symbol>   -> what depends on it (blast radius)\n" +
+  "  trace <a> <b>     -> how two symbols connect\n" +
+  "Call the gitnexus tool FIRST. Use run_shell only to fill a specific gap the " +
+  "graph leaves. Reply concisely with function/type names and file:line " +
+  "citations. Do not modify anything. Stop as soon as you can answer.";
+
+const SYS_F =
+  "You answer questions about the code in the current repository. A " +
+  "codegraphcontext knowledge graph for this repo is ALREADY BUILT. Prefer it " +
+  "over reading files:\n" +
+  "  find name <symbol>        -> where a symbol is defined, with file:line\n" +
+  "  find content \"<terms>\"    -> full-text search over source and docstrings\n" +
+  "  analyze callers <symbol>  -> every function that calls it\n" +
+  "  analyze calls <symbol>    -> everything it calls\n" +
+  "  analyze chain <a> <b>     -> how two symbols connect\n" +
+  "Call the codegraphcontext tool FIRST. Use run_shell only to fill a specific " +
+  "gap the graph leaves. Reply concisely with function/type names and file:line " +
+  "citations. Do not modify anything. Stop as soon as you can answer.";
+
 const TOOLS_A = [shellTool()];
 const TOOLS_B = [ctxTool(), shellTool()];
 const TOOLS_C = [graphifyTool(), shellTool()];
+const TOOLS_D = [competitorTool("codegraph", "codegraph knowledge graph",
+  "[\"query\",\"refund\"], [\"node\",\"ChargeService\"], [\"callers\",\"User\"], " +
+  "[\"callees\",\"User\"], [\"impact\",\"User\"]"), shellTool()];
+const TOOLS_E = [competitorTool("gitnexus", "gitnexus knowledge graph",
+  "[\"query\",\"refund flow\"], [\"context\",\"ChargeService\"], " +
+  "[\"impact\",\"User\"], [\"trace\",\"A\",\"B\"]"), shellTool()];
+const TOOLS_F = [competitorTool("codegraphcontext", "codegraphcontext knowledge graph",
+  "[\"find\",\"name\",\"ChargeService\"], [\"find\",\"content\",\"refund\"], " +
+  "[\"analyze\",\"callers\",\"User\"], [\"analyze\",\"calls\",\"User\"], " +
+  "[\"analyze\",\"chain\",\"A\",\"B\"]"), shellTool()];
+
 const ARM_CFG = {
   a: { sys: SYS_A, tools: TOOLS_A },
   b: { sys: SYS_B, tools: TOOLS_B },
   c: { sys: SYS_C, tools: TOOLS_C },
+  d: { sys: SYS_D, tools: TOOLS_D },
+  e: { sys: SYS_E, tools: TOOLS_E },
+  f: { sys: SYS_F, tools: TOOLS_F },
 };
 
 function shellTool() {
@@ -141,6 +205,30 @@ function graphifyTool() {
   };
 }
 
+// Same schema shape as ctxTool()/graphifyTool(): one `argv` array, no extras.
+function competitorTool(name, what, examples) {
+  return {
+    type: "function",
+    function: {
+      name,
+      description:
+        `Query the prebuilt ${what} for this repo. Pass the sub-command and ` +
+        `its arguments, e.g. ${examples}. Returns related graph nodes and edges.`,
+      parameters: {
+        type: "object",
+        properties: {
+          argv: {
+            type: "array",
+            items: { type: "string" },
+            description: `sub-command + args, without the leading '${name}'`,
+          },
+        },
+        required: ["argv"],
+      },
+    },
+  };
+}
+
 function runShell(command) {
   try {
     return execFileSync("/bin/sh", ["-c", command], {
@@ -184,6 +272,54 @@ function runGraphify(argv) {
   }
 }
 
+// One exec path for the three arena competitors. `file`+`pre` come from the
+// pinned entry recorded in versions.json; `env` carries only the isolation each
+// tool needs (telemetry off, private registry, wide output).
+//
+// BOTH streams are returned, and a non-zero exit with output is NOT an error.
+// Same reasoning as grep exit 1 in runShell: codegraphcontext prints its result
+// table on stderr, and gitnexus exits 1 with a JSON "symbol not found" body —
+// charging either as a tool failure, or hiding the answer it did print, would
+// measure our plumbing instead of the tool.
+function runExternal(label, file, pre, argv, env, denoise) {
+  const safe = Array.isArray(argv) ? argv.map(String) : [String(argv)];
+  const r = spawnSync(file, [...pre, ...safe], {
+    cwd: REPO, encoding: "utf8", timeout: 60000, maxBuffer: 32 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, ...env },
+  });
+  const clean = (s) => {
+    let lines = String(s || "").split("\n");
+    if (denoise) lines = lines.filter((l) => !denoise.test(l));
+    return lines.join("\n").trim();
+  };
+  const body = [clean(r.stdout), clean(r.stderr)].filter(Boolean).join("\n");
+  if (body) return body;
+  return `[${label} error] ${r.error?.message || `exit ${r.status}`}`.slice(0, OUT_CAP);
+}
+function runCodegraph(argv) {
+  if (!CGRAPH_ENTRY) return "[codegraph error] no entry configured";
+  return runExternal("codegraph", process.execPath, [CGRAPH_ENTRY], argv,
+    { CODEGRAPH_TELEMETRY: "0", NO_COLOR: "1" });
+}
+function runGitnexus(argv) {
+  if (!GNEXUS_ENTRY) return "[gitnexus error] no entry configured";
+  // The pino warn line about the optional VECTOR extension is printed on every
+  // call; it is noise, not an answer, and it is not the model's problem.
+  return runExternal("gitnexus", process.execPath, [GNEXUS_ENTRY], argv,
+    GNEXUS_HOME ? { HOME: GNEXUS_HOME, NO_COLOR: "1" } : { NO_COLOR: "1" },
+    /^\{"level":\d+,"time"/);
+}
+function runCgc(argv) {
+  if (!CGC_BIN) return "[codegraphcontext error] no entry configured";
+  const pre = CGC_DB ? ["--db", "kuzudb", "--db-path", CGC_DB] : [];
+  // COLUMNS=400 stops rich from ellipsising the Location column, which is where
+  // its file:line lives — truncating it would grade the terminal, not the tool.
+  return runExternal("codegraphcontext", CGC_BIN, pre, argv,
+    { COLUMNS: "400", NO_COLOR: "1" },
+    /^(No configuration file found|Using database:|Resolving context|Initializing services|Services initialized)/);
+}
+
 async function chat(messages, tools) {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -217,7 +353,8 @@ async function main() {
   ];
 
   const usage = { prompt: 0, completion: 0, total: 0, cost: 0 };
-  const calls = { run_shell: 0, ctx_optimize: 0, graphify: 0 };
+  const calls = { run_shell: 0, ctx_optimize: 0, graphify: 0,
+                  codegraph: 0, gitnexus: 0, codegraphcontext: 0 };
   const trace = [];        // every tool invocation, for audit
   let answer = "";
   let truncated = true;    // cleared when the model actually answers
@@ -247,6 +384,9 @@ async function main() {
         if (name === "run_shell") { calls.run_shell++; input = a.command || ""; out = runShell(input); }
         else if (name === "ctx_optimize") { calls.ctx_optimize++; input = (a.argv || []).join(" "); out = runCtx(a.argv || []); }
         else if (name === "graphify") { calls.graphify++; input = (a.argv || []).join(" "); out = runGraphify(a.argv || []); }
+        else if (name === "codegraph") { calls.codegraph++; input = (a.argv || []).join(" "); out = runCodegraph(a.argv || []); }
+        else if (name === "gitnexus") { calls.gitnexus++; input = (a.argv || []).join(" "); out = runGitnexus(a.argv || []); }
+        else if (name === "codegraphcontext") { calls.codegraphcontext++; input = (a.argv || []).join(" "); out = runCgc(a.argv || []); }
         else out = `[unknown tool ${name}]`;
       } catch (e) {
         out = `[tool arg parse error] ${e.message}`;
@@ -254,7 +394,7 @@ async function main() {
       trace.push({
         tool: name, input,
         out_bytes: String(out).length,
-        error: /^\[(shell|ctx-optimize|graphify) error\]/.test(String(out)),
+        error: /^\[(shell|ctx-optimize|graphify|codegraph|gitnexus|codegraphcontext) error\]/.test(String(out)),
         head: String(out).slice(0, 300),
       });
       messages.push({
@@ -268,7 +408,7 @@ async function main() {
   const record = {
     model: MODEL, arm: ARM, question: Q,
     wall_s: round(wall, 2),
-    steps: calls.run_shell + calls.ctx_optimize + calls.graphify,
+    steps: Object.values(calls).reduce((s, n) => s + n, 0),
     tool_calls: calls,
     tokens: { prompt: usage.prompt, completion: usage.completion, total: usage.total },
     cost_usd: round(usage.cost, 6),

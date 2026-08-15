@@ -31,14 +31,17 @@ const QFILE = args.questions || die("--questions required");
 const spec = JSON.parse(fs.readFileSync(QFILE, "utf8"));
 const QS = new Map((spec.questions || []).map((q) => [q.id, q]));
 
-const LABEL = { a: "shell", b: "ctx-optimize", c: "graphify" };
-const ARMS = ["a", "b", "c"];
+const LABEL = {
+  a: "shell", b: "ctx-optimize", c: "graphify",
+  d: "codegraph", e: "gitnexus", f: "codegraphcontext",
+};
+const ARMS = ["a", "b", "c", "d", "e", "f"];
 
 // ---- load records ----
 const recs = [];
 for (const DIR of DIRS) {
   for (const f of fs.readdirSync(DIR)) {
-    const m = f.match(new RegExp(`^${NAME}-([abc])-(.+)\\.json$`));
+    const m = f.match(new RegExp(`^${NAME}-([a-f])-(.+)\\.json$`));
     if (!m) continue;
     const [, arm, qid] = m;
     let j;
