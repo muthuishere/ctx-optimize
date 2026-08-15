@@ -4,8 +4,12 @@ Status: D0 IMPLEMENTED 2026-08-15 (owner: "it's okay in my laptop for full
 throttle for others we can have differently" — exactly what GOMAXPROCS gives:
 unchanged on a laptop, automatically bounded in a container). reqsume 7 modules
 now 0.73GB at GOMAXPROCS=2 / 2.66GB at 6 / 9.40GB at 18, where all three were
-~12.4GB before. D1/D2 (global instance pool, 64MB floor) and Ceiling 2 (query
-index) remain DRAFT.
+~12.4GB before. D1 IMPLEMENTED (process-wide worker budget): reqsume 9.40 -> 3.42GB at full
+throttle, -64%, byte-identical, single-module untouched.
+D2 (the 64MB floor) is DEFERRED ON EVIDENCE: marginal cost is ~160MB per worker
+while the initial-memory floor is only 64MB of it, so D2 cannot close the
+remaining gap. Bounding the guest out_buf is the real lever — own ADR.
+Ceiling 2 (query index) remains DRAFT.
 Scope: `internal/extract/code` (instance pooling) and `internal/query` (index).
 Both causes are MEASURED, not inferred.
 
