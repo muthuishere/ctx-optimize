@@ -1,13 +1,17 @@
 ---
 title: ctx-optimize
-description: A deterministic code knowledge graph for coding agents. 67% correct against a shell agent's 35%, on 15.0 tool calls against 42.7 — graded, 3 runs, n = 36 per arm. One binary, no LLM, no database, no MCP.
+description: One static binary that gathers a repo into a deterministic graph and answers structural questions with an exact file:line. No database, no server, no model, no MCP. Every edge states its confidence.
 template: splash
 hero:
-  tagline: Better answers, a third of the round trips, and no model in the loop. A deterministic code graph your agent queries instead of guessing at line numbers.
+  tagline: One static binary. No database, no server, no model, no MCP. Same input, same graph, byte for byte — and every answer carries an exact file:line.
   actions:
     - text: Quick start
       link: /ctx-optimize/quickstart/
       icon: right-arrow
+    - text: How it works
+      link: /ctx-optimize/how-it-works/
+      icon: document
+      variant: minimal
     - text: GitHub
       link: https://github.com/muthuishere/ctx-optimize
       icon: external
@@ -16,64 +20,121 @@ hero:
 
 import { Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
 
-```bash
-npm install -g @muthuishere/ctx-optimize   # v0.14.0 · one static binary per platform
-cd your-repo && ctx-optimize up            # one verb: bootstrap, gather, or pull
+You are probably reading this with an agent already open. Pick yours and paste the block — it
+installs the CLI, builds the graph, and wires itself up so it reaches for the store instead of
+grep.
+
+<Tabs>
+<TabItem label="Claude Code">
+```text
+Install ctx-optimize for this repo and set yourself up to use it:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install --claude
+   (installs the skill + the session hook, and adds the always-on
+    "knowledge graph before grep" rule to my global ~/.claude/CLAUDE.md)
+4. run: ctx-optimize init   — writes the committed pointer block so my
+   teammates' agents inherit it too
+
+From now on answer my code questions with its verbs — query, card,
+change-plan, affected, boundaries — instead of grep-and-read, and cite the
+file:line it returns.
 ```
+</TabItem>
+<TabItem label="Codex">
+```text
+Install ctx-optimize for this repo and set yourself up to use it:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install --codex
+   (installs the skill + hook and adds the always-on rule to my global
+    ~/.codex/AGENTS.md — then trust it once with /hooks inside codex)
+4. run: ctx-optimize init   — writes the committed pointer block for the team
 
-## The scoreboard, before anything else
+From now on answer my code questions with its verbs — query, card,
+change-plan, affected, boundaries — instead of grep-and-read, and cite the
+file:line it returns.
+```
+</TabItem>
+<TabItem label="Copilot">
+```text
+Install ctx-optimize for this repo and set yourself up to use it:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install --copilot
+4. run: ctx-optimize init   — writes the committed pointer block for the team
 
-One agent, three arms, same twelve hand-verified questions on **gorilla/mux** — small,
-modern, well-named Go, the terrain where plain grep is already strong. **3 runs, n = 36
-answers per arm**, model `gpt-4o-mini`, graded deterministically: no LLM judge, the same
-rule for every arm, and the grader never saw which tool produced the answer.
+From now on answer my code questions with its verbs — query, card,
+change-plan, affected, boundaries — instead of grep-and-read, and cite the
+file:line it returns.
+```
+</TabItem>
+<TabItem label="Any agent">
+```text
+Install ctx-optimize for this repo and set yourself up to use it:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install    — every agent CLI it detects
+4. run: ctx-optimize init       — the committed pointer block for the team
 
-| | shell (ripgrep) | ctx-optimize | graphify | proven at |
-|---|---|---|---|---|
-| Overall correctness | 35% | **67%** | 40% | [the graded run](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) |
-| Correct on "who calls this / what breaks if I change it" | 29% | **79%** | 42% | [the graded run](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) |
-| Correct on "where is X" | **47%** | 42% | 36% | [the loss we publish](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) |
-| Tool calls per run | 42.7 | **15.0** | 26.0 | [round trips and wall time](/ctx-optimize/benchmarks/#2-round-trips-tokens-and-wall-time) |
-| Wall seconds per run | 65.5 s | **40.1 s** | 43.1 s | [round trips and wall time](/ctx-optimize/benchmarks/#2-round-trips-tokens-and-wall-time) |
-| Empty answers · runs that hit the step cap | 4 · 3 | **0 · 0** | 0 · 0 | [the graded run](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) |
+From now on answer my code questions with its verbs — query, card,
+change-plan, affected, boundaries — instead of grep-and-read, and cite the
+file:line it returns.
+```
+</TabItem>
+</Tabs>
 
-**Grep wins "where is X"** — that is what a string search is for, and the row stays.
+The skill and hook install globally; the agent flag only picks which agent gets wired up. The
+optional part is the marker-fenced rule in your global instructions file — that is what makes
+an agent reach for the store unprompted, and `uninstall` removes it cleanly. `init` is the only
+step that touches the repo, and what it writes is meant to be committed.
+[The full walkthrough →](/ctx-optimize/quickstart/)
 
-### Tokens: it depends on the harness, and both halves are ours
+## What is different
 
-On a **small-model harness** — `gpt-4o-mini` via OpenRouter, tokens and cost taken from
-OpenRouter's own accounting rather than estimated — the store arm used **36% fewer tokens**
-(15,078 → 9,659) at **31% lower cost** ($0.0024 → $0.0016), in **4 steps against 11**. That
-is **4 questions, one run, one corpus, one model** — a far smaller sample than the
-correctness rows above, which are 12 questions over 3 runs, n = 36 per arm. Read it as
-directional, not as a rate.
+<CardGrid>
+	<Card title="Nothing to run">
+		One static binary. No database, no daemon, no language server, no model, no MCP.
+		The store is sorted newline-delimited JSON you can read with your eyes and diff in
+		git.
+	</Card>
+	<Card title="Deterministic">
+		Same input, same graph, byte for byte. The binary makes no LLM call, computes no
+		embedding, and holds no credentials at rest. Your agent supplies the intelligence.
+	</Card>
+	<Card title="Every answer is citable">
+		A hit is a resolved symbol with its real `file:line` range, signature and doc — not a
+		matching line you still have to chase.
+	</Card>
+	<Card title="Every edge states its confidence">
+		EXTRACTED is parsed fact. INFERRED is name-matched. AMBIGUOUS is surfaced as a
+		shortlist rather than guessed into the graph, and filtered out of traversals unless
+		you ask for it.
+	</Card>
+</CardGrid>
 
-On **frontier harnesses it is parity**: the same store moved token usage by **−0.2% on
-Claude Code and +3.0% on Codex**.
+And one answer no other tool in our comparison table has: `boundaries` — the repo's external
+surface, with direction, transport, and credentials flagged **by name**.
 
-Both are true because of the mechanism. In a thin loop, retrieval *is* most of the context,
-so cutting 11 steps to 4 cuts tokens with it. On Claude Code and Codex the agent's own fixed
-costs — system prompt, reasoning, the answer itself — dominate, and no retrieval tool
-shrinks those. **What we will not claim is a universal token saving**, because we measured
-that and it is not there:
-[what we do not claim](/ctx-optimize/limits/#-saves-you-tokens-universally) ·
-[the token numbers, with their provenance](/ctx-optimize/benchmarks/#2-round-trips-tokens-and-wall-time).
+## The evidence, in two rows
 
-Under the answers, the index itself: v0.14.0 gathers the **Linux kernel in 55 s** (from
-124 s) and answers `card` on it in **under 20 ms**
-([gather and query](/ctx-optimize/benchmarks/#3-gather-and-query-v0140)). On 253–1,474-file
-corpora, in the first **pin-verified** cross-tool run, we lead cold gather, warm re-run,
-query latency and store size against CodeGraph, graphify and GitNexus
-([the pinned run](/ctx-optimize/compare/#2-re-run-2026-08-15--the-first-pin-verified-run)).
+One agent, three arms, twelve hand-verified questions on **gorilla/mux**. 3 runs, n = 36
+answers per arm, model `gpt-4o-mini`, graded deterministically — no LLM judge, same rule for
+every arm, and the grader never saw which tool produced the answer.
 
-## What 35% against 67% actually looks like
+| | shell (ripgrep) | ctx-optimize | graphify |
+|---|---|---|---|
+| Overall correctness | 35% | **67%** | 40% |
+| Tool calls per run | 42.7 | **15.0** | 26.0 |
 
-This is a recorded transcript, not a scenario we imagined. We asked a grep-armed agent
-*which functions call `requestWithVars`*. It searched, got matching **lines**, and answered
-*"mux.go at line 4, test_helpers.go at line 3"* — **the ordinal positions in grep's own
-output**. The real call sites are `mux.go:209` and `test_helpers.go:18`, inside
-`Router.ServeHTTP` and `SetURLVars`. Neither was named; both line numbers were invented.
-Scored 0/2 by a deterministic grader that never saw which tool produced the answer.
+[The full scoreboard, question by question →](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) ·
+[gather, query and store size against other tools →](/ctx-optimize/compare/)
+
+## What a citation is worth
+
+A recorded transcript, both arms asked *which functions call `requestWithVars`*. It is here
+because it shows the mechanism the two rows above are made of: grep returns lines, so the
+agent has to name callers it never saw.
 
 <Tabs>
 <TabItem label="shell + ripgrep — 0/2">
@@ -84,7 +145,7 @@ The functions that call `requestWithVars` are:
  1. In `mux.go` at line 4: `req = requestWithVars(req, match.Vars)`
  2. In `test_helpers.go` at line 3: `return requestWithVars(r, val)`
 
-✗ no caller named · line numbers fabricated
+✗ no caller named · line numbers are grep's own output positions
 ```
 </TabItem>
 <TabItem label="ctx-optimize — 2/2">
@@ -101,17 +162,13 @@ The following functions call `requestWithVars`:
 </TabItem>
 </Tabs>
 
-Grep hands over lines. The store hands over resolved symbols. Every line handed over is
-another read, another grep, another round trip — which is what the 42.7-against-15.0 row is
-made of, and why the shell arm finished later out of individually faster calls.
+The real call sites are `mux.go:209` and `test_helpers.go:18`.
+[Both transcripts in full →](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run)
 
-Both transcripts in full, and every question in the set:
-[the graded run →](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run)
+## The external surface
 
-## One command for the external surface
-
-`boundaries` answers what no grep can: not *where the string is*, but the **direction**, the
-**transport**, and whether a name is a credential. Unedited, on this repo:
+`boundaries` answers what direction a call goes, over what transport, and whether a name is a
+credential. On this repo, with rows elided to fit:
 
 ```text
 $ ctx-optimize boundaries
@@ -120,72 +177,27 @@ boundaries: 73 ports
 CONSUMES (what this system calls out to)
   config.env     28 · 28 external · 1 SENSITIVE · 3 dynamic
       OPENROUTER_API_KEY                 INFERRED   SECRET  proof/agent/agent.mjs:L28 (+1 sites)
-      CTX_OPTIMIZE_STORE                 INFERRED    internal/app/app_test.go:L49 (+3 sites)
+      … 27 more not shown — --all for the full list
   network.http   16 · 16 external
       api.github.com                     INFERRED    internal/app/app.go:L3149
-      codeload.github.com                INFERRED    internal/app/manifests.go:L157 (+2 sites)
 
 UNRESOLVED  3 ports carry a dynamic identifier — the SITE is certain,
             the value is not
 ```
 
-Credentials are flagged **by name**; a value never enters the graph, is never printed and is
-never stored. [How it works, and its two honest limits →](/ctx-optimize/boundaries/)
+Credentials are flagged by name; a value never enters the graph, is never printed and is
+never stored. [How it works, and its two limits →](/ctx-optimize/boundaries/)
 
-## Now the part that cuts the other way
+## Where we lose
 
-**ripgrep is faster than us on every single call** — 1.59 s to our 3.70 s on the Linux
-kernel. **CodeGraph is faster still on kernel queries, 0.79 s to our 3.70 s.** And **grep
-wins the "where is X" questions outright, 47% to our 42%**. All three true, all three ours
-to report. The point is not that grep is slow; it is that per-call latency is not the unit.
-An agent answering one real question makes dozens of calls, and the question is what gets
-scored — on those same five kernel questions we were useful on 4 of 5 and CodeGraph on 0 of
-5, and we still got one wrong.
-
-[The kernel table, unpinned and labelled as such →](/ctx-optimize/compare/#3-measured-head-to-head--codegraph-gitnexus-graphify-ripgrep-2026-08-run) ·
+ripgrep is faster per call than we are, CodeGraph is faster still on kernel queries, and grep
+beats us outright on "where is X" — 47% to our 42%.
 [Everything we do not claim →](/ctx-optimize/limits/)
 
-## Answers you cannot grep for
+## Next
 
-<CardGrid>
-	<Card title="What breaks if I change this?">
-		`affected` walks reverse dependencies across the whole graph. `change-plan` composes
-		the whole edit briefing — signature, callers, blast radius, and which tests to run —
-		into one call.
-	</Card>
-	<Card title="What does this system talk to?">
-		`boundaries` splits CONSUMES from PROVIDES, groups by transport, and flags credentials
-		**by name**. Sixteen rules ship built in, each carrying its own measured recall.
-	</Card>
-	<Card title="How are these two connected?">
-		`path` returns the shortest chain of real edges between two symbols — not a guess, and
-		not a similarity score.
-	</Card>
-	<Card title="What is this symbol?">
-		`card` returns signature, doc comment, location, callers and callees in one shot. On the
-		Linux kernel it answers in under 20 ms.
-	</Card>
-</CardGrid>
-
-## Four decisions, and they are the whole product
-
-<CardGrid>
-	<Card title="Tree-sitter, compiled to WASM">
-		Real grammars, real ASTs — hosted by wazero inside the binary and fanned across every
-		core. No toolchain, no language server, no runtime to install. 12 languages embedded;
-		anything else is a one-command grammar pack.
-	</Card>
-	<Card title="Plain ndjson. No database.">
-		The store is sorted, atomically written newline-delimited JSON — no SQLite, no Neo4j,
-		no daemon. It diffs in git, greps in a pinch, and you can read it with your eyes.
-	</Card>
-	<Card title="Producer-scoped replace">
-		Every node records which producer emitted it, so a re-gather replaces only that
-		producer's slice and prunes what went stale. Re-sync after a change is sub-second.
-	</Card>
-	<Card title="No LLM. No embeddings. No MCP.">
-		The binary never calls a model and holds no credentials at rest. Same input, same
-		graph, byte for byte. Your agent supplies the intelligence; the store supplies exact
-		recall with `file:line`.
-	</Card>
-</CardGrid>
+[How it works](/ctx-optimize/how-it-works/) — tree-sitter in wasm, the ndjson store, the
+lookup index that fails safe. ·
+[The dashboard](/ctx-optimize/dashboard/) — `serve`, one local page over every store. ·
+[Cookbook](/ctx-optimize/cookbook/) — pick the verb by intent. ·
+[CLI reference](/ctx-optimize/cli/)

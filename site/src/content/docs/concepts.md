@@ -55,9 +55,9 @@ A knowledge graph that presents a guess with the same confidence as a fact is wo
 |---|---|---|
 | EXTRACTED | Parsed directly from source — the AST, the manifest, the live connector. Not a guess. | a function's `calls` edge from a resolved, unambiguous call site |
 | INFERRED | Name-matched or heuristically linked — plausible, not certified. | a route matched to a handler by naming convention, not an explicit binding |
-| AMBIGUOUS | Multiple candidates, no way to pick one confidently — the edge is **dropped**, never guessed into the graph. | two functions with the same name in different packages calling a third — the call edge is omitted rather than pointed at the wrong one |
+| AMBIGUOUS | Multiple candidates, no way to pick one confidently — the edge is **kept but filtered out of every traversal by default**, never guessed into a confident answer. | two functions with the same name in different packages calling a third — the call edge is held back as a shortlist rather than pointed at the wrong one |
 
-This is the same discipline the [confidence note on the home page](/ctx-optimize/#ask) talks about, made concrete: ambiguous calls are dropped, never guessed. When you ask `change-plan` for a blast radius, the answer separates extracted evidence from inferred evidence in its confidence footer — so the agent (and you) know exactly how much to trust each line.
+Made concrete: an ambiguous call is never guessed into an answer, but it is not thrown away either. It is held back as a shortlist you can ask for with `--include-ambiguous` on `card` / `affected` / `change-plan` / `path` / `hubs`, and widened rows are marked as candidates to verify — never as callers. This is why a method's blast radius is a **floor**, not the full set. When you ask `change-plan` for a blast radius, the answer separates extracted evidence from inferred evidence in its confidence footer — so the agent (and you) know exactly how much to trust each line.
 
 ## Plain files, outside your repo, one per machine.
 
@@ -104,7 +104,7 @@ $ ctx-optimize fresh; echo $?
 
 Code extraction doesn't shell out to a language server or a per-language toolchain. Every grammar is compiled ahead of time to WASI-target WebAssembly and embedded in the binary; a pure-Go WebAssembly runtime ([wazero](https://github.com/tetratelabs/wazero)) hosts it — one instance per worker goroutine, fanned across every core. `CGO_ENABLED=0`, one static binary, nothing to install.
 
-12 languages ship embedded in the binary today — Go, Python, JavaScript, TypeScript/TSX, Java, C, C++, C#, Rust, Zig, SQL. Anything else is a **grammar pack**: a `<name>.wasm` plus a `<name>.json` node-type mapping, dropped into `~/ctxoptimize/grammars/` (machine-wide) or `.ctxoptimize/grammars/` (travels with the repo). `ctx-optimize languages add kotlin` builds one from any tree-sitter grammar, in pure Go — no toolchain to install; a Zig compiler is fetched once, sha256-verified against ziglang.org's index, and cached. Calls resolve module-wide by unique name; an ambiguous match is dropped rather than guessed (see [provenance](#provenance) above).
+12 languages ship embedded in the binary today — Go, Python, JavaScript, TypeScript/TSX, Java, C, C++, C#, Rust, Zig, SQL. Anything else is a **grammar pack**: a `<name>.wasm` plus a `<name>.json` node-type mapping, dropped into `~/ctxoptimize/grammars/` (machine-wide) or `.ctxoptimize/grammars/` (travels with the repo). `ctx-optimize languages add kotlin` builds one from any tree-sitter grammar, in pure Go — no toolchain to install; a Zig compiler is fetched once, sha256-verified against ziglang.org's index, and cached. Calls resolve module-wide by unique name; an ambiguous match is held back as a shortlist rather than guessed (see [provenance](#provenance) above).
 
 ## One store per module. A navigator, not a merged mega-graph.
 
