@@ -81,13 +81,29 @@ func buildGroundTruth(nodes []schema.Node, edges []schema.Edge) *groundTruth {
 			continue
 		}
 		k := strings.ToLower(n.Label)
+		// The label tiebreak, written out INDEPENDENTLY of the implementation
+		// — that independence is the whole value of this file. A definition
+		// beats a mention; among equals, smallest ID. Mirrors
+		// store.labelRankNode and analyze.labelRank, which is three copies of
+		// one rule: store must not import analyze, and a ground truth that
+		// called the code it audits would prove nothing.
 		hit, seen := g.byLowerLbl[k]
+		rank := func(x *schema.Node) int {
+			switch {
+			case isImportStubID(x.ID), x.Kind == "dependency", strings.HasPrefix(x.ID, "dep://"):
+				return 2
+			case x.Kind == "section" || x.Kind == "document":
+				return 1
+			default:
+				return 0
+			}
+		}
 		switch {
 		case !seen:
 			g.byLowerLbl[k] = n
-		case isImportStubID(hit.ID) && !isImportStubID(n.ID):
+		case rank(n) < rank(hit):
 			g.byLowerLbl[k] = n
-		case isImportStubID(hit.ID) == isImportStubID(n.ID) && n.ID < hit.ID:
+		case rank(n) == rank(hit) && n.ID < hit.ID:
 			g.byLowerLbl[k] = n
 		}
 	}
@@ -206,6 +222,13 @@ func TestEquivalenceHermetic(t *testing.T) {
 		{ID: "cfg#quoted", Label: `has"quote`, Kind: "config_key", FileType: "config", Source: "Makefile", Location: "L7"},
 		{ID: "cfg#uni", Label: "uni<URL", Kind: "config_key", FileType: "config", Source: "Makefile", Location: "L8"},
 		{ID: "pkg/e.go::Self", Label: "Self", Kind: "function", FileType: "code", Source: "e.go", Location: "L9"},
+		// Prose vs declaration on one label — the case that slipped through.
+		// The section's ID sorts BEFORE the class's, so a smallest-ID tiebreak
+		// answers `card Gamma` with a README heading while the class sits in
+		// the store. Both resolvers must prefer the declaration, and this pair
+		// is what makes the equivalence test able to say so.
+		{ID: "README.md::gamma", Label: "Gamma", Kind: "section", FileType: "document", Source: "README.md", Location: "L1-L9"},
+		{ID: "pkg/f.go::Gamma", Label: "Gamma", Kind: "class", FileType: "code", Source: "f.go", Location: "L10-L40"},
 	}
 	edges := []schema.Edge{
 		{Source: "pkg/a.go::Alpha", Target: "pkg/c.go::beta", Relation: "calls", Confidence: "EXTRACTED"},

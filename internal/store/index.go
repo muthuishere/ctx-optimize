@@ -590,9 +590,9 @@ func (s *Store) ResolveExact(name string) (n *schema.Node, via string, ok bool) 
 	for i := 1; i < len(cands); i++ {
 		c := &cands[i]
 		switch {
-		case isImportStubID(best.ID) && !isImportStubID(c.ID):
+		case labelRankNode(c) < labelRankNode(best):
 			best = c
-		case isImportStubID(best.ID) == isImportStubID(c.ID) && c.ID < best.ID:
+		case labelRankNode(c) == labelRankNode(best) && c.ID < best.ID:
 			best = c
 		}
 	}
@@ -603,6 +603,36 @@ func (s *Store) ResolveExact(name string) (n *schema.Node, via string, ok bool) 
 // because store must not depend on analyze; the index_equivalence test pins
 // them together so a change to one that skips the other fails the build.
 func isImportStubID(id string) bool { return strings.HasPrefix(id, "module://") }
+
+// labelRankNode mirrors analyze.labelRank — a DEFINITION beats a MENTION when
+// several nodes share a label. Lower wins. Same duplication rule as
+// isImportStubID: store must not depend on analyze, so the equivalence test is
+// what keeps the two honest.
+//
+// This function is why the fast path stays a SPEED optimisation and not a
+// behaviour change. `card Flask` resolves by exact label, so it never reaches
+// analyze at all — fixing the tiebreak only there left the index answering
+// `README.md::flask` while the slow path answered `src/flask/app.py::Flask`.
+// The equivalence test did not catch it, because no fixture node paired prose
+// with a declaration; one now does.
+var declKindsIdx = map[string]bool{
+	"function": true, "method": true, "class": true, "type": true,
+	"interface": true, "struct": true, "enum": true, "trait": true,
+	"file": true,
+}
+
+func labelRankNode(n *schema.Node) int {
+	switch {
+	case isImportStubID(n.ID), n.Kind == "dependency", strings.HasPrefix(n.ID, "dep://"):
+		return 3
+	case n.Kind == "section" || n.Kind == "document":
+		return 2
+	case declKindsIdx[n.Kind]:
+		return 0
+	default:
+		return 1
+	}
+}
 
 // EdgesTouching returns every edge with id as source or target, deduplicated —
 // exactly the edges analyze.CardFor inspects, and nothing else. A self-edge

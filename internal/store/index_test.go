@@ -48,9 +48,9 @@ func n(id, label string) schema.Node {
 func TestIndexLookupEqualsFullScan(t *testing.T) {
 	nodes := []schema.Node{
 		n("a", "Alpha"), n("b", "Beta"), n("c", "Alpha"), // duplicate label
-		n("d", "with\ttab"),        // tab: breaks a naive line format
-		n("e", `quote"inside`),     // escaped quote: truncates a naive scanner
-		n("f", "unicode<URL"), // \u escape: never decoded by a naive scanner
+		n("d", "with\ttab"),                 // tab: breaks a naive line format
+		n("e", `quote"inside`),              // escaped quote: truncates a naive scanner
+		n("f", "unicode<URL"),               // \u escape: never decoded by a naive scanner
 		n("g", "Zeta"), n("h", "with\ttab"), // duplicate of the tab label
 	}
 	s := seed(t, nodes, nil)

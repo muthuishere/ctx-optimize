@@ -20,6 +20,12 @@ type Candidate struct {
 	Label string `json:"label"`
 	Kind  string `json:"kind"`
 	Score int    `json:"score"`
+	// Source/Location make a candidate CITABLE without a second lookup. A
+	// refusal that says "pick one of these five" is only useful if the reader
+	// can see where each one lives — otherwise every candidate costs another
+	// command to evaluate, and the honest refusal reads as a dead end.
+	Source   string `json:"source,omitempty"`
+	Location string `json:"location,omitempty"`
 }
 
 // AmbiguousError: fuzzy resolution found several nodes scoring alike —
@@ -36,6 +42,12 @@ func (e *AmbiguousError) Error() string {
 	fmt.Fprintf(&b, "%q has no exact match and several near names score alike — refusing to guess; pick one:", e.Name)
 	for _, c := range e.Candidates {
 		fmt.Fprintf(&b, "\n  %s  [%s]  %s", c.Label, c.Kind, c.ID)
+		// The location is the difference between a list you can act on and a
+		// list you have to re-query. Appended, not substituted: the id stays
+		// the thing you paste back to disambiguate.
+		if c.Location != "" {
+			fmt.Fprintf(&b, "  %s", c.Location)
+		}
 	}
 	b.WriteString("\n(use the exact label or id, or --fuzzy to take the top candidate)")
 	return b.String()
@@ -67,14 +79,12 @@ func ResolveVia(nodes []schema.Node, name string) (*schema.Node, string, error) 
 		var hit *schema.Node
 		for i := range nodes {
 			if strings.EqualFold(nodes[i].Label, want) {
-				// A real declaration beats a synthetic module:// import stub
-				// on any label tie (ADR 2026-07-24-answer-quality F1): the
-				// stub has no signature, no body, no file:line — it must
-				// never be THE answer when the definition exists. Among
-				// equals, smallest ID keeps determinism.
-				if hit == nil || (isImportStub(hit) && !isImportStub(&nodes[i])) {
+				// A DEFINITION beats a MENTION on any label tie. Among equals,
+				// smallest ID keeps determinism. See labelRank.
+				switch {
+				case hit == nil, labelRank(&nodes[i]) < labelRank(hit):
 					hit = &nodes[i]
-				} else if isImportStub(hit) == isImportStub(&nodes[i]) && nodes[i].ID < hit.ID {
+				case labelRank(&nodes[i]) == labelRank(hit) && nodes[i].ID < hit.ID:
 					hit = &nodes[i]
 				}
 			}
@@ -137,7 +147,10 @@ func ResolveVia(nodes []schema.Node, name string) (*schema.Node, string, error) 
 	for i := range nodes {
 		if scores[i] == bestScore && !seen[nodes[i].Label] && !(declTops && isImportStub(&nodes[i])) {
 			seen[nodes[i].Label] = true
-			tied = append(tied, Candidate{ID: nodes[i].ID, Label: nodes[i].Label, Kind: nodes[i].Kind, Score: scores[i]})
+			tied = append(tied, Candidate{
+				ID: nodes[i].ID, Label: nodes[i].Label, Kind: nodes[i].Kind, Score: scores[i],
+				Source: nodes[i].Source, Location: nodes[i].Location,
+			})
 		}
 	}
 	if len(tied) > 1 {
@@ -155,6 +168,51 @@ func ResolveVia(nodes []schema.Node, name string) (*schema.Node, string, error) 
 // Real declarations outrank these everywhere (ADR 2026-07-24-answer-quality).
 func isImportStub(n *schema.Node) bool {
 	return strings.HasPrefix(n.ID, "module://")
+}
+
+// declKinds are the kinds that DEFINE a symbol — what the code producer emits
+// for a declaration. Everything else in the graph mentions, configures or
+// points at a name without being it.
+var declKinds = map[string]bool{
+	"function": true, "method": true, "class": true, "type": true,
+	"interface": true, "struct": true, "enum": true, "trait": true,
+	"file": true,
+}
+
+// labelRank orders nodes that share a label: a DEFINITION beats a MENTION.
+// Lower wins. It only ever settles a TIE — a repo whose only `react` node is
+// the dependency still resolves to it; the rank matters solely when a local
+// definition of the same name also exists.
+//
+// The rule started as "a real declaration beats a module:// import stub"
+// (ADR 2026-07-24-answer-quality F1): the stub has no signature, body or
+// file:line, so it must never be THE answer when the definition exists.
+// Everything below is that same principle, generalized after flask showed how
+// many ways a tie can be lost.
+//
+// flask has FIVE nodes labelled some case of "Flask": `class Flask`
+// (src/flask/app.py L109-L1625), `section Flask` (README.md), `module://Flask`,
+// `dep://pypi/flask`, and `config_key flask` (pyproject.toml). Label matching is
+// case-insensitive, so all five tie — and the old smallest-ID tiebreak answered
+// `card Flask` with the README heading. Demoting prose promoted the dependency;
+// demoting that promoted the config key. Enumerating losers is whack-a-mole, so
+// this ranks by what a node IS:
+//
+//	0  a declaration          — it IS the name
+//	1  another real node      — config key, task, table, topic, port: it uses the name
+//	2  prose                  — a section or document ABOUT the name
+//	3  an external pointer    — module:// or dep://: it points at a name defined elsewhere
+func labelRank(n *schema.Node) int {
+	switch {
+	case isImportStub(n), n.Kind == "dependency", strings.HasPrefix(n.ID, "dep://"):
+		return 3
+	case n.Kind == "section" || n.Kind == "document":
+		return 2
+	case declKinds[n.Kind]:
+		return 0
+	default:
+		return 1
+	}
 }
 
 // lastSegment strips the qualifier prefixes agents invent: path, `::` chain,
