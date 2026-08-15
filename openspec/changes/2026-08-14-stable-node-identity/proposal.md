@@ -1,6 +1,14 @@
 # ADR 5 — stable node identity: a citation must not move between gathers
 
-Status: DRAFT — owner review pending 2026-08-14. No product code until agreed.
+Status: IMPLEMENTED 2026-08-15 — D1 only, extended with two tiebreaks the
+original text did not anticipate (widest span, richer metadata). Drift is 0 on
+all four corpora, verified byte-identical.
+D2b (drop function-locals) is REJECTED on census evidence: its premise was
+"329 of 354 are C locals", but Newtonsoft's 404 are C# method OVERLOADS that
+must stay and kubernetes' 100 are file-level. It fixes one language of three.
+D2a (qualify by line) remains open as a RECALL issue, not a determinism one —
+Newtonsoft's 41 WriteValueAsync overloads still collapse to one node, so 40
+real methods are absent from the graph. Own ADR, own measurement.
 Scope: `internal/extract/code` (id minting + sort) and `internal/store` (sort).
 Found by the 2026-08-14 regression audit. **Pre-existing — NOT caused by that
 day's 30 commits**, and proven so below.
