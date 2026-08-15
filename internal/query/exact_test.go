@@ -72,8 +72,19 @@ func TestExactMatchOnIdentifierAndLabel(t *testing.T) {
 // A near-miss must NOT be promoted. The tier carries certainty; if a substring
 // or a prefix could enter it, it would be a heuristic wearing certainty's
 // clothes and the ranking would be a guess again.
+//
+// This asserts the PREDICATE directly rather than inferring the tier from a
+// score gap. The earlier version inferred it — "rank 1 with a gap > 1 must mean
+// the tier" — and that proxy broke the moment `port` joined callableKind and
+// stopped taking the 5x dotted-label penalty: the node then won on lexical
+// score alone, with a gap over 1, and the test reported a promotion that never
+// happened. Infer nothing you can observe.
 func TestNearMissDoesNotEnterTheExactTier(t *testing.T) {
-	nodes := exactCorpus()
+	target := &schema.Node{
+		ID: "port:network.http:>api.openai.com", Label: "api.openai.com",
+		Kind: "port", FileType: "boundary", Source: "port://network.http/api.openai.com",
+		Metadata: map[string]string{"identifier": "api.openai.com"},
+	}
 	for _, q := range []string{
 		"api.openai.co",    // one char short
 		"api.openai.comm",  // one char long
@@ -82,14 +93,16 @@ func TestNearMissDoesNotEnterTheExactTier(t *testing.T) {
 		"api openai com",   // tokens, not the string
 		"xapi.openai.comx", // contains it
 	} {
-		got := Run(nodes, nil, q, 2000)
-		if len(got.Hits) > 0 && got.Hits[0].Node.ID == "port:network.http:>api.openai.com" {
-			// Only a problem if it won BECAUSE of the tier — lexical scoring may
-			// legitimately rank it first. Distinguish by checking the runner-up
-			// gap is not the synthetic display offset.
-			if len(got.Hits) > 1 && got.Hits[0].Score-got.Hits[1].Score > 1 {
-				t.Errorf("%q: promoted to the exact tier — near-misses must be scored, not named", q)
-			}
+		if exactMatch(target, normalizeExact(q)) {
+			t.Errorf("%q entered the exact tier — near-misses must be scored, not named", q)
+		}
+	}
+	// The control: the real thing still does enter, in all three spellings.
+	for _, q := range []string{
+		"api.openai.com", "  API.OpenAI.COM  ", "port:network.http:>api.openai.com",
+	} {
+		if !exactMatch(target, normalizeExact(q)) {
+			t.Errorf("%q did NOT enter the exact tier — the gate is too tight to be useful", q)
 		}
 	}
 }

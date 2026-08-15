@@ -122,10 +122,18 @@ func dropStopwords(qTokens []string) []string {
 
 // callableKind marks kinds whose dotted labels are real symbols, not child
 // declarations of a parent scope.
+//
+// `port` belongs here for exactly that reason: a boundary identifier is
+// `api.openai.com` or `CONFIG_ENCRYPTION_KEY` — a whole external NAME, never a
+// child of a parent scope. Omitting it meant every hostname (dots are what a
+// hostname IS) took scoreNode's 5x child-declaration downrank, so a partial
+// query like "openai" returned nine hits with the host among none of them. The
+// exact-match tier (ADR 14 D1) rescued verbatim queries; this rescues the
+// partial ones the tier cannot see.
 var callableKind = map[string]bool{
 	"function": true, "method": true, "class": true, "interface": true,
 	"file": true, "module": true, "table": true, "document": true,
-	"section": true, "topic": true,
+	"section": true, "topic": true, "port": true,
 }
 
 // normalizeExact is the ONLY normalization an exact match gets: trim and
