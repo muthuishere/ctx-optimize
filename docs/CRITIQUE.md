@@ -88,6 +88,16 @@ legacy/hostile code" as a published-benchmark secondary claim.
    (ADR 6 / ADR 7). Until that is fixed, the headline number is not
    reproducible from HEAD. Re-measure before it is quoted again.
 
+10. **The boundary graph is not reachable by `query`** (found 2026-08-15 while
+   gating it). `api.openai.com` is a port node whose id IS that string, and
+   querying it verbatim returns `openAPIRoutes`, `buildOpenAPIBatch`,
+   `fetchOpenAPI` — the exact match does not place. An exact identifier match
+   earns no boost over a file sharing one token, and candidates tie (seven at
+   1.51 on a fixture). Concept phrasing is worse: "what does it shell out to"
+   returns nothing. So the boundary lane, the services registry and the 30-vendor
+   catalogue are correct, gated, and unreachable by the verb our own
+   instructions tell agents to call. See ADR 14.
+
 ## Kill criteria (pre-committed)
 Thin slice (cards + deterministic wiki) on kernel + one true legacy repo:
 **composite <25% on hostile terrain → stop, or pivot to impact-analysis-only**
