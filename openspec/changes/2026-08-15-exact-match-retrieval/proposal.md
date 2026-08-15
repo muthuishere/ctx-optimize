@@ -1,6 +1,27 @@
 # ADR 14 — the boundary graph is unreachable by query
 
-Status: DRAFT — owner review pending 2026-08-15. No product code until agreed.
+Status: D1 IMPLEMENTED 2026-08-15 in `d2bb787`.
+
+⚠️ **CORRECTION to this ADR's headline reproduction.** It claimed
+`api.openai.com` is a port node in THIS repo's store. It is not — the two grep
+hits are that string inside our own source (`services.json`, `ast.go`); the node
+lives in reqsume's store. The example was written without checking which store
+held the node, and `query` was correctly failing to return a node that was not
+there. The DEFECT is real and was proven on the boundary fixture
+(`api.weather.example` at rank 7, seven candidates tied at 1.51) and confirmed
+after the fix on reqsume, where the node genuinely exists: `api.openai.com` and
+`CONFIG_ENCRYPTION_KEY` now both rank 1.
+
+Root cause turned out to be worse than "no boost": `scoreNode`'s dotted-label
+downrank (`s *= 0.2`) fires on any label containing `.` whose kind is not in
+`callableKind`, and `port` is not — so every hostname took a 5x PENALTY from a
+heuristic written for child declarations.
+
+Also fixed en route: `query` had never been deterministic (map-iteration order
+decided which token's IDF counted). 20 runs of the unchanged binary gave two
+distinct output hashes; now one.
+
+The concept-phrasing half of this ADR remains OPEN and unfixed.
 Scope: `internal/query` scoring only. No producer change, no schema change, no
 new node kind.
 Found while building ADR 13's boundary golden gate: the facts gated perfectly

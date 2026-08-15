@@ -96,7 +96,12 @@ legacy/hostile code" as a published-benchmark secondary claim.
    1.51 on a fixture). Concept phrasing is worse: "what does it shell out to"
    returns nothing. So the boundary lane, the services registry and the 30-vendor
    catalogue are correct, gated, and unreachable by the verb our own
-   instructions tell agents to call. See ADR 14.
+   instructions tell agents to call. See ADR 14. **Half-fixed 2026-08-15**
+   (`d2bb787`): naming a node now finds it, and `query` is deterministic for the
+   first time (it never was — map order decided which token's IDF counted). Two
+   things remain: CONCEPT phrasing still fails ("what does it shell out to"
+   returns nothing), and a dotted-label 5x downrank written for child
+   declarations still penalises every hostname on PARTIAL queries.
 
 11. **`scope=internal` has never been produced** (found 2026-08-15 by the
    `boundaries` verb). ADR 1 D1 promises internal/external "decided by JOIN".
