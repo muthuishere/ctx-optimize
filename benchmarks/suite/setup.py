@@ -73,7 +73,24 @@ def main():
         if a.tools and name not in a.tools:
             continue
         if t.get("local"):
-            versions[name] = {"local": True, "entry": os.path.join(REPO, t["entry"])}
+            # A local tool is either shipped by this repo (`entry` is a repo-relative
+            # path) or already on PATH — ripgrep has no `entry` at all, and assuming
+            # one crashed setup before it could write versions.json, which is how the
+            # arena ended up with no provenance file in the first place.
+            if t.get("entry"):
+                rec = {"local": True, "entry": os.path.join(REPO, t["entry"])}
+            else:
+                # The manifest names the PROJECT (ripgrep); the binary it installs
+                # is `rg`. Assuming they match recorded ripgrep as unavailable while
+                # it sat on PATH the whole time.
+                found = shutil.which(t.get("bin") or name)
+                rec = {"local": True, "on_path": True, "entry": found,
+                       "available": bool(found)}
+                if found:
+                    _, ver = sh([found, "--version"], timeout=30)
+                    rec["version"] = ver.strip().splitlines()[0] if ver.strip() else None
+            versions[name] = rec
+            print(f"== {name}: local ({rec.get('entry') or 'NOT FOUND on PATH'})")
             continue
         if not t.get("gatherable") and not t.get("repo"):
             # Field context only (SaaS, embeddings, packers) — nothing to build.
@@ -106,15 +123,39 @@ def main():
                 continue
             print(f"== {name}: {sha[:12]} pinned={pinned}")
 
+        # Python tools get their OWN venv. Two reasons, both learned the hard way:
+        # a Homebrew interpreter refuses `pip install -e .` outright (PEP 668), and
+        # a tool already on PATH from some earlier install is NOT necessarily built
+        # from the SHA we just pinned — which would let a pinned clone vouch for an
+        # unpinned binary. The venv makes the thing we run the thing we pinned.
+        venv_bin = None
+        if any(s.startswith("pip ") for s in t.get("build", [])):
+            venv = os.path.join(dest, ".venv")
+            if not os.path.isdir(venv):
+                rc, log = sh([sys.executable, "-m", "venv", venv])
+                if rc != 0:
+                    rec["venv_error"] = log[-300:]
+            venv_bin = os.path.join(venv, "bin")
+
         for step in t.get("build", []):
-            rc, log = sh(step.split(), cwd=dest)
-            rec.setdefault("build", []).append({"cmd": step, "ok": rc == 0,
+            argv = step.split()
+            if venv_bin and argv[0] in ("pip", "pip3", "python", "python3"):
+                argv[0] = os.path.join(venv_bin, argv[0])
+            rc, log = sh(argv, cwd=dest)
+            rec.setdefault("build", []).append({"cmd": " ".join(argv), "ok": rc == 0,
                                                 "log_tail": None if rc == 0 else log[-400:]})
             if rc != 0:
                 print(f"!! {name}: build step {step!r} failed")
                 break
 
-        entry = os.path.join(dest, t["entry"]) if "/" in t.get("entry", "") else shutil.which(t.get("entry", ""))
+        if "/" in t.get("entry", ""):
+            entry = os.path.join(dest, t["entry"])
+        elif venv_bin and os.path.exists(os.path.join(venv_bin, t.get("entry", ""))):
+            # Prefer the venv's copy over whatever the same name resolves to on PATH.
+            entry = os.path.join(venv_bin, t["entry"])
+            rec["entry_from_venv"] = True
+        else:
+            entry = shutil.which(t.get("entry", ""))
         rec["entry"] = entry
         rec["entry_exists"] = bool(entry and os.path.exists(entry))
         if not rec["entry_exists"]:
@@ -122,9 +163,18 @@ def main():
         versions[name] = rec
 
     out = os.path.join(a.arena, "versions.json")
+    # A filtered run (`--tools gitnexus`) must UPDATE the provenance file, not
+    # replace it. Overwriting it wiped every other tool's record and left a
+    # results file claiming exactly one pinned competitor — the provenance file
+    # silently becoming less true is the failure mode it exists to prevent.
+    if a.tools and os.path.exists(out):
+        with open(out) as f:
+            merged = json.load(f)
+        merged.update(versions)
+        versions = merged
     with open(out, "w") as f:
         json.dump(versions, f, indent=1, sort_keys=True)
-    print(f"\nwrote {out}")
+    print(f"\nwrote {out} ({len(versions)} tools)")
     unpinned = [n for n, v in versions.items() if v.get("clone_ok") and not v.get("pinned")]
     if unpinned:
         print(f"WARNING: floating (not pinned) — {', '.join(unpinned)}. Any result using these is not version-reproducible.")

@@ -16,6 +16,16 @@ hero:
 
 import { Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
 
+<video
+	class="ctx-video"
+	controls
+	playsinline
+	preload="metadata"
+	poster="/ctx-optimize/media/explainer-poster.jpg"
+>
+	<source src="/ctx-optimize/media/explainer.mp4" type="video/mp4" />
+</video>
+
 ```bash
 npm install -g @muthuishere/ctx-optimize   # v0.14.0 · one static binary per platform
 cd your-repo && ctx-optimize up            # one verb: bootstrap, gather, or pull
@@ -75,6 +85,30 @@ already strong. Three arms, one clone each, twelve hand-verified questions,
 | Empty answers | 4 | **0** | — |
 
 [The full graded run →](/ctx-optimize/benchmarks/)
+
+## One command for the external surface
+
+`boundaries` answers what no grep can: not *where the string is*, but the **direction**, the
+**transport**, and whether a name is a credential. Unedited, on this repo:
+
+```text
+$ ctx-optimize boundaries
+boundaries: 73 ports
+
+CONSUMES (what this system calls out to)
+  config.env     28 · 28 external · 1 SENSITIVE · 3 dynamic
+      OPENROUTER_API_KEY                 INFERRED   SECRET  proof/agent/agent.mjs:L28 (+1 sites)
+      CTX_OPTIMIZE_STORE                 INFERRED    internal/app/app_test.go:L49 (+3 sites)
+  network.http   16 · 16 external
+      api.github.com                     INFERRED    internal/app/app.go:L3149
+      codeload.github.com                INFERRED    internal/app/manifests.go:L157 (+2 sites)
+
+UNRESOLVED  3 ports carry a dynamic identifier — the SITE is certain,
+            the value is not
+```
+
+Credentials are flagged **by name**; a value never enters the graph, is never printed and is
+never stored. [How it works, and its two honest limits →](/ctx-optimize/boundaries/)
 
 ## Now the part that cuts the other way
 

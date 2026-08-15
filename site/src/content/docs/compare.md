@@ -9,7 +9,7 @@ This page is written the way the rest of this site is: **if a competitor is bett
 
 ## The category converged on one pattern: a local graph, served over MCP.
 
-A year ago "give your agent codebase context" meant embeddings and a vector DB. It doesn't anymore. The tools that broke out — **CodeGraph** (~47K stars, MIT) and **GitNexus** (~42K stars) — both pre-compute a structural graph **on-device** and expose it to agents over the **Model Context Protocol (MCP)**: no cloud, no embeddings API, no code leaving the machine. **graphify** popularized the central-store idea; **potpie** took the funded, Neo4j-backed platform route; **Serena** skips the graph entirely and wraps live language servers. We share the local-first, deterministic half of that consensus — and we make one deliberately contrarian choice, spelled out below.
+A year ago "give your agent codebase context" meant embeddings and a vector DB. It doesn't anymore. The tools that broke out — **[CodeGraph](https://github.com/colbymchenry/codegraph)** (~47K stars, MIT) and **[GitNexus](https://github.com/abhigyanpatwari/GitNexus)** (~42K stars) — both pre-compute a structural graph **on-device** and expose it to agents over the **Model Context Protocol (MCP)**: no cloud, no embeddings API, no code leaving the machine. **[graphify](https://graphify.com/)** popularized the central-store idea; **[potpie](https://github.com/potpie-ai/potpie)** took the funded, Neo4j-backed platform route; **[Serena](https://github.com/oraios/serena)** skips the graph entirely and wraps live language servers. We share the local-first, deterministic half of that consensus — and we make one deliberately contrarian choice, spelled out below.
 
 :::note
 **Numbers are approximate, mid-2026, and move fast.** Star counts and feature lists here are from public repos and third-party write-ups (linked at the bottom), not our benchmarks. The measured head-to-head is in section 2 below; where a row is measured it replaces the claimed one, wins and losses alike.
@@ -52,7 +52,55 @@ You don't need a benchmark to count dependencies. This is the win we hold agains
 | Works fully offline | yes | yes | yes | not for labeling | no | yes |
 | Cold start → first answer | seconds | seconds | seconds | index + model | DB bring-up | LSP warmup |
 
-### 2. Measured head-to-head — CodeGraph, GitNexus, graphify, ripgrep (2026-08 run)
+### 2. Re-run 2026-08-15 — the first **pin-verified** run
+
+Every earlier table on this page was produced against an arena built by hand, with no
+record of which competitor build it measured. `benchmarks/suite/setup.py` now rebuilds the
+field from `tools.json` with shallow **pinned** clones and writes `versions.json`; the
+runner copies that provenance into the result file, so a number can no longer state which
+ctx-optimize produced it while saying nothing about what it beat.
+
+**Pins held:** [CodeGraph](https://github.com/colbymchenry/codegraph) `572d22bf` ·
+[graphify](https://graphify.com/) `2fa6cd3d` ·
+[GitNexus](https://github.com/abhigyanpatwari/GitNexus) `91b22676`. 
+**Pin did not hold:** [CodeGraphContext](https://github.com/Shashankss1205/CodeGraphContext) —
+recorded `pinned: false`, and it is not in the table below.
+
+| corpus | tool | cold gather | warm re-run | query | store on disk |
+|---|---|---|---|---|---|
+| corpus-gin (253 files) | **ctx-optimize** | 0.325 s | 0.038 s | 13 ms | 2.2 MB |
+|  | CodeGraph | 0.602 s | 0.143 s | 101 ms | 8.1 MB |
+|  | graphify | 0.807 s | 0.731 s | 116 ms | 5.0 MB |
+|  | GitNexus | 7.983 s | 5.646 s | 761 ms | 76.2 MB |
+| corpus-flask (344 files) | **ctx-optimize** | 0.324 s | 0.039 s | 13 ms | 2.2 MB |
+|  | CodeGraph | 0.449 s | 0.141 s | 97 ms | 5.2 MB |
+|  | graphify | 0.865 s | 0.756 s | 108 ms | 3.3 MB |
+|  | GitNexus | 6.572 s | 5.059 s | 766 ms | 63.4 MB |
+| corpus-ctx-src (408 files) | **ctx-optimize** | 0.318 s | 0.027 s | 13 ms | 2.1 MB |
+|  | CodeGraph | 0.787 s | 0.125 s | 100 ms | 12.0 MB |
+|  | graphify | 1.374 s | 1.379 s | 122 ms | 6.7 MB |
+|  | GitNexus | 13.289 s | 8.376 s | 776 ms | 143.8 MB |
+| corpus-graphify-src (1474 files) | **ctx-optimize** | 0.48 s | 0.03 s | 25 ms | 9.4 MB |
+|  | CodeGraph | 1.351 s | 0.13 s | 103 ms | 26.3 MB |
+|  | graphify | 5.134 s | 5.657 s | 385 ms | 26.9 MB |
+|  | GitNexus | 11.131 s | 8.351 s | 815 ms | 201.3 MB |
+
+Apple M5 Pro (18 cores, 48 GB), best-of-3 gather, median-of-5 query, load average recorded
+in the result file. Each tool runs its own fastest deterministic path — no LLM, no
+embeddings, no clustering, for anyone.
+
+:::caution[Read the scope before reading the win]
+**These are small corpora — 253 to 1,474 files — and on small corpora we lead every
+column.** That is not the whole board. On the **Linux kernel**, CodeGraph answers a query
+in **0.79 s to our 3.70 s** and ripgrep in **1.59 s**; that table is below and it has not
+been re-run against pinned clones yet, so it is still labelled by the build that produced
+it. A tool that wins at 400 files and loses at 84,000 has to publish both.
+
+`corpus-graphify-src` is **1,474 files here against 754 in the 2026-07-24 run** — the same
+label over a changed tree. The rows are not comparable and no delta is drawn between them.
+:::
+
+### 3. Measured head-to-head — CodeGraph, GitNexus, graphify, ripgrep (2026-08 run)
 
 :::note
 **Correction — this page previously overstated CodeGraph by 4×.** The 2026-07-24 tables published CodeGraph's flask query at **416 ms**. That number was wrong and it flattered us. CodeGraph resolves its store from the working directory, and our old harness invoked it from the wrong one; the real figure is **102 ms**. Because the same harness bug touched *every* CodeGraph cell in that run, the whole 2026-07-24 head-to-head has been retired rather than patched, and replaced below with a clean re-run. The warm-re-sync and store-on-disk tables from that run are gone with it — they will return when they are re-measured. A "fastest" claim published next to a number that overstates a competitor is not a fastest claim; it is a mistake with a bar chart on it.
@@ -110,7 +158,7 @@ A latency column on its own is not a comparison, so this table carries the answe
 **‡ ripgrep beats us, and we are saying so first.** 11 ms against our 12 on flask; 23 against our 27 on graphify src; 1.59 s against our 3.70 s on the kernel. Claude Code's Grep tool *is* ripgrep, so that is the baseline every agent already carries. It is also a different question. **rg returns matching lines; we return resolved symbols** — declaration, signature, `file:line`, callers, and blast radius. `rg` is the fastest way to find a string, and it cannot tell you who calls a function. That is the whole trade, and it is why **we do not claim to be the fastest anything**: we are the slowest graph in our own kernel table and the only one that named the function.
 :::
 
-### 3. Answer quality — the graded run
+### 4. Answer quality — the graded run
 
 Speed tables cannot tell you whether an answer was right, so there is a separate graded study: **gorilla/mux, 12 hand-verified questions, 3 runs, n = 36 per arm**, deterministically graded (no LLM judge, same rule for every arm), comparing a shell agent (ripgrep), the same agent with ctx-optimize, and the same agent with graphify, all on `gpt-4o-mini`.
 
@@ -142,17 +190,17 @@ potpie and Serena still have no measured row — different architectures (Neo4j 
 
 ## What each competitor is genuinely better at — and where we'd pick ourselves.
 
-### CodeGraph
+### [CodeGraph](https://github.com/colbymchenry/codegraph)
 
 ********
 
-### GitNexus
+### [GitNexus](https://github.com/abhigyanpatwari/GitNexus)
 
-### graphify
+### [graphify](https://graphify.com/)
 
 ****``
 
-### potpie & Serena
+### [potpie](https://github.com/potpie-ai/potpie) & [Serena](https://github.com/oraios/serena)
 
 ********
 

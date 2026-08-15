@@ -1,0 +1,388 @@
+{
+ "arena": {
+  "ast-grep": {
+   "skipped": "no index \u2014 it scans the tree on every query, so it has no cold-gather row to occupy"
+  },
+  "augment / cody / greptile / deepwiki": {
+   "skipped": "SaaS or cloud-indexed \u2014 no single-machine deterministic path, and code egress makes them a different product category"
+  },
+  "claude-context": {
+   "skipped": "embeddings-based; requires an embedding provider, so it cannot share a no-LLM/no-network row"
+  },
+  "codegraph": {
+   "build": [
+    {
+     "cmd": "npm install",
+     "log_tail": null,
+     "ok": true
+    },
+    {
+     "cmd": "npm run build",
+     "log_tail": null,
+     "ok": true
+    }
+   ],
+   "entry": "/Users/muthuishere/ctx-bench-arena/tools/codegraph/dist/bin/codegraph.js",
+   "entry_exists": true,
+   "pinned": true,
+   "repo": "https://github.com/colbymchenry/codegraph.git",
+   "requested_ref": "572d22bfbe82602080e457bec655f72e3314f9ef",
+   "resolved_sha": "572d22bfbe82602080e457bec655f72e3314f9ef",
+   "reused_existing_clone": true
+  },
+  "codegraphcontext": {
+   "build": [
+    {
+     "cmd": "/Users/muthuishere/ctx-bench-arena/tools/codegraphcontext/.venv/bin/pip install -e .",
+     "log_tail": null,
+     "ok": true
+    }
+   ],
+   "entry": "/Users/muthuishere/ctx-bench-arena/tools/codegraphcontext/.venv/bin/cgc",
+   "entry_exists": true,
+   "entry_from_venv": true,
+   "pinned": false,
+   "repo": "https://github.com/Shashankss1205/CodeGraphContext.git",
+   "requested_ref": null,
+   "resolved_sha": "810ea8a9f04fddb2b298b61d752a5e619e19245a",
+   "reused_existing_clone": true
+  },
+  "ctx-optimize": {
+   "entry": "/Users/muthuishere/muthu/gitworkspace/ctx-optimize/bin/ctx-optimize",
+   "local": true
+  },
+  "gitnexus": {
+   "build": [
+    {
+     "cmd": "npm --prefix gitnexus install --no-audit --no-fund",
+     "log_tail": null,
+     "ok": true
+    },
+    {
+     "cmd": "npm --prefix gitnexus run build",
+     "log_tail": null,
+     "ok": true
+    }
+   ],
+   "entry": "/Users/muthuishere/ctx-bench-arena/tools/gitnexus/gitnexus/dist/cli/index.js",
+   "entry_exists": true,
+   "pinned": true,
+   "repo": "https://github.com/abhigyanpatwari/GitNexus.git",
+   "requested_ref": "91b22676ceaa66ce7941fcb146ffc68ff9a144e6",
+   "resolved_sha": "91b22676ceaa66ce7941fcb146ffc68ff9a144e6",
+   "reused_existing_clone": true
+  },
+  "gnu-global (gtags)": {
+   "skipped": "not benchmarkable"
+  },
+  "graphify": {
+   "build": [
+    {
+     "cmd": "/Users/muthuishere/ctx-bench-arena/tools/graphify/.venv/bin/pip install -e .",
+     "log_tail": null,
+     "ok": true
+    }
+   ],
+   "entry": "/Users/muthuishere/ctx-bench-arena/tools/graphify/.venv/bin/graphify",
+   "entry_exists": true,
+   "entry_from_venv": true,
+   "pinned": true,
+   "repo": "https://github.com/safishamsi/graphify.git",
+   "requested_ref": "2fa6cd3d5548577f8c5f591b713f0bf80c1af183",
+   "resolved_sha": "2fa6cd3d5548577f8c5f591b713f0bf80c1af183",
+   "reused_existing_clone": true
+  },
+  "repomix": {
+   "skipped": "packs a repo into one LLM-ready file rather than building a queryable graph \u2014 no query verb to time"
+  },
+  "ripgrep": {
+   "available": true,
+   "entry": "/opt/homebrew/bin/rg",
+   "local": true,
+   "on_path": true,
+   "version": "ripgrep 15.2.0"
+  },
+  "scip indexers (scip-go, scip-typescript, ...)": {
+   "skipped": "not benchmarkable"
+  },
+  "serena": {
+   "skipped": "LSP-over-MCP with no persistent graph \u2014 nothing to build, nothing to size"
+  },
+  "zoekt": {
+   "skipped": "not benchmarkable"
+  }
+ },
+ "arena_pinned": {
+  "codegraph": true,
+  "codegraphcontext": false,
+  "gitnexus": true,
+  "graphify": true
+ },
+ "corpora": {
+  "corpus-ctx-src": {
+   "ast-grep": {
+    "lang": "go",
+    "path_note": "no index \u2014 scans the tree on every query",
+    "pattern": "func $NAME($$$) {$$$}",
+    "query_ms": 26
+   },
+   "codegraph": {
+    "cold_s": 0.787,
+    "error": null,
+    "path_note": "init <path> cold / sync <path> warm (local node-sqlite, no embeddings/LLM)",
+    "query_ms": 100,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none (local node-sqlite; telemetry disabled in the timed path)",
+    "store_bytes": 12001509,
+    "warm_s": 0.125
+   },
+   "ctx-optimize": {
+    "cold_s": 0.318,
+    "error": null,
+    "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
+    "query_ms": 13,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 2085396,
+    "warm_s": 0.027
+   },
+   "files": 408,
+   "gitnexus": {
+    "cold_s": 13.289,
+    "error": null,
+    "path_note": "analyze --skip-git --index-only (no embeddings/skills/PDG; no LLM)",
+    "query_ms": 776,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none (local LadybugDB)",
+    "store_bytes": 143769009,
+    "warm_s": 8.376
+   },
+   "graphify": {
+    "cold_s": 1.374,
+    "error": null,
+    "path_note": "update <path> --no-cluster (extraction+graph only, no clustering/LLM; its fastest path)",
+    "query_ms": 122,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 6743669,
+    "warm_s": 1.379
+   },
+   "grep": {
+    "path_note": "grep literal scan, no index \u2014 returns matching lines, NOT resolved symbols",
+    "query_ms": 641,
+    "term": "store"
+   },
+   "question": "store merge producer",
+   "ripgrep": {
+    "path_note": "rg literal scan, no index \u2014 returns matching lines, NOT resolved symbols",
+    "query_ms": 13,
+    "term": "store"
+   }
+  },
+  "corpus-flask": {
+   "ast-grep": {
+    "lang": "python",
+    "path_note": "no index \u2014 scans the tree on every query",
+    "pattern": "def $NAME($$$):",
+    "query_ms": 17
+   },
+   "codegraph": {
+    "cold_s": 0.449,
+    "error": null,
+    "path_note": "init <path> cold / sync <path> warm (local node-sqlite, no embeddings/LLM)",
+    "query_ms": 97,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none (local node-sqlite; telemetry disabled in the timed path)",
+    "store_bytes": 5206245,
+    "warm_s": 0.141
+   },
+   "ctx-optimize": {
+    "cold_s": 0.324,
+    "error": null,
+    "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
+    "query_ms": 13,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 2184231,
+    "warm_s": 0.039
+   },
+   "files": 344,
+   "gitnexus": {
+    "cold_s": 6.572,
+    "error": null,
+    "path_note": "analyze --skip-git --index-only (no embeddings/skills/PDG; no LLM)",
+    "query_ms": 766,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none (local LadybugDB)",
+    "store_bytes": 63400427,
+    "warm_s": 5.059
+   },
+   "graphify": {
+    "cold_s": 0.865,
+    "error": null,
+    "path_note": "update <path> --no-cluster (extraction+graph only, no clustering/LLM; its fastest path)",
+    "query_ms": 108,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 3317484,
+    "warm_s": 0.756
+   },
+   "grep": {
+    "path_note": "grep literal scan, no index \u2014 returns matching lines, NOT resolved symbols",
+    "query_ms": 249,
+    "term": "route"
+   },
+   "question": "route decorator handling",
+   "ripgrep": {
+    "path_note": "rg literal scan, no index \u2014 returns matching lines, NOT resolved symbols",
+    "query_ms": 11,
+    "term": "route"
+   }
+  },
+  "corpus-gin": {
+   "ast-grep": {
+    "lang": "go",
+    "path_note": "no index \u2014 scans the tree on every query",
+    "pattern": "func $NAME($$$) {$$$}",
+    "query_ms": 26
+   },
+   "codegraph": {
+    "cold_s": 0.602,
+    "error": null,
+    "path_note": "init <path> cold / sync <path> warm (local node-sqlite, no embeddings/LLM)",
+    "query_ms": 101,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none (local node-sqlite; telemetry disabled in the timed path)",
+    "store_bytes": 8065253,
+    "warm_s": 0.143
+   },
+   "ctx-optimize": {
+    "cold_s": 0.325,
+    "error": null,
+    "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
+    "query_ms": 13,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 2150773,
+    "warm_s": 0.038
+   },
+   "files": 253,
+   "gitnexus": {
+    "cold_s": 7.983,
+    "error": null,
+    "path_note": "analyze --skip-git --index-only (no embeddings/skills/PDG; no LLM)",
+    "query_ms": 761,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none (local LadybugDB)",
+    "store_bytes": 76232930,
+    "warm_s": 5.646
+   },
+   "graphify": {
+    "cold_s": 0.807,
+    "error": null,
+    "path_note": "update <path> --no-cluster (extraction+graph only, no clustering/LLM; its fastest path)",
+    "query_ms": 116,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 4966453,
+    "warm_s": 0.731
+   },
+   "grep": {
+    "path_note": "grep literal scan, no index \u2014 returns matching lines, NOT resolved symbols",
+    "query_ms": 294,
+    "term": "router"
+   },
+   "question": "router group middleware",
+   "ripgrep": {
+    "path_note": "rg literal scan, no index \u2014 returns matching lines, NOT resolved symbols",
+    "query_ms": 11,
+    "term": "router"
+   }
+  },
+  "corpus-graphify-src": {
+   "ast-grep": {
+    "lang": "python",
+    "path_note": "no index \u2014 scans the tree on every query",
+    "pattern": "def $NAME($$$):",
+    "query_ms": 51
+   },
+   "codegraph": {
+    "cold_s": 1.351,
+    "error": null,
+    "path_note": "init <path> cold / sync <path> warm (local node-sqlite, no embeddings/LLM)",
+    "query_ms": 103,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none (local node-sqlite; telemetry disabled in the timed path)",
+    "store_bytes": 26284261,
+    "warm_s": 0.13
+   },
+   "ctx-optimize": {
+    "cold_s": 0.48,
+    "error": null,
+    "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
+    "query_ms": 25,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 9444277,
+    "warm_s": 0.03
+   },
+   "files": 1474,
+   "gitnexus": {
+    "cold_s": 11.131,
+    "error": null,
+    "path_note": "analyze --skip-git --index-only (no embeddings/skills/PDG; no LLM)",
+    "query_ms": 815,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none (local LadybugDB)",
+    "store_bytes": 201314802,
+    "warm_s": 8.351
+   },
+   "graphify": {
+    "cold_s": 5.134,
+    "error": null,
+    "path_note": "update <path> --no-cluster (extraction+graph only, no clustering/LLM; its fastest path)",
+    "query_ms": 385,
+    "query_runs": 5,
+    "runs": 3,
+    "runtime_deps": "none",
+    "store_bytes": 26865044,
+    "warm_s": 5.657
+   },
+   "grep": {
+    "path_note": "grep literal scan, no index \u2014 returns matching lines, NOT resolved symbols",
+    "query_ms": 1033,
+    "term": "how"
+   },
+   "question": "how does clustering work",
+   "ripgrep": {
+    "path_note": "rg literal scan, no index \u2014 returns matching lines, NOT resolved symbols",
+    "query_ms": 23,
+    "term": "how"
+   }
+  }
+ },
+ "loadavg": [
+  8.77392578125,
+  5.24658203125,
+  3.97412109375
+ ],
+ "machine": "Apple M5 Pro, 18 cores, 48 GB",
+ "versions": {
+  "ctx-optimize": "ctx-optimize v0.13.0-104-g8ccc129-dirty (8ccc129, 2026-08-15T13:35:49Z)"
+ }
+}

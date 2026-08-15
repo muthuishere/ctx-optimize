@@ -230,6 +230,31 @@ def main():
     _, p = run([CTX, "version"], 60)
     results["versions"]["ctx-optimize"] = p.stdout.strip() if p else "?"
 
+    # Carry the arena's provenance INTO the result file. Without this, a result
+    # states which ctx-optimize produced it and says nothing about which
+    # competitor build it beat — which is exactly how the 2026-07-24 numbers
+    # became unreproducible. `provenance: absent` is itself the finding: it means
+    # setup.py has not been run and no competitor row here is pin-verified.
+    vpath = os.path.join(ARENA, "versions.json")
+    if os.path.exists(vpath):
+        with open(vpath) as f:
+            results["arena"] = json.load(f)
+        results["arena_pinned"] = {
+            n: v.get("pinned") for n, v in results["arena"].items()
+            if isinstance(v, dict) and "pinned" in v
+        }
+    else:
+        results["arena"] = None
+        results["arena_note"] = ("no versions.json — run benchmarks/suite/setup.py first; "
+                                 "no competitor number in this file is pin-verified")
+
+    # The load average is part of the measurement on a shared laptop: the same
+    # A/B swung +16.8% then +4.9% on a loaded box.
+    try:
+        results["loadavg"] = os.getloadavg()
+    except OSError:
+        pass
+
     for corpus in a.corpora:
         cpath, question, pat, lang = CORPORA[corpus]
         if not os.path.isdir(cpath):

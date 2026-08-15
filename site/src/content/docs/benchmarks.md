@@ -69,12 +69,28 @@ On the full kernel (2.85M nodes / 5.54M edges) the resident cost *is* the graph,
 machine cannot gather it.
 
 :::caution[Provenance of the competitor numbers]
-Competitor rows on the [comparison page](/ctx-optimize/compare/) come from a 2026-08 run on
-a benchmark arena that **predates the committed `setup.py`**, so it carries no
-`versions.json` and **no competitor number is pin-verified**. They are reported with the
-tool version we recorded at the time, and they will be re-run against pinned clones before
-any of them is used as a headline. Our own numbers above come from the committed harness on
-pinned corpora and are reproducible from this repo.
+**As of 2026-08-15 the arena is pin-verified — for the first time.**
+`benchmarks/suite/setup.py` rebuilds the field from `tools.json` with shallow *pinned*
+clones and writes `versions.json`; the runner now copies that provenance into every result
+file. The 2026-08-15 small-corpus run on the
+[comparison page](/ctx-optimize/compare/) carries held pins for
+[CodeGraph](https://github.com/colbymchenry/codegraph),
+[graphify](https://graphify.com/) and
+[GitNexus](https://github.com/abhigyanpatwari/GitNexus), and records
+[CodeGraphContext](https://github.com/Shashankss1205/CodeGraphContext) as `pinned: false`
+rather than quietly reporting it as pinned.
+
+**The kernel-scale rows are still unpinned.** They come from the earlier arena and are
+labelled by the build that produced them. They will be re-run before any of them is used
+as a headline.
+
+Getting there fixed three real defects in our own harness: `setup.py` crashed before it
+could write `versions.json` at all, a Homebrew interpreter's PEP 668 refusal meant Python
+competitors were being run from whatever was already on PATH rather than from the pinned
+clone, and a filtered `--tools` run *overwrote* the provenance file instead of updating it,
+leaving a results file that claimed exactly one pinned competitor. GitNexus's recorded
+build command also turned out to match a layout the pinned tree does not have — so the
+binary in the arena had not been built from the pin either.
 :::
 
 ## The harnesses, all committed
