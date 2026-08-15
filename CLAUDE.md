@@ -77,9 +77,10 @@ connector), everything else via adapter scripts through the validated
     multilang corpora (`multilang/corpora/`), and prior results
     (`results-multi.json`, `RUN-NOTES.md`, `AUDIT.md`). Take corpus paths and
     entry points from there; extend the recorded results rather than starting a
-    parallel record. Check what a recorded row actually covers before comparing
-    to it — the k8s row is `/pkg` only (3,125 files), not the whole repo
-    (15,309), and merging the two would be a silent methodology error.
+    parallel record. ALWAYS check what a recorded row actually covers
+    (file count, subdir, ref) before comparing a new number to it — a row
+    measured on a subdirectory reads identically to a whole-repo row in the
+    JSON, and merging them is a silent methodology error.
   - `benchmarks/bench.py` / `bench_multi.py` — single-pass runners (cold/warm).
     `benchmarks/session/session.py` — the MULTI-PASS session runner (cold build
     → queries → scripted edit → incremental → queries + staleness probes), which

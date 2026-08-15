@@ -23,13 +23,26 @@ number behind it; where a number is stale or missing, it says so.
 | answer correctness | 0.79 | codegraph **0.86** | see P1 — partly stale |
 | answer coverage | 0.79 | codegraph **1.00** | we omit sig+doc in `query` |
 | query latency, linux | 3,516ms | codegraph **536ms** | reads all 855MB before knowing the question |
-| peak RSS, reqsume | **10.58GB** | graphify **429MB** | modules × workers × 64MB |
+| peak RSS, reqsume | 9.40GB at full throttle (was 12.4GB; **0.73GB** at GOMAXPROCS=2 since `e54dd6f`) | graphify **429MB** | modules × workers × 64MB |
 | one-file re-gather | 91% of cold | unmeasured | store write is O(whole graph) |
 
 Competitor rows are 2026-07-24 and **unpinned** (the arena has no
 `versions.json`). Treat as indicative until `setup.py` rebuilds it.
 
-## P0 — memory, because it is a "cannot use it" bug
+## P0 — memory (D0 SHIPPED 2026-08-15, remainder open)
+
+**Done:** worker pools now key on `runtime.GOMAXPROCS(0)`, not `NumCPU`
+(commit `e54dd6f`). `NumCPU` ignored cgroup quotas, so a 2-CPU container on a
+64-core host spawned 63 wasm instances. Measured on reqsume's 7 modules after:
+**0.73 GB at GOMAXPROCS=2**, 2.66 GB at 6, 9.40 GB at 18 — all were ~12.4 GB
+before, and GOMAXPROCS is now a working memory cap. Full throttle on a laptop
+is unchanged.
+
+**Open:** at full throttle the multi-module case still costs 9.40 GB, because
+the budget MULTIPLIES — module fan-out x per-module workers x 64 MB. ADR 12
+D1 (global instance budget) / D2 (the 64 MB floor).
+
+### The original framing, kept for the numbers
 
 reqsume (7 modules, 4,883 files) peaks at **10.58 GB**. An 8 GB CI runner
 cannot gather it. graphify does the same tree in 429 MB. Cause is measured:

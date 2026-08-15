@@ -164,6 +164,8 @@ func runCorpus(t *testing.T, base, specPath string) {
 		if err := appendHistory(historyLine{Kind: "corpus", Corpus: corpusName, Nodes: nodes, Edges: edges, GatherMS: gatherWall.Milliseconds()}); err != nil {
 			t.Errorf("audit record failed: %v", err)
 		}
+	}
+	if perfRecordingEnabled() {
 		if err := recordPerfBaseline(corpusName, gatherWall); err != nil {
 			t.Errorf("perf baseline record failed: %v", err)
 		} else {
@@ -179,7 +181,7 @@ func runCorpus(t *testing.T, base, specPath string) {
 	// Gate 2 — the same-machine baseline, which is what catches the ~1.5x
 	// class the ceiling must let through. Silent when this machine has no
 	// recorded baseline: wall-clock does not travel between machines.
-	if !recordingEnabled() {
+	if !perfRecordingEnabled() {
 		if want, ok := perfBaselineFor(corpusName); ok {
 			limit := time.Duration(float64(want) * perfTolerance)
 			if gatherWall > limit {
@@ -193,7 +195,7 @@ func runCorpus(t *testing.T, base, specPath string) {
 				}
 				if best > limit {
 					t.Errorf("gather %s vs baseline %s on this machine (%s) — %.2fx, over the %.2fx tolerance; "+
-						"confirmed by a second run at %s. Either a real regression, or re-record with RECORD_GOLDEN=1 and justify the rise.",
+						"confirmed by a second run at %s. Either a real regression, or re-record with RECORD_PERF=1 RECORD_PERF_RISE=1 and justify the rise.",
 						best.Round(time.Millisecond), want.Round(time.Millisecond), perfFingerprint(),
 						float64(best)/float64(want), perfTolerance, retry.Round(time.Millisecond))
 				} else {
@@ -207,7 +209,7 @@ func runCorpus(t *testing.T, base, specPath string) {
 			}
 		} else {
 			t.Logf("no gather baseline for machine %s — the tight perf gate is INACTIVE here; "+
-				"establish one with RECORD_GOLDEN=1 (baselines on file: %v)", perfFingerprint(), perfBaselineCorpora())
+				"establish one with RECORD_PERF=1 (baselines on file: %v)", perfFingerprint(), perfBaselineCorpora())
 		}
 	}
 	if pq := spec.ProbeQuery; pq != nil {

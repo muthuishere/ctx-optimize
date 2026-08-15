@@ -102,12 +102,26 @@ func perfBaselineFor(corpus string) (time.Duration, bool) {
 	return time.Duration(ms) * time.Millisecond, true
 }
 
-// recordPerfBaseline writes this machine's gather time for a corpus. Called
-// only under RECORD_GOLDEN=1, the same switch the judged scoreboard uses.
+// perfRecordingEnabled gates the perf baseline on its OWN switch, not on
+// RECORD_GOLDEN.
+//
+// It used to share RECORD_GOLDEN with the judged scoreboard, and Taskfile.yml
+// sets that on every corpus run — so the tight baseline gate (which skips
+// itself while recording) never executed, and each run silently rewrote the
+// number it was supposed to be judged against. The baseline rose twice under
+// commit subjects that said "ratchets down". A gate that records what it just
+// measured is not a gate.
+func perfRecordingEnabled() bool { return os.Getenv("RECORD_PERF") == "1" }
+
+// recordPerfBaseline writes this machine's gather time for a corpus, under
+// RECORD_PERF=1 only.
 //
 // Recording is a DELIBERATE act: whatever the tree does at that moment becomes
 // the number future runs are held to, so recording on a known-slow build pins
-// the slowness as normal.
+// the slowness as normal. Hence the ratchet below — a FALL records freely, a
+// RISE needs RECORD_PERF_RISE=1 and a reason in the commit message. That is the
+// same governance the judged floors have, now actually enforced in code rather
+// than promised in a doc string.
 func recordPerfBaseline(corpus string, wall time.Duration) error {
 	b := loadPerfBaselines()
 	b.Doc = "Gather wall-time baselines per machine fingerprint (GOOS-GOARCH-cpuN). " +
@@ -119,7 +133,13 @@ func recordPerfBaseline(corpus string, wall time.Duration) error {
 	if b.Machines[fp] == nil {
 		b.Machines[fp] = map[string]int64{}
 	}
-	b.Machines[fp][corpus] = wall.Milliseconds()
+	ms := wall.Milliseconds()
+	if prev, ok := b.Machines[fp][corpus]; ok && ms > prev && os.Getenv("RECORD_PERF_RISE") != "1" {
+		return fmt.Errorf("refusing to raise the %s baseline on %s: %dms -> %dms. "+
+			"A rise is a reviewed diff — re-run with RECORD_PERF_RISE=1 and justify it in the commit, "+
+			"or fix the regression", corpus, fp, prev, ms)
+	}
+	b.Machines[fp][corpus] = ms
 
 	// Deterministic, git-diffable output — sorted keys, trailing newline.
 	if err := os.MkdirAll(filepath.Dir(perfBaselineFile), 0o755); err != nil {
