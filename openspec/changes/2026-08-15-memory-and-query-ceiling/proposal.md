@@ -28,6 +28,19 @@ footprint is:
 That matches the 10.58 GB observed, and it explains why a small monorepo is
 the worst case rather than a big single-module repo.
 
+**It is NOT the markdown swap, the boundary lane, or importresolve — proven by
+A/B.** Same module (`reqsume/apps/api`), same machine:
+
+| build | peak RSS |
+|---|---|
+| baseline `0a2b192` — regex markdown, no boundary lane, pre-D7 | **2.56 GB** |
+| HEAD — goldmark + boundary + D7 + services + drift | **2.57 GB** |
+
+0.01 GB apart. Every lane this session added is memory-free; the footprint is
+entirely the wasm instance model and has been there all along. Scaling check on
+the same repo: 1 module 2.57 GB → 7 modules 12.37 GB (~1.77 GB per module),
+which is the per-module signature, not a per-lane one.
+
 **Why it matters now, not later:** an 8 GB CI runner cannot gather reqsume, and
 a 16-core laptop gathering a 10-module monorepo would need ~10 GB. This is a
 correctness-of-experience bug for exactly the multi-module users the product
