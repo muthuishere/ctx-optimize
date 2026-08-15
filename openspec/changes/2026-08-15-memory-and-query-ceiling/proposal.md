@@ -46,6 +46,33 @@ a 16-core laptop gathering a 10-module monorepo would need ~10 GB. This is a
 correctness-of-experience bug for exactly the multi-module users the product
 targets.
 
+### D0 — key on GOMAXPROCS, not NumCPU (one line, do this first)
+
+The owner's instinct — "small CI runners allocate few CPUs, so we scale down
+automatically" — is right for a small **VM** and wrong for a **container**.
+
+`code.go:420` uses `runtime.NumCPU()`, which ignores `GOMAXPROCS` **and ignores
+cgroup CPU quotas**. Measured: `GOMAXPROCS=2` moved peak RSS only 2.57 → 1.91 GB
+(−26%), not the ~8× a real drop from 17 workers to 1 would give — because we
+still CREATE 17 instances and GOMAXPROCS merely limits how many run at once.
+Confirmed directly: `NumCPU=18 GOMAXPROCS=3` under `GOMAXPROCS=3`.
+
+Consequences:
+- 2-core GitHub-hosted runner → `NumCPU`=2 → 1 worker → fine today.
+- Container with `--cpus=2` on a 64-core host, or a k8s self-hosted runner →
+  `NumCPU` reports **the host's** 64 → 63 instances → OOM despite the quota.
+
+**Fix: `workers := runtime.GOMAXPROCS(0) - 1`.** We are on **go 1.26.3**, and
+Go 1.25+ made `GOMAXPROCS` container-aware, so this single change makes the
+worker count respect cgroup limits automatically AND honours an explicit
+`GOMAXPROCS` for anyone who wants to cap us. It is strictly more correct than
+`NumCPU` on every platform and identical on a bare VM.
+
+Gate it the same way as everything else: byte-identical output (worker count
+must not affect the graph — if it does, that is an ADR 5-class bug), and a
+measurement at `GOMAXPROCS=2` showing the footprint actually falls near 1
+worker's worth.
+
 ### D1 — bound instances globally, not per module
 
 The instance pool must be a process-wide resource with a cap, not something
