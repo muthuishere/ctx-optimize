@@ -1,0 +1,22 @@
+{
+  "_doc": [
+    "A SMALL SLICE of Loc-Bench for proving the harness end to end.",
+    "Chosen for clone+gather feasibility, NOT for score: 4 mid-size Python repos,",
+    "3 instances each. A slice score is indicative only \u2014 the published baselines",
+    "are full-560 numbers and are not comparable until the full set is run."
+  ],
+  "instances": [
+    "py-pdf__pypdf-2964",
+    "py-pdf__pypdf-2934",
+    "py-pdf__pypdf-2656",
+    "ranaroussi__yfinance-2139",
+    "ranaroussi__yfinance-2173",
+    "ranaroussi__yfinance-2122",
+    "tobymao__sqlglot-4524",
+    "tobymao__sqlglot-4523",
+    "tobymao__sqlglot-4519",
+    "sqlfluff__sqlfluff-6399",
+    "sqlfluff__sqlfluff-6554",
+    "sqlfluff__sqlfluff-6444"
+  ]
+}

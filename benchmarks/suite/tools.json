@@ -33,7 +33,14 @@
     "  answers_classes  classes the tool can answer AT ALL. A class not listed is",
     "                   reported n/a and EXCLUDED from that score. Scoring a line",
     "                   matcher 0/10 on 'who calls this' is a rigged test, not a",
-    "                   finding."
+    "                   finding.",
+    "",
+    "EXTERNAL YARDSTICK: benchmarks/locbench/ scores ctx-optimize on Loc-Bench",
+    "(czlll/Loc-Bench_V1, LocAgent ACL 2025) \u2014 somebody else's ground truth and",
+    "baselines. We enter its RETRIEVAL tier (no LLM), whose published peers are",
+    "BM25 38.69% / CodeRankEmbed 52.55% file Acc@5; LocAgent's 84.59% is the",
+    "agentic tier and is NOT our comparison. Competitors here could take the same",
+    "ranked-list protocol \u2014 that is the next step toward an external comparison."
   ],
   "tools": [
     {
