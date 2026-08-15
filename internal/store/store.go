@@ -249,11 +249,7 @@ func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error) {
 		}
 		byID[n.ID] = n
 	}
-	nodes := make([]schema.Node, 0, len(byID))
-	for _, n := range byID {
-		nodes = append(nodes, n)
-	}
-	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
+	nodes := mergeOrdered(existing, byID, nodeKey)
 
 	oldEdges, err := s.Edges()
 	if err != nil {
@@ -278,11 +274,7 @@ func (s *Store) Merge(b *schema.Batch) (nodesAdded, edgesAdded int, err error) {
 		}
 		byKey[edgeKey(e)] = e
 	}
-	edges := make([]schema.Edge, 0, len(byKey))
-	for _, e := range byKey {
-		edges = append(edges, e)
-	}
-	sort.Slice(edges, func(i, j int) bool { return edgeKey(edges[i]) < edgeKey(edges[j]) })
+	edges := mergeOrdered(oldEdges, byKey, edgeKeyOf)
 
 	if err := writeNDJSON(s.nodesPath(), len(nodes), func(i int) any { return nodes[i] }); err != nil {
 		return 0, 0, err
@@ -423,16 +415,11 @@ func (s *Store) ReplaceAll(batches []*schema.Batch, force bool) ([]ReplaceResult
 		return results, nil
 	}
 
-	out := make([]schema.Node, 0, len(byID))
-	for _, n := range byID {
-		out = append(out, n)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	edges := make([]schema.Edge, 0, len(byKey))
-	for _, e := range byKey {
-		edges = append(edges, e)
-	}
-	sort.Slice(edges, func(i, j int) bool { return edgeMergeKey(edges[i]) < edgeMergeKey(edges[j]) })
+	// Order by MERGE, not by sort: both slices came off disk already sorted, so
+	// the survivors keep their order and only genuinely new keys need sorting.
+	// Measured on go-kubernetes this was 59% of the whole store phase.
+	out := mergeOrdered(nodes, byID, nodeKey)
+	edges := mergeOrdered(oldEdges, byKey, edgeKeyOf)
 
 	if err := writeNDJSON(s.nodesPath(), len(out), func(i int) any { return out[i] }); err != nil {
 		return results, err
@@ -496,7 +483,9 @@ func (s *Store) Replace(b *schema.Batch, force bool) (added, pruned int, err err
 		newIDs[n.ID] = true
 	}
 	prevIDs := make(map[string]bool, len(existing))
-	kept := existing[:0]
+	// NOT existing[:0]: the merge below needs the on-disk order intact, and
+	// aliasing the backing array would overwrite it as we filter.
+	kept := make([]schema.Node, 0, len(existing))
 	for _, n := range existing {
 		prevIDs[n.ID] = true
 		if n.Metadata["producer"] == b.Producer && !newIDs[n.ID] {
@@ -524,11 +513,7 @@ func (s *Store) Replace(b *schema.Batch, force bool) (added, pruned int, err err
 		}
 		byID[n.ID] = n
 	}
-	nodes := make([]schema.Node, 0, len(byID))
-	for _, n := range byID {
-		nodes = append(nodes, n)
-	}
-	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
+	nodes := mergeOrdered(existing, byID, nodeKey)
 
 	oldEdges, err := s.Edges()
 	if err != nil {
@@ -551,11 +536,7 @@ func (s *Store) Replace(b *schema.Batch, force bool) (added, pruned int, err err
 		}
 		byKey[edgeKey(e)] = e
 	}
-	edges := make([]schema.Edge, 0, len(byKey))
-	for _, e := range byKey {
-		edges = append(edges, e)
-	}
-	sort.Slice(edges, func(i, j int) bool { return edgeKey(edges[i]) < edgeKey(edges[j]) })
+	edges := mergeOrdered(oldEdges, byKey, edgeKeyOf)
 
 	if err := writeNDJSON(s.nodesPath(), len(nodes), func(i int) any { return nodes[i] }); err != nil {
 		return 0, 0, err
