@@ -1,0 +1,93 @@
+# ADR 12 — two ceilings with identified causes: RSS per module, query per byte
+
+Status: DRAFT — owner review pending 2026-08-15. No product code until agreed.
+Scope: `internal/extract/code` (instance pooling) and `internal/query` (index).
+Both causes are MEASURED, not inferred.
+
+## Ceiling 1 — peak RSS scales with MODULES, not repo size
+
+| repo | modules | files | peak RSS |
+|---|---|---|---|
+| reqsume | **7** | 4,883 | **10.58 GB** |
+| ctx-optimize | 1 | ~1,200 | 2.69 GB |
+| go-kubernetes | 1 | 24,471 | 4.46 GB |
+| linux | 1 | 145,250 | 11.11 GB |
+
+reqsume is a *small* repo and outweighs kubernetes 5× at a fifth of the files.
+graphify uses **429 MB** on the same reqsume tree — **25× less**.
+
+**Cause.** Workers are `runtime.NumCPU() - 1` (`code.go:420`) = 17 here. Each
+worker builds its own wazero instance (`code.go:449`), and an instance starts
+with a **64 MB** linear memory (ADR 8 measured this: 71% of an 8.3 GB gather's
+allocation was wazero linear memory). Modules gather in PARALLEL. So the live
+footprint is:
+
+    modules_in_flight x (NumCPU-1) x 64 MB
+
+7 x 17 x 64 MB = **7.6 GB** of guest memory alive at once, before the graph.
+That matches the 10.58 GB observed, and it explains why a small monorepo is
+the worst case rather than a big single-module repo.
+
+**Why it matters now, not later:** an 8 GB CI runner cannot gather reqsume, and
+a 16-core laptop gathering a 10-module monorepo would need ~10 GB. This is a
+correctness-of-experience bug for exactly the multi-module users the product
+targets.
+
+### D1 — bound instances globally, not per module
+
+The instance pool must be a process-wide resource with a cap, not something
+each `ExtractPaths` call allocates independently. Options to measure:
+per-module worker budget = `max(1, (NumCPU-1) / modules_in_flight)`; a shared
+pool of N instances that modules borrow from; or serializing module gathers
+when projected footprint exceeds a threshold.
+
+Note the symbol-table cache (`45087a6`) already proved instances are shareable
+across modules — the same reasoning extends to parse instances.
+
+### D2 — question the 64 MB floor
+
+ADR 8 rejected `WithMemoryCapacityFromMax` because eager allocation needs
+`WithMemoryLimitPages` and the measured peak was 282 MB x 17 workers. That
+analysis assumed one module. It should be re-run against the real constraint
+(total footprint across modules), and paired with a smaller initial memory —
+64 MB per instance is a lot when 17 of them are idle-sized for one 1.8 MB file.
+
+## Ceiling 2 — `query` reads the whole node file; `card` does not
+
+Measured on a QUIET machine (load 1.90), linux v6.9:
+
+| verb | time | why |
+|---|---|---|
+| `card <symbol>` | **22 ms** | index-backed (`5a46dd6`) |
+| `query "<terms>"` | **3,516 ms** | reads + parses **855 MB** of `nodes.ndjson` |
+
+**`query` did NOT regress.** The recorded baseline is 4,039 ms and HEAD is
+3,516 ms — **13% faster**. An earlier report of 6,162 ms was taken at load
+8.7–12.2 and is noise; the number is corrected here so it is not repeated.
+
+But it is our weakest axis in absolute terms, and codegraph's recorded 536 ms
+is ~6.6x faster. The cause is architectural, not incidental: **the whole node
+file is deserialized before the question is even known.** `card` already solved
+this shape with a lookup index and went 1.8 s → 22 ms.
+
+### D3 — give `query` the treatment `card` already has
+
+Lexical scoring needs term → node postings, which is an index, not a scan.
+Constraints: it must stay deterministic and git-diffable, must be rebuilt as
+part of the gather (never lazily on first query — that would make the first
+query pay for everyone), and must degrade to the current scan if absent so old
+stores keep working.
+
+Measure before building: what fraction of the 3,516 ms is read, JSON parse, and
+scoring? If parse dominates, a compact index makes it vanish; if scoring
+dominates, the index only helps the read.
+
+## Gates
+
+- Peak RSS on reqsume must fall well under 8 GB (the CI-runner constraint) with
+  byte-identical output; measure kubernetes and linux too since D1 changes
+  worker scheduling.
+- `query` latency: report before/after on linux and kubernetes; judged
+  scoreboard may not move DOWN (a faster query that ranks worse is a loss).
+- Determinism gates (now byte-identity on both tiers) must stay green — D1
+  changes concurrency, which is exactly what ADR 5 taught us to distrust.
