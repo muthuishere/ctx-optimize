@@ -154,7 +154,8 @@ grep on structure wastes the store):
 | Question shape | Tool |
 |---|---|
 | symbols, structure, callers, impact, architecture, "how does X work" | store verbs (query/card/change-plan/affected/path/hubs) |
-| exact literal strings, every occurrence, config VALUES, comments, member fields, build files, error-message text | **grep directly — the store does not index these; say so and grep** |
+| exact literal strings, every occurrence, config VALUES, comments, member fields, build files, error-message text | **grep directly — the store does not index these; say so and grep.** Where `grep`/`rg` is absent (Windows, bare container), `ctx-optimize search '<literal>' [--ext .go] [--count]` sweeps the extractor's own file set, so a vendored tree the extractor never read cannot inflate the count |
+| external hosts, env-var NAMES, spawned binaries, exposed routes — the egress/ingress surface | `ctx-optimize boundaries`. These READ like config values, but the store DOES index them as `port` nodes with `file:line`; grep finds the string, this gives direction, transport and whether it is a credential |
 
 **The ladder — descend it, never stop on a rung:**
 1. Right-tool store verb first (find→query · inspect→card ·

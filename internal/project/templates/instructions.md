@@ -34,6 +34,7 @@ CI gate: `up && fresh`.
 | **Connection** — how are A and B related | `ctx-optimize path "A" "B" --json` |
 | **Orient** — where do I start | `ctx-optimize hubs --top 10 --json` |
 | **List / filter** — every node of a kind, edges of a relation, deps by scope ("all k8s services", "which files use react", "our dev deps") | `ctx-optimize nodes --kind K` / `edges --relation R` / `deps --scope dev [--importers]` — native, portable, **never `export \| jq`** |
+| **Boundaries** — what does this call out to / expose, which env vars are secrets, what does it shell out to, is that call http or a queue | `ctx-optimize boundaries [--sensitive] [--transport T] [--direction consumes\|provides] [--json]` — CONSUMES/PROVIDES split with `file:line`. **`query` cannot reach these** (a hostname scores as prose); this verb or `nodes --kind port` are the ways in |
 | **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — verbatim source hydrated from the file at answer time (nothing stored) |
 | **The answer looks short — where are the rest of the callers?** | add `--include-ambiguous` to `card`/`explain`/`affected`/`path`/`hubs`/`change-plan`. These verbs answer with FACTS ONLY by default, so a **method's blast radius is a floor**: call sites the store refused to attribute are held back as a shortlist. The flag walks them, and marks every widened row (`?`, or a `MAYBE` heading) — candidates to verify, never callers |
 | **Code changed** — bring the store current | `ctx-optimize sync` — incremental resync of THIS repo (0-change ≈ ms); `--adapters` adds adapter scripts, `--all` adds native sources (dials). Opt-in autosync: `"autosync": "lazy"` in config.json (stale reads resync themselves in the background) |
@@ -121,7 +122,8 @@ answer from a partial store without saying so.
 | Question shape | Tool |
 |---|---|
 | symbols, structure, callers, impact, architecture, "how does X work" | store verbs (table above) |
-| exact literal strings, every occurrence, config VALUES, comments, member fields, build files | **grep directly — the store does not index these; say so and grep** |
+| exact literal strings, every occurrence, config VALUES, comments, member fields, build files | **grep directly — the store does not index these; say so and grep.** No `grep`/`rg` (Windows, bare container)? `ctx-optimize search '<literal>' [--ext .go] [--count]` sweeps the extractor's own file set — same gitignore, same skip-dirs, so counts match what the store saw |
+| external hosts, env-var NAMES, spawned binaries, exposed routes | `ctx-optimize boundaries` — these look like "config values" but the store DOES index them as `port` nodes with `file:line`. Grep finds the string; this tells you the direction, transport and whether it is a credential |
 
 The ladder: right-tool store verb first → verify before a human acts → READ
 the cited range when behavior matters (that is the point of the location, not
