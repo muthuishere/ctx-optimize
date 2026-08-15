@@ -127,10 +127,47 @@ Stated plainly so no later reader has to reconstruct it:
 No goal in this ADR is "beat X". The goal is that every capability we ship has
 a number attached that can go down.
 
-## Open question for the owner
+## D4 — YES to golden gating, with per-class floors and a hermetic fixture
 
-Do the judged golden floors gain these classes, or only the competitor board?
-Adding them to `internal/golden` makes them a CI regression gate for the
-boundary lane — which is the real prize — but it also means a boundary rule
-change can fail the build, and those floors sit at 16.5/13.0 on a 20-question
-scale that would need restructuring.
+Owner decision 2026-08-15: the boundary classes go into the golden net, not
+only the competitor board. That is the whole point — a capability with no
+failing test is a promise.
+
+Two design constraints follow:
+
+**Per-class floors, never a renumbered blend.** Do NOT extend linux-block's
+20-question set to 25 and re-floor it: that disturbs pinned numbers
+(16.5 / 13.0) for an unrelated reason and makes a boundary regression look like
+a code-locate regression. Each class carries its own floor, so a boundary rule
+going quiet fails the BOUNDARY floor and names itself.
+
+**Gate hermetically; measure at scale separately.** linux has no HTTP egress
+and Newtonsoft has no routes, so neither can host these classes. But the golden
+net already gates on hermetic FIXTURES (`dockerstack`, `multimod`, `pydeps`),
+and a boundary fixture is the natural home: a small repo with known env vars
+(one flagged sensitive), a literal HTTP host, an SDK call, a spawned process,
+and two routes — every expected port written out exactly. That runs in CI with
+no corpus clone and fails loudly when a rule stops matching. The corpus tier
+can then measure BREADTH on kubernetes (404 ports) without being the gate.
+
+## D5 — ask the developer's question, not our schema's
+
+Sharpening D1's fairness rule, because `n/a` alone does not make a question
+fair. A benchmark phrased in our own vocabulary is rigged even when nobody is
+scored zero:
+
+| ask this | not this | why |
+|---|---|---|
+| "How does the API talk to the worker?" | "What is this port's transport?" | the first is a question anyone has; the second tests our schema |
+| "What external services does this repo call?" | "List nodes of kind=port, direction=consumes" | ditto |
+| "Which config values are secrets?" | "Which ports carry sensitive=true?" | ditto |
+
+The test: **would a developer ask this if ctx-optimize did not exist?** If yes,
+it is a fair question and a competitor's inability to answer is a real
+capability gap. If no, we invented the question to fit our answer, and it
+belongs in a unit test rather than a benchmark.
+
+The transport case is the interesting one and worth stating plainly: "is this
+call HTTP or gRPC" IS a real question — it changes how you debug, retry and
+couple two services — but it should be asked the way a developer asks it, with
+the transport appearing in the ANSWER rather than in the question.
