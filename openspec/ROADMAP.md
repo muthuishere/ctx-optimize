@@ -1,7 +1,13 @@
-# Roadmap — beating the field, from measured position
+# Roadmap — from measured position
 
 Written 2026-08-15 from the session's measurements. Every line here has a
 number behind it; where a number is stale or missing, it says so.
+
+**Framing (owner, 2026-08-15): we do not have to win everything.** Some of
+these gaps are other tools making a different, legitimate trade — codegraph
+prints 18KB per answer and scores higher for it; ripgrep has no index to build
+and is ~7x cheaper per session. Those are not defects to erase. Fix the real
+DEFECTS, state the capability we have plainly, and let the rest stand.
 
 ## Where we actually stand
 
@@ -93,8 +99,11 @@ would have manufactured five fake regressions).
    investigated. `graphify_q2` (`node_link_graph`) is a networkx import not
    defined in the corpus — arguably unanswerable, but it scores against us.
 
-**Target: correctness ≥ 0.86, coverage ≥ 0.90, context under 8KB, efficiency
-not below 2.5×.**
+**Targets are the DEFECTS, not a rank.** Fix (1) and (2) because they are
+genuine bugs — a candidate list without line numbers is unusable, and a README
+section is not the class you asked for. Decide (3) deliberately. Where we land
+after that is where we land: codegraph scores 0.86 by printing 18KB per answer
+against our 7KB, and that trade is theirs to make, not a gap we owe anyone.
 
 ## P2 — the two speed axes we lose
 

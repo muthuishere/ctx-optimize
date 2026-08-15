@@ -35,10 +35,13 @@ measuring a **narrow slice chosen before half the product existed**. We built a
 boundary lane, a services registry, a doc graph and route extraction, and then
 scored ourselves on none of them.
 
-## Why this matters more as engineering than as marketing
+## The reason is the regression net, NOT the scoreboard
 
-The obvious reading is "our benchmark undersells us". The important reading is
-the opposite:
+Owner's position, and it settles the framing: *"don't have to win all, and the
+capability we possess, that's fine."* So this ADR is explicitly **not** an
+attempt to raise our number by adding questions we happen to win. If these
+classes are added and our score on them is mediocre, that is a fine outcome —
+the point is that it becomes VISIBLE and STAYS visible.
 
 **An unmeasured capability has no regression net.** The boundary lane has unit
 tests, but no judged question anywhere. If a rule silently stopped matching, or
@@ -59,12 +62,15 @@ Extend both scored sets with the classes above, following the fairness rules
   zero on "what external APIs does this repo call" is a rigged comparison, not
   a finding, and it would poison the credibility of the classes where we do
   compete honestly.
-- **Breadth is its own axis, stated separately from correctness.** The honest
-  claim is "we answer six classes, others answer one or two" — NOT a single
-  number in which our unique classes drag the average up. Anyone can win a
-  blended score by inventing questions only they can answer; that is the
-  benchmark-you-design-and-win failure, and it costs more credibility than it
-  buys.
+- **Breadth is a capability STATEMENT, not a score.** Publish a plain matrix of
+  which classes each tool answers, the way `tools.json` already documents the
+  field. "We model external boundaries; codegraph does not; codegraph shows more
+  source per answer than we do" is a true and useful sentence. Turning that into
+  a number we win is the benchmark-you-design-and-win failure, and it costs more
+  credibility than it buys.
+- **We are not trying to win these classes.** We are the only tool that enters
+  some of them, which makes a comparative score meaningless there — the number
+  that matters is our own, over time, so a regression shows up.
 
 ## D2 — ground truth must be as verifiable as the locate questions
 
@@ -104,10 +110,27 @@ locate questions, they do not ship. A soft-graded class in the same table as a
 hard-graded one contaminates both, and a skeptic is right to discount the whole
 board.
 
+## Where we honestly stand, and that being fine
+
+Stated plainly so no later reader has to reconstruct it:
+
+- **Code-locate**: we are third — 0.804 against codegraph's 0.86. codegraph
+  wins by printing more source (18KB per answer vs our 7KB). That is a real
+  design choice with a real cost, not a defect we must erase. Fix the actual
+  DEFECTS (card omitting line numbers is one), then accept where we land.
+- **Context efficiency**: we lead, ~2.3x codegraph on correctness-per-byte.
+- **Build and re-gather speed, determinism, boundaries**: we lead, in some
+  cases by orders of magnitude, and in boundaries we are alone.
+- **`ripgrep` beats us on locate and is ~7x cheaper per session.** Already in
+  the README, and it should stay there.
+
+No goal in this ADR is "beat X". The goal is that every capability we ship has
+a number attached that can go down.
+
 ## Open question for the owner
 
-Do the judged golden floors gain these classes too, or only the competitor
-board? Adding them to `internal/golden` makes them a CI regression gate for the
-boundary lane — which is the real prize here — but it also means a boundary
-rule change can fail the build, and those floors currently sit at 16.5/13.0 on
-a 20-question scale that would have to be restructured.
+Do the judged golden floors gain these classes, or only the competitor board?
+Adding them to `internal/golden` makes them a CI regression gate for the
+boundary lane — which is the real prize — but it also means a boundary rule
+change can fail the build, and those floors sit at 16.5/13.0 on a 20-question
+scale that would need restructuring.
