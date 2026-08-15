@@ -1,6 +1,14 @@
 # ADR 11 — incremental gather: the store write is the bottleneck, not the parse
 
-Status: DRAFT — owner review pending 2026-08-15. No product code until agreed.
+Status: D1 IMPLEMENTED 2026-08-15. The diagnosis in this ADR was WRONG about
+the cause and right about the location: parsing is 211ms, sorting is 1,375ms
+(59%). Fix was to merge into the already-sorted file rather than re-sort it —
+isolated ReplaceAll 2.624s -> 1.561s (-40%), one-file re-gather 98.3% -> 86.6%
+of cold on kubernetes, 96.2% -> 80.9% on java-spring.
+The 20% target is NOT reachable from D1: the store phase is 2.624s of a 6.833s
+gather, so deleting it entirely leaves 60% of cold. The rest is extraction —
+D2's per-file cache, whose spike already exists and now has its prerequisite.
+D2 remains DRAFT. No product code until agreed.
 Scope: `internal/store` (incremental write) and, second, a per-file extract
 cache in `internal/extract/code`. No schema change, no emitted-fact change.
 Written from a working spike, not a design sketch — the numbers below are
