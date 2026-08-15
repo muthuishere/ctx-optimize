@@ -179,6 +179,17 @@ func (m *ASTMatch) URLHost(lit string) (string, bool) {
 	if rest == "" {
 		return "", false
 	}
+	// RFC 3986 userinfo: everything through the LAST '@' before the path is
+	// credentials, not the host. Without this, `https://user:pw@host/x` reported
+	// `user` as the host — a FABRICATED name, which is worse than a miss and is
+	// exactly what the confidence tiers exist to prevent — and
+	// `https://user@host/x` dropped the real host entirely. The password is
+	// never captured either way (the ':' terminator below stops before it), so
+	// this was not a leak; it was a lie. Last '@', because a userinfo field may
+	// legally contain a percent-encoded one.
+	if at := strings.LastIndexByte(rest[:hostEnd(rest)], '@'); at >= 0 {
+		rest = rest[at+1:]
+	}
 	end := len(rest)
 	for i := 0; i < len(rest); i++ {
 		switch rest[i] {
@@ -433,4 +444,17 @@ func (ix *Index) SDKMatches(last, expr string) []SDKBound {
 		}
 	}
 	return out
+}
+
+// hostEnd returns where the authority component ends — the first delimiter that
+// can only appear after it. Used to bound the userinfo search so an '@' in a
+// query string or fragment is never mistaken for credentials.
+func hostEnd(rest string) int {
+	for i := 0; i < len(rest); i++ {
+		switch rest[i] {
+		case '/', '?', '#', '"', '\'', '`', ' ':
+			return i
+		}
+	}
+	return len(rest)
 }
