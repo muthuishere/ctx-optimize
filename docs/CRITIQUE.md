@@ -98,6 +98,17 @@ legacy/hostile code" as a published-benchmark secondary claim.
    catalogue are correct, gated, and unreachable by the verb our own
    instructions tell agents to call. See ADR 14.
 
+11. **`scope=internal` has never been produced** (found 2026-08-15 by the
+   `boundaries` verb). ADR 1 D1 promises internal/external "decided by JOIN".
+   Measured: ctx-optimize 56 external / 0 internal, reqsume 163 / 0. The join
+   compares consumes identifiers (HOSTS) against provides identifiers (ROUTE
+   PATHS) — unsatisfiable by construction. So reqsume, whose UI calls its own
+   API 137 times and which MOTIVATED the boundary lane, reports every one as
+   external. The fixture gate passes because its expectations were recorded
+   from actual output: a gate that records reality cannot detect that reality
+   is wrong — the same shape as the perf gate that recorded its own timing.
+   See ADR 16.
+
 ## Kill criteria (pre-committed)
 Thin slice (cards + deterministic wiki) on kernel + one true legacy repo:
 **composite <25% on hostile terrain → stop, or pivot to impact-analysis-only**
