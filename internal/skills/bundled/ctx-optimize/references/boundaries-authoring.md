@@ -34,12 +34,30 @@ recall < 0.70            → AMBIGUOUS, or reject the rule
 `known_misses` is **mandatory** whenever recall < 1.0. Silence that looks like
 completeness is the one failure that makes a graph lie.
 
+**This law is enforced by REVIEW, not by the loader — know that before you
+lean on it.** Measured against the shipped binary: a rule with no `verified`
+block at all loads without complaint, and an omitted `tier` defaults to
+**EXTRACTED** — so an entirely unmeasured rule silently claims the *highest*
+confidence tier. Never omit `tier`. Set it from your numbers, and treat a
+missing `verified` block in a diff as a blocking review comment, because
+nothing downstream will catch it for you.
+
 **Hold this standard against yourself.** The rules that ship in this binary
 were measured and most were *downgraded* by their own numbers: the `env-*`
 rules landed at **INFERRED** (recall 0.81–0.95 — `os.Getenv(varName)` with a
 variable name is unmatchable), and the `process-*` rules at **AMBIGUOUS**
-(recall 0.65, and 0.00 for python — argv is nearly always a variable). Honest
-numbers that demote your own rule are the point, not a failure.
+(recall 0.65). Honest numbers that demote your own rule are the point, not a
+failure.
+
+**And a recorded number can itself be wrong — check before you copy the
+pattern.** `process-py` ships recording recall **0.00**, which reads as "the
+Python spawn rule matches nothing". Run it and it emits correctly:
+`subprocess.run(["git", "status"])` yields a `process.exec` port. The 0.00 is a
+ground-truth artifact — the raw sweep counted `subprocess.` occurrences inside
+comments and strings that are not call sites at all. A wrong denominator does
+not merely mis-tier a rule; published, it advertises a working capability as
+broken. This is the same class of error as the inflated denominator above, and
+it is why step 3 says to sanity-check the count.
 
 ## The loop — eight steps, all required
 
@@ -59,12 +77,20 @@ numbers that demote your own rule are the point, not a failure.
 Ask the store what exists before guessing what to match:
 
 ```sh
-ctx-optimize deps                      # what this repo talks to by dependency
-ctx-optimize nodes --kind port         # boundaries already captured
-ctx-optimize nodes --kind route        # provider side from the AST recognizers
+ctx-optimize boundaries                          # the summary — start here
+ctx-optimize deps                                # what this repo talks to by dependency
+ctx-optimize nodes --kind port                   # every boundary captured
+ctx-optimize nodes --kind port --where direction=provides   # the routes we serve
 ctx-optimize edges --relation consumes
 ctx-optimize query "http client wrapper" --json
 ```
+
+There is **no `route` kind** — a served route is a `port` with
+`direction=provides`. This matters more than it reads: `--kind` is an OPEN
+vocabulary (adapters mint their own), so `nodes --kind route` does not error,
+it prints `(0 nodes)` and exits 0. **An empty result is not evidence of
+absence** until you have confirmed the kind exists — cross-check with
+`nodes --kind port` before concluding a repo serves nothing.
 
 A kind that is *present* but never *connected* is the work list. So is a
 dependency in `deps` with no matching `port`.
@@ -87,8 +113,15 @@ Ranked, best first:
 
 ```sh
 ctx-optimize search 'exec\.Command\(' --ext .go --count
-ctx-optimize search 'os\.Getenv\(' --ext .go,.ts --path internal/ --count
+ctx-optimize search 'os\.Getenv\(' --ext .go,.ts --count
 ```
+
+`search` takes `--ext`, `--count`, `--files` and `--ndjson`. **It has no path
+filter** — `--path` is the global repo-root flag, so `search … --path internal/`
+silently re-roots the sweep and prints `0`. A zero denominator is the most
+dangerous output in this whole loop: it makes recall undefined, and an
+inattentive author records 1.00. **Sanity-check every ground-truth count
+against a number you expect before you divide by it.**
 
 Use `search`, not `rg`/`grep`: it is cross-OS (a teammate on Windows
 reproduces your number) and it walks **the same files the extractor walks**, so
@@ -98,6 +131,17 @@ the denominator is honest. External `rg`/`grep` are optional cross-checks only
 **Ground truth must be broader than your rule.** Count `os\.Getenv\(` — every
 call site — not `os\.Getenv\("[A-Z_]+"\)`, which is your own capture logic
 wearing a disguise and will always report recall 1.00.
+
+**But broader is not the same as sloppy, and the wrapper case proves it.** A
+count of `api(Get|Post)\(` over a repo whose wrapper exports those names
+returns the CALL SITES *plus the two function DEFINITIONS*. Measured on a
+5-call-site fixture: ground truth 7, matched 5, recall 0.71 — a rule with
+perfect recall demoted from EXTRACTED to INFERRED by two lines that are not
+boundaries at all. Definitions, imports, re-exports and test doubles all
+inflate the denominator. Subtract them explicitly and say so in
+`known_misses`, or ground on a pattern that cannot match a definition — one
+that requires a quote after the paren catches a literal argument but not
+`apiGet(p: string)`.
 
 ### 4 RUN
 
@@ -140,6 +184,11 @@ Rule plus evidence, in one committed diff a reviewer can read.
 
 ## The schema — real field names, from `internal/boundaries/defaults.json`
 
+This is the shipped `env-go` rule, copied. Note it declares **no** `metadata`:
+only the `network.*` rules carry `otel.server.address` / `otel.http.route`,
+because those keys mean something a tracing backend can join on. An env-var
+name is not a server address — putting one there would poison that join.
+
 ```json
 {
   "version": 1,
@@ -157,7 +206,6 @@ Rule plus evidence, in one committed diff a reviewer can read.
         "when_identifier_matches": "KEY|TOKEN|SECRET|PASSWORD|_PW",
         "set": { "sensitive": "true" }
       },
-      "metadata": { "otel.server.address": "$identifier" },
       "tier": "INFERRED",
       "verified": {
         "at": "2026-08-14",
@@ -196,8 +244,11 @@ they were chosen by enumerating what the shipped rules actually need:
 **The rule that makes this worth doing:** an argument that is not a string
 literal is NOT a miss. `os.Getenv(name)` is a certain env read with an
 uncertain value, so it emits with `resolved: dynamic` at AMBIGUOUS instead of
-vanishing. A regex saw only text, so it saw nothing there — which is why
-`process-py` measured 0.00 and reported "this repo spawns nothing", a lie.
+vanishing. A regex saw only text, so it saw nothing there, and a repo that
+spawned processes reported that it spawned none — a lie the AST lane fixed.
+(The `process-py` recall still recorded in `defaults.json` predates that fix
+and is measured against a denominator full of comments; see the warning at the
+top of this file before you trust any single recorded number.)
 
 Other `ast` fields: `receiver_any_of` / `receiver_suffix` (constrain the
 receiver — better precision than route packs, which key on the callee's last
@@ -243,7 +294,9 @@ Field notes that are easy to get wrong:
 - `exclude` is **top-level**, not inside `when`. `when` holds only `ext`.
 - Declare `ast` OR `match`+`scan:"raw"` — never both; the loader rejects it.
 - `ast[].arg` is a **0-based argument position**. (`match[].identifier`, the
-  raw lane's capture group, is 1-based — group 0 is invalid.)
+  raw lane's capture group, is 1-based. `identifier: 0` is NOT rejected — it is
+  the zero value and reads as group 1, so a rule meaning "the whole match"
+  quietly gets the first group instead. Always write the group you mean.)
 - `direction` is `provides` (this repo serves it) or `consumes` (this repo
   calls it). **`scope` is NOT yours to set** — the engine computes it. Be aware
   of what it currently produces: the join intends `internal` when a consumed
@@ -252,10 +305,25 @@ Field notes that are easy to get wrong:
   and **every consumed port is `external` today**. Do not design a rule around
   `scope`, and do not report `external` as evidence that a call is
   third-party.
-- `metadata` values may interpolate `$identifier`. Open metadata keys must be
-  **namespaced** (`otel.*`, `pack.*`, `org.*`) — the schema door rejects a bare
-  unknown key fail-closed. Reserved keys: `direction`, `transport`,
-  `identifier`, `scope`, `sensitive`, `resolved`, `raw`, `producer`.
+- `metadata` values may interpolate `$identifier`. Open keys must be
+  **namespaced** (`otel.*`, `pack.*`, `org.*`) and this one IS enforced
+  fail-closed — a bare `"owner": "me"` fails the batch loudly at the schema
+  door, naming the key.
+- **The reserved keys are NOT enforced, and writing one silently overrules the
+  rule.** `direction`, `transport`, `identifier`, `scope`, `sensitive`,
+  `resolved`, `raw`, `producer` are applied from `metadata` *after* the engine
+  sets them. Measured: a rule declaring `"direction": "consumes"` with
+  `"metadata": {"direction": "provides"}` emits a port that `boundaries` lists
+  under **PROVIDES** — the summary reports the exact opposite of the truth.
+  Never put a reserved key in `metadata`.
+- **First rule to mint an identifier owns its metadata.** Ports dedup by
+  `transport` + `identifier`; a later rule matching the same one contributes
+  its sites but its `metadata` is dropped. If your metadata does not appear,
+  check whether a shipped rule created that port first.
+- `transport` is **not a closed vocabulary**: a typo'd `carrier.pigeon` is
+  accepted and renders as its own group in the `boundaries` summary,
+  indistinguishable from a real transport. Copy the string from an existing
+  rule rather than typing it.
 - `tier` omitted defaults to EXTRACTED. **Always set it explicitly** from your
   measurement.
 - Identifiers are normalized at emit for `network.*` transports (case, trailing
@@ -270,7 +338,7 @@ replace a shipped default by reusing its id):
 ```
 .ctxoptimize/boundaries.json        repo    (committed, reviewed)  ← author here
 ~/ctxoptimize/boundaries/*.json     machine (CTX_OPTIMIZE_BOUNDARIES overrides)
-embedded defaults                   the 14 shipped rules
+embedded defaults                   the 16 shipped rules
 ```
 
 A malformed file **fails loudly** — a silently dropped rule would make every

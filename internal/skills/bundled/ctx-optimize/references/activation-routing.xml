@@ -264,7 +264,7 @@
 
     <route id="boundaries-author" group="customize">
       <when>the graph is missing our external API calls / env reads / routes / queue usage, teach it our custom HTTP wrapper or router, add boundary rules for a framework we use, author boundaries.json</when>
-      <goal>Author DECLARATIVE boundary rules — data in `.ctxoptimize/boundaries.json`, never code — through a fixed 8-step MEASURED loop: survey (from the store) → propose → ground (independent count) → run → measure recall AND precision → iterate → derive tier → write rule + evidence. Ladder, merged by rule `id` so a repo rule can narrow or replace a shipped default: repo `.ctxoptimize/boundaries.json` &gt; machine `~/ctxoptimize/boundaries/*.json` &gt; the 14 embedded defaults.</goal>
+      <goal>Author DECLARATIVE boundary rules — data in `.ctxoptimize/boundaries.json`, never code — through a fixed 8-step MEASURED loop: survey (from the store) → propose → ground (independent count) → run → measure recall AND precision → iterate → derive tier → write rule + evidence. Ladder, merged by rule `id` so a repo rule can narrow or replace a shipped default: repo `.ctxoptimize/boundaries.json` &gt; machine `~/ctxoptimize/boundaries/*.json` &gt; the 16 embedded defaults.</goal>
       <cmd>ctx-optimize search 'exec\.Command\(' --ext .go --count      # ground truth: cross-OS, SAME file set as the extractor</cmd>
       <cmd>edit .ctxoptimize/boundaries.json  → ctx-optimize add . --force  → ctx-optimize nodes --kind port</cmd>
       <cmd>ctx-optimize boundaries verify                               # the standing check; numbers only move UP</cmd>
