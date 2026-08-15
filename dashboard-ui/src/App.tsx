@@ -4,13 +4,13 @@ import Overview from './screens/Overview'
 import Repos from './screens/Repos'
 import Onboard from './screens/Onboard'
 import Query from './screens/Query'
-import Viewer from './screens/Viewer'
+import ViewerShell from './screens/ViewerShell'
 import Settings from './screens/Settings'
 import Changes from './screens/Changes'
 
 // Hash routing keeps the app a single embedded file server: only "/" is ever
 // requested. Routes: #/overview #/repos #/onboard #/query/<module>
-// #/viewer/<module> #/settings #/changes. The logo lands on #/overview.
+// #/viewer/<module>?view=<id> #/settings #/changes. The logo lands on #/overview.
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || '#/overview')
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function App() {
           {route === 'repos' && <Repos />}
           {route === 'onboard' && <Onboard />}
           {route === 'query' && <Query initialModule={arg} />}
-          {route === 'viewer' && <Viewer initialModule={arg} />}
+          {route === 'viewer' && <ViewerShell initialModule={arg} />}
           {route === 'settings' && <Settings />}
           {route === 'changes' && <Changes />}
         </ErrorBoundary>

@@ -117,6 +117,7 @@ func NewHandler(root string, ops *Ops) http.Handler {
 		jsonOK(w, mods)
 	})
 	mux.HandleFunc("/api/graph", s.handleGraph)
+	mux.HandleFunc("/api/scene", s.handleScene)
 	mux.HandleFunc("/api/query", s.handleQuery)
 	mux.HandleFunc("/api/usage", s.handleUsage)
 	mux.HandleFunc("/api/stores", s.handleStores)

@@ -10,6 +10,37 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+- **`serve` gets a second viewer, and a switcher to reach it: Flow — the
+  architecture, DERIVED.** The dashboard's only picture was the force-directed
+  graph, which on a real store is a hairball. The new **Flow** viewer draws the
+  same store as a readable scene — numbered cards, labelled curves, a hub, and
+  the outer world — and every mark on it is computed from the graph, never
+  authored. `GET /api/scene` (read-only: no token, no audit, and it never
+  creates a store dir) returns the derivation from `internal/scene`:
+  - a **card is a DIRECTORY** (the package boundary the author chose), ranked by
+    cross-directory edge weight;
+  - an **arrow is N real `imports`/`calls` edges** lifted to those directories
+    and summed, drawn with its relation and its count — `AMBIGUOUS` edges are
+    excluded, so an arrow is a fact;
+  - a card's **column is its longest-path depth in the lifted dependency DAG**,
+    with Sugiyama barycentre row ordering, so position carries the direction
+    dependencies actually point. This is the explicit answer to the
+    `2026-08-13-serve-world` view that was killed by its own criterion —
+    "position carried no information, it was the sort order… a map with no
+    routes is a list in a costume";
+  - the **hub is the most depended-upon directory** (in-degree weighted by
+    in-share), so the floor of the dependency stack falls out of the graph:
+    `internal/store` here, `src/database` on a real service;
+  - the **outer world is the boundary lane's ports**, grouped by transport into
+    dashed plates placed under the subsystems that open them — port NAMES only,
+    sensitive ones flagged, never a value;
+  - the scene prints what it is hiding: top N of M directories, N of M lifted
+    relations drawn, and which test trees were excluded.
+  The **view switcher** is a registry (`dashboard-ui/src/viewers.ts`): a third
+  viewer is one entry, and the shell never names one. Canvas 2D, system fonts,
+  zero external requests, and `prefers-reduced-motion` stops every travelling
+  dot (verified headless: identical frames 1.4 s apart).
+
 - **The lookup index no longer dies on a gather that changed nothing.** Its
   fail-safe header is keyed on the graph's CONTENT hash instead of the file's
   size+mtime, so a rewrite that produced identical bytes keeps the index alive —

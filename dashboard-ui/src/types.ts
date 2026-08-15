@@ -149,3 +149,71 @@ export interface ScanResult {
   clipped: boolean
   depth: number
 }
+
+// ---- the derived architecture scene (GET /api/scene, internal/scene) ----
+// Mirrors internal/scene.Scene exactly. A Door carries a port's NAME and two
+// flags; there is no value field on the wire, and there never may be.
+
+export interface SceneCard {
+  id: string
+  label: string
+  dir: string
+  files: number
+  decls: number
+  in: number
+  out: number
+  layer: number
+  row: number
+  detail: string
+  glyph: string
+  hub: boolean
+}
+
+export interface SceneLink {
+  from: string
+  to: string
+  relation: string
+  label: string
+  weight: number
+}
+
+export interface SceneDoor {
+  label: string
+  direction: string
+  sensitive: boolean
+  dynamic: boolean
+}
+
+export interface SceneWorld {
+  id: string
+  transport: string
+  total: number
+  provides: number
+  consumes: number
+  sensitive: number
+  sample: SceneDoor[]
+  truncated: boolean
+}
+
+export interface SceneStat {
+  label: string
+  text: string
+}
+
+export interface Scene {
+  module: string
+  title: string
+  total_nodes: number
+  total_edges: number
+  subsystems_total: number
+  subsystems_shown: number
+  lifted_total: number
+  lifted_shown: number
+  cards: SceneCard[]
+  links: SceneLink[]
+  world: SceneWorld[]
+  stats: SceneStat[]
+  chips: string[]
+  notes: string[]
+  empty?: string
+}

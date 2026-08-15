@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { kindColorMap, KNOWN_PRODUCERS, producerColorMap, SPECIAL_KINDS } from '../App'
 import ForceGraph, { MAX_SIM_NODES } from '../ForceGraph'
-import { safeDecode, sanitizeEdge, sanitizeNode } from '../sanitize'
-import type { Edge, GraphResponse, Module, Node, StoreInfo, StoreLinks } from '../types'
+import { sanitizeEdge, sanitizeNode } from '../sanitize'
+import type { Edge, GraphResponse, Node, StoreInfo, StoreLinks } from '../types'
+import type { ViewerProps } from '../viewers'
 
 // sourceLinks builds the up-to-three "open" targets for a selected node. It
 // returns null for a node with no source, or whose source is a synthetic URI
@@ -41,13 +42,9 @@ const LIMIT = 400
 
 const producerOf = (n: Node) => n.metadata?.producer || '(unknown)'
 
-export default function Viewer({ initialModule: rawArg }: { initialModule: string }) {
-  const qi = rawArg.indexOf('?')
-  const initialModule = safeDecode(qi < 0 ? rawArg : rawArg.slice(0, qi))
-  const initialCenter = qi < 0 ? '' : new URLSearchParams(rawArg.slice(qi + 1)).get('center') || ''
+export default function GraphViewer({ module: mod, params }: ViewerProps) {
+  const initialCenter = params.get('center') || ''
 
-  const [mods, setMods] = useState<Module[]>([])
-  const [mod, setMod] = useState(initialModule)
   const [nodes, setNodes] = useState<Map<string, Node>>(new Map())
   const [edges, setEdges] = useState<Map<string, Edge>>(new Map())
   const [totals, setTotals] = useState({ nodes: 0, edges: 0, truncated: false })
@@ -98,21 +95,20 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
     }
   }, [merge])
 
+  // The shell owns module selection; reload whenever it changes.
   useEffect(() => {
-    api<Module[]>('/api/modules').then((m) => {
-      setMods(m)
-      const key = initialModule || (m.length > 0 ? m[0].key : '')
-      if (key) {
-        setMod(key)
-        load(key, initialCenter)
-      }
-    }).catch((e) => setErr(String(e.message || e)))
+    if (!mod) return
+    resetFilters()
+    load(mod, initialCenter)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mod])
+
+  useEffect(() => {
     // Link bases ride along on /api/stores — best-effort, never fatal to the
     // graph if it fails (nodes just show no "open" row).
     api<StoreInfo[]>('/api/stores')
       .then((s) => setStoreLinks(new Map(s.filter((x) => x.links).map((x) => [x.key, x.links!]))))
       .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const expand = useCallback(async (id: string) => {
@@ -218,12 +214,7 @@ export default function Viewer({ initialModule: rawArg }: { initialModule: strin
     <div className="viewer">
       <div className="side">
         <div className="controls">
-          <div className="kicker">viewer</div>
-          <select value={mod} onChange={(e) => { setMod(e.target.value); resetFilters(); load(e.target.value, '') }}>
-            {mods.map((m) => (
-              <option key={m.key} value={m.key}>{m.key} ({m.nodes})</option>
-            ))}
-          </select>
+          <div className="kicker">force-directed graph</div>
           <div className="row" style={{ gap: 6 }}>
             <span className="chip">nodes <b>{shown.nodes.length}</b> / {totals.nodes}</span>
             <span className="chip">edges <b>{shown.edges.length}</b></span>
