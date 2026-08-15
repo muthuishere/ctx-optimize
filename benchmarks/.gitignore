@@ -3,3 +3,9 @@
 corpus-*/
 ctxstore-*/
 graphify-out/
+
+# Python bytecode — a .pyc was committed by accident on 2026-08-15 when the
+# session harness landed as a whole directory. Compiled artifacts are not
+# evidence and churn on every run.
+__pycache__/
+*.pyc
