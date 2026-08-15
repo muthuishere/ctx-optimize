@@ -68,6 +68,16 @@ legacy/hostile code" as a published-benchmark secondary claim.
    external evidence; a skeptic discounts it entirely and is right to. An
    independent yardstick (Loc-Bench scores at file/module/function
    granularity, which maps 1:1 onto our node kinds) is the missing piece.
+   **Partly addressed 2026-08-15**: a Loc-Bench harness now exists
+   (`benchmarks/locbench/`). Two honest limits came with it. (a) We can only
+   enter the RETRIEVAL tier — the input is a natural-language issue and
+   answering it end-to-end requires reasoning the binary refuses to do; the
+   comparison set is therefore BM25 38.69% … CodeRankEmbed 52.55%, NOT
+   LocAgent's agentic 84.59%. (b) The 12-instance slice scores file Acc@5
+   66.67%, which would beat every published baseline and **must not be quoted**
+   — the slice selects small repos (median 154 files); on the one large repo we
+   score 33.33%, below BM25, and the full benchmark is dominated by large
+   repos. The size split prints on every run so the caveat cannot be dropped.
 8. **Against SCIP we have no accuracy argument** — scip-* indexers run the real
    type checker, so their edges are compiler-precise where ours are heuristic
    (INFERRED/AMBIGUOUS by construction). Our case there is cost and coverage —
