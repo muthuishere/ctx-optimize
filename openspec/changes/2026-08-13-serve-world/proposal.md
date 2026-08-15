@@ -1,7 +1,9 @@
 # ADR 3 — the world view in serve: render the doors, not the hairball
 
-Status: DRAFT (revised 2026-08-15) — owner review pending. No product code until
-agreed.
+Status: **KILLED BY ITS OWN CRITERION** (2026-08-15). The §8 mockup was built
+and looked at before any endpoint shipped; the wall does not survive contact
+with a real 273-port service. See §10 for the measurement and the fallback.
+No product code was written. The prior status was DRAFT, owner review pending.
 
 Revision note: the first draft of this file was written on 2026-08-13, before
 the boundary lane existed. It planned against ADR 1/ADR 2 as *proposals* and
@@ -311,7 +313,62 @@ Each of the four must be demonstrated failing before the PR is opened, and the
 demonstration named in the commit body. A gate that records what it measures is
 not a gate.
 
-## 10. Dependencies
+## 10. Kill-criterion result — measured 2026-08-15: **KILLED**
+
+§8 said to decide with a static mockup of the 273 before the endpoint ships.
+The mockup was built from the real port nodes of three stores
+(`ctx-optimize` 73, `reqsume/apps/api` 273, `reqsume/apps/ui` 37), laid out
+exactly as §5 specifies: rounded enclosure, doors ordered by
+`(transport, identifier)`, `provides` on one half of the perimeter and
+`consumes` on the other, transport as the door's channel, dashed edge for
+AMBIGUOUS, seal glyph for `sensitive`, faded for `resolved: dynamic`, labels
+verbatim. Rendered headless in Chrome and looked at.
+
+**Criterion 1 — legibility: passes only by growing the canvas.** At 1600x1000
+the 273-door wall is legible on the left and right walls (horizontal labels)
+and unreadable on the top and bottom, where 150-odd labels stand vertically at
+~13px pitch and run off the canvas. Every label becomes readable at 2600x1700
+— 2.9x the pixel area of a laptop viewport — which means the wall is read by
+panning. 73 doors are comfortably legible at 1400x900, so this is a scale
+failure, not a design failure. On its own this would be survivable.
+
+**Criterion 2 — does the picture teach anything the CLI table does not: NO.**
+This is the one that kills it. Put side by side on one 1900x1050 screen, the
+`boundaries` table is fully readable and the wall scaled to the same screen is
+a picket fence of sub-pixel text. And even at full legibility, every visual
+channel in the design maps 1:1 onto a column the table already prints:
+
+| wall channel | table column |
+|---|---|
+| which half of the perimeter | `CONSUMES` / `PROVIDES` heading |
+| door shape | the `transport` group heading |
+| solid vs broken edge | `INFERRED` / `AMBIGUOUS` |
+| seal glyph | `SECRET` |
+| ajar | the `${var}` identifier, printed verbatim |
+| pulse period (D2) | `(+N sites)` |
+| position on the perimeter | *nothing* — it is the sort order |
+
+The last row is the finding. **Position carries no information, and no edges
+are drawn**, so the picture has no adjacency, no locality and no topology — it
+is the same sorted list, bent into a rectangle. The one thing a wall would earn
+that a table cannot is *roads between walls*, and §7 defers those while §4
+limit 1 shows the data cannot support them until ADR 16 lands. A map with no
+routes is a list in a costume.
+
+Evidence (headless Chrome renders, kept out of the repo):
+`api273.png` (1600x1000, top/bottom illegible), `api273-big.png` (2600x1700,
+fully legible), `ctx73.png`, `side.png` (table vs wall on one screen).
+
+**Consequence.** D1 as written is not built. The gap in §2 is real and
+unchanged — the dashboard still has no boundary surface of any kind, and the
+degree-ranked budget still starves ports to 1 of 73 — so the fallback §8 names
+is the right product: **`GET /api/boundaries` unchanged as specified in §6/§7,
+and a dashboard screen that renders the existing grouped table** rather than a
+wall. The endpoint is identical in both branches; only the renderer changes.
+That is its own (small) ADR, and no product code is written until the owner
+agrees to it.
+
+## 11. Dependencies
 
 None blocking for D1: the boundary lane shipped in v0.14.0 and the data is in
 the store today. ADR 16 (`2026-08-15-scope-join-broken`) blocks any
