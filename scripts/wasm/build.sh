@@ -28,6 +28,21 @@ mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 for r in "${GRAMMARS[@]}"; do
   [ -d "$r" ] || git clone --depth 1 "$(clone_url "$r")" "$r"
+  # HONOR THE LOCK. `git clone --depth 1` takes whatever the DEFAULT BRANCH
+  # points at today, and the provenance block below then overwrites the lock
+  # with it — so the lock recorded history instead of pinning it, and a rebuild
+  # silently swapped grammars underneath a committed 32MB artifact that
+  # go:embeds into every binary. Measured for real on 2026-08-15: a rebuild
+  # pulled tree-sitter ee0847d->0e2af0d and tree-sitter-c-sharp af29416->9150f7d
+  # without a word. Set UPDATE_GRAMMARS=1 to intentionally take newer commits.
+  if [ -f "$LOCK" ] && [ -z "${UPDATE_GRAMMARS:-}" ]; then
+    want=$(awk -v n="$r" '$1 == n { print $2 }' "$LOCK")
+    if [ -n "$want" ] && [ "$(git -C "$r" rev-parse HEAD)" != "$want" ]; then
+      echo "pinning $r to locked $want"
+      git -C "$r" fetch --depth 1 origin "$want"
+      git -C "$r" checkout -q "$want"
+    fi
+  fi
 done
 
 # sql does not commit its generated parser — generate once (needs node/npx)

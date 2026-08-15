@@ -1,6 +1,20 @@
 # ADR 9 — filter inside the wasm, don't match inside it
 
-Status: DRAFT — owner review pending 2026-08-15. No product code until agreed.
+Status: SPIKED 2026-08-15 — verdict DO-NOT-SHIP as a standalone change.
+The filter WORKS (records 24,056,337 -> 15,641,548, -35%, matching the 37%
+hypothesis) and is byte-identity SAFE (every corpus: identical node-id sets,
+zero edge differences; on java-spring the filtered build differs LESS from the
+control than the control differs from itself). Old-shim grammar packs verified
+unaffected.
+It fails the kill criterion on savings: go-kubernetes **-1.0%**, against the
+stated 5% bar. Median across six corpora ~-2%; java-spring measured +2.1%.
+The saving tracks punctuation density — c-linux -7.4% (-4.5s), c-postgres
+-6.7%, py-django -0.1%. A 35% record cut buys 1-7% because parsing is 58% and
+untouched. Peak RSS unchanged.
+=> Do not rebuild a 32MB committed artifact for this alone (and every
+user-built grammar pack keeps the old shim until rebuilt). DO fold it in if a
+wasm rebuild happens for any other reason: it is a one-line, verified-safe
+change and C-heavy repos gain real time. Question closed with numbers.
 Owner question: *"cant we add the boundary inside the wasm itself instead of
 doing seperately"*.
 Scope: `internal/grammar/assets/shim.c` (+ a `treesitter.wasm` rebuild) and the
