@@ -2,8 +2,8 @@
   "_doc": "Gather wall-time baselines per machine fingerprint (GOOS-GOARCH-cpuN). Written by RECORD_GOLDEN=1, enforced by TestCorpusGolden within perfTolerance. A fingerprint with no entry means the gate does not apply on that machine — wall-clock is not comparable across hardware. Numbers may FALL freely; a rise is a reviewed diff, exactly like a judged floor.",
   "machines": {
     "darwin-arm64-cpu18": {
-      "linux-block": 365,
-      "newtonsoft": 644
+      "linux-block": 327,
+      "newtonsoft": 587
     }
   }
 }
