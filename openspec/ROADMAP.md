@@ -12,7 +12,7 @@ number behind it; where a number is stale or missing, it says so.
 | cold build, kubernetes | **7.32s** | graphify 249.65s (**34×**) |
 | cold build, linux | **55.14s** | — (none completes) |
 | re-gather, no change | **0.25s** | graphify 267.54s (**1,070×**) |
-| context efficiency (correctness/byte) | **0.000132** | codegraph 0.0000478 (**2.8×**) |
+| context efficiency (correctness/byte) | **0.000110** query, 0.000563 card | codegraph 0.0000478 (**2.3×**, was 2.8× — see P1.3) |
 | external-API / boundary ports | **only tool that models it** | none |
 | determinism (byte-identical re-gather) | **yes** | unmeasured elsewhere |
 
@@ -20,8 +20,8 @@ number behind it; where a number is stale or missing, it says so.
 
 | axis | us | best | cause |
 |---|---|---|---|
-| answer correctness | 0.79 | codegraph **0.86** | see P1 — partly stale |
-| answer coverage | 0.79 | codegraph **1.00** | we omit sig+doc in `query` |
+| answer correctness | **0.804** query / 0.714 card (re-measured 2026-08-15) | codegraph **0.86** | see P1 |
+| answer coverage | **0.821** query / 0.857 card | codegraph **1.00** | `card` lists candidates without line numbers |
 | query latency, linux | 3,516ms | codegraph **536ms** | reads all 855MB before knowing the question |
 | peak RSS, reqsume | 9.40GB at full throttle (was 12.4GB; **0.73GB** at GOMAXPROCS=2 since `e54dd6f`) | graphify **429MB** | modules × workers × 64MB |
 | one-file re-gather | 91% of cold | unmeasured | store write is O(whole graph) |
@@ -52,26 +52,49 @@ gather in parallel → `modules × 17 × 64MB` = 7.6 GB of guest memory alive.
 **Target: under 2 GB on reqsume, byte-identical output.** ADR 12 D1/D2.
 This is first because every other win is unreachable by a user who OOMs.
 
-## P1 — reclaim the quality rows (cheapest real win)
+## P1 — reclaim the quality rows (RE-MEASURED 2026-08-15)
 
-Two moves, both small:
+Step 1 is DONE: the bench was re-run at HEAD on the July rubric, unchanged.
+D7's prediction held on the question the judge had flagged (`card url_for`
+0.50/0.00 → **1.00/1.00**), but the aggregate gain is modest and **we still do
+not beat codegraph**:
 
-1. **Re-run the judged quality bench at HEAD.** The July run scored
-   `ctx-optimize card` at 0.66 because it answered `url_for [module]
-   module://url_for` with no definition. That is the unresolved `module://`
-   placeholder D7 fixed. Verified today: the same question now returns
-   `url_for [function] src/flask/helpers.py L200-L251` with signature and
-   body — 0.5 → 1.0 correctness, 0.5 → 1.0 coverage on that question alone.
-   **The published 0.79/0.66 understate HEAD. Re-measure before optimising
-   anything.**
-2. **Close coverage by emitting what codegraph emits.** It scores 1.00 by
-   always showing signature + docstring; our `query` shows location and a
-   snippet. `card` already produces the richer form. Make `query`'s top hits
-   carry sig+doc. Watch the efficiency metric while doing it — our 2.8× win is
-   correctness *per byte*, and paying 18KB like codegraph to match its
-   coverage would trade our strongest axis for its strongest.
+| | July | HEAD | codegraph |
+|---|---|---|---|
+| query correctness | 0.786 | **0.804** | 0.86 |
+| query coverage | 0.786 | **0.821** | 1.00 |
+| card correctness | 0.661 | **0.714** | — |
+| card coverage | 0.750 | **0.857** | — |
 
-**Target: correctness ≥ 0.86, coverage ≥ 0.90, context under 8KB.**
+Only 6 of 28 outputs were byte-identical to July, so 22 were re-scored; two
+scoring errors were caught and corrected against ourselves (a README mention of
+`app.py` was inflating a file-match; July's judge scored stderr, and dropping it
+would have manufactured five fake regressions).
+
+**The remaining work, in value order:**
+
+1. **`card` disambiguation omits line numbers — caps 5 questions at 0.50–0.75.**
+   (Merge, dispatch_request, ServeHTTP, addRoute, node_link_graph.) It correctly
+   refuses to guess and lists candidates, but without `L#-L#` the judge cannot
+   score a location. Adding the range to each candidate line costs a few bytes
+   and would lift those five toward 1.00 — arithmetically that alone takes card
+   correctness from 0.714 to ~0.84.
+2. **`card Flask` returns a README section, not the class.** A doc `section`
+   outranks the class for a bare class name, though the class IS in the store
+   (`card Flask.dispatch_request` resolves to `src/flask/app.py L966-L990`).
+   Ranking bug; `docDemote` territory.
+3. **Query output grew 22% (5,992 → 7,291 bytes) and efficiency fell 16%**
+   (2.8× → 2.3× codegraph). Measured cause on flask_q1: hits fell 20 → 10 while
+   neighbour lines rose 51 → 80 — we now spend the budget on deeper
+   neighbourhoods for fewer hits. That may be better answers, but it is eroding
+   our strongest quality claim by drift rather than by decision. Decide it
+   deliberately.
+4. `gin_q2` ServeHTTP stuck at 0.50/0.50 on both verbs since July, never
+   investigated. `graphify_q2` (`node_link_graph`) is a networkx import not
+   defined in the corpus — arguably unanswerable, but it scores against us.
+
+**Target: correctness ≥ 0.86, coverage ≥ 0.90, context under 8KB, efficiency
+not below 2.5×.**
 
 ## P2 — the two speed axes we lose
 
