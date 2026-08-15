@@ -3,6 +3,7 @@ package code
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/muthuishere/ctx-optimize/internal/schema"
@@ -322,10 +323,16 @@ def one_again():
 	}
 }
 
-// Zero recognizer hits on this repo's own internal/ tree — the measured
+// Zero recognizer hits on this repo's own PRODUCTION tree — the measured
 // false-positive check from the spec (Go code, one embedded html asset).
 // Covers the core recognizers AND frontend routers; a hermetic store root
 // keeps a developer's machine route packs out of the measurement.
+//
+// golden/testdata/repos/ is excluded because those are deliberate FIXTURES:
+// the boundary fixture declares real express routes so the golden net can gate
+// route extraction (ADR 13 D4). Counting them here would make a fixture that
+// exists to prove routes ARE found fail a test that proves they are NOT
+// invented. The claim being made is about our own source, not our test data.
 func TestNoRoutesInThisRepo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("parses the whole internal/ tree")
@@ -335,13 +342,16 @@ func TestNoRoutesInThisRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	isFixture := func(id string) bool {
+		return strings.Contains(id, "golden/testdata/repos/")
+	}
 	for _, n := range batch.Nodes {
-		if n.Kind == "route" {
+		if n.Kind == "route" && !isFixture(n.ID) {
 			t.Errorf("unexpected route node in own repo: %s (%s)", n.ID, n.Label)
 		}
 	}
 	for _, e := range batch.Edges {
-		if e.Relation == "handles" {
+		if e.Relation == "handles" && !isFixture(e.Source) {
 			t.Errorf("unexpected handles edge in own repo: %s→%s", e.Source, e.Target)
 		}
 	}

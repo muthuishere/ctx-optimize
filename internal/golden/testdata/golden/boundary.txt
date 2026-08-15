@@ -1,0 +1,25 @@
+== ports (11)
+P port:config.env:>OPENAI_API_KEY | dir=consumes | transport=config.env | identifier=OPENAI_API_KEY | scope=external | sensitive=true
+P port:config.env:>PAYMENTS_API_KEY | dir=consumes | transport=config.env | identifier=PAYMENTS_API_KEY | scope=external | sensitive=true
+P port:config.env:>SERVICE_TIER | dir=consumes | transport=config.env | identifier=SERVICE_TIER | scope=external | sensitive=-
+P port:network.http:</healthz | dir=provides | transport=network.http | identifier=/healthz | scope=- | sensitive=-
+P port:network.http:</orders | dir=provides | transport=network.http | identifier=/orders | scope=- | sensitive=-
+P port:network.http:</status | dir=provides | transport=network.http | identifier=/status | scope=- | sensitive=-
+P port:network.http:</upload | dir=provides | transport=network.http | identifier=/upload | scope=- | sensitive=-
+P port:network.http:>api.openai.com | dir=consumes | transport=network.http | identifier=api.openai.com | scope=external | sensitive=-
+P port:network.http:>api.weather.example | dir=consumes | transport=network.http | identifier=api.weather.example | scope=external | sensitive=-
+P port:process.exec:>git | dir=consumes | transport=process.exec | identifier=git | scope=external | sensitive=-
+P port:storage.local:>session_token | dir=consumes | transport=storage.local | identifier=session_token | scope=external | sensitive=-
+== boundary edges (12)
+E ai/agent.py -consumes-> port:config.env:>OPENAI_API_KEY | INFERRED | rule=env-py | site=ai/agent.py:L4
+E ai/agent.py -consumes-> port:network.http:>api.openai.com | EXTRACTED | rule=service:openai | site=ai/agent.py:L8
+E api/main.go -consumes-> port:config.env:>PAYMENTS_API_KEY | INFERRED | rule=env-go | site=api/main.go:L12
+E api/main.go -consumes-> port:config.env:>SERVICE_TIER | INFERRED | rule=env-go | site=api/main.go:L12
+E api/main.go -provides-> port:network.http:</healthz | INFERRED | rule=routes-go | site=api/main.go:L17
+E api/main.go -provides-> port:network.http:</orders | INFERRED | rule=routes-go | site=api/main.go:L18
+E api/main.go -consumes-> port:process.exec:>git | AMBIGUOUS | rule=process-go | site=api/main.go:L24
+E pyproject.toml -consumes-> port:network.http:>api.openai.com | INFERRED | rule=service:openai | site=pyproject.toml
+E web/app.ts -provides-> port:network.http:</status | INFERRED | rule=routes-express | site=web/app.ts:L5
+E web/app.ts -provides-> port:network.http:</upload | INFERRED | rule=routes-express | site=web/app.ts:L6
+E web/app.ts -consumes-> port:storage.local:>session_token | INFERRED | rule=webstorage | site=web/app.ts:L9
+E worker/worker.go -consumes-> port:network.http:>api.weather.example | INFERRED | rule=http-url-literal | site=worker/worker.go:L7
