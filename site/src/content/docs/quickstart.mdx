@@ -1,0 +1,152 @@
+---
+title: Quick start
+description: "Install the binary, gather a repo, and ask the first question — three commands, no service to run."
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## The fastest way: paste this into your agent
+
+You are probably reading this with an agent already open. Pick yours, paste the
+block, and it does the setup — installs the CLI, builds the graph, and wires
+itself up so it reaches for the store instead of grep.
+
+<Tabs>
+<TabItem label="Claude Code">
+```text
+Install ctx-optimize for this repo and set yourself up to use it:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install --claude
+   (installs the skill + the session hook, and adds the always-on
+    "knowledge graph before grep" rule to my global ~/.claude/CLAUDE.md)
+4. run: ctx-optimize init   — writes the committed pointer block so my
+   teammates' agents inherit it too
+
+From now on answer my code questions with its verbs — query, card,
+change-plan, affected, boundaries — instead of grep-and-read, and cite the
+file:line it returns.
+```
+</TabItem>
+<TabItem label="Codex">
+```text
+Install ctx-optimize for this repo and set yourself up to use it:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install --codex
+   (installs the skill + hook and adds the always-on rule to my global
+    ~/.codex/AGENTS.md — then trust it once with /hooks inside codex)
+4. run: ctx-optimize init   — writes the committed pointer block for the team
+
+From now on answer my code questions with its verbs — query, card,
+change-plan, affected, boundaries — instead of grep-and-read, and cite the
+file:line it returns.
+```
+</TabItem>
+<TabItem label="Copilot">
+```text
+Install ctx-optimize for this repo and set yourself up to use it:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install --copilot
+4. run: ctx-optimize init   — writes the committed pointer block for the team
+
+From now on answer my code questions with its verbs — query, card,
+change-plan, affected, boundaries — instead of grep-and-read, and cite the
+file:line it returns.
+```
+</TabItem>
+<TabItem label="Any agent">
+```text
+Install ctx-optimize for this repo and set yourself up to use it:
+1. npm install -g @muthuishere/ctx-optimize
+2. cd into the repo root and run: ctx-optimize up
+3. run: ctx-optimize install    — every agent CLI it detects
+4. run: ctx-optimize init       — the committed pointer block for the team
+
+From now on answer my code questions with its verbs — query, card,
+change-plan, affected, boundaries — instead of grep-and-read, and cite the
+file:line it returns.
+```
+</TabItem>
+</Tabs>
+
+Every line is a command you could have typed yourself. There is no `curl | sh`
+and nothing behind a shortener, deliberately: you should be able to read what
+will run before an agent runs it.
+
+**Where things land, so nothing is a surprise.** The skill is **always
+installed globally** — `~/.claude/skills/ctx-optimize` for Claude Code,
+`~/.agents/skills/ctx-optimize` for the others — along with a session hook for
+that agent. The agent flag (`--claude`, `--codex`, `--copilot`) only chooses
+*which* agent gets wired up, not where the skill goes. Plain `install` does
+every agent CLI it detects.
+
+The one **optional** part is the always-on rule in your **global** instructions
+file, `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`. That is the line that makes
+an agent reach for the store without being asked. Everything above is undone by
+`ctx-optimize uninstall`, which strips the skill, the hook and the
+marker-fenced rule and leaves the rest of the file alone.
+
+`ctx-optimize init` is the only step that touches the repo, and it writes files
+you are meant to commit — the whole team's agents inherit them.
+
+The steps are explained one by one below if you would rather do them by hand.
+
+## Install
+
+```bash
+npm install -g @muthuishere/ctx-optimize   # one static binary per platform
+```
+
+Or `go install github.com/muthuishere/ctx-optimize/cmd/ctx-optimize@latest`, or download a
+binary from [Releases](https://github.com/muthuishere/ctx-optimize/releases). There is no
+service, no daemon, no database and no API key.
+
+## Gather
+
+```bash
+cd your-repo
+ctx-optimize up
+```
+
+`up` is the one verb that always does the right thing: bootstrap a config if there is none
+(scanning for modules in a monorepo), gather the graph, or pull the team's prebuilt store
+when the config declares a remote. It is a safe no-op ever after.
+
+The store lands in `~/ctxoptimize/<repo-name>/` — outside your repo, one per machine. The
+only thing written **into** your repo is `.ctxoptimize/` (config, instructions card,
+optional adapters), which is meant to be committed.
+
+## Teach your agent
+
+```bash
+ctx-optimize install --skills     # Claude Code + Codex
+```
+
+This installs the agent skill and writes a pointer block into `AGENTS.md` / `CLAUDE.md`, so
+an agent reaches for the store without being told. The full usage card is committed at
+`.ctxoptimize/instructions.md` — teammates inherit it with zero installation.
+
+## Ask
+
+```bash
+ctx-optimize query "store merge producer"   # find: ranked hits with file:line
+ctx-optimize card Store.Merge               # inspect: signature, doc, callers, callees
+ctx-optimize change-plan Store.Merge        # about to edit: callers + blast radius + tests
+ctx-optimize affected Store.Merge           # blast radius only
+ctx-optimize boundaries                     # what this system talks to
+```
+
+Every answer carries an exact `file:line`. Pick the verb by intent rather than reaching for
+`query` every time — the [cookbook](/ctx-optimize/cookbook/) maps the question you would ask
+a teammate to the one command that answers it.
+
+## Keep it current
+
+```bash
+ctx-optimize sync      # incremental resync; a no-change run is milliseconds
+```
+
+Or set `"autosync": "lazy"` in `.ctxoptimize/config.json` and a stale read resyncs itself in
+the background.

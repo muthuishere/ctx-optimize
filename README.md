@@ -112,18 +112,28 @@ useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
 **Already in Claude Code, Codex or Copilot? Paste this and it does the setup:**
 
 ```text
-Install ctx-optimize for this repo:
+Install ctx-optimize for this repo and set yourself up to use it:
 1. npm install -g @muthuishere/ctx-optimize
 2. cd into the repo root and run: ctx-optimize up
-3. run: ctx-optimize install --skills
+3. run: ctx-optimize install --claude     (or --codex / --copilot, or plain
+   `install` for every agent CLI you detect)
+4. run: ctx-optimize init                 (writes the committed pointer block
+   so my teammates' agents inherit it too)
 
-Then answer my code questions with its verbs — query, card, change-plan,
-affected, boundaries — instead of grep-and-read, and cite the file:line it
-returns.
+From now on answer my code questions with its verbs — query, card,
+change-plan, affected, boundaries — instead of grep-and-read, and cite the
+file:line it returns.
 ```
 
 Every line is a command you could have typed. No `curl | sh`, nothing behind a
 shortener: you can read what will run before an agent runs it.
+
+The skill is **always installed globally** (`~/.claude/skills/` or
+`~/.agents/skills/`) with a session hook; the agent flag only picks which agent
+gets wired up. The one optional piece is the always-on rule added to your
+**global** `~/.claude/CLAUDE.md` / `~/.codex/AGENTS.md` — that is what makes an
+agent reach for the store unprompted. `ctx-optimize uninstall` removes all
+three. Only `init` touches the repo, and it writes files meant to be committed.
 
 By hand:
 
