@@ -144,25 +144,30 @@ type Stat struct {
 
 // Scene is the whole derived picture.
 type Scene struct {
-	Module          string     `json:"module"`
-	Title           string     `json:"title"`
-	TotalNodes      int        `json:"total_nodes"`
-	TotalEdges      int        `json:"total_edges"`
-	SubsystemsTotal int        `json:"subsystems_total"`
-	SubsystemsShown int        `json:"subsystems_shown"`
-	LiftedTotal     int        `json:"lifted_total"` // lifted edges in the whole repo
-	LiftedShown     int        `json:"lifted_shown"` // lifted edges drawn
-	Cards           []Card     `json:"cards"`
-	Links           []Link     `json:"links"`
-	World           []World    `json:"world"`
-	Stats           []Stat     `json:"stats"`
-	Chips           []string   `json:"chips"`
-	Notes           []string   `json:"notes"` // honesty lines, printed on screen
-	Root            string     `json:"root"`  // what this scene is scoped to ("" = whole repo)
-	Level           string     `json:"level"` // what a card stands for: directory | file | declaration
-	Crumbs          []Crumb    `json:"crumbs"`
-	Questions       []Question `json:"questions"`
-	Empty           string     `json:"empty,omitempty"`
+	Module          string   `json:"module"`
+	Title           string   `json:"title"`
+	TotalNodes      int      `json:"total_nodes"`
+	TotalEdges      int      `json:"total_edges"`
+	SubsystemsTotal int      `json:"subsystems_total"`
+	SubsystemsShown int      `json:"subsystems_shown"`
+	LiftedTotal     int      `json:"lifted_total"` // lifted edges in the whole repo
+	LiftedShown     int      `json:"lifted_shown"` // lifted edges drawn
+	Cards           []Card   `json:"cards"`
+	Links           []Link   `json:"links"`
+	World           []World  `json:"world"`
+	Stats           []Stat   `json:"stats"`
+	Chips           []string `json:"chips"`
+	Notes           []string `json:"notes"` // honesty lines, printed on screen
+	Root            string   `json:"root"`  // what this scene is scoped to ("" = whole repo)
+	Level           string   `json:"level"` // what a card stands for: directory | file | declaration
+	Crumbs          []Crumb  `json:"crumbs"`
+	// Inside is what this level HOLDS, for the case where it holds things but
+	// draws nothing — a directory whose subdirectories never reference each
+	// other. Saying "holds 2 subdirectories" and offering no way to reach them
+	// makes the reader back out and hunt; these are the way in.
+	Inside    []Crumb    `json:"inside"`
+	Questions []Question `json:"questions"`
+	Empty     string     `json:"empty,omitempty"`
 }
 
 // Options tunes the derivation. Zero values mean the defaults.
@@ -684,6 +689,24 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			case LevelDecl:
 				what = "declarations"
 			}
+			// what IS here, as somewhere to go
+			names := make([]string, 0, len(subs))
+			for d := range subs {
+				names = append(names, d)
+			}
+			sort.Strings(names)
+			for i, d := range names {
+				if i >= 12 {
+					break
+				}
+				label := path.Base(d)
+				if level == LevelDecl {
+					if n, ok := byID[d]; ok && n.Label != "" {
+						label = n.Label
+					}
+				}
+				sc.Inside = append(sc.Inside, Crumb{Label: label, Root: d})
+			}
 			held := len(subs)
 			sc.Empty = "`" + opt.Root + "` holds " + itoa(held) + " " + what +
 				", and none of them call or import each other — so there is no flow to draw at this level. " +
@@ -1089,6 +1112,9 @@ func (s Scene) finish() Scene {
 	}
 	if s.Questions == nil {
 		s.Questions = []Question{}
+	}
+	if s.Inside == nil {
+		s.Inside = []Crumb{}
 	}
 	return s
 }

@@ -24,7 +24,7 @@ import type { ViewerProps } from '../viewers'
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
 
-export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
+export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
   const [err, setErr] = useState('')
   const wrap = useRef<HTMLDivElement | null>(null)
@@ -35,10 +35,11 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
     setErr('')
     const q = new URLSearchParams({ module })
     if (root) q.set('root', root)
+    if (grain) q.set('grain', grain)
     api<Scene>(`/api/scene?${q}`)
       .then((s) => setScene(sanitizeScene(s)))
       .catch((e) => setErr(String(e.message || e)))
-  }, [module, root])
+  }, [module, root, grain])
 
 
   useEffect(() => {
@@ -90,7 +91,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
 
     // Hit regions live in VIRTUAL space: the camera pans and zooms between
     // frames, so a region measured in pixels would drift the moment it did.
-    type Hit = { x: number; y: number; w: number; h: number; root: string; kind?: 'reset' }
+    type Hit = { x: number; y: number; w: number; h: number; root: string; kind?: 'reset'; grain?: string }
     let hits: Hit[] = []
     let hover = -1
     const hitAt = (vx: number, vy: number) =>
@@ -107,7 +108,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
     const onUp = (e: PointerEvent) => {
       const v = toVirtual(e)
       const i = hitAt(v.x, v.y)
-      if (i >= 0 && hits[i].kind !== 'reset') onRoot(hits[i].root)
+      if (i >= 0 && hits[i].kind !== 'reset') onRoot(hits[i].root, hits[i].grain || '')
     }
     const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
     canvas.addEventListener('pointermove', onMove)
@@ -120,7 +121,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
     // link. Only the TEXT is a target, so the rest of the room stays inert.
     function titleLink(
       label: string, x: number, baseY: number, size: number, maxW: number,
-      root: string, enterable: boolean,
+      root: string, enterable: boolean, grain = '',
     ): boolean {
       let shown = label
       ctx!.font = `700 ${S(size)}px ${SANS}`
@@ -129,7 +130,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
       const w = ctx!.measureText(shown).width / SC
       let on = false
       if (enterable) {
-        hits.push({ x, y: baseY - size, w, h: size * 1.35, root })
+        hits.push({ x, y: baseY - size, w, h: size * 1.35, root, grain })
         on = hover === hits.length - 1
       }
       text(shown, x, baseY, {
@@ -277,7 +278,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
       if (pillar) {
         text('LOAD-BEARING', r.x + pad + 26, r.y + 22, { size: 8, color: ACC, spacing: 1.2, weight: 700 })
       }
-      const titleOn = titleLink(c.label, r.x + pad, r.y + 44, 15, r.w - pad * 2, c.dir, c.children > 0)
+      const titleOn = titleLink(c.label, r.x + pad, r.y + 44, 15, r.w - pad * 2, c.dir, c.children > 0, c.enter_grain)
       if (r.h > 74) {
         text(`${c.files} files · ${c.decls} decls`, r.x + pad, r.y + 64,
           { size: 10, color: MUTED, font: MONO, max: r.w - pad * 2 })
@@ -354,7 +355,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
         const w = measure(c.label, 11.5, last ? 700 : 500) + 22
         if (!last) {
           const p = T(x, y)
-          hits.push({ x, y, w, h: 24, root: c.root })
+          hits.push({ x, y, w, h: 24, root: c.root, grain: '' })
           const on = hover === hits.length - 1
           ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()

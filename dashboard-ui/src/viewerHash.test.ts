@@ -8,21 +8,21 @@ import { parseViewerHash, viewerHash } from './screens/ViewerShell'
 // longer on — and the link you copied opened something else.
 describe('viewer address', () => {
   it('round-trips store, view and drilled root', () => {
-    const a = { module: 'AI-company-master', view: 'house', root: 'src/aiteam/api' }
+    const a = { module: 'AI-company-master', view: 'house', root: 'src/aiteam/api', grain: '' }
     expect(parseViewerHash(viewerHash(a).replace('#/viewer/', ''))).toMatchObject(a)
   })
 
   it('always writes the view, even when it is the default', () => {
     // A URL that omits it silently changes meaning the day the default changes.
-    expect(viewerHash({ module: 'repo', view: 'graph', root: '' })).toContain('view=graph')
+    expect(viewerHash({ module: 'repo', view: 'graph', root: '', grain: '' })).toContain('view=graph')
   })
 
   it('omits root at the top level rather than writing an empty one', () => {
-    expect(viewerHash({ module: 'repo', view: 'flow', root: '' })).not.toContain('root=')
+    expect(viewerHash({ module: 'repo', view: 'flow', root: '', grain: '' })).not.toContain('root=')
   })
 
   it('survives a store key or directory that needs escaping', () => {
-    const a = { module: 'org/repo name', view: 'flow', root: 'src/a b/c+d' }
+    const a = { module: 'org/repo name', view: 'flow', root: 'src/a b/c+d', grain: '' }
     const parsed = parseViewerHash(viewerHash(a).replace('#/viewer/', ''))
     expect(parsed.module).toBe('org/repo name')
     expect(parsed.root).toBe('src/a b/c+d')
@@ -39,5 +39,20 @@ describe('viewer address', () => {
     // the graph viewer's ?center= is address state too and must survive parsing
     const p = parseViewerHash('myrepo?view=graph&center=pkg%2Ff.go%3A%3AFn')
     expect(p.params.get('center')).toBe('pkg/f.go::Fn')
+  })
+})
+
+// The grain is part of the address, but only when it is FORCED: a directory
+// whose level can be inferred must not pin one, or a link shared today keeps
+// showing files after the directory grows subdirectories.
+describe('viewer address carries a forced grain', () => {
+  it('round-trips a pinned grain', () => {
+    const a = { module: 'linux', view: 'flow', root: 'drivers/base', grain: 'file' }
+    expect(parseViewerHash(viewerHash(a).replace('#/viewer/', ''))).toMatchObject(a)
+  })
+
+  it('writes no grain when the level is inferred', () => {
+    expect(viewerHash({ module: 'linux', view: 'flow', root: 'drivers/base', grain: '' }))
+      .not.toContain('grain=')
   })
 })

@@ -26,6 +26,8 @@ export interface ViewerAddress {
   module: string
   view: string
   root: string
+  /** forces the level: "" infers it from root, "file"/"decl" pin it */
+  grain: string
 }
 
 export function parseViewerHash(raw: string): ViewerAddress & { params: URLSearchParams } {
@@ -36,6 +38,7 @@ export function parseViewerHash(raw: string): ViewerAddress & { params: URLSearc
     module,
     view: params.get('view') || DEFAULT_VIEWER,
     root: params.get('root') || '',
+    grain: params.get('grain') || '',
     params,
   }
 }
@@ -46,6 +49,10 @@ export function viewerHash(a: ViewerAddress): string {
   // silently changes meaning the day the default changes.
   q.set('view', a.view)
   if (a.root) q.set('root', a.root)
+  // grain only when it is FORCED. A directory that can be inferred must not
+  // carry one, or a shared link pins a level that the code may since have
+  // grown past.
+  if (a.grain) q.set('grain', a.grain)
   return '#/viewer/' + encodeURIComponent(a.module) + '?' + q.toString()
 }
 
@@ -101,7 +108,7 @@ export default function ViewerShell({ initialModule: rawArg }: { initialModule: 
           </select>
         </label>
         <span className="vs-blurb">{def.blurb}</span>
-        {addr.root && <span className="vs-root">{addr.root}</span>}
+        {addr.root && <span className="vs-root">{addr.root}{addr.grain ? ` · ${addr.grain}s` : ''}</span>}
         {err && <span className="err">{err}</span>}
       </div>
       {/* key on view+module: switching either gives the viewer a clean mount
@@ -111,7 +118,8 @@ export default function ViewerShell({ initialModule: rawArg }: { initialModule: 
           key={def.id + ' ' + addr.module}
           module={addr.module}
           root={addr.root}
-          onRoot={(r: string) => go({ root: r })}
+          grain={addr.grain}
+          onRoot={(r: string, grain = '') => go({ root: r, grain })}
           params={addr.params}
         />
       )}

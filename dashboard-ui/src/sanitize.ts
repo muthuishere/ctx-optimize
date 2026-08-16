@@ -79,6 +79,7 @@ export function sanitizeScene(s: any): Scene {
     // A scene with no crumbs is a level you cannot leave, so the trail back to
     // the whole repo is synthesised rather than trusted.
     questions: arr<SceneQuestion>(s?.questions),
+    inside: arr<SceneCrumb>(s?.inside),
     crumbs: arr<SceneCrumb>(s?.crumbs).length
       ? arr<SceneCrumb>(s?.crumbs)
       : [{ label: String(s?.title ?? 'repo'), root: '' }],

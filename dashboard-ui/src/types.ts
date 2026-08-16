@@ -171,6 +171,7 @@ export interface SceneCard {
   hub: boolean
   children: number
   top: string
+  enter_grain: string
 }
 
 export interface SceneCrumb {
@@ -231,6 +232,7 @@ export interface Scene {
   root: string
   level: string
   crumbs: SceneCrumb[]
+  inside: SceneCrumb[]
   questions: SceneQuestion[]
   notes: string[]
   empty?: string

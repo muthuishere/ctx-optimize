@@ -12,6 +12,7 @@ function scene(): Scene {
     level: 'directory',
     crumbs: [{ label: 'demo', root: '' }],
     questions: [],
+    inside: [],
     total_nodes: 100,
     total_edges: 200,
     subsystems_total: 20,
@@ -19,10 +20,10 @@ function scene(): Scene {
     lifted_total: 9,
     lifted_shown: 5,
     cards: [
-      { id: 'a', label: 'a', dir: 'src/a', files: 3, decls: 9, in: 0, out: 20, ext_in: 0, ext_out: 0, layer: 0, row: 0, detail: 'A', glyph: '⇄', hub: false, children: 2, top: 'Fn' },
-      { id: 'b', label: 'b', dir: 'src/b', files: 3, decls: 9, in: 20, out: 6, ext_in: 0, ext_out: 0, layer: 0, row: 1, detail: 'B', glyph: '◇', hub: false, children: 0, top: 'Fn' },
-      { id: 'c', label: 'c', dir: 'src/c', files: 3, decls: 9, in: 26, out: 4, ext_in: 0, ext_out: 0, layer: 1, row: 0, detail: 'C', glyph: '◇', hub: false, children: 3, top: 'Fn' },
-      { id: 'd', label: 'd', dir: 'src/d', files: 3, decls: 9, in: 30, out: 0, ext_in: 0, ext_out: 0, layer: 2, row: 0, detail: 'D', glyph: '⚙', hub: true, children: 0, top: 'Fn' },
+      { id: 'a', label: 'a', dir: 'src/a', files: 3, decls: 9, in: 0, out: 20, ext_in: 0, ext_out: 0, layer: 0, row: 0, detail: 'A', glyph: '⇄', hub: false, children: 2, top: 'Fn', enter_grain: '' },
+      { id: 'b', label: 'b', dir: 'src/b', files: 3, decls: 9, in: 20, out: 6, ext_in: 0, ext_out: 0, layer: 0, row: 1, detail: 'B', glyph: '◇', hub: false, children: 0, top: 'Fn', enter_grain: '' },
+      { id: 'c', label: 'c', dir: 'src/c', files: 3, decls: 9, in: 26, out: 4, ext_in: 0, ext_out: 0, layer: 1, row: 0, detail: 'C', glyph: '◇', hub: false, children: 3, top: 'Fn', enter_grain: '' },
+      { id: 'd', label: 'd', dir: 'src/d', files: 3, decls: 9, in: 30, out: 0, ext_in: 0, ext_out: 0, layer: 2, row: 0, detail: 'D', glyph: '⚙', hub: true, children: 0, top: 'Fn', enter_grain: '' },
     ],
     links: [
       { from: 'a', to: 'c', relation: 'calls', label: 'CALLS', weight: 20 },

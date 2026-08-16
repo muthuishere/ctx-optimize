@@ -27,7 +27,7 @@ const ZERO = { dx: 0, dy: 0 }
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
 
-export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
+export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
   const [err, setErr] = useState('')
   const wrap = useRef<HTMLDivElement | null>(null)
@@ -38,10 +38,11 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
     setErr('')
     const q = new URLSearchParams({ module })
     if (root) q.set('root', root)
+    if (grain) q.set('grain', grain)
     api<Scene>(`/api/scene?${q}`)
       .then((s) => setScene(sanitizeScene(s)))
       .catch((e) => setErr(String(e.message || e)))
-  }, [module, root])
+  }, [module, root, grain])
 
 
   useEffect(() => {
@@ -105,7 +106,12 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
 
     // Hit regions are rebuilt every frame in VIRTUAL units; the transform is a
     // plain scale, so screen->virtual is one division.
-    type Hit = { x: number; y: number; w: number; h: number; root: string; kind: 'card' | 'crumb' | 'reset' | 'world' }
+    type Hit = {
+      x: number; y: number; w: number; h: number; root: string
+      kind: 'card' | 'crumb' | 'reset' | 'world'
+      /** the grain this target opens at; '' means infer from root */
+      grain?: string
+    }
     let hits: Hit[] = []
     let hover = -1
     const hitAt = (vx: number, vy: number) =>
@@ -177,7 +183,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
         relayout()
         return
       }
-      onRoot(hits[i].root)
+      onRoot(hits[i].root, hits[i].grain || '')
     }
     const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
     canvas.addEventListener('pointerdown', onDown)
@@ -335,7 +341,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
     // to stay free for dragging the shape.
     function titleLink(
       label: string, x: number, baseY: number, size: number, maxW: number,
-      root: string, enterable: boolean, align: CanvasTextAlign = 'left',
+      root: string, enterable: boolean, align: CanvasTextAlign = 'left', grain = '',
     ): boolean {
       let shown = label
       ctx!.font = `700 ${S(size)}px ${SANS}`
@@ -345,7 +351,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       const lx = align === 'center' ? x - w / 2 : x
       let on = false
       if (enterable) {
-        hits.push({ x: lx, y: baseY - size, w, h: size * 1.35, root, kind: 'card' })
+        hits.push({ x: lx, y: baseY - size, w, h: size * 1.35, root, kind: 'card', grain })
         on = hover === hits.length - 1
       }
       text(shown, x, baseY, {
@@ -371,7 +377,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
     // shape moving. Card body = move the shape; badge = go inside.
     function registerDoor(b: Box, x: number, y: number, w: number, h: number): boolean {
       if (!b.card || b.card.children <= 0) return false
-      hits.push({ x, y, w, h, root: b.card.dir, kind: 'card' })
+      hits.push({ x, y, w, h, root: b.card.dir, kind: 'card', grain: b.card.enter_grain })
       return hover === hits.length - 1
     }
 
@@ -426,7 +432,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       text(b.n, b.x + 18, b.y + (tight ? b.h / 2 + 5 : 36),
         { size: tight ? 13 : 19, weight: 300, color: pal.dim, font: MONO })
       if (tight) {
-        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, c.dir, c.children > 0)
+        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, c.dir, c.children > 0, 'left', c.enter_grain)
         if (c.children > 0) drawEnter(b.x + b.w - 10, b.y + 6, c.children, on || on2, 'right')
         return
       }
@@ -436,7 +442,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       rr(ip.x, ip.y, S(26), S(26), S(7)); ctx!.stroke()
       text(c.glyph, b.x + 31, b.y + 66, { size: 13, color: pal.muted, align: 'center', font: MONO })
 
-      const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, c.dir, c.children > 0)
+      const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, c.dir, c.children > 0, 'left', c.enter_grain)
       // A short card drops its lower lines rather than drawing them over each
       // other: cardH shrinks to fit a full column, and the fixed offsets that
       // were fine at 118 units are not at 74.
@@ -511,7 +517,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       text('MOST DEPENDED ON', b.x, b.y - (roomy ? 46 : 34),
         { size: 8.5, color: MUTED, align: 'center', spacing: 1.3, weight: 700 })
       const titleOn = titleLink(c.label, b.x, b.y - (roomy ? 20 : 12),
-        roomy ? 19 : 15, b.r * 1.7, c.dir, c.children > 0, 'center')
+        roomy ? 19 : 15, b.r * 1.7, c.dir, c.children > 0, 'center', c.enter_grain)
       if (!tight) {
         text(c.dir, b.x, b.y + (roomy ? -2 : 4),
           { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.75 })
@@ -628,7 +634,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
         const w = measure(c.label, 11.5, last ? 700 : 500) + 22
         if (!last) {
           const p = T(x, y)
-          hits.push({ x, y, w, h: 24, root: c.root, kind: 'crumb' })
+          hits.push({ x, y, w, h: 24, root: c.root, kind: 'crumb', grain: '' })
           const on = hover === hits.length - 1
           ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()
@@ -761,9 +767,39 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
         drawHeader(t)
         // wrapped, and drawn once: a DOM copy of this message used to sit on
         // top of the canvas copy, each truncating differently
-        wrapText(scene!.empty, 900, 15).forEach((ln, i) => {
-          text(ln, VW / 2, lay.vh / 2 + i * 22, { size: 15, color: pal.muted, align: 'center' })
+        const lines = wrapText(scene!.empty, 900, 15)
+        const top = lay.vh / 2 - (lines.length * 22) / 2 - 24
+        lines.forEach((ln, i) => {
+          text(ln, VW / 2, top + i * 22, { size: 15, color: pal.muted, align: 'center' })
         })
+        // What this level HOLDS, as somewhere to go. Telling someone there are
+        // two subdirectories and then making them back out and hunt for them is
+        // the same failure as a badge nobody can find.
+        const inside = scene!.inside
+        if (inside.length > 0) {
+          const widths = inside.map((c) => measure(c.label, 12, 600) + 28)
+          const total = widths.reduce((a, b) => a + b + 10, -10)
+          let x = VW / 2 - total / 2
+          const y = top + lines.length * 22 + 16
+          inside.forEach((c, i) => {
+            const w = widths[i]
+            hits.push({ x, y, w, h: 28, root: c.root, kind: 'card', grain: '' })
+            const on = hover === hits.length - 1
+            const q = T(x, y)
+            ctx.fillStyle = on ? mix(pal.panel, pal.accent, .22) : mix(pal.panel, pal.text, .08)
+            rr(q.x, q.y, S(w), S(28), S(14)); ctx.fill()
+            ctx.strokeStyle = on ? pal.accent : rgba(pal.accent, .45)
+            ctx.lineWidth = Math.max(1, S(1))
+            rr(q.x, q.y, S(w), S(28), S(14)); ctx.stroke()
+            text(c.label, x + w / 2, y + 19, {
+              size: 12, weight: 600, align: 'center',
+              color: on ? pal.accent : mix(pal.text, pal.accent, .55),
+            })
+            x += w + 10
+          })
+          text('go straight in', VW / 2, y + 48,
+            { size: 10, color: pal.dim, align: 'center', spacing: 1 })
+        }
         raf = requestAnimationFrame(frame)
         return
       }

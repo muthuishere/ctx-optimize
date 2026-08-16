@@ -43,6 +43,12 @@ func (s *server) handleScene(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("root"); v != "" && len(v) <= 512 {
 		opt.Root = v
 	}
+	// `grain` forces the level. Only the two values that mean anything are
+	// accepted; anything else falls back to inference rather than erroring,
+	// because a bad grain in a shared URL should still show the scene.
+	if v := r.URL.Query().Get("grain"); v == "file" || v == "decl" {
+		opt.Grain = v
+	}
 
 	// The cache is consulted BEFORE the graph is read, which is the whole point:
 	// on linux, reading nodes and edges costs 2.4s and Derive another 3.2s, and
@@ -87,7 +93,7 @@ func sceneKey(dir, module string, opt scene.Options) (key, stamp string, ok bool
 	if err1 != nil || err2 != nil {
 		return "", "", false // no graph on disk: derive every time, cache nothing
 	}
-	key = fmt.Sprintf("%s\x00%s\x00%d\x00%t", module, opt.Root, opt.Cards, opt.IncludeTests)
+	key = fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%t", module, opt.Root, opt.Grain, opt.Cards, opt.IncludeTests)
 	stamp = fmt.Sprintf("%d-%d-%d-%d", n.Size(), n.ModTime().UnixNano(), e.Size(), e.ModTime().UnixNano())
 	return key, stamp, true
 }

@@ -15,8 +15,15 @@ export interface ViewerProps {
   module: string
   /** the drilled directory ("" = the whole repo). Comes from the URL. */
   root: string
-  /** navigate to a level. Writes the URL; the shell owns the address. */
-  onRoot: (root: string) => void
+  /** the forced grain ("" = infer from root) */
+  grain: string
+  /**
+   * navigate to a level. Writes the URL; the shell owns the address. `grain`
+   * is passed only when the target cannot be inferred from `root` alone — the
+   * card standing for a directory's OWN files, whose root is the directory it
+   * is already showing.
+   */
+  onRoot: (root: string, grain?: string) => void
   /** the rest of the query, read-only — e.g. the graph viewer's ?center=. */
   params: URLSearchParams
 }
