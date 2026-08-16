@@ -295,7 +295,47 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
     // A card with subdirectories is a door. registerDoor gives it its hit region
     // and returns whether the pointer is currently on it, so the affordance and
     // the click target can never disagree.
-    // The click target is the BADGE, never the whole card. Registering the
+    // titleLink draws a card's name and, when there is something inside,
+    // makes the NAME the way in. A badge in the corner is discoverable only
+    // once you know to look for it; the name is the first thing read, so it is
+    // the thing that should be clickable — and it is styled like a link
+    // (accent colour, underline on hover) so it advertises that itself.
+    //
+    // Only the TEXT is registered, not the card: the rest of the card body has
+    // to stay free for dragging the shape.
+    function titleLink(
+      label: string, x: number, baseY: number, size: number, maxW: number,
+      root: string, enterable: boolean, align: CanvasTextAlign = 'left',
+    ): boolean {
+      let shown = label
+      ctx!.font = `700 ${S(size)}px ${SANS}`
+      while (shown.length > 1 && ctx!.measureText(shown).width / cam.k > maxW) shown = shown.slice(0, -1)
+      if (shown !== label) shown = shown.slice(0, -1) + '…'
+      const w = ctx!.measureText(shown).width / cam.k
+      const lx = align === 'center' ? x - w / 2 : x
+      let on = false
+      if (enterable) {
+        hits.push({ x: lx, y: baseY - size, w, h: size * 1.35, root, kind: 'card' })
+        on = hover === hits.length - 1
+      }
+      text(shown, x, baseY, {
+        size, weight: 700, align,
+        color: enterable ? (on ? pal.accent : mix(pal.text, pal.accent, .55)) : INK,
+      })
+      if (enterable) {
+        // the underline: dotted when idle, solid on hover — a link that only
+        // reveals itself on hover is a link nobody finds
+        const u = T(lx, baseY + 3.5)
+        ctx!.strokeStyle = on ? pal.accent : rgba(pal.accent, .45)
+        ctx!.lineWidth = Math.max(1, S(on ? 1.4 : 1))
+        ctx!.setLineDash(on ? [] : [S(2.5), S(2.5)])
+        ctx!.beginPath(); ctx!.moveTo(u.x, u.y); ctx!.lineTo(u.x + S(w), u.y); ctx!.stroke()
+        ctx!.setLineDash([])
+      }
+      return on
+    }
+
+    // The badge is a SECOND target, never the whole card. Registering the
     // card made every card with children un-draggable: the gesture hit a click
     // region, the camera took it, and the entire frame panned instead of the
     // shape moving. Card body = move the shape; badge = go inside.
@@ -320,12 +360,6 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       ctx!.strokeStyle = on ? DOT : HAIR; ctx!.lineWidth = Math.max(1, S(on ? 1.8 : 1))
       rr(p.x, p.y, S(b.w), S(b.h), S(12)); ctx!.stroke()
       occupy(b.x, b.y, b.w, b.h)
-      if (c.children > 0) {
-        // Top strip, beside the ordinal — the only band on a card that carries
-        // no text of its own. It used to sit at the foot of the card and landed
-        // squarely on the detail line.
-        drawEnter(b.x + b.w - 14, b.y + 12, c.children, on, 'right')
-      }
 
       text(b.n, b.x + 18, b.y + 36, { size: 19, weight: 300, color: pal.dim, font: MONO })
       const ip = T(b.x + 18, b.y + 48)
@@ -334,7 +368,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       rr(ip.x, ip.y, S(26), S(26), S(7)); ctx!.stroke()
       text(c.glyph, b.x + 31, b.y + 66, { size: 13, color: pal.muted, align: 'center', font: MONO })
 
-      text(c.label, b.x + 54, b.y + 67, { size: 16, weight: 700, max: b.w - 70 })
+      const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, c.dir, c.children > 0)
       text(c.dir, b.x + 18, b.y + 91, { size: 10.5, color: pal.dim, font: MONO, max: b.w - 36 })
       text(c.detail || `${c.files} files`, b.x + 18, b.y + b.h - 15,
         { size: 11.5, color: MUTED, max: b.w - 36 })
@@ -342,6 +376,11 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       // in/out counters, top-right — the numbers that decided the column
       text(`${c.out}↗`, b.x + b.w - 18, b.y + 26, { size: 10, color: pal.dim, font: MONO, align: 'right' })
       text(`↘${c.in}`, b.x + b.w - 18, b.y + 40, { size: 10, color: pal.dim, font: MONO, align: 'right' })
+      if (c.children > 0) {
+        // Top strip, beside the ordinal — the only band on a card that carries
+        // no text of its own. Drawn AFTER the title so it can share its hover.
+        drawEnter(b.x + b.w - 14, b.y + 12, c.children, on || titleOn, 'right')
+      }
     }
 
     // drawEnter is the one "you can go in here" mark, used by cards and the hub
@@ -378,14 +417,14 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       ctx!.strokeStyle = on ? DOT : rgba(pal.focus, .65); ctx!.lineWidth = S(4)
       ctx!.beginPath(); ctx!.arc(p.x, p.y, R * pulse, 0, 7); ctx!.stroke()
       occupy(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2)
-      if (c.children > 0) drawEnter(b.x, b.y + b.r - 34, c.children, on, 'center')
 
       text('MOST DEPENDED ON', b.x, b.y - 46, { size: 8.5, color: MUTED, align: 'center', spacing: 1.3, weight: 700 })
-      text(c.label, b.x, b.y - 20, { size: 19, weight: 700, align: 'center', max: b.r * 1.8 })
+      const titleOn = titleLink(c.label, b.x, b.y - 20, 19, b.r * 1.8, c.dir, c.children > 0, 'center')
       text(c.dir, b.x, b.y - 2, { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.85 })
       text(c.detail, b.x, b.y + 20, { size: 11, color: MUTED, align: 'center', max: b.r * 1.8 })
       text(`${c.in} in · ${c.out} out`, b.x, b.y + 44, { size: 11, color: DOT, font: MONO, align: 'center', weight: 700 })
       text(`${c.files} files · ${c.decls} decls`, b.x, b.y + 62, { size: 10, color: pal.dim, font: MONO, align: 'center' })
+      if (c.children > 0) drawEnter(b.x, b.y + b.r - 34, c.children, on || titleOn, 'center')
     }
 
     // The outer world: one dashed PLATE per transport, holding a bounded

@@ -107,6 +107,39 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
       },
     })
 
+    // The room's NAME is the way in — see FlowViewer.titleLink. A corner badge
+    // is discoverable only once you know to look; the name is the first thing
+    // read, so it is what should be clickable, and it says so by looking like a
+    // link. Only the TEXT is a target, so the rest of the room stays inert.
+    function titleLink(
+      label: string, x: number, baseY: number, size: number, maxW: number,
+      root: string, enterable: boolean,
+    ): boolean {
+      let shown = label
+      ctx!.font = `700 ${S(size)}px ${SANS}`
+      while (shown.length > 1 && ctx!.measureText(shown).width / cam.k > maxW) shown = shown.slice(0, -1)
+      if (shown !== label) shown = shown.slice(0, -1) + '…'
+      const w = ctx!.measureText(shown).width / cam.k
+      let on = false
+      if (enterable) {
+        hits.push({ x, y: baseY - size, w, h: size * 1.35, root })
+        on = hover === hits.length - 1
+      }
+      text(shown, x, baseY, {
+        size, weight: 700,
+        color: enterable ? (on ? pal.accent : mix(pal.text, pal.accent, .55)) : INK,
+      })
+      if (enterable) {
+        const u = T(x, baseY + 3.5)
+        ctx!.strokeStyle = on ? pal.accent : rgba(pal.accent, .45)
+        ctx!.lineWidth = Math.max(1, S(on ? 1.4 : 1))
+        ctx!.setLineDash(on ? [] : [S(2.5), S(2.5)])
+        ctx!.beginPath(); ctx!.moveTo(u.x, u.y); ctx!.lineTo(u.x + S(w), u.y); ctx!.stroke()
+        ctx!.setLineDash([])
+      }
+      return on
+    }
+
     function rr(x: number, y: number, w: number, h: number, r: number) {
       ctx!.beginPath()
       ctx!.moveTo(x + r, y); ctx!.lineTo(x + w - r, y); ctx!.quadraticCurveTo(x + w, y, x + w, y + r)
@@ -213,21 +246,19 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
     function drawRoom(r: Room, t: number) {
       const c = r.card
       const p = T(r.x, r.y)
-      let on = false
-      if (c.children > 0) {
-        hits.push({ x: r.x, y: r.y, w: r.w, h: r.h, root: c.dir })
-        on = hover === hits.length - 1
-      }
-      // the hub is the load-bearing room: it gets the pillar treatment
+      // The room frame no longer carries hover: the NAME is the target, so the
+      // name is what lights up. A whole room highlighting for a link inside it
+      // says "click anywhere", which is exactly the confusion that made the
+      // card un-draggable in the flow view.
       const pillar = c.hub
       ctx!.save()
-      ctx!.shadowColor = on ? rgba(pal.focus, .45) : 'rgba(0,0,0,.4)'
-      ctx!.shadowBlur = S(on ? 22 : 12); ctx!.shadowOffsetY = S(3)
+      ctx!.shadowColor = 'rgba(0,0,0,.4)'
+      ctx!.shadowBlur = S(12); ctx!.shadowOffsetY = S(3)
       ctx!.fillStyle = pillar ? mix(pal.panel, pal.amber, .12) : ROOM
       rr(p.x, p.y, S(r.w), S(r.h), S(6)); ctx!.fill()
       ctx!.restore()
-      ctx!.strokeStyle = on ? DOT : pillar ? ACC : WALL
-      ctx!.lineWidth = Math.max(1, S(on || pillar ? 1.8 : 1))
+      ctx!.strokeStyle = pillar ? ACC : WALL
+      ctx!.lineWidth = Math.max(1, S(pillar ? 1.8 : 1))
       rr(p.x, p.y, S(r.w), S(r.h), S(6)); ctx!.stroke()
 
       const pad = 12
@@ -239,7 +270,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
       if (pillar) {
         text('LOAD-BEARING', r.x + pad + 26, r.y + 22, { size: 8, color: ACC, spacing: 1.2, weight: 700 })
       }
-      text(c.label, r.x + pad, r.y + 44, { size: 15, weight: 700, max: r.w - pad * 2 })
+      const titleOn = titleLink(c.label, r.x + pad, r.y + 44, 15, r.w - pad * 2, c.dir, c.children > 0)
       if (r.h > 74) {
         text(`${c.files} files · ${c.decls} decls`, r.x + pad, r.y + 64,
           { size: 10, color: MUTED, font: MONO, max: r.w - pad * 2 })
@@ -257,14 +288,14 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
         const w = measure(label, 9, 700, MONO) + 24
         const bx = r.x + r.w - w - 8, by = r.y + 8
         const q = T(bx, by)
-        ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
+        ctx!.fillStyle = titleOn ? mix(pal.panel, pal.accent, .18) : mix(pal.panel, pal.text, .05)
         rr(q.x, q.y, S(w), S(17), S(8.5)); ctx!.fill()
-        ctx!.strokeStyle = on ? DOT : pal.line2; ctx!.lineWidth = Math.max(1, S(1))
+        ctx!.strokeStyle = titleOn ? pal.accent : pal.line2; ctx!.lineWidth = Math.max(1, S(1))
         rr(q.x, q.y, S(w), S(17), S(8.5)); ctx!.stroke()
-        text(label, bx + 8, by + 12, { size: 9, weight: 700, font: MONO, color: on ? DOT : pal.muted })
+        text(label, bx + 8, by + 12, { size: 9, weight: 700, font: MONO, color: titleOn ? pal.accent : pal.muted })
         const cx = bx + w - 10, cy = by + 8.5
         const a1 = T(cx - 2.5, cy - 3.5), b1 = T(cx + 1.5, cy), c1 = T(cx - 2.5, cy + 3.5)
-        ctx!.strokeStyle = on ? DOT : pal.dim; ctx!.lineWidth = Math.max(1, S(1.5))
+        ctx!.strokeStyle = titleOn ? pal.accent : pal.dim; ctx!.lineWidth = Math.max(1, S(1.5))
         ctx!.beginPath(); ctx!.moveTo(a1.x, a1.y); ctx!.lineTo(b1.x, b1.y); ctx!.lineTo(c1.x, c1.y); ctx!.stroke()
       }
       void t
