@@ -1523,7 +1523,7 @@ func glyphOf(t map[string]bool) string {
 		return "↗"
 	case t["consumes:config.env"]:
 		return "⚙"
-	case t["consumes:storage.local"] || t["provides:storage.local"]:
+	case t["consumes:storage.browser"] || t["provides:storage.browser"]:
 		return "⇪"
 	default:
 		return "◇"

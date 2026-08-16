@@ -173,7 +173,14 @@ function meaningOf(transport: string, relation: string): string {
   if (transport.startsWith('network.')) return 'calls over the network'
   if (transport.startsWith('config.')) return 'settings read from the environment'
   if (transport.startsWith('process.')) return 'binaries run as processes'
-  if (transport.startsWith('storage.')) return 'files and buckets'
+  // Named per SUB-family, because the families differ in kind and one blanket
+  // line would say something untrue about most of them. `storage.browser` is
+  // the only one shipped today; the others are named here so a rule that adds
+  // one lands on a sentence instead of the fallback.
+  if (transport === 'storage.browser') return 'the browser’s own storage'
+  if (transport === 'storage.file') return 'files on disk'
+  if (transport === 'storage.bucket') return 'object storage'
+  if (transport.startsWith('storage.')) return 'stored data'
   if (transport.startsWith('db.')) return 'databases'
   if (transport.startsWith('queue.')) return 'queues and topics'
   return 'a boundary of the system'

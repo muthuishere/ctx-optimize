@@ -1208,7 +1208,7 @@
     },
     {
       "id": "webstorage",
-      "transport": "storage.local",
+      "transport": "storage.browser",
       "direction": "consumes",
       "when": {
         "ext": [

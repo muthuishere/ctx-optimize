@@ -12,7 +12,7 @@ P port:network.http:>/status | dir=consumes | transport=network.http | identifie
 P port:network.http:>api.openai.com | dir=consumes | transport=network.http | identifier=api.openai.com | scope=- | sensitive=-
 P port:network.http:>api.weather.example | dir=consumes | transport=network.http | identifier=api.weather.example | scope=- | sensitive=-
 P port:process.exec:>git | dir=consumes | transport=process.exec | identifier=git | scope=- | sensitive=-
-P port:storage.local:>session_token | dir=consumes | transport=storage.local | identifier=session_token | scope=- | sensitive=-
+P port:storage.browser:>session_token | dir=consumes | transport=storage.browser | identifier=session_token | scope=- | sensitive=-
 == boundary edges (15)
 E ai/agent.py -consumes-> port:config.env:>OPENAI_API_KEY | INFERRED | rule=env-py | site=ai/agent.py:L4
 E ai/agent.py -consumes-> port:network.http:>api.openai.com | EXTRACTED | rule=service:openai | site=ai/agent.py:L8
@@ -24,7 +24,7 @@ E api/main.go -consumes-> port:process.exec:>git | AMBIGUOUS | rule=process-go |
 E pyproject.toml -consumes-> port:network.http:>api.openai.com | INFERRED | rule=service:openai | site=pyproject.toml
 E web/app.ts -provides-> port:network.http:</status | INFERRED | rule=routes-express | site=web/app.ts:L5
 E web/app.ts -provides-> port:network.http:</upload | INFERRED | rule=routes-express | site=web/app.ts:L6
-E web/app.ts -consumes-> port:storage.local:>session_token | INFERRED | rule=webstorage | site=web/app.ts:L9
+E web/app.ts -consumes-> port:storage.browser:>session_token | INFERRED | rule=webstorage | site=web/app.ts:L9
 E web/client.ts -consumes-> port:network.http:>/nowhere | AMBIGUOUS | rule=http-same-origin-fetch | site=web/client.ts:L22
 E web/client.ts -consumes-> port:network.http:>/orders | AMBIGUOUS | rule=http-same-origin-fetch | site=web/client.ts:L10
 E web/client.ts -consumes-> port:network.http:>/status | AMBIGUOUS | rule=http-same-origin-fetch | site=web/client.ts:L15

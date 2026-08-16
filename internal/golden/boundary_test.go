@@ -75,8 +75,8 @@ func TestGoldenBoundaryRepo(t *testing.T) {
 	})
 
 	// ---- class: boundary/storage -----------------------------------------
-	classPort(t, ports, "boundary/storage", "port:storage.local:>session_token", portFact{
-		Direction: "consumes", Transport: "storage.local",
+	classPort(t, ports, "boundary/storage", "port:storage.browser:>session_token", portFact{
+		Direction: "consumes", Transport: "storage.browser",
 		Identifier: "session_token",
 	})
 
@@ -197,7 +197,7 @@ func TestGoldenBoundaryRepo(t *testing.T) {
 	// noise and hide the real defect.
 	for _, probe := range []struct{ q, want string }{
 		{"git process exec", "port:process.exec:>git"},
-		{"session token storage", "port:storage.local:>session_token"},
+		{"session token storage", "port:storage.browser:>session_token"},
 		{"orders route", "port:network.http:</orders"},
 	} {
 		top := queryTop(t, storeRoot, repo, probe.q, 3)

@@ -62,6 +62,22 @@ describe('the legend is one row per MODE', () => {
     expect(rows.find((r) => r.label === 'config.env')!.meaning).toBe('settings read from the environment')
   })
 
+  it('describes each storage family as what it actually is', () => {
+    // `storage.local` used to read as "local disk" and was described as "files
+    // and buckets". Its one rule matches localStorage/sessionStorage and
+    // nothing else — no file rule and no bucket rule exists — so both the name
+    // and the sentence were claiming coverage the store does not have.
+    const row = (t: string) => legendFor(sceneWith([
+      { from: 'a', to: 'b', relation: 'shares', label: 'X', weight: 1, transport: t },
+    ]))[0].meaning
+    expect(row('storage.browser')).toContain('browser')
+    expect(row('storage.file')).toContain('disk')
+    expect(row('storage.bucket')).toContain('object storage')
+    // and a storage family nobody has written a rule for yet stays vague on
+    // purpose rather than borrowing a sibling's description
+    expect(row('storage.somethingnew')).toBe('stored data')
+  })
+
   it('says nothing about modes the scene does not contain', () => {
     const rows = legendFor(sceneWith([
       { from: 'e', to: 'f', relation: 'depends', label: 'DEPENDS', weight: 1 },

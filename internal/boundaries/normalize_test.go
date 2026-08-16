@@ -13,7 +13,7 @@ func TestNormalizePerTransport(t *testing.T) {
 		// Non-network identifiers are case-sensitive facts — verbatim.
 		{"config.env", "OPENAI_API_KEY", "OPENAI_API_KEY"},
 		{"process.exec", "Git", "Git"},
-		{"storage.local", "Theme/", "Theme/"},
+		{"storage.browser", "Theme/", "Theme/"},
 	}
 	for _, c := range cases {
 		if got := Normalize(c.transport, c.raw); got != c.want {
