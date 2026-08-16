@@ -63,14 +63,47 @@ merging the graphs would not connect them even in principle. Ports are the only
 identity in the store that is global — which is why they are the whole answer
 here.
 
+### The paths are IN THE CODE — measured, 111 of 149
+
+The owner's instinct ("within a monorepo there is a high chance it calls
+within — match on relative path, at medium confidence") turned out not to need
+a heuristic at all. Taking apps/api's 149 concrete provided routes and grepping
+apps/ui's source for each:
+
+```
+routes the UI source literally contains:  111 of 149
+   /admin/ai-models                 lib/config.ts
+   /admin/alert-recipients          lib/config.ts
+   /admin/credits/add               lib/config.ts
+   /admin/convert                   pages/AdminTemplateTesting.tsx
+   …
+```
+
+Most sit in ONE route table (`lib/config.ts`) composed against a base URL, which
+is why the extractor sees only the host: it resolves the base and discards the
+path. There are ZERO relative-path requests in the whole repo — `fetch('/api/x')`
+never appears — so a relative-path rule would have matched nothing. The pattern
+is `${BASE}/admin/ai-models`, and the discriminating half is the literal.
+
+This also settles the confidence tier. A path literal in one module matching a
+route registered in another is a NAME MATCH, exactly like `calls` resolved by
+unique name: **INFERRED**, never EXTRACTED. Two modules that both mention
+`/health` are the AMBIGUOUS case the existing rules already know how to handle —
+capped, excluded from traversals by default, surfaced on demand.
+
 ## Proposal
 
 **D1 — the consumer side keeps the path.** OTel already names both halves:
 `server.address` AND `url.path` / `url.template`. Recording the path turns
 `ui consumes api.reqsume.com/admin/ai-models` and
-`api provides /admin/ai-models` into an exact match, with a weight (how many of
-the 176 routes a consumer actually uses) and a `file:line` on each end. No
+`api provides /admin/ai-models` into a match, with a weight (how many of the
+176 routes a consumer actually uses) and a `file:line` on each end. No
 configuration, no adapter, no new producer — one extractor field.
+
+The literal must be captured where it is WRITTEN, not only where it is
+requested: 111 of these live in a route table, one hop from the call. That is
+the same shape the boundary rules already handle for env-var names, so it is an
+extension of an existing mechanism rather than a new one.
 
 **D2 — the provider side keeps its host when the code states one.** A route
 registered under a declared base URL should carry it. Where the code does not
@@ -93,7 +126,7 @@ Only relations that can be defended get drawn, each labelled distinctly:
 | relation | evidence | available |
 |---|---|---|
 | `calls` / `imports` | a code edge crossing modules | never — ids are module-relative |
-| `provides`→`consumes` | one module's route matched by another's request | **after D1** |
+| `provides`→`consumes` | one module's route literal matched by another's registration — INFERRED, never EXTRACTED | **after D1**; 111 pairs already visible on reqsume |
 | `shares` | both modules touch the same external port | today, 6 pairs on reqsume |
 
 `shares` is drawn dashed and named, never as an arrow of causation.
@@ -102,9 +135,11 @@ Only relations that can be defended get drawn, each labelled distinctly:
 
 If, after D1, a real monorepo yields no `provides`→`consumes` matches, then the
 module grain has only `shares` to draw and D4 is a chooser wearing a diagram —
-in which case it ships as a plain list and this ADR closes. The test is
-reqsume: `apps/ui` must resolve at least one of `apps/api`'s 176 routes, and
-the number must be printed on screen rather than asserted here.
+in which case it ships as a plain list and this ADR closes. The test is reqsume, and the floor is no longer "at least one": a grep of the
+sources already finds **111 of 149**, so D1 must recover a number of that order.
+Recovering a handful would mean the extractor is finding the calls but not the
+route table, which is a different bug wearing this ADR's clothes. Whatever the
+number, it is printed on screen, not asserted here.
 
 ## Cost note
 
