@@ -70,7 +70,7 @@ func TestShippedRulesDeclareTierAndEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 16 → 18 on 2026-08-16: `webstorage` split into webstorage-local,
-	// webstorage-session and webstorage-cookie (ADR 24). The before/after port
+	// webstorage-session and webstorage-cookie (ADR 26). The before/after port
 	// diff this gate demands, run on two real repos with --force:
 	//
 	//   agentic-nexus  69 → 69 ports   1 storage.browser → 1 …browser.session

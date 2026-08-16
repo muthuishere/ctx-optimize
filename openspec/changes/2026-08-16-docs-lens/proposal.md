@@ -1,4 +1,4 @@
-# ADR 26 — the docs lens: the backbone is `contains`, not `references`
+# ADR 28 — the docs lens: the backbone is `contains`, not `references`
 
 Status: SPIKE COMPLETE — design implication decided, build not started
 Date: 2026-08-16
@@ -7,7 +7,7 @@ Date: 2026-08-16
 
 > "so now we have a new ADR for next gen — look into it and do some spikes"
 
-Following ADR 25, which drew doc links for the first time and then measured that
+Following ADR 27, which drew doc links for the first time and then measured that
 almost none of them appear in a repo-level picture.
 
 ## The problem, restated precisely
@@ -64,7 +64,7 @@ links is 22:1. Every document has structure; almost none have neighbours.
 overlay.** Not a link graph. The thing to draw is the thing that is there.
 
 - Nodes come from `contains`, which every doc has.
-- `references` are drawn ON TOP, where they exist, in the ink ADR 25 gave them.
+- `references` are drawn ON TOP, where they exist, in the ink ADR 27 gave them.
 - The orphan rate is itself a fact worth printing. "1,200 documents, 82 linked"
   says something true and useful about a repo's documentation, and it is the
   number this spike exists to have measured rather than assumed.

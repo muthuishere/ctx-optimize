@@ -75,7 +75,7 @@ func TestGoldenBoundaryRepo(t *testing.T) {
 	})
 
 	// ---- class: boundary/storage -----------------------------------------
-	// Three kinds of browser storage, three transports (ADR 24). They differ in
+	// Three kinds of browser storage, three transports (ADR 26). They differ in
 	// LIFETIME and in who else can see them — sessionStorage dies with the tab,
 	// a cookie is sent to the server on every request — so collapsing them into
 	// one `storage.browser` was hiding the part that matters to a reader.

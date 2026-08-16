@@ -1,4 +1,4 @@
-# ADR 25 — the document graph, and where it actually is
+# ADR 27 — the document graph, and where it actually is
 
 Status: SPIKE COMPLETE — D0 shipped, the rest awaits a decision the numbers changed
 Date: 2026-08-16

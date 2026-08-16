@@ -1,4 +1,4 @@
-# ADR 24 — `storage.local` names a coverage we do not have
+# ADR 26 — `storage.local` names a coverage we do not have
 
 Status: ACCEPTED — implemented 2026-08-16
 Date: 2026-08-16
