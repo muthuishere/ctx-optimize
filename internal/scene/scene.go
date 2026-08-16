@@ -245,6 +245,11 @@ var declKinds = map[string]bool{
 var liftedRelations = map[string]string{
 	"imports": "IMPORTS",
 	"calls":   "CALLS",
+	// Doc links are a real dependency between directories and were extracted
+	// all along — `card` prints them, `edges --relation references` lists them
+	// — but the picture never drew one, so the only relation a reader could SEE
+	// was code. An ADR that half the repo points at looked like an orphan.
+	"references": "DOCS",
 }
 
 var testSegments = map[string]bool{

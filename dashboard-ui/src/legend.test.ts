@@ -84,6 +84,19 @@ describe('the legend is one row per MODE', () => {
     expect(row('storage.somethingnew')).toBe('stored data')
   })
 
+  it('gives doc links their own ink and their own sentence', () => {
+    // They were extracted all along and never DRAWN — `card` printed them and
+    // the picture did not, so the only relation a reader could see was code.
+    const rows = legendFor(sceneWith([
+      { from: 'docs', to: 'docs/adr', relation: 'references', label: 'DOCS', weight: 4 },
+      { from: 'a', to: 'b', relation: 'calls', label: 'CALLS', weight: 2 },
+    ]))
+    expect(rows.find((r) => r.label === 'references')!.meaning)
+      .toBe('a link one document makes to another')
+    expect(relationStyle('references').line).not.toBe(relationStyle('calls').line)
+    expect(relationStyle('references').line).not.toBe(relationStyle('imports').line)
+  })
+
   it('says nothing about modes the scene does not contain', () => {
     const rows = legendFor(sceneWith([
       { from: 'e', to: 'f', relation: 'depends', label: 'DEPENDS', weight: 1 },

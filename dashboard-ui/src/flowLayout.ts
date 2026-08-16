@@ -100,6 +100,9 @@ const HUB_R = 100
 export const RELATION_STYLE: Record<string, { line: string; flow: string; label: string; dashed?: boolean }> = {
   calls:    { line: '#b9a9d8', flow: '#6d4ec4', label: '#6d4ec4' },
   imports:  { line: '#c9cec2', flow: '#7f8c74', label: '#7f8c74' },
+  // Doc links: a dependency written by a human, not the compiler. Its own ink
+  // so it is never mistaken for code structure.
+  references: { line: '#d9c6a0', flow: '#8a6d3b', label: '#8a6d3b' },
   provides: { line: '#a8cbb4', flow: '#1f8a55', label: '#1f8a55' },
   consumes: { line: '#e3c48f', flow: '#b9761a', label: '#b9761a' },
   // Module grain (ADR 22). `depends` is the strongest edge in the store — two
@@ -168,7 +171,9 @@ export interface LegendRow {
  */
 function meaningOf(transport: string, relation: string): string {
   if (!transport) {
-    return relation === 'depends' ? 'a package one declares and another publishes' : relation
+    if (relation === 'depends') return 'a package one declares and another publishes'
+    if (relation === 'references') return 'a link one document makes to another'
+    return relation
   }
   if (transport.startsWith('network.')) return 'calls over the network'
   if (transport.startsWith('config.')) return 'settings read from the environment'
