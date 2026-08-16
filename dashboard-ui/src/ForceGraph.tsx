@@ -18,6 +18,20 @@ const SPECIAL = new Set(['route', 'dependency', 'task', 'resource', 'image', 'co
 // the "showing N of M" note is honest.
 export const MAX_SIM_NODES = 1200
 
+// BATCH_ABOVE is where the renderer switches from one draw call per primitive
+// to one per style class. Both are measured (see draw()), and they do NOT
+// produce the same image: stroked individually, translucent edges ACCUMULATE
+// where they overlap, so a dense graph reads brighter; stroked as one path per
+// class they composite once and read flatter. A pixel diff at 5,232 nodes put
+// the difference at 68-95% of inked pixels — far too much to swap in silently.
+//
+// So the exact path is kept for everything at or below the cap, which is every
+// view that exists today (MAX_SIM_NODES = 1200, where per-primitive costs
+// ~0.5ms and is not worth changing). Batching exists for the sizes the exact
+// path cannot draw at all — 20,000 nodes is 360ms a frame per-primitive and
+// 5ms batched. Nobody's current view changes; the cliff above it disappears.
+export const BATCH_ABOVE = MAX_SIM_NODES
+
 // Hand-rolled canvas force layout — ported from the original single-file UI
 // (grid-approximated repulsion + springs + mild centering). Zero graph-viz
 // dependencies: the physics is ~60 lines and the store graphs it draws are
@@ -153,6 +167,25 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
       return s
     }
 
+    // neighborSet is an O(E) scan and draw() called it EVERY FRAME. It only
+    // changes when the focus changes, so it is cached against exactly that.
+    let neighCache: { key: string | null; set: Set<string> } = { key: undefined as never, set: new Set() }
+    const neighborsOf = (id: string | null) => {
+      if (neighCache.key !== id) neighCache = { key: id, set: neighborSet(id) }
+      return neighCache.set
+    }
+
+    // The node array was rebuilt from the Map every frame. The Map only changes
+    // when the neighbourhood is expanded, so the array is kept and rebuilt then.
+    let nodeArr: SimNode[] = []
+    const simList = () => {
+      if (nodeArr.length !== st.sim.size) nodeArr = Array.from(st.sim.values())
+      return nodeArr
+    }
+
+    const nodeRadius = (n: SimNode) =>
+      (SPECIAL.has(n.kind) ? 5 : 3.5) + Math.min(10, Math.sqrt(n.deg) * 1.4)
+
     const step = () => {
       const nodes = Array.from(st.sim.values())
       const k = 45
@@ -213,15 +246,169 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
       return moved // peak per-node motion this tick — used to detect "settled"
     }
 
-    const draw = () => {
+    // BATCHED DRAW. Measured in headless Chrome over a real store and three
+    // synthetic graphs (20k/100k/500k nodes, ~2.4 edges per node), at
+    // zoom-to-fit so nothing is culled:
+    //
+    //     nodes     per-primitive     batched     win
+    //     20,000       360.7 ms       5.05 ms     71x
+    //    100,000     2,043.7 ms      35.40 ms     58x
+    //    500,000    10,481.0 ms     455.60 ms     23x
+    //
+    // The win is BATCHING, not culling — culling the same 20k scene moved 5.34
+    // to 5.05 ms, i.e. nothing. In Canvas2D the per-primitive state change costs
+    // far more than the geometry, so the rules here are:
+    //
+    //   · edges are grouped into one path per STYLE CLASS: 5 strokes a frame
+    //     instead of one per edge;
+    //   · nodes are grouped into one path per COLOUR;
+    //   · ctx.font is assigned ONCE, not per label — assigning it re-parses the
+    //     string, and it was previously set inside the node loop;
+    //   · shadowBlur is set once per colour batch instead of per node;
+    //   · the neighbour set is cached against the focus rather than rebuilt
+    //     (it is an O(E) scan and it ran every frame);
+    //   · the node array is kept, not rebuilt from the Map every frame.
+    //
+    // Resilience is unchanged in kind but moved: a malformed node or edge is
+    // skipped while the batch is BUILT, so one bad item still cannot take out
+    // the frame — it just never enters a path.
+    const EDGE_CLASSES = [
+      { stroke: 'rgba(74,222,128,.95)', lw: 2.1 },   // 0 touches the focus
+      { stroke: 'rgba(148,163,184,.06)', lw: 1 },    // 1 dimmed by a focus
+      { stroke: 'rgba(110,231,183,.55)', lw: 1.7 },  // 2 high impact
+      { stroke: 'rgba(148,163,184,.13)', lw: 0.7 },  // 3 low impact
+      { stroke: 'rgba(148,163,184,.28)', lw: 1 },    // 4 everything else
+    ]
+    const edgeClass = (e: Edge, focus: string | null) => {
+      if (focus && (e.source === focus || e.target === focus)) return 0
+      if (focus) return 1
+      if (HIGH_IMPACT.has(e.relation)) return 2
+      if (LOW_IMPACT.has(e.relation)) return 3
+      return 4
+    }
+
+    const drawBatched = () => {
       const view = st.view
       ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
       ctx.clearRect(0, 0, cv.width, cv.height)
       ctx.translate(view.x, view.y)
       ctx.scale(view.k, view.k)
       const focus = st.selected || st.hovered
-      const neigh = neighborSet(focus)
-      const nodes = Array.from(st.sim.values())
+      const neigh = neighborsOf(focus)
+      const nodes = simList()
+      const glow = nodes.length <= 600
+
+      // viewport in world space, with a margin so half-visible marks still draw
+      const mg = 80 / view.k
+      const vx0 = -view.x / view.k - mg
+      const vy0 = -view.y / view.k - mg
+      const vx1 = vx0 + cv.width / devicePixelRatio / view.k + 2 * mg
+      const vy1 = vy0 + cv.height / devicePixelRatio / view.k + 2 * mg
+      const visible = (p: SimNode) => p.x >= vx0 && p.x <= vx1 && p.y >= vy0 && p.y <= vy1
+
+      // ---- edges, one path per style class
+      const buckets: SimNode[][] = EDGE_CLASSES.map(() => [])
+      for (const e of st.edges) {
+        const a = st.sim.get(e.source)
+        const b = st.sim.get(e.target)
+        if (!a || !b) continue
+        if (!visible(a) && !visible(b)) continue
+        buckets[edgeClass(e, focus)].push(a, b)
+      }
+      for (let i = 0; i < EDGE_CLASSES.length; i++) {
+        const pts = buckets[i]
+        if (pts.length === 0) continue
+        ctx.strokeStyle = EDGE_CLASSES[i].stroke
+        ctx.lineWidth = EDGE_CLASSES[i].lw / view.k
+        ctx.beginPath()
+        for (let j = 0; j < pts.length; j += 2) {
+          ctx.moveTo(pts[j].x, pts[j].y)
+          ctx.lineTo(pts[j + 1].x, pts[j + 1].y)
+        }
+        ctx.stroke()
+      }
+
+      // ---- nodes, one path per colour, split by whether the focus dims them
+      const lit = new Map<string, SimNode[]>()
+      const dim = new Map<string, SimNode[]>()
+      const labels: SimNode[] = []
+      for (const n of nodes) {
+        if (!visible(n)) continue
+        const c = st.colors.get(n.kind) || '#94a3b8'
+        const inFocus = !focus || n.id === focus || neigh.has(n.id)
+        const table = inFocus ? lit : dim
+        let b = table.get(c)
+        if (!b) table.set(c, (b = []))
+        b.push(n)
+        if (view.k > 0.5 && (n.id === focus || neigh.has(n.id) || (!focus && n.deg > 3))) labels.push(n)
+      }
+      const paint = (table: Map<string, SimNode[]>, alpha: number, withGlow: boolean) => {
+        ctx.globalAlpha = alpha
+        for (const [c, list] of table) {
+          if (withGlow) {
+            ctx.shadowColor = c
+            ctx.shadowBlur = 12
+          }
+          ctx.fillStyle = c
+          ctx.beginPath()
+          for (const n of list) {
+            const r = nodeRadius(n)
+            ctx.moveTo(n.x + r, n.y)
+            ctx.arc(n.x, n.y, r, 0, Math.PI * 2)
+          }
+          ctx.fill()
+          if (withGlow) ctx.shadowBlur = 0
+        }
+      }
+      paint(lit, 1, glow)
+      paint(dim, 0.28, false)
+      ctx.globalAlpha = 1
+      ctx.shadowBlur = 0
+
+      // ---- the focus ring: one node, so it stays its own draw
+      if (focus) {
+        const n = st.sim.get(focus)
+        if (n) {
+          const r = nodeRadius(n)
+          ctx.strokeStyle = '#ffffff'
+          ctx.lineWidth = 1.6 / view.k
+          ctx.beginPath()
+          ctx.arc(n.x, n.y, r + 3 / view.k, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+      }
+
+      // ---- labels, with the font set ONCE
+      if (labels.length > 0) {
+        ctx.font = `${11 / view.k}px ui-monospace, monospace`
+        ctx.lineWidth = 3 / view.k
+        ctx.strokeStyle = 'rgba(10,12,16,.85)'
+        for (const n of labels) {
+          // Coerce the label defensively: a node with a missing/non-string
+          // label (corrupt store, adapter bug) must not break the draw loop.
+          const label = typeof n.label === 'string' ? n.label : String(n.label ?? n.id ?? '')
+          const r = nodeRadius(n)
+          const lx = n.x + r + 4 / view.k
+          const ly = n.y + 3.5 / view.k
+          ctx.strokeText(label, lx, ly)
+          ctx.fillStyle = n.id === focus ? '#ffffff' : 'rgba(232,237,244,.92)'
+          ctx.fillText(label, lx, ly)
+        }
+      }
+    }
+
+    // The EXACT renderer: one draw call per primitive, translucent overlap
+    // accumulating exactly as it always has. This is what every view at or
+    // below BATCH_ABOVE still gets, so no existing picture changes.
+    const drawExact = () => {
+      const view = st.view
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
+      ctx.clearRect(0, 0, cv.width, cv.height)
+      ctx.translate(view.x, view.y)
+      ctx.scale(view.k, view.k)
+      const focus = st.selected || st.hovered
+      const neigh = neighborsOf(focus)
+      const nodes = simList()
       const glow = nodes.length <= 600
 
       for (const e of st.edges) {
@@ -229,27 +416,9 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
         const a = st.sim.get(e.source)
         const b = st.sim.get(e.target)
         if (!a || !b) continue
-        const hot = focus && (e.source === focus || e.target === focus)
-        let stroke: string
-        let lw: number
-        if (hot) {
-          stroke = 'rgba(74,222,128,.95)'
-          lw = 2.1
-        } else if (focus) {
-          stroke = 'rgba(148,163,184,.06)'
-          lw = 1
-        } else if (HIGH_IMPACT.has(e.relation)) {
-          stroke = 'rgba(110,231,183,.55)' // bright emerald — the load-bearing edges
-          lw = 1.7
-        } else if (LOW_IMPACT.has(e.relation)) {
-          stroke = 'rgba(148,163,184,.13)' // structural scaffolding — thin + dim
-          lw = 0.7
-        } else {
-          stroke = 'rgba(148,163,184,.28)'
-          lw = 1
-        }
-        ctx.strokeStyle = stroke
-        ctx.lineWidth = lw / view.k
+        const i = edgeClass(e, focus)
+        ctx.strokeStyle = EDGE_CLASSES[i].stroke
+        ctx.lineWidth = EDGE_CLASSES[i].lw / view.k
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
         ctx.lineTo(b.x, b.y)
@@ -258,7 +427,7 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
       }
       for (const n of nodes) {
        try {
-        const r = (SPECIAL.has(n.kind) ? 5 : 3.5) + Math.min(10, Math.sqrt(n.deg) * 1.4)
+        const r = nodeRadius(n)
         const inFocus = !focus || n.id === focus || neigh.has(n.id)
         const c = st.colors.get(n.kind) || '#94a3b8'
         ctx.globalAlpha = inFocus ? 1 : 0.28
@@ -281,8 +450,6 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
           ctx.stroke()
         }
         if (view.k > 0.5 && (n.id === focus || neigh.has(n.id) || (!focus && n.deg > 3))) {
-          // Coerce the label defensively: a node with a missing/non-string
-          // label (corrupt store, adapter bug) must not break the draw loop.
           const label = typeof n.label === 'string' ? n.label : String(n.label ?? n.id ?? '')
           ctx.font = `${11 / view.k}px ui-monospace, monospace`
           ctx.lineWidth = 3 / view.k
@@ -295,6 +462,8 @@ export default function ForceGraph({ nodes, edges, colors, selectedId, onSelect 
        } catch { /* one bad node is skipped alone — the rest still draw */ }
       }
     }
+
+    const draw = () => (simList().length > BATCH_ABOVE ? drawBatched() : drawExact())
 
     // The settle-and-stop loop. It runs only while there is physics left to
     // simulate (st.ticking) or a repaint is pending (needsDraw); otherwise it

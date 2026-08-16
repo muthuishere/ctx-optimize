@@ -102,3 +102,34 @@ describe('houseLayout', () => {
     expect(Number.isFinite(bare.ground)).toBe(true)
   })
 })
+
+// The first render of this view normalised widths PER FLOOR, so every floor
+// filled the building and a 44-file room looked exactly like a 5-file room —
+// while the legend on screen said "room width = files". A channel that carries
+// no fact is the failure the killed wall view was killed for, so the scale is
+// global and this test compares ACROSS floors, which is the case that broke.
+describe('houseLayout width is one scale for the whole building', () => {
+  it('makes a fat directory wider than a thin one on a DIFFERENT floor', () => {
+    const s: Scene = scene({
+      cards: [
+        { id: 'big', label: 'big', dir: 'src/big', files: 44, decls: 300, in: 0, out: 20,
+          layer: 0, row: 0, detail: '', glyph: '◇', hub: false, children: 0 },
+        { id: 'small', label: 'small', dir: 'src/small', files: 5, decls: 20, in: 20, out: 0,
+          layer: 1, row: 0, detail: '', glyph: '◇', hub: true, children: 0 },
+      ],
+      links: [{ from: 'big', to: 'small', relation: 'calls', label: 'CALLS', weight: 20 }],
+      world: [],
+    })
+    const h = houseLayout(s)
+    const big = h.byId.get('big')!
+    const small = h.byId.get('small')!
+    expect(big.w).toBeGreaterThan(small.w * 1.5)
+    // and a floor that is not the heaviest must NOT reach the walls
+    expect(small.w).toBeLessThan(HVW - 2 * 210 - 1)
+  })
+
+  it('still lets a one-file room be read', () => {
+    const h = houseLayout(scene())
+    expect(h.byId.get('tiny')!.w).toBeGreaterThan(80)
+  })
+})

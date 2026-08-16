@@ -232,18 +232,46 @@ direction: the enemy is the draw call and the state change, not the geometry.
   draft named — *one* Go layout compiled twice so the server and the browser
   cannot disagree — and that belongs to Phase 3, not to performance.
 
-## Correctness gate
+## Correctness gate — and it FAILED
 
 A speedup that changes what the user sees is not a speedup. The two renderers
-are compared **pixel by pixel** at the same camera, and the difference is
-reported as a share of inked pixels rather than of the canvas. The one genuine
-behavioural change is compositing: overlapping translucent nodes composited
-twice per-primitive and composite once when batched, so dimmed clusters read
-slightly lighter. That is a real change and is recorded here rather than
-discovered later.
+were compared pixel by pixel at the same camera, and the draft's prediction —
+"dimmed clusters read slightly lighter" — was wrong by two orders of magnitude:
+
+| store | zoom | inked pixels differing |
+|---|---|---|
+| 5,232 nodes | 0.90 | **68.4%** |
+| 5,232 nodes | fit (0.18) | **80.7%** |
+| 20,000 nodes | 0.90 | **74.3%** |
+| 20,000 nodes | fit (0.09) | **95.4%** |
+
+The cause is compositing, and it is inherent rather than a bug: stroked one at
+a time, 12,477 translucent edges ACCUMULATE where they overlap, so a dense
+graph reads bright and saturated. Stroked as one path per style class they
+composite once and read flat. Side-by-side renders confirm it — the same graph,
+visibly different weather.
+
+**So batching is not a drop-in replacement, and shipping it wholesale would
+have quietly restyled every existing user's view.** The resolution keeps both:
+
+- at or below `BATCH_ABOVE` (= `MAX_SIM_NODES`, 1200) the EXACT per-primitive
+  path runs, unchanged, because it costs ~0.5 ms there and nobody's picture
+  should move for a saving nobody can perceive;
+- above it, batching — which is not a preference but the only way those sizes
+  render at all (20,000 nodes: 360 ms/frame exact, 5 ms batched).
+
+Every view that exists today is below the cap, so **nothing anyone currently
+sees changes**, and the cliff above it is gone. Raising the cap is now a
+product decision rather than a performance one, which is where it belongs.
 
 ## Status
 
-- Phase 0 — **implemented**, `ForceGraph.tsx`, with the measurement table in
-  the code so the next person does not re-derive it.
+- Phase 0 — **implemented**, `ForceGraph.tsx`, as a size-switched pair, with
+  the measurement tables in the code so the next person does not re-derive
+  them. The batched path is dormant until the cap is raised.
+- **Open for the owner:** whether to raise `MAX_SIM_NODES`. Batching makes
+  20k-100k nodes viable, but everything above the cap draws in the flatter
+  style, and the honest question is whether a 20,000-node hairball is worth
+  looking at — both renders at 5k are already illegible mud. That is a product
+  call, not a performance one.
 - Phases 1-3 — deferred, each with its trigger stated above.

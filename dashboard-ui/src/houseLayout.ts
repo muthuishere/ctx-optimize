@@ -63,7 +63,7 @@ const MARGIN_X = 210 // the strip outside the walls, where the doors hang
 const TOP = 236
 const BOTTOM = 812
 const ROOM_GAP = 14
-const FLOOR_GAP = 10
+const FLOOR_GAP = 26 // room for the storey label to sit clear of the rooms
 
 export function houseLayout(scene: Scene): House {
   const cards = scene.cards || []
@@ -93,38 +93,51 @@ export function houseLayout(scene: Scene): House {
   const byId = new Map<string, Room>()
   let ordinal = 0
 
+  // ONE scale for the whole building, not one per floor. Normalising each floor
+  // to the full width makes every floor look full and makes the width channel a
+  // lie: a 44-file room and a 5-file room came out identical, while the legend
+  // said "room width = files". A single px-per-file, set so the heaviest floor
+  // just fills the building, is what makes that sentence true — and it is why
+  // most floors do NOT reach the walls.
+  const filesOnFloor = (layer: number) =>
+    cards.filter((c) => c.layer === layer).reduce((a, c) => a + Math.max(1, c.files), 0)
+  const roomsOnFloor = (layer: number) => cards.filter((c) => c.layer === layer).length
+  let pxPerFile = Infinity
+  for (const f of floors) {
+    const n = roomsOnFloor(f.layer)
+    if (n === 0) continue
+    const usable = inner - ROOM_GAP * (n - 1)
+    pxPerFile = Math.min(pxPerFile, usable / Math.max(1, filesOnFloor(f.layer)))
+  }
+  if (!Number.isFinite(pxPerFile)) pxPerFile = 1
+
   for (const f of floors) {
     const on = cards.filter((c) => c.layer === f.layer).sort((a, b) => a.row - b.row)
     if (on.length === 0) continue
-    // Width is proportional to FILES, floored so a one-file directory is still
-    // a readable room, then normalised to the floor. A room's width is the only
-    // thing on screen that says "this directory is big".
-    const weights = on.map((c) => Math.max(1, c.files))
-    const total = weights.reduce((a, b) => a + b, 0)
+    // A one-file directory still gets a room you can read a name in; below the
+    // floor the width stops being proportional and says so by being uniform.
     const usable = inner - ROOM_GAP * (on.length - 1)
-    const minW = Math.min(120, usable / on.length)
-    let x = left
+    const minW = Math.min(150, usable / on.length)
+    const widths = on.map((c) => Math.max(minW, Math.max(1, c.files) * pxPerFile))
+    let total = widths.reduce((a, b) => a + b, 0) + ROOM_GAP * (on.length - 1)
+    // the min-width floor can still overflow; squeeze the row back inside so a
+    // room never hangs outside the building it is in
+    if (total > inner) {
+      const k = (inner - ROOM_GAP * (on.length - 1)) / (total - ROOM_GAP * (on.length - 1))
+      for (let i = 0; i < widths.length; i++) widths[i] *= k
+      total = inner
+    }
+    let x = left + (inner - total) / 2   // centred, so a light floor reads light
     on.forEach((c, i) => {
-      const raw = (weights[i] / total) * usable
-      const w = Math.max(minW, raw)
       ordinal++
       const r: Room = {
-        card: c, x, y: f.y, w, h: f.h, floor: f.layer,
+        card: c, x, y: f.y, w: widths[i], h: f.h, floor: f.layer,
         n: String(ordinal).padStart(2, '0'),
       }
       rooms.push(r)
       byId.set(c.id, r)
-      x += w + ROOM_GAP
+      x += widths[i] + ROOM_GAP
     })
-    // The min-width floor can overflow the wall; squeeze the row back inside so
-    // a room never hangs outside the building it is in.
-    const overflow = x - ROOM_GAP - right
-    if (overflow > 0) {
-      const row = rooms.filter((r) => r.floor === f.layer)
-      const k = (inner - ROOM_GAP * (row.length - 1)) / (inner - ROOM_GAP * (row.length - 1) + overflow)
-      let cx = left
-      for (const r of row) { r.w *= k; r.x = cx; cx += r.w + ROOM_GAP }
-    }
   }
 
   const stairs: Stair[] = []

@@ -246,6 +246,13 @@ export default function HouseViewer({ module, params }: ViewerProps) {
 
       const pad = 12
       text(r.n, r.x + pad, r.y + 22, { size: 12, weight: 400, color: '#c2bbae', font: MONO })
+      // The load-bearing mark rides on the TOP row beside the ordinal. It used
+      // to sit at the foot of the room, where it landed on top of the files
+      // line in exactly the room that earns it — the hub is often the smallest
+      // directory, so it gets the shortest room.
+      if (pillar) {
+        text('LOAD-BEARING', r.x + pad + 26, r.y + 22, { size: 8, color: ACC, spacing: 1.2, weight: 700 })
+      }
       text(c.label, r.x + pad, r.y + 44, { size: 15, weight: 700, max: r.w - pad * 2 })
       if (r.h > 74) {
         text(`${c.files} files · ${c.decls} decls`, r.x + pad, r.y + 64,
@@ -258,10 +265,6 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       if (r.w > 150) {
         text(`↘${c.in}  ${c.out}↗`, r.x + r.w - pad, r.y + r.h - 12,
           { size: 9.5, color: '#aaa49a', font: MONO, align: 'right' })
-      }
-      if (pillar) {
-        text('LOAD-BEARING', r.x + pad, r.y + r.h - 12,
-          { size: 8, color: ACC, spacing: 1.2, weight: 700 })
       }
       if (c.children > 0) {
         const label = `${c.children} inside`
