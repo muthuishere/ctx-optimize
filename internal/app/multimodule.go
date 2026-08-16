@@ -987,7 +987,7 @@ func gatherInto(s *store.Store, base string, dirs, excludes []string, force, ski
 	}
 	rec := freshness.Source{
 		Path: absBase, Head: curHead, HeadUnix: curHeadUnix, AddedUnix: time.Now().Unix(),
-		TreeSig: curSig, Partial: partial,
+		TreeSig: curSig, Partial: partial, RulesSig: boundaryRulesSig(absBase),
 	}
 	if len(partial) > 0 {
 		// A partial gather must not be short-circuited on the NEXT run as
@@ -1400,4 +1400,18 @@ func moduleOwnerOf(sc *scope, source string) string {
 		}
 	}
 	return owner
+}
+
+// boundaryRulesSig is the rule vocabulary this gather ran with, recorded so a
+// later run can tell "the code moved on" from "the rules moved on" — two
+// different states with two different fixes, and only one of them is `add`.
+//
+// Best-effort: a rule set that cannot be loaded yields "", which Dated reads as
+// "no opinion" rather than as drift. Refusing to record beats accusing wrongly.
+func boundaryRulesSig(root string) string {
+	rules, err := boundaries.Load(root)
+	if err != nil {
+		return ""
+	}
+	return boundaries.Fingerprint(rules)
 }

@@ -1529,13 +1529,37 @@ func freshnessReports(s *store.Store) ([]freshness.Report, freshness.State) {
 	reports := make([]freshness.Report, 0, len(srcs))
 	for _, src := range srcs {
 		curHead, curUnix, _ := gitHead(src.Path)
-		reports = append(reports, freshness.Evaluate(src, curHead, curUnix, now))
+		rep := freshness.Evaluate(src, curHead, curUnix, now)
+		// Rule drift is orthogonal to git freshness: a store can be perfectly
+		// up to date with HEAD and still hold answers in a vocabulary this
+		// binary no longer uses. It rides along rather than becoming a State,
+		// because it does not change what `Overall` means to a hook.
+		rep.Dated = src.Dated(boundaryRulesSig(src.Path))
+		reports = append(reports, rep)
 	}
 	return reports, freshness.Overall(reports)
 }
 
 // freshnessLine renders a one-line human verdict for status / fresh.
 func freshnessLine(reports []freshness.Report, overall freshness.State) string {
+	// Said first and regardless of the git verdict, because git freshness
+	// cannot see it: a store can be exactly at HEAD and still answer in a
+	// vocabulary the binary has stopped using. A reqsume store ended up holding
+	// `storage.local` and `storage.browser` at once, drawn as two rows of the
+	// same colour, with nothing on screen able to say why.
+	//
+	// Whether a plain `add` clears it depends on WHERE the rules moved, and
+	// both were measured: a change to `.ctxoptimize/boundaries.json` is a
+	// change to the source tree, so `add` re-gathers and fixes it; a change in
+	// the binary or in ~/ctxoptimize/boundaries leaves the tree identical, so
+	// `add` correctly reports "unchanged — skipped" and the store stays dated.
+	// The line names --force because it is the answer in both cases.
+	for _, r := range reports {
+		if r.Dated {
+			return "! DATED — this store's boundary answers came from a DIFFERENT rule set. " +
+				"Run: ctx-optimize add . --force (a plain `add` skips an unchanged tree)"
+		}
+	}
 	switch overall {
 	case freshness.Fresh:
 		return "✓ up to date with git HEAD"

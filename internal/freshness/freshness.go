@@ -39,6 +39,26 @@ type Source struct {
 	// incompleteness is recorded: a store missing its code lane must not
 	// answer as though it has one. Empty = complete.
 	Partial []string `json:"partial,omitempty"`
+	// RulesSig is the boundary RULE VOCABULARY this gather ran with. Empty on
+	// a store written before stores recorded it.
+	//
+	// A third kind of out-of-date, and it needs its own name for the same
+	// reason Partial does: Stale means the code moved on (fix: `add`), Partial
+	// means the last gather broke (fix: look at why), and Dated means the rules
+	// changed underneath a store the code never touched — which `add` will NOT
+	// fix, because the tree signature is identical and every module is
+	// correctly skipped. Only `add --force` rewrites it.
+	RulesSig string `json:"rules_sig,omitempty"`
+}
+
+// Dated reports whether this store's boundary answers were produced by a
+// different rule vocabulary than the one now loaded.
+//
+// Conservative on both sides: a store with no recorded signature is NOT called
+// dated (it predates the record, and guessing would cry wolf on every old
+// store), and an empty current signature never accuses anything.
+func (s Source) Dated(currentRulesSig string) bool {
+	return s.RulesSig != "" && currentRulesSig != "" && s.RulesSig != currentRulesSig
 }
 
 // Report is the freshness verdict for one source.
@@ -53,6 +73,10 @@ type Report struct {
 	// this source, so a caller can say WHICH part is missing rather than just
 	// that something is.
 	Partial []string `json:"partial,omitempty"`
+	// Dated: the boundary rules changed since this store was written. NOT a
+	// State — it is orthogonal to git freshness, and a store can be perfectly
+	// fresh and dated at once.
+	Dated bool `json:"dated,omitempty"`
 }
 
 // Evaluate compares one recorded source against the repo's current head.

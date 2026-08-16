@@ -20,7 +20,9 @@ package boundaries
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -92,6 +94,32 @@ type Matcher struct {
 // Load resolves the ladder for root and returns compiled, validated rules.
 // A malformed file fails loudly (fail-closed, like the schema door) — a
 // silently dropped rule would make every later count a lie.
+// Fingerprint identifies the RULE VOCABULARY a gather ran with: every rule id
+// paired with the transport it emits, hashed.
+//
+// It exists because the store had no way to know its own answers were produced
+// by a different vocabulary. Freshness compares the SOURCE TREE to git HEAD, so
+// a rule change is invisible to it — correctly, the code did not move — and a
+// plain `add .` therefore skips every module. One reqsume store ended up
+// holding three generations of one concept at once: `storage.local` in apps/ui,
+// `storage.browser` in regressiontest, and a binary emitting
+// `storage.browser.local`. The viewer drew two rows for the same thing and had
+// no way to say why.
+//
+// Only the id→transport pairing is hashed, not the whole rule. Tightening a
+// regex or adding an AST shape changes what a rule FINDS, which freshness and
+// the counts already speak to; changing what it is CALLED changes what every
+// stored answer means, and that is what a reader needs told.
+func Fingerprint(rules []Rule) string {
+	pairs := make([]string, 0, len(rules))
+	for _, r := range rules {
+		pairs = append(pairs, r.ID+"="+r.Transport)
+	}
+	sort.Strings(pairs) // Load already sorts, but a caller may not
+	sum := sha256.Sum256([]byte(strings.Join(pairs, "\n")))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
 func Load(root string) ([]Rule, error) {
 	merged := map[string]Rule{}
 	apply := func(data []byte, origin string) error {
