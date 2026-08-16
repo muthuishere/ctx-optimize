@@ -65,6 +65,20 @@ type Card struct {
 	// drill-down affordance: a card with 0 is a leaf and must not invite a click
 	// that would land on an empty scene.
 	Children int `json:"children"`
+	// Top is the single highest-degree declaration in this directory — a real
+	// symbol name, which is what a question or a `card` command needs to be
+	// worth pasting.
+	Top string `json:"top"`
+}
+
+// Question is something worth ASKING about this scene, paired with the verb
+// that answers it. Both halves are derived from the drawn facts: the names in
+// the text are the names on screen, and the command is one this binary
+// actually has. A suggested question that does not run, or that asks about a
+// symbol this repo does not contain, would be worse than no suggestion.
+type Question struct {
+	Text    string `json:"text"`
+	Command string `json:"command"`
 }
 
 // Crumb is one step of the drill-down trail. Root is what to pass back as
@@ -118,23 +132,24 @@ type Stat struct {
 
 // Scene is the whole derived picture.
 type Scene struct {
-	Module          string   `json:"module"`
-	Title           string   `json:"title"`
-	TotalNodes      int      `json:"total_nodes"`
-	TotalEdges      int      `json:"total_edges"`
-	SubsystemsTotal int      `json:"subsystems_total"`
-	SubsystemsShown int      `json:"subsystems_shown"`
-	LiftedTotal     int      `json:"lifted_total"` // lifted edges in the whole repo
-	LiftedShown     int      `json:"lifted_shown"` // lifted edges drawn
-	Cards           []Card   `json:"cards"`
-	Links           []Link   `json:"links"`
-	World           []World  `json:"world"`
-	Stats           []Stat   `json:"stats"`
-	Chips           []string `json:"chips"`
-	Notes           []string `json:"notes"` // honesty lines, printed on screen
-	Root            string   `json:"root"`  // the directory this scene is scoped to ("" = whole repo)
-	Crumbs          []Crumb  `json:"crumbs"`
-	Empty           string   `json:"empty,omitempty"`
+	Module          string     `json:"module"`
+	Title           string     `json:"title"`
+	TotalNodes      int        `json:"total_nodes"`
+	TotalEdges      int        `json:"total_edges"`
+	SubsystemsTotal int        `json:"subsystems_total"`
+	SubsystemsShown int        `json:"subsystems_shown"`
+	LiftedTotal     int        `json:"lifted_total"` // lifted edges in the whole repo
+	LiftedShown     int        `json:"lifted_shown"` // lifted edges drawn
+	Cards           []Card     `json:"cards"`
+	Links           []Link     `json:"links"`
+	World           []World    `json:"world"`
+	Stats           []Stat     `json:"stats"`
+	Chips           []string   `json:"chips"`
+	Notes           []string   `json:"notes"` // honesty lines, printed on screen
+	Root            string     `json:"root"`  // the directory this scene is scoped to ("" = whole repo)
+	Crumbs          []Crumb    `json:"crumbs"`
+	Questions       []Question `json:"questions"`
+	Empty           string     `json:"empty,omitempty"`
 }
 
 // Options tunes the derivation. Zero values mean the defaults.
@@ -226,6 +241,126 @@ func scopeTo(root, dir string) string {
 		rest = rest[:i]
 	}
 	return root + "/" + rest
+}
+
+// questionsFor turns the drawn scene into things worth asking an agent, each
+// paired with the verb that answers it. Every name used is a name on screen and
+// every command is one this binary has — a suggestion that does not run is
+// worse than no suggestion.
+//
+// The order is by how much the scene says about it: the hub first (it is the
+// thing most code depends on), then the heaviest single relation, then the
+// outer world, which is the part of a codebase people can least afford to
+// guess at.
+func questionsFor(sc Scene, ports map[string]schema.Node) []Question {
+	var qs []Question
+	add := func(text, cmd string) {
+		if text == "" || cmd == "" {
+			return
+		}
+		qs = append(qs, Question{Text: text, Command: cmd})
+	}
+
+	var hub *Card
+	for i := range sc.Cards {
+		if sc.Cards[i].Hub {
+			hub = &sc.Cards[i]
+		}
+	}
+	if hub != nil && hub.Top != "" {
+		add("What breaks if I change `"+hub.Top+"`? It is in the most depended-upon directory here ("+
+			itoa(hub.In)+" edges in).",
+			"ctx-optimize change-plan \""+hub.Top+"\"")
+		add("Who calls into `"+hub.Label+"` and why does everything depend on it?",
+			"ctx-optimize affected \""+hub.Top+"\"")
+	}
+
+	// the heaviest drawn relation between two cards
+	best := -1
+	for i, l := range sc.Links {
+		if strings.HasPrefix(l.To, "world:") {
+			continue
+		}
+		if best < 0 || l.Weight > sc.Links[best].Weight {
+			best = i
+		}
+	}
+	if best >= 0 {
+		l := sc.Links[best]
+		from, to := cardOf(sc, l.From), cardOf(sc, l.To)
+		if from != nil && to != nil && from.Top != "" && to.Top != "" {
+			add("`"+from.Label+"` "+strings.ToLower(l.Relation)+" `"+to.Label+"` "+itoa(l.Weight)+
+				" times — what is that coupling actually doing?",
+				"ctx-optimize path \""+from.Top+"\" \""+to.Top+"\"")
+		}
+	}
+
+	if len(ports) > 0 {
+		add("What does this codebase call out to, and what does it expose?",
+			"ctx-optimize boundaries")
+		sensitive := 0
+		for _, p := range ports {
+			if p.Metadata["sensitive"] == "true" {
+				sensitive++
+			}
+		}
+		if sensitive > 0 {
+			add("Which "+itoa(sensitive)+" of these are secrets, and where is each one read?",
+				"ctx-optimize boundaries --sensitive")
+		}
+		// the busiest transport gets its own question, named
+		bestT, bestN := "", 0
+		for _, w := range sc.World {
+			if w.Total > bestN {
+				bestT, bestN = w.Transport, w.Total
+			}
+		}
+		if bestT != "" {
+			add("Show me all "+itoa(bestN)+" `"+bestT+"` boundaries with a file:line for each.",
+				"ctx-optimize boundaries --transport "+bestT)
+		}
+	}
+
+	// the biggest source of dependency: what it leans on
+	var src *Card
+	for i := range sc.Cards {
+		if sc.Cards[i].Out > 0 && (src == nil || sc.Cards[i].Out > src.Out) {
+			src = &sc.Cards[i]
+		}
+	}
+	if src != nil && src.Top != "" && (hub == nil || src.ID != hub.ID) {
+		add("`"+src.Label+"` depends on more than anything else here ("+itoa(src.Out)+
+			" edges out). What is it pulling in?",
+			"ctx-optimize card \""+src.Top+"\"")
+	}
+	return qs
+}
+
+func cardOf(sc Scene, id string) *Card {
+	for i := range sc.Cards {
+		if sc.Cards[i].ID == id {
+			return &sc.Cards[i]
+		}
+	}
+	return nil
+}
+
+// topDecl is the single highest-degree declaration, already sorted by caller.
+//
+// It returns the label VERBATIM. detailOf strips the qualifier before the last
+// dot because a card has ~200px and `Repo.Get` reads better as `Get` — but that
+// is a DISPLAY choice, and Top is not for display: it is pasted into `card` /
+// `change-plan` / `path`, which resolve against the stored label. Reusing the
+// stripped form here produced `ctx-optimize change-plan "kfree"` for the linux
+// kernel, where the node is `kfree_via_page.kunit` and nothing resolves — a
+// suggested command that cannot run, which is worse than no suggestion.
+func topDecl(list []schema.Node) string {
+	for _, n := range list {
+		if n.Label != "" {
+			return n.Label
+		}
+	}
+	return ""
 }
 
 // crumbsFor builds the trail back out. The first crumb is always the whole
@@ -566,6 +701,7 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			Glyph:    glyphOf(touch[r.dir]),
 			Hub:      r.dir == hub,
 			Children: len(kids[r.dir]),
+			Top:      topDecl(top[r.dir]),
 		})
 	}
 	sort.Slice(sc.Cards, func(i, j int) bool {
@@ -670,6 +806,21 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		sc.Notes = append(sc.Notes,
 			"no boundaries recorded for this store — run `ctx-optimize boundaries` to draw the outer world")
 	}
+	// Leaves are a FACT about the code, not a missing feature. Without this a
+	// level where nothing can be entered looks identical to one where the
+	// drill-down is broken — which is exactly how it read on linux/mm, where
+	// all four subsystems are genuinely leaf directories.
+	leaves := 0
+	for _, c := range sc.Cards {
+		if c.Children == 0 {
+			leaves++
+		}
+	}
+	if leaves == len(sc.Cards) && len(sc.Cards) > 0 {
+		sc.Notes = append(sc.Notes,
+			"every directory here is a leaf — there is nothing further to open at this level")
+	}
+	sc.Questions = questionsFor(sc, ports)
 	return sc.finish()
 }
 
@@ -699,6 +850,9 @@ func (s Scene) finish() Scene {
 	}
 	if s.Crumbs == nil {
 		s.Crumbs = []Crumb{}
+	}
+	if s.Questions == nil {
+		s.Questions = []Question{}
 	}
 	return s
 }

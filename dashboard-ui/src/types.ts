@@ -168,11 +168,17 @@ export interface SceneCard {
   glyph: string
   hub: boolean
   children: number
+  top: string
 }
 
 export interface SceneCrumb {
   label: string
   root: string
+}
+
+export interface SceneQuestion {
+  text: string
+  command: string
 }
 
 export interface SceneLink {
@@ -222,6 +228,7 @@ export interface Scene {
   chips: string[]
   root: string
   crumbs: SceneCrumb[]
+  questions: SceneQuestion[]
   notes: string[]
   empty?: string
 }

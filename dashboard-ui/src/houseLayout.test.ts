@@ -12,18 +12,19 @@ import type { Scene } from './types'
 function scene(over: Partial<Scene> = {}): Scene {
   return {
     module: 'demo', title: 'demo', root: '', crumbs: [{ label: 'demo', root: '' }],
+    questions: [],
     total_nodes: 400, total_edges: 900,
     subsystems_total: 12, subsystems_shown: 4,
     lifted_total: 9, lifted_shown: 3,
     cards: [
       { id: 'web', label: 'web', dir: 'src/web', files: 30, decls: 90, in: 0, out: 40,
-        layer: 0, row: 0, detail: 'Serve', glyph: '⇄', hub: false, children: 2 },
+        layer: 0, row: 0, detail: 'Serve', glyph: '⇄', hub: false, children: 2, top: 'Fn' },
       { id: 'tiny', label: 'tiny', dir: 'src/tiny', files: 1, decls: 2, in: 0, out: 3,
-        layer: 0, row: 1, detail: 'T', glyph: '◇', hub: false, children: 0 },
+        layer: 0, row: 1, detail: 'T', glyph: '◇', hub: false, children: 0, top: 'Fn' },
       { id: 'core', label: 'core', dir: 'src/core', files: 10, decls: 40, in: 40, out: 12,
-        layer: 1, row: 0, detail: 'Charge', glyph: '◇', hub: false, children: 0 },
+        layer: 1, row: 0, detail: 'Charge', glyph: '◇', hub: false, children: 0, top: 'Fn' },
       { id: 'db', label: 'db', dir: 'src/db', files: 4, decls: 12, in: 52, out: 0,
-        layer: 2, row: 0, detail: 'Open', glyph: '⚙', hub: true, children: 0 },
+        layer: 2, row: 0, detail: 'Open', glyph: '⚙', hub: true, children: 0, top: 'Fn' },
     ],
     links: [
       { from: 'web', to: 'core', relation: 'calls', label: 'CALLS', weight: 40 },
@@ -70,7 +71,7 @@ describe('houseLayout', () => {
       cards: Array.from({ length: 9 }, (_, i) => ({
         id: 'r' + i, label: 'r' + i, dir: 'src/r' + i, files: i === 0 ? 200 : 1,
         decls: 1, in: 1, out: 1, layer: 0, row: i, detail: '', glyph: '◇',
-        hub: false, children: 0,
+        hub: false, children: 0, top: 'Fn',
       })),
       links: [],
     })
@@ -113,9 +114,9 @@ describe('houseLayout width is one scale for the whole building', () => {
     const s: Scene = scene({
       cards: [
         { id: 'big', label: 'big', dir: 'src/big', files: 44, decls: 300, in: 0, out: 20,
-          layer: 0, row: 0, detail: '', glyph: '◇', hub: false, children: 0 },
+          layer: 0, row: 0, detail: '', glyph: '◇', hub: false, children: 0, top: 'Fn' },
         { id: 'small', label: 'small', dir: 'src/small', files: 5, decls: 20, in: 20, out: 0,
-          layer: 1, row: 0, detail: '', glyph: '◇', hub: true, children: 0 },
+          layer: 1, row: 0, detail: '', glyph: '◇', hub: true, children: 0, top: 'Fn' },
       ],
       links: [{ from: 'big', to: 'small', relation: 'calls', label: 'CALLS', weight: 20 }],
       world: [],

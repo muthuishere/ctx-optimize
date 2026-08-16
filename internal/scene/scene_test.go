@@ -622,3 +622,111 @@ func TestDrillSelfCardIsNotADoor(t *testing.T) {
 		t.Errorf("src/app must be enterable from the top level, got %+v", top)
 	}
 }
+
+// TestQuestionsUseRealNamesAndRealVerbs — a suggested question is only useful
+// if it can be pasted. Both halves have to be true: the names must be names
+// this repo contains, and the command must be a verb this binary has. A
+// plausible-looking command that errors is worse than no suggestion at all.
+func TestQuestionsUseRealNamesAndRealVerbs(t *testing.T) {
+	nodes, edges := fixture()
+	s := Derive("demo", nodes, edges, Options{})
+	if len(s.Questions) == 0 {
+		t.Fatal("a scene with a hub, links and ports produced no questions")
+	}
+	// every verb the questions may use, from `ctx-optimize help`
+	verbs := map[string]bool{
+		"change-plan": true, "affected": true, "path": true, "card": true,
+		"boundaries": true, "query": true, "explain": true, "nodes": true, "edges": true,
+	}
+	// Every declaration label the fixture actually defines. The fixture is
+	// re-labelled with QUALIFIERS on purpose: the first version of this test
+	// used bare names, so it never noticed that Top was being handed the
+	// display-stripped form and produced commands that resolved to nothing.
+	declared := map[string]bool{}
+	for i := range nodes {
+		if declKinds[nodes[i].Kind] {
+			nodes[i].Label = "Pkg." + nodes[i].Label
+			declared[nodes[i].Label] = true
+		}
+	}
+	s = Derive("demo", nodes, edges, Options{})
+	for _, q := range s.Questions {
+		if q.Text == "" || q.Command == "" {
+			t.Errorf("half-built question: %+v", q)
+		}
+		fields := strings.Fields(q.Command)
+		if len(fields) < 2 || fields[0] != "ctx-optimize" {
+			t.Errorf("command is not a ctx-optimize invocation: %q", q.Command)
+			continue
+		}
+		if !verbs[fields[1]] {
+			t.Errorf("question uses a verb this binary does not have: %q", q.Command)
+		}
+		// any quoted argument must be a symbol the fixture defines
+		for _, arg := range strings.Split(q.Command, "\"") {
+			if arg == "" || strings.HasPrefix(arg, "ctx-optimize") || strings.TrimSpace(arg) == "" {
+				continue
+			}
+			if strings.HasPrefix(arg, "-") || strings.Contains(arg, " ") {
+				continue
+			}
+			if !declared[arg] {
+				t.Errorf("question asks about %q, which this repo does not declare (command %q)", arg, q.Command)
+			}
+		}
+	}
+}
+
+// TestQuestionsFollowTheScene — the questions describe THIS scene, so drilling
+// into a different level must produce different ones. A fixed list dressed up
+// as derivation is the same failure as position that carries no information.
+func TestQuestionsFollowTheScene(t *testing.T) {
+	nodes, edges := nested()
+	top := Derive("demo", nodes, edges, Options{})
+	in := Derive("demo", nodes, edges, Options{Root: "src/app"})
+	if len(top.Questions) == 0 || len(in.Questions) == 0 {
+		t.Fatalf("questions missing: top=%d inside=%d", len(top.Questions), len(in.Questions))
+	}
+	same := len(top.Questions) == len(in.Questions)
+	for i := range top.Questions {
+		if !same {
+			break
+		}
+		if top.Questions[i] != in.Questions[i] {
+			same = false
+		}
+	}
+	if same {
+		t.Error("the same questions came back for the whole repo and for one directory inside it")
+	}
+	// a store with no ports must not offer a boundaries question
+	np, ne := noPorts()
+	for _, q := range Derive("demo", np, ne, Options{}).Questions {
+		if strings.Contains(q.Command, "boundaries") {
+			t.Errorf("offered a boundaries question for a store with no ports: %q", q.Command)
+		}
+	}
+}
+
+// TestDeriveSaysWhenEveryDirectoryIsALeaf — on linux/mm all four subsystems are
+// genuinely leaf directories, and the level read as though drill-down were
+// broken. A leaf is a fact about the code and has to say so.
+func TestDeriveSaysWhenEveryDirectoryIsALeaf(t *testing.T) {
+	nodes, edges := nested()
+	in := Derive("demo", nodes, edges, Options{Root: "src/app"})
+	leaf := false
+	for _, n := range in.Notes {
+		if strings.Contains(n, "leaf") {
+			leaf = true
+		}
+	}
+	if !leaf {
+		t.Errorf("a level where nothing can be opened does not say so; notes = %q", in.Notes)
+	}
+	// and the top level, which HAS an enterable directory, must not claim it
+	for _, n := range Derive("demo", nodes, edges, Options{}).Notes {
+		if strings.Contains(n, "every directory here is a leaf") {
+			t.Errorf("a level with an enterable directory claims every one is a leaf")
+		}
+	}
+}

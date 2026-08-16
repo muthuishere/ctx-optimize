@@ -11,6 +11,7 @@ import type {
   SceneLink,
   SceneStat,
   SceneCrumb,
+  SceneQuestion,
   SceneWorld,
 } from './types'
 
@@ -76,6 +77,7 @@ export function sanitizeScene(s: any): Scene {
     root: String(s?.root ?? ''),
     // A scene with no crumbs is a level you cannot leave, so the trail back to
     // the whole repo is synthesised rather than trusted.
+    questions: arr<SceneQuestion>(s?.questions),
     crumbs: arr<SceneCrumb>(s?.crumbs).length
       ? arr<SceneCrumb>(s?.crumbs)
       : [{ label: String(s?.title ?? 'repo'), root: '' }],
