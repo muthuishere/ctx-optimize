@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { attach, fit, type Cam } from '../camera'
+import { relationStyle } from '../flowLayout'
 import { houseLayout, HVH, HVW, type House, type Room } from '../houseLayout'
 import { sanitizeScene } from '../sanitize'
 import type { Scene } from '../types'
@@ -79,7 +81,9 @@ export default function HouseViewer({ module, params }: ViewerProps) {
     const onMotion = () => { still = !!motion?.matches }
     motion?.addEventListener?.('change', onMotion)
 
-    let SC = 1, OX = 0, OY = 0, W = 0, Hh = 0
+    const CAM_OPTS = { vw: HVW, vh: HVH, pad: 24, minK: 0.12, maxK: 8 }
+    const cam: Cam = { k: 1, x: 0, y: 0 }
+    let W = 0, Hh = 0, fitted = false
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       W = host.clientWidth || 1
@@ -88,41 +92,36 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       canvas.height = Math.floor(Hh * dpr)
       canvas.style.width = W + 'px'
       canvas.style.height = Hh + 'px'
-      SC = Math.min(W / HVW, Hh / HVH)
-      OX = (W - HVW * SC) / 2
-      OY = (Hh - HVH * SC) / 2
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      if (!fitted) { fit(cam, CAM_OPTS, W, Hh); fitted = true }
     }
     const ro = new ResizeObserver(resize)
     ro.observe(host)
     resize()
 
-    const T = (x: number, y: number) => ({ x: OX + x * SC, y: OY + y * SC })
-    const S = (v: number) => v * SC
+    const T = (x: number, y: number) => ({ x: cam.x + x * cam.k, y: cam.y + y * cam.k })
+    const S = (v: number) => v * cam.k
 
-    type Hit = { x: number; y: number; w: number; h: number; root: string }
+    // Hit regions live in VIRTUAL space: the camera pans and zooms between
+    // frames, so a region measured in pixels would drift the moment it did.
+    type Hit = { x: number; y: number; w: number; h: number; root: string; kind?: 'reset' }
     let hits: Hit[] = []
     let hover = -1
-    const local = (e: PointerEvent) => {
-      const r = canvas.getBoundingClientRect()
-      return [e.clientX - r.left, e.clientY - r.top] as const
-    }
-    const hitAt = (px: number, py: number) =>
-      hits.findIndex((h) => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h)
-    const onMove = (e: PointerEvent) => {
-      const [px, py] = local(e)
-      hover = hitAt(px, py)
-      canvas.style.cursor = hover >= 0 ? 'pointer' : 'default'
-    }
-    const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
-    const onDown = (e: PointerEvent) => {
-      const [px, py] = local(e)
-      const i = hitAt(px, py)
-      if (i >= 0) setRoot(hits[i].root)
-    }
-    canvas.addEventListener('pointermove', onMove)
-    canvas.addEventListener('pointerleave', onLeave)
-    canvas.addEventListener('pointerdown', onDown)
+    const hitAt = (vx: number, vy: number) =>
+      hits.findIndex((h) => vx >= h.x && vx <= h.x + h.w && vy >= h.y && vy <= h.y + h.h)
+    const detach = attach(canvas, cam, CAM_OPTS, {
+      onPick: (vx, vy) => (hitAt(vx, vy) >= 0 ? 'click' : null),
+      onClick: (vx, vy) => {
+        const i = hitAt(vx, vy)
+        if (i < 0) return
+        if (hits[i].kind === 'reset') { fit(cam, CAM_OPTS, W, Hh); return }
+        setRoot(hits[i].root)
+      },
+      onHover: (vx, vy) => {
+        hover = hitAt(vx, vy)
+        canvas.style.cursor = hover >= 0 ? 'pointer' : 'default'
+      },
+    })
 
     function rr(x: number, y: number, w: number, h: number, r: number) {
       ctx!.beginPath()
@@ -141,7 +140,7 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       ctx!.textBaseline = 'alphabetic'
       let s = str
       if (max > 0) {
-        while (s.length > 1 && ctx!.measureText(s).width / SC > max) s = s.slice(0, -1)
+        while (s.length > 1 && ctx!.measureText(s).width / cam.k > max) s = s.slice(0, -1)
         if (s !== str) s = s.slice(0, -1) + '…'
       }
       if (spacing) {
@@ -155,7 +154,7 @@ export default function HouseViewer({ module, params }: ViewerProps) {
     }
     const measure = (s: string, size: number, weight = 400, font = SANS) => {
       ctx!.font = `${weight} ${S(size)}px ${font}`
-      return ctx!.measureText(s).width / SC
+      return ctx!.measureText(s).width / cam.k
     }
 
     // ---- the shell: roof, walls, ground line
@@ -205,7 +204,8 @@ export default function HouseViewer({ module, params }: ViewerProps) {
         const A = T(a.x, a.y), B = T(b.x, b.y)
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
         const M = T(mid.x, mid.y)
-        ctx!.strokeStyle = '#d3cec2'
+        const rs = relationStyle(s.link.relation)
+        ctx!.strokeStyle = rs.line
         ctx!.lineWidth = Math.max(1, S(heft))
         ctx!.beginPath()
         ctx!.moveTo(A.x, A.y)
@@ -218,8 +218,10 @@ export default function HouseViewer({ module, params }: ViewerProps) {
           const x = (1 - u) * (1 - u) * a.x + 2 * (1 - u) * u * mid.x + u * u * b.x
           const y = (1 - u) * (1 - u) * a.y + 2 * (1 - u) * u * mid.y + u * u * b.y
           const q = T(x, y)
-          ctx!.fillStyle = `rgba(63,82,200,${0.75 * Math.min(1, Math.sin(Math.PI * u) + 0.3)})`
+          ctx!.globalAlpha = 0.8 * Math.min(1, Math.sin(Math.PI * u) + 0.3)
+          ctx!.fillStyle = rs.flow
           ctx!.beginPath(); ctx!.arc(q.x, q.y, S(3.2), 0, 7); ctx!.fill()
+          ctx!.globalAlpha = 1
         }
       }
     }
@@ -229,7 +231,7 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       const p = T(r.x, r.y)
       let on = false
       if (c.children > 0) {
-        hits.push({ x: p.x, y: p.y, w: S(r.w), h: S(r.h), root: c.dir })
+        hits.push({ x: r.x, y: r.y, w: r.w, h: r.h, root: c.dir })
         on = hover === hits.length - 1
       }
       // the hub is the load-bearing room: it gets the pillar treatment
@@ -330,7 +332,7 @@ export default function HouseViewer({ module, params }: ViewerProps) {
         const w = measure(c.label, 11.5, last ? 700 : 500) + 22
         if (!last) {
           const p = T(x, y)
-          hits.push({ x: p.x, y: p.y, w: S(w), h: S(24), root: c.root })
+          hits.push({ x, y, w, h: 24, root: c.root })
           const on = hover === hits.length - 1
           ctx!.fillStyle = on ? '#eaedfb' : '#f2efe8'
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()
@@ -350,6 +352,19 @@ export default function HouseViewer({ module, params }: ViewerProps) {
         62, 84, { size: 46, weight: 800, max: 620 })
       text('the same derived scene, read as a building', 62, 108, { size: 13, color: '#6d675e' })
       drawCrumbs()
+      const label = 'RESET VIEW'
+      const rw = measure(label, 9, 700) + 22
+      const rx = HVW - 62 - rw, ry = 140
+      hits.push({ x: rx, y: ry, w: rw, h: 22, root: '', kind: 'reset' })
+      const ron = hover === hits.length - 1
+      const rp = T(rx, ry)
+      ctx!.fillStyle = ron ? '#eaedfb' : '#f2efe8'
+      rr(rp.x, rp.y, S(rw), S(22), S(11)); ctx!.fill()
+      ctx!.strokeStyle = ron ? DOT : '#e6e0d4'; ctx!.lineWidth = Math.max(1, S(1))
+      rr(rp.x, rp.y, S(rw), S(22), S(11)); ctx!.stroke()
+      text(label, rx + rw / 2, ry + 15, {
+        size: 9, weight: 700, align: 'center', spacing: 1.1, color: ron ? DOT : '#8b8479',
+      })
 
       const bits = [
         `${scene!.subsystems_shown} of ${scene!.subsystems_total} directories`,
@@ -396,9 +411,7 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       cancelAnimationFrame(raf)
       ro.disconnect()
       motion?.removeEventListener?.('change', onMotion)
-      canvas.removeEventListener('pointermove', onMove)
-      canvas.removeEventListener('pointerleave', onLeave)
-      canvas.removeEventListener('pointerdown', onDown)
+      detach()
     }
   }, [scene])
 

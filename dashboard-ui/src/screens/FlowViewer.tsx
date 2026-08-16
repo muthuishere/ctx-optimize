@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { sanitizeScene } from '../sanitize'
-import { bez, bezT, layout, VH, VW, type Box } from '../flowLayout'
+import { bez, bezT, layout, relationStyle, VH, VW, type Box } from '../flowLayout'
+import { attach, fit, type Cam } from '../camera'
 import type { Scene } from '../types'
 import type { ViewerProps } from '../viewers'
 
@@ -28,6 +29,7 @@ const CARD = '#ffffff'
 const ACC = '#e08a1e'
 const DOT = '#4a5cd0'
 const GROUND = '#fbfaf8'
+const ZERO = { dx: 0, dy: 0 }
 
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
@@ -84,7 +86,13 @@ export default function FlowViewer({ module, params }: ViewerProps) {
     const onMotion = () => { still = !!motion?.matches }
     motion?.addEventListener?.('change', onMotion)
 
-    let SC = 1, OX = 0, OY = 0, W = 0, H = 0
+    // The camera replaces the old fixed letterbox: the scene no longer sits at
+    // whatever scale happened to fit, and it can be panned, zoomed and — for a
+    // card — dragged. The camera moves the EYE, never the facts: where a card
+    // sits is still derived, and a dragged card is the user's own override.
+    const CAM_OPTS = { vw: VW, vh: VH, pad: 24, minK: 0.12, maxK: 8 }
+    const cam: Cam = { k: 1, x: 0, y: 0 }
+    let W = 0, H = 0, fitted = false
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       W = host.clientWidth || 1
@@ -93,44 +101,76 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       canvas.height = Math.floor(H * dpr)
       canvas.style.width = W + 'px'
       canvas.style.height = H + 'px'
-      SC = Math.min(W / VW, H / VH)
-      OX = (W - VW * SC) / 2
-      OY = (H - VH * SC) / 2
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      if (!fitted) { fit(cam, CAM_OPTS, W, H); fitted = true }
     }
     const ro = new ResizeObserver(resize)
     ro.observe(host)
     resize()
 
-    const T = (x: number, y: number) => ({ x: OX + x * SC, y: OY + y * SC })
-    const S = (v: number) => v * SC
+    const T = (x: number, y: number) => ({ x: cam.x + x * cam.k, y: cam.y + y * cam.k })
+    const S = (v: number) => v * cam.k
 
     // ---- drill-down. Hit regions are rebuilt every frame in SCREEN space, so
     // they follow the canvas through resize and letterboxing without a second
     // source of truth for geometry. No DOM overlay: the stage is one canvas.
-    type Hit = { x: number; y: number; w: number; h: number; root: string; kind: 'card' | 'crumb' }
+    // Hit regions are rebuilt every frame in VIRTUAL space now, not screen
+    // space: the camera can pan and zoom between frames, and a region measured
+    // in pixels would drift the moment it did.
+    type Hit = { x: number; y: number; w: number; h: number; root: string; kind: 'card' | 'crumb' | 'reset' }
     let hits: Hit[] = []
     let hover = -1
-    const hitAt = (px: number, py: number) =>
-      hits.findIndex((h) => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h)
-    const local = (e: PointerEvent) => {
-      const r = canvas.getBoundingClientRect()
-      return [e.clientX - r.left, e.clientY - r.top] as const
+    const hitAt = (vx: number, vy: number) =>
+      hits.findIndex((h) => vx >= h.x && vx <= h.x + h.w && vy >= h.y && vy <= h.y + h.h)
+
+    // A dragged box carries an OFFSET from its derived position, never a
+    // replacement for it: the layout stays the source of truth, and Reset puts
+    // everything back exactly where the store put it.
+    const nudged = new Map<string, { dx: number; dy: number }>()
+    const off = (id: string) => nudged.get(id) || ZERO
+    let dragging: { id: string; ox: number; oy: number } | null = null
+
+    const boxAt = (vx: number, vy: number) => {
+      for (let i = lay.boxes.length - 1; i >= 0; i--) {
+        const b = lay.boxes[i]
+        const o = off(b.id)
+        if (b.kind === 'hub') {
+          if (Math.hypot(vx - (b.x + o.dx), vy - (b.y + o.dy)) <= b.r) return b
+        } else if (vx >= b.x + o.dx && vx <= b.x + o.dx + b.w &&
+                   vy >= b.y + o.dy && vy <= b.y + o.dy + b.h) return b
+      }
+      return null
     }
-    const onMove = (e: PointerEvent) => {
-      const [px, py] = local(e)
-      hover = hitAt(px, py)
-      canvas.style.cursor = hover >= 0 ? 'pointer' : 'default'
-    }
-    const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
-    const onDown = (e: PointerEvent) => {
-      const [px, py] = local(e)
-      const i = hitAt(px, py)
-      if (i >= 0) setRoot(hits[i].root)
-    }
-    canvas.addEventListener('pointermove', onMove)
-    canvas.addEventListener('pointerleave', onLeave)
-    canvas.addEventListener('pointerdown', onDown)
+
+    const detach = attach(canvas, cam, CAM_OPTS, {
+      onPick: (vx, vy) => {
+        if (hitAt(vx, vy) >= 0) return 'click'
+        const b = boxAt(vx, vy)
+        if (b) {
+          const o = off(b.id)
+          dragging = { id: b.id, ox: vx - o.dx, oy: vy - o.dy }
+          return 'drag'
+        }
+        return null
+      },
+      onDragTo: (vx, vy) => {
+        if (dragging) nudged.set(dragging.id, { dx: vx - dragging.ox, dy: vy - dragging.oy })
+      },
+      onClick: (vx, vy) => {
+        const i = hitAt(vx, vy)
+        if (i < 0) return
+        if (hits[i].kind === 'reset') {
+          nudged.clear()
+          fit(cam, CAM_OPTS, W, H)
+          return
+        }
+        setRoot(hits[i].root)
+      },
+      onHover: (vx, vy) => {
+        hover = hitAt(vx, vy)
+        canvas.style.cursor = hover >= 0 ? 'pointer' : boxAt(vx, vy) ? 'grab' : 'default'
+      },
+    })
 
     function rr(x: number, y: number, w: number, h: number, r: number) {
       ctx!.beginPath()
@@ -149,7 +189,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       ctx!.textBaseline = 'alphabetic'
       let s = str
       if (max > 0) {
-        while (s.length > 1 && ctx!.measureText(s).width / SC > max) s = s.slice(0, -1)
+        while (s.length > 1 && ctx!.measureText(s).width / cam.k > max) s = s.slice(0, -1)
         if (s !== str) s = s.slice(0, -1) + '…'
       }
       if (spacing) {
@@ -163,16 +203,26 @@ export default function FlowViewer({ module, params }: ViewerProps) {
     }
     const measure = (s: string, size: number, weight = 400, font = SANS) => {
       ctx!.font = `${weight} ${S(size)}px ${font}`
-      return ctx!.measureText(s).width / SC
+      return ctx!.measureText(s).width / cam.k
     }
 
     function drawCurves(t: number) {
       for (const c of lay.curves) {
-        const { p0, p1, p2, p3, link } = c
+        const { link } = c
+        // A dragged card takes its arrows with it: each endpoint moves by its
+        // own box's offset and the control points by the average, so a curve
+        // never detaches from the thing it describes.
+        const oa = off(link.from), ob = off(link.to)
+        const shift = (q: { x: number; y: number }, d: { dx: number; dy: number }) =>
+          d === ZERO ? q : { x: q.x + d.dx, y: q.y + d.dy }
+        const mid = { dx: (oa.dx + ob.dx) / 2, dy: (oa.dy + ob.dy) / 2 }
+        const p0 = shift(c.p0, oa), p3 = shift(c.p3, ob)
+        const p1 = shift(c.p1, mid), p2 = shift(c.p2, mid)
         const A = T(p0.x, p0.y), B = T(p1.x, p1.y), C = T(p2.x, p2.y), D = T(p3.x, p3.y)
         const world = link.to.startsWith('world:')
+        const rs = relationStyle(link.relation)
         const heft = 0.9 + 2.2 * Math.sqrt(link.weight / lay.maxWeight)
-        ctx!.strokeStyle = world ? '#dcd3c1' : '#cfcabf'
+        ctx!.strokeStyle = rs.line
         ctx!.lineWidth = Math.max(1, S(heft))
         ctx!.setLineDash(world ? [S(6), S(6)] : [])
         ctx!.beginPath(); ctx!.moveTo(A.x, A.y); ctx!.bezierCurveTo(B.x, B.y, C.x, C.y, D.x, D.y); ctx!.stroke()
@@ -181,7 +231,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
         const tg = bezT(p0, p1, p2, p3, 1)
         const ang = Math.atan2(tg.y, tg.x)
         ctx!.save(); ctx!.translate(D.x, D.y); ctx!.rotate(ang)
-        ctx!.strokeStyle = '#b6b0a4'; ctx!.lineWidth = Math.max(1, S(1.5))
+        ctx!.strokeStyle = rs.flow; ctx!.lineWidth = Math.max(1, S(1.5))
         ctx!.beginPath(); ctx!.moveTo(-S(10), -S(5.5)); ctx!.lineTo(0, 0); ctx!.lineTo(-S(10), S(5.5)); ctx!.stroke()
         ctx!.restore()
 
@@ -192,10 +242,12 @@ export default function FlowViewer({ module, params }: ViewerProps) {
           const q = bez(p0, p1, p2, p3, u)
           const s = T(q.x, q.y)
           const fade = Math.min(1, Math.sin(Math.PI * Math.min(u, 1 - u) * 2.6) + 0.35)
-          ctx!.fillStyle = `rgba(74,92,208,${0.85 * fade})`
+          ctx!.globalAlpha = 0.85 * fade
+          ctx!.fillStyle = rs.flow
           ctx!.beginPath(); ctx!.arc(s.x, s.y, S(3.6), 0, 7); ctx!.fill()
-          ctx!.fillStyle = `rgba(74,92,208,${0.12 * fade})`
+          ctx!.globalAlpha = 0.14 * fade
           ctx!.beginPath(); ctx!.arc(s.x, s.y, S(8), 0, 7); ctx!.fill()
+          ctx!.globalAlpha = 1
         }
 
       }
@@ -204,24 +256,54 @@ export default function FlowViewer({ module, params }: ViewerProps) {
     // Edge labels are a SEPARATE pass, drawn after the cards. A relation label
     // that a card covers is worse than no label — the whole claim of this view
     // is that every arrow is named.
+    // COLLISION. Edge labels used to be placed at the curve's midpoint and
+    // drawn regardless of what was already there — so on a dense scene they
+    // landed on top of the cards, and the "N inside" badge landed on top of a
+    // card's own detail line. Every card, badge and placed label now registers
+    // its rectangle here, and a label tries a short ladder of offsets along the
+    // curve normal before giving up. Giving up means NOT drawing it: an
+    // unreadable label is worse than an absent one, and the count it carries is
+    // also printed on the card.
+    let occupied: { x: number; y: number; w: number; h: number }[] = []
+    const hitsRect = (a: { x: number; y: number; w: number; h: number }) =>
+      occupied.some((b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y)
+    const occupy = (x: number, y: number, w: number, h: number) => occupied.push({ x, y, w, h })
+
     function drawCurveLabels() {
       for (const c of lay.curves) {
-        const { p0, p1, p2, p3, link } = c
+        const { link } = c
+        const oa = off(link.from), ob = off(link.to)
+        const shift = (q: { x: number; y: number }, d: { dx: number; dy: number }) =>
+          d === ZERO ? q : { x: q.x + d.dx, y: q.y + d.dy }
+        const mid = { dx: (oa.dx + ob.dx) / 2, dy: (oa.dy + ob.dy) / 2 }
+        const p0 = shift(c.p0, oa), p3 = shift(c.p3, ob)
+        const p1 = shift(c.p1, mid), p2 = shift(c.p2, mid)
         const m = bez(p0, p1, p2, p3, 0.5)
         const mt = bezT(p0, p1, p2, p3, 0.5)
-        const off = 17
+        const off0 = 17
         const lbl = link.label
         const cnt = String(link.weight)
         const wl = measure(lbl, 9.5, 700) + lbl.length * 1.15
         const wc = measure(cnt, 9.5, 700, MONO)
         const pad = 5
         const total = wl + 7 + wc
-        const lx = Math.min(VW - 70 - total / 2, Math.max(70 + total / 2, m.x - mt.y * off))
-        const ly = m.y + mt.x * off + 4
+        // walk out along the normal, both ways, until the box is clear
+        let lx = 0, ly = 0, placed = false
+        for (const d of [off0, -off0, off0 * 2, -off0 * 2, off0 * 3, -off0 * 3]) {
+          lx = Math.min(VW - 70 - total / 2, Math.max(70 + total / 2, m.x - mt.y * d))
+          ly = m.y + mt.x * d + 4
+          if (!hitsRect({ x: lx - total / 2 - pad, y: ly - 11, w: total + pad * 2, h: 15 })) {
+            placed = true
+            break
+          }
+        }
+        if (!placed) continue
+        occupy(lx - total / 2 - pad, ly - 11, total + pad * 2, 15)
         const q = T(lx - total / 2 - pad, ly - 11)
         ctx!.fillStyle = 'rgba(251,250,248,.94)'
         rr(q.x, q.y, S(total + pad * 2), S(15), S(3)); ctx!.fill()
-        text(lbl, lx - total / 2, ly, { size: 9.5, weight: 700, color: MUTED, spacing: 1.15 })
+        const rs = relationStyle(link.relation)
+        text(lbl, lx - total / 2, ly, { size: 9.5, weight: 700, color: rs.label, spacing: 1.15 })
         text(cnt, lx + total / 2, ly, { size: 9.5, weight: 700, color: ACC, font: MONO, align: 'right' })
       }
     }
@@ -231,12 +313,13 @@ export default function FlowViewer({ module, params }: ViewerProps) {
     // the click target can never disagree.
     function registerDoor(b: Box, x: number, y: number, w: number, h: number): boolean {
       if (!b.card || b.card.children <= 0) return false
-      const p = T(x, y)
-      hits.push({ x: p.x, y: p.y, w: S(w), h: S(h), root: b.card.dir, kind: 'card' })
+      hits.push({ x, y, w, h, root: b.card.dir, kind: 'card' })
       return hover === hits.length - 1
     }
 
-    function drawCard(b: Box) {
+    function drawCard(b0: Box) {
+      const o = off(b0.id)
+      const b = o === ZERO ? b0 : { ...b0, x: b0.x + o.dx, y: b0.y + o.dy }
       const c = b.card!
       const p = T(b.x, b.y)
       const on = registerDoor(b, b.x, b.y, b.w, b.h)
@@ -247,9 +330,12 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       ctx!.restore()
       ctx!.strokeStyle = on ? DOT : HAIR; ctx!.lineWidth = Math.max(1, S(on ? 1.8 : 1))
       rr(p.x, p.y, S(b.w), S(b.h), S(12)); ctx!.stroke()
+      occupy(b.x, b.y, b.w, b.h)
       if (c.children > 0) {
-        // the door badge: how many subdirectories are inside, and a chevron in
-        drawEnter(b.x + b.w - 18, b.y + b.h - 30, c.children, on, 'right')
+        // Top strip, beside the ordinal — the only band on a card that carries
+        // no text of its own. It used to sit at the foot of the card and landed
+        // squarely on the detail line.
+        drawEnter(b.x + b.w - 14, b.y + 12, c.children, on, 'right')
       }
 
       text(b.n, b.x + 18, b.y + 36, { size: 19, weight: 300, color: '#b8b3a8', font: MONO })
@@ -287,7 +373,9 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b2.x, b2.y); ctx!.lineTo(c2.x, c2.y); ctx!.stroke()
     }
 
-    function drawHub(b: Box, t: number) {
+    function drawHub(b0: Box, t: number) {
+      const o = off(b0.id)
+      const b = o === ZERO ? b0 : { ...b0, x: b0.x + o.dx, y: b0.y + o.dy }
       const c = b.card!
       const p = T(b.x, b.y)
       const R = S(b.r)
@@ -299,6 +387,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       ctx!.restore()
       ctx!.strokeStyle = on ? DOT : '#c3c9ee'; ctx!.lineWidth = S(4)
       ctx!.beginPath(); ctx!.arc(p.x, p.y, R * pulse, 0, 7); ctx!.stroke()
+      occupy(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2)
       if (c.children > 0) drawEnter(b.x, b.y + b.r - 34, c.children, on, 'center')
 
       text('MOST DEPENDED ON', b.x, b.y - 46, { size: 8.5, color: MUTED, align: 'center', spacing: 1.3, weight: 700 })
@@ -313,7 +402,9 @@ export default function FlowViewer({ module, params }: ViewerProps) {
     // sample of the port NAMES. The killed wall view put 273 names around a
     // perimeter and could not be read; a plate lists a few and says how many it
     // is not showing.
-    function drawWorld(b: Box, t: number) {
+    function drawWorld(b0: Box, t: number) {
+      const o = off(b0.id)
+      const b = o === ZERO ? b0 : { ...b0, x: b0.x + o.dx, y: b0.y + o.dy }
       const w = b.world!
       const p = T(b.x, b.y)
       ctx!.save()
@@ -379,7 +470,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
         const w = measure(c.label, 11.5, last ? 700 : 500) + 22
         if (!last) {
           const p = T(x, y)
-          hits.push({ x: p.x, y: p.y, w: S(w), h: S(24), root: c.root, kind: 'crumb' })
+          hits.push({ x, y, w, h: 24, root: c.root, kind: 'crumb' })
           const on = hover === hits.length - 1
           ctx!.fillStyle = on ? '#eef0fc' : '#f4f2ed'
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()
@@ -396,6 +487,25 @@ export default function FlowViewer({ module, params }: ViewerProps) {
           text('/', x + 5, y + 16, { size: 11.5, color: '#bdb8ad' })
           x += 15
         }
+      })
+    }
+
+    // Reset: the scene is derived, so there is always a canonical arrangement
+    // to go back to. Pan, zoom and a dragged card are all the user's, and this
+    // is how they hand it back.
+    function drawReset() {
+      const label = 'RESET VIEW'
+      const w = measure(label, 9, 700) + 22
+      const x = VW - 62 - w, y = 224
+      hits.push({ x, y, w, h: 22, root: '', kind: 'reset' })
+      const on = hover === hits.length - 1
+      const p = T(x, y)
+      ctx!.fillStyle = on ? '#eef0fc' : '#f4f2ed'
+      rr(p.x, p.y, S(w), S(22), S(11)); ctx!.fill()
+      ctx!.strokeStyle = on ? DOT : '#e4dfd4'; ctx!.lineWidth = Math.max(1, S(1))
+      rr(p.x, p.y, S(w), S(22), S(11)); ctx!.stroke()
+      text(label, x + w / 2, y + 15, {
+        size: 9, weight: 700, align: 'center', spacing: 1.1, color: on ? DOT : '#8a857c',
       })
     }
 
@@ -420,6 +530,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       }
 
       drawCrumbs()
+      drawReset()
 
       text(scene!.root ? scene!.root.split('/').pop()! : scene!.title,
         VW - 62, 118, { size: 62, weight: 800, align: 'right', max: 700 })
@@ -459,6 +570,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       const t = (now - t0) / 1000
       // Hit regions are geometry, and geometry is rebuilt every frame.
       hits = []
+      occupied = []
       ctx.fillStyle = '#f4f3ef'; ctx.fillRect(0, 0, W, H)
       const p = T(0, 0)
       ctx.fillStyle = GROUND; ctx.fillRect(p.x, p.y, S(VW), S(VH))
@@ -491,9 +603,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       cancelAnimationFrame(raf)
       ro.disconnect()
       motion?.removeEventListener?.('change', onMotion)
-      canvas.removeEventListener('pointermove', onMove)
-      canvas.removeEventListener('pointerleave', onLeave)
-      canvas.removeEventListener('pointerdown', onDown)
+      detach()
     }
   }, [scene])
 
