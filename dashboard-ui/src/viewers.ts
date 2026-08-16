@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import GraphViewer from './screens/GraphViewer'
 import FlowViewer from './screens/FlowViewer'
+import HouseViewer from './screens/HouseViewer'
 
 // The VIEWER REGISTRY. Everything the switcher shows comes from this list, so a
 // third and fourth viewer is one entry each — ViewerShell renders the dropdown
@@ -35,6 +36,12 @@ export const VIEWERS: ViewerDef[] = [
     label: 'Flow — derived architecture',
     blurb: 'directories, lifted edges, the outer world',
     Component: FlowViewer,
+  },
+  {
+    id: 'house',
+    label: 'House — the codebase as a building',
+    blurb: 'floors are dependency depth, doors are the boundary',
+    Component: HouseViewer,
   },
 ]
 
