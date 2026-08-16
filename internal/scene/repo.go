@@ -28,10 +28,21 @@ type RepoModule struct {
 	Publishes []string
 	Declares  []string
 
-	// Ports are this module's `port` node ids. Port ids are global, so two
-	// modules holding the same one touch the same external service. That is
-	// `shares`, and it is never a call.
-	Ports []string
+	// Provides and Consumes are this module's `port` node ids, split by
+	// DIRECTION. Port ids are global, which is what lets them join across
+	// separately-gathered module stores — and the direction is what decides
+	// which of two very different statements the join supports:
+	//
+	//   A consumes what B PROVIDES → A calls B. Directed, an arrow.
+	//   both CONSUME the same port  → they call the same third party. Not a
+	//                                 call between them, and never drawn as one.
+	//
+	// Collapsing the two into one "shares" was the defect: reqsume's ui and api
+	// share twelve ports and every one is consumes/consumes — OpenAI, GitHub,
+	// LinkedIn, firebase — so the line a reader took for "ui calls api" was
+	// twelve third parties they have in common.
+	Provides []string
+	Consumes []string
 
 	// Code is how many code edges (imports/calls) the module holds. It is the
 	// drill affordance — a module with none has no directory-grain picture
@@ -115,36 +126,59 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 	// ---- 3. shared external ports. Undirected, and drawn only where there is
 	// no `depends` between the two — a real dependency is the stronger and more
 	// specific statement, and both lines between one pair is noise.
-	portOf := map[string]map[string]bool{}
-	for _, m := range mods {
-		if len(m.Ports) == 0 {
-			continue
+	provOf, consOf := map[string]map[string]bool{}, map[string]map[string]bool{}
+	setOf := func(ids []string) map[string]bool {
+		out := make(map[string]bool, len(ids))
+		for _, p := range ids {
+			out[p] = true
 		}
-		set := make(map[string]bool, len(m.Ports))
-		for _, p := range m.Ports {
-			set[p] = true
-		}
-		portOf[m.Key] = set
+		return out
 	}
-	shares := map[pair]int{}
+	for _, m := range mods {
+		provOf[m.Key] = setOf(m.Provides)
+		consOf[m.Key] = setOf(m.Consumes)
+	}
+	calls := map[pair][]string{}  // A consumes a port B provides
+	shares := map[pair][]string{} // both consume the same port
 	keys := make([]string, 0, len(mods))
 	for _, m := range mods {
 		keys = append(keys, m.Key)
 	}
 	sort.Strings(keys)
+	related := func(a, b string) bool {
+		return depends[pair{a, b}] > 0 || depends[pair{b, a}] > 0
+	}
 	for i, a := range keys {
 		for _, b := range keys[i+1:] {
-			if depends[pair{a, b}] > 0 || depends[pair{b, a}] > 0 {
+			if related(a, b) {
 				continue
 			}
-			n := 0
-			for p := range portOf[a] {
-				if portOf[b][p] {
-					n++
+			var ab, ba, both []string
+			for p := range consOf[a] {
+				if provOf[b][p] {
+					ab = append(ab, p)
+				} else if consOf[b][p] {
+					both = append(both, p)
 				}
 			}
-			if n > 0 {
-				shares[pair{a, b}] = n
+			for p := range consOf[b] {
+				if provOf[a][p] {
+					ba = append(ba, p)
+				}
+			}
+			sort.Strings(ab)
+			sort.Strings(ba)
+			sort.Strings(both)
+			if len(ab) > 0 {
+				calls[pair{a, b}] = ab
+			}
+			if len(ba) > 0 {
+				calls[pair{b, a}] = ba
+			}
+			// A directed call between the pair already says the specific thing;
+			// what they merely have in common is the weaker statement.
+			if len(both) > 0 && len(ab) == 0 && len(ba) == 0 {
+				shares[pair{a, b}] = both
 			}
 		}
 	}
@@ -189,7 +223,7 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 
 	// ---- 5. links, drawn only between cards that are both on screen.
 	var links []Link
-	drawnDep, drawnShare := 0, 0
+	drawnDep, drawnShare, drawnCall := 0, 0, 0
 	for p, w := range depends {
 		if !shown[p.from] || !shown[p.to] {
 			continue
@@ -197,11 +231,23 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 		links = append(links, Link{From: p.from, To: p.to, Relation: "depends", Label: "DEPENDS", Weight: w})
 		drawnDep++
 	}
-	for p, w := range shares {
+	for p, ids := range calls {
 		if !shown[p.from] || !shown[p.to] {
 			continue
 		}
-		links = append(links, Link{From: p.from, To: p.to, Relation: "shares", Label: "SHARES", Weight: w})
+		links = append(links, Link{From: p.from, To: p.to, Relation: "calls", Label: "CALLS",
+			Weight: len(ids), Detail: nameThem(ids)})
+		drawnCall++
+	}
+	for p, ids := range shares {
+		if !shown[p.from] || !shown[p.to] {
+			continue
+		}
+		// The label says what it IS, not a verb the reader has to guess at.
+		// "SHARES 12" between a ui and an api reads as "the ui calls the api";
+		// it is twelve third parties they both call, and the names prove it.
+		links = append(links, Link{From: p.from, To: p.to, Relation: "shares", Label: "BOTH CALL",
+			Weight: len(ids), Detail: nameThem(ids)})
 		drawnShare++
 	}
 	sort.Slice(links, func(i, j int) bool {
@@ -215,7 +261,7 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 	})
 	sc.Links = links
 	sc.LiftedShown = len(links)
-	sc.LiftedTotal = len(depends) + len(shares)
+	sc.LiftedTotal = len(depends) + len(shares) + len(calls)
 
 	// ---- 6. layering. Only `depends` is a direction; `shares` is symmetric and
 	// laying out by it would invent a hierarchy that the evidence does not have.
@@ -300,13 +346,19 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 
 	// ---- 8. stats and the honesty notes.
 	sc.Stats = []Stat{
-		{Label: plural("module", len(mods)), Text: itoa(len(mods))},
+		{Label: plural("module", "modules", len(mods)), Text: itoa(len(mods))},
 		{Label: "nodes", Text: comma(sc.TotalNodes)},
 		{Label: "edges", Text: comma(sc.TotalEdges)},
 	}
-	sc.Chips = append(sc.Chips, itoa(len(depends))+" depends")
+	sc.Chips = append(sc.Chips, itoa(len(depends))+" declared "+
+		plural("dependency", "dependencies", len(depends)))
+	if len(calls) > 0 {
+		sc.Chips = append(sc.Chips, itoa(len(calls))+" module-to-module "+
+			plural("call", "calls", len(calls)))
+	}
 	if len(shares) > 0 {
-		sc.Chips = append(sc.Chips, itoa(len(shares))+" shares")
+		sc.Chips = append(sc.Chips, itoa(len(shares))+" "+
+			plural("pair", "pairs", len(shares))+" calling the same third parties")
 	}
 	sc.Notes = append(sc.Notes,
 		"a card here is a MODULE — clicking one opens that module's own store at directory grain")
@@ -318,10 +370,16 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 	sc.Notes = append(sc.Notes,
 		itoa(drawnDep)+" of "+itoa(len(depends))+
 			" `depends` arrows drawn — a module declaring a package a sibling publishes, EXTRACTED from both manifests")
+	if len(calls) > 0 {
+		sc.Notes = append(sc.Notes,
+			itoa(drawnCall)+" of "+itoa(len(calls))+
+				" `calls` arrows drawn — one module CONSUMES a port another PROVIDES, which is a call between them")
+	}
 	if len(shares) > 0 {
 		sc.Notes = append(sc.Notes,
 			itoa(drawnShare)+" of "+itoa(len(shares))+
-				" `shares` links drawn — both modules touch the SAME external port. That is not a call between them")
+				" dashed links drawn — both modules CONSUME the same external port, so they call the same third party. "+
+				"That is not a call between them, which is why it has no arrowhead and the names are printed")
 	}
 	if hub != "" && bestIn > 0 {
 		sc.Notes = append(sc.Notes, "hub = the module the most of this repo depends on ("+itoa(bestIn)+" declarations in)")
@@ -365,12 +423,36 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 }
 
 // plural keeps a count and its noun in agreement. "1 modules" in the header
-// strip is the kind of detail that makes a reader wonder what else is sloppy.
-func plural(word string, n int) string {
+// strip is the kind of detail that makes a reader wonder what else is sloppy —
+// and so is "0 declared dependencys", which is what appending an "s" produced.
+// The plural is given, never guessed.
+func plural(one, many string, n int) string {
 	if n == 1 {
-		return word
+		return one
 	}
-	return word + "s"
+	return many
+}
+
+// nameThem turns port ids into the names a reader recognises. A count is not
+// an explanation: three names and a remainder is what turns "12" into "OpenAI,
+// GitHub and LinkedIn, plus nine more".
+func nameThem(ids []string) string {
+	const show = 3
+	out := make([]string, 0, show)
+	for _, id := range ids {
+		n := id
+		if i := strings.LastIndex(n, ":>"); i >= 0 {
+			n = n[i+2:]
+		}
+		if len(out) < show {
+			out = append(out, n)
+		}
+	}
+	s := strings.Join(out, ", ")
+	if rest := len(ids) - len(out); rest > 0 {
+		s += " +" + itoa(rest) + " more"
+	}
+	return s
 }
 
 // lastSeg is the display name for a path with no recorded module name.

@@ -380,9 +380,16 @@ async function run(page) {
       repoScene.sc.cards.map((c) => c.id).slice(0, 3).join(', '))
     // `shares` is symmetric — it must never be reported as a directed call.
     const bad = (repoScene.sc.links || []).filter(
-      (l) => !['depends', 'shares'].includes(l.relation))
+      (l) => !['depends', 'calls', 'shares'].includes(l.relation))
     check('module grain draws only relations it can defend', bad.length === 0,
-      bad.map((l) => l.relation).join(',') || 'depends/shares only')
+      bad.map((l) => l.relation).join(',') || 'depends/calls/shares only')
+    // A count is not an explanation: a line between a ui and an api that says
+    // only "12" reads as "the ui calls the api" when it is twelve third
+    // parties they both call. Every port-derived link has to name them.
+    const unnamed = (repoScene.sc.links || []).filter(
+      (l) => (l.relation === 'shares' || l.relation === 'calls') && !l.detail)
+    check('port-derived links name what they stand for', unnamed.length === 0,
+      unnamed.length ? `${unnamed.length} unnamed` : 'all named')
 
     await page.blank()
     await page.goto(`#/viewer/${encodeURIComponent(repoScene.repo)}?view=flow`)

@@ -267,8 +267,9 @@ func scanEdges(path string, rm *scene.RepoModule) bool {
 
 // portNode is the only part of a node this join reads.
 type portNode struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
+	ID       string            `json:"id"`
+	Kind     string            `json:"kind"`
+	Metadata map[string]string `json:"metadata"`
 }
 
 // scanPorts pulls the module's port ids. Port ids are global, which is the one
@@ -291,8 +292,16 @@ func scanPorts(path string, rm *scene.RepoModule) bool {
 		if json.Unmarshal(line, &n) != nil || n.Kind != "port" {
 			continue
 		}
-		rm.Ports = append(rm.Ports, n.ID)
+		// The direction is the whole difference between "A calls B" and "A and
+		// B call the same third party", so it is carried, never flattened.
+		switch n.Metadata["direction"] {
+		case "provides":
+			rm.Provides = append(rm.Provides, n.ID)
+		case "consumes":
+			rm.Consumes = append(rm.Consumes, n.ID)
+		}
 	}
-	sort.Strings(rm.Ports)
+	sort.Strings(rm.Provides)
+	sort.Strings(rm.Consumes)
 	return sc.Err() == nil
 }

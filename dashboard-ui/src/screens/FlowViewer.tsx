@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { arrangementKey, clearArrangement, loadArrangement, saveArrangement } from '../arrangement'
 import { fetchScene } from '../sceneApi'
 import { bez, bezT, CHIP_H, layout, relationStyle, VW, type Box } from '../flowLayout'
 import type { Scene } from '../types'
@@ -85,7 +86,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
     let SC = 1, W = 0, H = 0, vh = 1000
     // Which outer-world group is open. Collapsed, the band is a strip of chips
     // and the cards get the room back; expanded, one group shows its door names.
-    let openWorld = ''
+    let openWorld = loadArrangement(arrangementKey('flow', module, root, grain))?.openWorld || ''
     let lay = layout(scene, vh, openWorld)
     const relayout = () => { lay = layout(scene, vh, openWorld) }
     const resize = () => {
@@ -126,8 +127,17 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
     // A dragged box carries an OFFSET from its derived position, never a
     // replacement for it: the layout stays the source of truth, and Reset puts
     // everything back exactly where the store put it.
-    const nudged = new Map<string, { dx: number; dy: number }>()
+    // The arrangement is the reader's, so it survives a reload. It is stored
+    // as OFFSETS from the derived layout, which is what makes it safe to keep:
+    // the picture underneath is still derived, and RESET VIEW is one click.
+    const akey = arrangementKey('flow', module, root, grain)
+    const saved = loadArrangement(akey)
+    const nudged = new Map<string, { dx: number; dy: number }>(
+      Object.entries(saved?.nudged || {}))
     const off = (id: string) => nudged.get(id) || ZERO
+    const remember = () => saveArrangement(akey, {
+      nudged: Object.fromEntries(nudged), openWorld,
+    })
     let dragging: { id: string; ox: number; oy: number } | null = null
     let moved = 0
 
@@ -174,18 +184,23 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       dragging = null
       try { canvas.releasePointerCapture(e.pointerId) } catch { /* already gone */ }
       canvas.style.cursor = 'default'
-      if (wasDragging) return
+      if (wasDragging) {
+        remember()
+        return
+      }
       const v = toVirtual(e)
       const i = hitAt(v.x, v.y)
       if (i < 0) return
       if (hits[i].kind === 'reset') {
         nudged.clear()
         openWorld = ''
+        clearArrangement(akey)
         relayout()
         return
       }
       if (hits[i].kind === 'world') {
         openWorld = openWorld === hits[i].root ? '' : hits[i].root
+        remember()
         relayout()
         return
       }
@@ -343,6 +358,21 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         const rs = relationStyle(link.relation)
         text(lbl, lx - total / 2, ly, { size: 9.5, weight: 700, color: rs.label, spacing: 1.15 })
         text(cnt, lx + total / 2, ly, { size: 9.5, weight: 700, color: ACC, font: MONO, align: 'right' })
+        // A count is not an explanation. "SHARES 12" between a ui and an api
+        // reads as "the ui calls the api" — it is twelve THIRD PARTIES both of
+        // them call, and only the names say so. The server sends them; this
+        // prints them under the label where the reader is already looking.
+        if (link.detail) {
+          const dw = measure(link.detail, 8.5, 500)
+          const dx = Math.min(VW - 70 - dw / 2, Math.max(70 + dw / 2, lx))
+          if (!hitsRect({ x: dx - dw / 2 - 3, y: ly + 3, w: dw + 6, h: 12 })) {
+            occupy(dx - dw / 2 - 3, ly + 3, dw + 6, 12)
+            const dq = T(dx - dw / 2 - 3, ly + 3)
+            ctx!.fillStyle = rgba(pal.ground, .92)
+            rr(dq.x, dq.y, S(dw + 6), S(12), S(3)); ctx!.fill()
+            text(link.detail, dx, ly + 12, { size: 8.5, color: MUTED, align: 'center' })
+          }
+        }
       }
     }
 
@@ -622,7 +652,9 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
 
       const cols = 2
       const cw = (b.w - 28 - 8) / cols
-      const rowsFit = Math.max(0, Math.floor((b.h - 76) / 24))
+      // At least one row, always: the plate is only open because the reader
+      // asked for the names, and opening it to show none answers nothing.
+      const rowsFit = Math.max(1, Math.floor((b.h - 76) / 24))
       const shown = w.sample.slice(0, rowsFit * cols)
       shown.forEach((d, i) => {
         const cx2 = b.x + 14 + (i % cols) * (cw + 8)
@@ -808,8 +840,14 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         text(s, x + w / 2, y + 19, { size: 11.5, color: pal.muted, align: 'center' })
         x += w + 10
       }
-      // the honesty strip — what is sampled, what is excluded
-      scene!.notes.forEach((n, i) => {
+      // the honesty strip — what is sampled, what is excluded, and what the
+      // POSITIONS mean, which changes with the layout the scene earned
+      const notes = lay.clustered
+        ? ['nothing here depends on anything else here, so there is no left-to-right to read — '
+           + 'cards that touch each other are drawn together, and modules nothing connects to sit apart',
+           ...scene!.notes]
+        : scene!.notes
+      notes.forEach((n, i) => {
         text(n, VW - 62, lay.footerY + 24 + i * 14.5, { size: 9.8, color: i === 0 ? pal.amber : MUTED, align: 'right' })
       })
     }

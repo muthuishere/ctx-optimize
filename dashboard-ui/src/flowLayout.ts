@@ -44,6 +44,20 @@ export interface Layout {
   byId: Map<string, Box>
   curves: Curve[]
   maxWeight: number
+  /**
+   * true when the cards were CLUSTERED rather than placed by dependency depth.
+   * A column's x is the longest-path depth in the lifted DAG — but a scene with
+   * no directed edges has no DAG, and every card lands in layer 0. Seven cards
+   * in one column then overflow a fixed frame and overlap each other, which is
+   * what a multi-module repo with no cross-module dependency looked like.
+   *
+   * Clustering keeps position meaningful without inventing a direction:
+   * cards that touch each other are drawn near each other, and modules nothing
+   * connects to are set aside rather than padded into a row. The flag travels
+   * so the picture can SAY that x is no longer dependency depth here — the
+   * killed wall view died of position that meant nothing and did not admit it.
+   */
+  clustered: boolean
 }
 
 // The composition adapts to the STAGE. It used to be a fixed 1600x1000 letter-
@@ -67,7 +81,12 @@ const CARD_H_MIN = 56
 // — the card band collapsed to 7 units and the hub landed on the title.
 const headerH = (vh: number) => Math.max(132, Math.min(254, vh * 0.26))
 const footerH = (vh: number) => Math.max(64, Math.min(112, vh * 0.13))
-const worldH = (vh: number) => Math.max(92, Math.min(WORLD_H, vh * 0.16))
+// An OPEN plate has to fit its heading and at least one row of door names.
+// 92 did not: (92-76)/24 rounds to zero rows, so an expanded plate printed
+// "showing 0 of 25" — it took the space, hid the names, and told the reader
+// the store had nothing, which was false. A plate that cannot show a name is
+// strictly worse than the chip it replaced.
+const worldH = (vh: number) => Math.max(112, Math.min(WORLD_H, vh * 0.16))
 const HUB_R = 100
 // The outer world is a PLATE, not a ring: a transport with 205 ports needs its
 // door names in rows, and the killed wall view proved a perimeter of names is
@@ -89,6 +108,8 @@ export const RELATION_STYLE: Record<string, { line: string; flow: string; label:
   // is drawn dashed and pale so it can never be misread as one.
   depends:  { line: '#9db4d8', flow: '#2f5fa8', label: '#2f5fa8' },
   shares:   { line: '#d8cfc2', flow: '#9a8f7e', label: '#9a8f7e', dashed: true },
+  // one module CONSUMES a port another PROVIDES: a real call between them, so
+  // it reads like `calls` does everywhere else rather than inventing a colour
 }
 export const RELATION_FALLBACK = { line: '#cfcabf', flow: '#4a5cd0', label: '#8a857c', dashed: false }
 export const relationStyle = (rel: string) => RELATION_STYLE[rel] || RELATION_FALLBACK
@@ -233,7 +254,109 @@ export function layout(scene: Scene, vh: number = VH, expanded: string = ''): La
   // sized from the band it has to sit in, not from a constant.
   const hubR = Math.max(40, Math.min(HUB_R, (cardH * HUB_FACTOR) / 2))
 
+  // No topology to draw. One layer means no card depends on another, so there
+  // is no left-to-right to read; a column is then a flow chart of nothing, and
+  // past four cards it does not even fit the frame — seven modules stacked,
+  // overlapping, with the last one past the footer.
+  //
+  // What IS in the data is who touches whom. So the cards are CLUSTERED:
+  // connected ones sit together, and modules nothing connects to are set aside
+  // in their own column. Adjacency then means something — it is the only thing
+  // position can honestly carry when there is no direction to read.
+  const clustered = layers === 1 && cards.length > 3 && !cards.some((c) => c.hub)
   let ordinal = 0
+  if (clustered) {
+    const band = Math.max(CARD_H_MIN, bandBottom - bandTop)
+    const idx = new Map(cards.map((c, i) => [c.id, i]))
+    const deg = cards.map(() => 0)
+    const pairs: Array<[number, number]> = []
+    for (const lk of scene.links || []) {
+      const a = idx.get(lk.from), b = idx.get(lk.to)
+      if (a === undefined || b === undefined || a === b) continue
+      pairs.push([a, b]); deg[a]++; deg[b]++
+    }
+    const linkedCards = cards.filter((_, i) => deg[i] > 0)
+    const loners = cards.filter((_, i) => deg[i] === 0)
+
+    // The lone modules take a narrow column on the right; the connected ones
+    // get the rest. With none of either, the split costs nothing.
+    const loneW = loners.length > 0 ? Math.min(span * 0.28, CARD_W_MAX + 40) : 0
+    const mainW = span - loneW
+    const cw = Math.max(CARD_W_MIN, Math.min(CARD_W_MAX,
+      mainW / Math.max(2, Math.ceil(Math.sqrt(Math.max(1, linkedCards.length)))) - 26))
+    const ch = Math.max(CARD_H_MIN, Math.min(CARD_H_MAX,
+      band / Math.max(2, Math.ceil(Math.sqrt(Math.max(1, linkedCards.length)))) - GAP_Y))
+
+    // Seeded on a circle by rank, then a FIXED number of relaxation passes:
+    // linked pairs pull together, every pair pushes apart. Deterministic — no
+    // clock, no randomness — so the same scene always draws the same picture,
+    // which is what makes a saved arrangement worth saving.
+    const pos = new Map<string, { x: number; y: number }>()
+    const cx0 = left + mainW / 2
+    const cy0 = bandTop + band / 2
+    const rx = Math.max(cw, mainW / 2 - cw / 2 - 12)
+    const ry = Math.max(ch, band / 2 - ch / 2 - 12)
+    linkedCards.forEach((c, i) => {
+      const t = (i / Math.max(1, linkedCards.length)) * Math.PI * 2
+      pos.set(c.id, { x: cx0 + Math.cos(t) * rx * 0.7, y: cy0 + Math.sin(t) * ry * 0.7 })
+    })
+    for (let pass = 0; pass < 60; pass++) {
+      for (const [a, b] of pairs) {
+        const pa = pos.get(cards[a].id), pb = pos.get(cards[b].id)
+        if (!pa || !pb) continue
+        const dx = pb.x - pa.x, dy = pb.y - pa.y
+        const d = Math.hypot(dx, dy) || 1
+        const want = cw * 1.5
+        const k = ((d - want) / d) * 0.06
+        pa.x += dx * k; pa.y += dy * k; pb.x -= dx * k; pb.y -= dy * k
+      }
+      for (let i = 0; i < linkedCards.length; i++) {
+        for (let j = i + 1; j < linkedCards.length; j++) {
+          const pa = pos.get(linkedCards[i].id)!, pb = pos.get(linkedCards[j].id)!
+          const dx = pb.x - pa.x, dy = pb.y - pa.y
+          const d = Math.hypot(dx, dy) || 1
+          const min = Math.hypot(cw + 24, ch + GAP_Y)
+          if (d >= min) continue
+          const k = ((d - min) / d) * 0.5
+          pa.x += dx * k; pa.y += dy * k; pb.x -= dx * k; pb.y -= dy * k
+        }
+      }
+      for (const c of linkedCards) {
+        const p = pos.get(c.id)!
+        p.x = Math.min(left + mainW - cw / 2 - 8, Math.max(left + cw / 2 + 8, p.x))
+        p.y = Math.min(bandBottom - ch / 2, Math.max(bandTop + ch / 2, p.y))
+      }
+    }
+    for (const c of linkedCards) {
+      ordinal++
+      const p = pos.get(c.id)!
+      const b: Box = { id: c.id, kind: 'card', x: p.x - cw / 2, y: p.y - ch / 2, w: cw, h: ch, r: 0, card: c,
+        n: String(cards.indexOf(c) + 1).padStart(2, '0') }
+      boxes.push(b); byId.set(b.id, b)
+    }
+    // The lone column is a column only while there is a cluster to sit beside.
+    // With nothing connected at all — a repo of entirely independent modules —
+    // it is the whole picture, and squeezing it into 28% of the width stacked
+    // six cards into space for three. Then it is a grid across the full frame.
+    const laneW = linkedCards.length > 0 ? loneW : span
+    const laneX = linkedCards.length > 0 ? left + mainW : left
+    const lcols = linkedCards.length > 0
+      ? 1
+      : Math.min(loners.length, Math.max(1, Math.round(Math.sqrt((loners.length * (span / band)) / 2))))
+    const lrows = Math.max(1, Math.ceil(loners.length / lcols))
+    const cellW = laneW / lcols
+    const lw = Math.max(CARD_W_MIN, Math.min(CARD_W_MAX, cellW - 34))
+    // The row step has to fit the band: n cards and (n-1) gaps, never more.
+    const lh = Math.max(CARD_H_MIN, Math.min(ch, (band - (lrows - 1) * GAP_Y) / lrows))
+    const lstep = lrows > 1 ? Math.max(lh + GAP_Y, (band - lh) / (lrows - 1)) : 0
+    loners.forEach((c, i) => {
+      const x = laneX + cellW * ((i % lcols) + 0.5) - lw / 2
+      const y = bandTop + (lrows > 1 ? Math.floor(i / lcols) * lstep : band / 2 - lh / 2)
+      const b: Box = { id: c.id, kind: 'card', x, y, w: lw, h: lh, r: 0, card: c,
+        n: String(cards.indexOf(c) + 1).padStart(2, '0') }
+      boxes.push(b); byId.set(b.id, b)
+    })
+  } else
   for (let l = 0; l < layers; l++) {
     const col = (perLayer.get(l) || []).slice().sort((a, b) => a.row - b.row)
     const cx = left + colW * (l + 0.5)
@@ -374,7 +497,7 @@ export function layout(scene: Scene, vh: number = VH, expanded: string = ''): La
       p3,
     })
   }
-  return { vh, headerH: bandTop, footerY, boxes, byId, curves, maxWeight }
+  return { vh, headerH: bandTop, footerY, boxes, byId, curves, maxWeight, clustered }
 }
 
 export function bez(

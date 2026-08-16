@@ -451,7 +451,7 @@ func TestRepoSceneScanSurvivesKeyReordering(t *testing.T) {
 	// `kind` last, `port` also appearing inside a label — both are cases a
 	// substring-only reader would get wrong.
 	body := `{"label":"port-forwarder","id":"src/x.go","source":"src/x.go","kind":"file"}
-{"metadata":{"transport":"network.http"},"source":"port://network.http/example.com","label":"example.com","id":"port:network.http:>example.com","kind":"port"}
+{"metadata":{"transport":"network.http","direction":"consumes"},"source":"port://network.http/example.com","label":"example.com","id":"port:network.http:>example.com","kind":"port"}
 `
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -460,7 +460,7 @@ func TestRepoSceneScanSurvivesKeyReordering(t *testing.T) {
 	if !scanPorts(p, &rm) {
 		t.Fatal("scanPorts reported failure on a readable file")
 	}
-	if len(rm.Ports) != 1 || rm.Ports[0] != "port:network.http:>example.com" {
-		t.Fatalf("ports = %v, want exactly the one real port", rm.Ports)
+	if len(rm.Consumes) != 1 || rm.Consumes[0] != "port:network.http:>example.com" {
+		t.Fatalf("consumed ports = %v, want exactly the one real port", rm.Consumes)
 	}
 }

@@ -194,6 +194,8 @@ export interface SceneLink {
   relation: string
   label: string
   weight: number
+  /** names what the arrow stands for, where a count alone would mislead */
+  detail?: string
 }
 
 export interface SceneDoor {

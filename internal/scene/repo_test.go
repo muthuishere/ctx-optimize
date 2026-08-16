@@ -99,9 +99,9 @@ func TestDeriveRepoHubIsMostDependedUpon(t *testing.T) {
 // where a real dependency already says something stronger and more specific.
 func TestDeriveRepoSharesIsSeparateFromDepends(t *testing.T) {
 	m := mods()
-	m[0].Ports = []string{"port:network.http:>api.openai.com"}
-	m[1].Ports = []string{"port:network.http:>api.openai.com"}
-	m[2].Ports = []string{"port:network.http:>api.openai.com"}
+	m[0].Consumes = []string{"port:network.http:>api.openai.com"}
+	m[1].Consumes = []string{"port:network.http:>api.openai.com"}
+	m[2].Consumes = []string{"port:network.http:>api.openai.com"}
 	sc := DeriveRepo("acme", m, Options{})
 	for _, l := range sc.Links {
 		if l.Relation != "shares" {
@@ -119,14 +119,69 @@ func TestDeriveRepoSharesIsSeparateFromDepends(t *testing.T) {
 	if l.Relation != "shares" {
 		t.Fatalf("ui -> worker = %q, want shares", l.Relation)
 	}
-	var note string
+	explained := false
 	for _, n := range sc.Notes {
-		if strings.Contains(n, "shares") {
-			note = n
+		if strings.Contains(n, "not a call between them") {
+			explained = true
 		}
 	}
-	if !strings.Contains(note, "not a call") {
-		t.Fatalf("shares is drawn but never explained as not-a-call; notes = %v", sc.Notes)
+	if !explained {
+		t.Fatalf("the dashed link is drawn but never explained as not-a-call; notes = %v", sc.Notes)
+	}
+	// A COUNT is not an explanation. "SHARES 12" between a ui and an api reads
+	// as "the ui calls the api"; only naming the third parties says otherwise,
+	// and that has to travel on the link itself, where the reader is looking.
+	if !strings.Contains(l.Detail, "api.openai.com") {
+		t.Fatalf("the link does not name what is shared: %+v", l)
+	}
+	if l.Label == "SHARES" {
+		t.Fatalf("the label is a verb the reader has to guess at: %q", l.Label)
+	}
+}
+
+// A port one module PROVIDES and another CONSUMES is a call between them —
+// directed, with an arrowhead — and must never be flattened into the symmetric
+// "they both call the same third party".
+func TestDeriveRepoDirectedCallBeatsSharedThirdParty(t *testing.T) {
+	m := mods()
+	m[1].Provides = []string{"port:network.http:>/v1/resume"}                  // api provides
+	m[2].Consumes = []string{"port:network.http:>/v1/resume"}                  // worker calls it
+	m[0].Consumes = []string{"port:network.http:>api.openai.com"}              // ui and
+	m[2].Consumes = append(m[2].Consumes, "port:network.http:>api.openai.com") // worker share a third party
+	sc := DeriveRepo("acme", m, Options{})
+
+	l, ok := repoLink(sc, "acme/apps/worker", "acme/apps/api")
+	if !ok {
+		t.Fatalf("no worker -> api link; links = %+v", sc.Links)
+	}
+	// worker already DECLARES api's package, which is the stronger statement.
+	if l.Relation != "depends" {
+		t.Fatalf("worker -> api = %q; a declared dependency outranks a port join", l.Relation)
+	}
+
+	// ui neither declares nor provides anything worker needs, so the only thing
+	// between them is a third party they both call.
+	sh, ok := repoLink(sc, "acme/apps/ui", "acme/apps/worker")
+	if !ok {
+		sh, ok = repoLink(sc, "acme/apps/worker", "acme/apps/ui")
+	}
+	if !ok || sh.Relation != "shares" {
+		t.Fatalf("ui/worker = %+v, want a dashed shares link", sh)
+	}
+
+	// And with the declaration removed, the port join is what is left — and it
+	// is DIRECTED, because one side provides what the other consumes.
+	m[2].Declares = nil
+	sc = DeriveRepo("acme", m, Options{})
+	c, ok := repoLink(sc, "acme/apps/worker", "acme/apps/api")
+	if !ok || c.Relation != "calls" {
+		t.Fatalf("worker -> api = %+v, want a directed calls link", c)
+	}
+	if !strings.Contains(c.Detail, "/v1/resume") {
+		t.Fatalf("the call does not name what is called: %+v", c)
+	}
+	if _, back := repoLink(sc, "acme/apps/api", "acme/apps/worker"); back {
+		t.Fatalf("a directed call was drawn in both directions")
 	}
 }
 
@@ -216,6 +271,31 @@ func TestDeriveRepoNeverSendsNull(t *testing.T) {
 		for _, k := range []string{"cards", "links", "world", "stats", "chips", "notes", "crumbs", "questions", "inside"} {
 			if m[k] == nil {
 				t.Fatalf("scene.%s is null for %q", k, sc.Module)
+			}
+		}
+	}
+}
+
+// A count and its noun have to agree. "1 modules" and "0 declared dependencys"
+// are the kind of detail that makes a reader wonder what else is sloppy.
+func TestDeriveRepoCountsAgreeWithTheirNouns(t *testing.T) {
+	one := DeriveRepo("solo", mods()[:1], Options{})
+	for _, st := range one.Stats {
+		if st.Text == "1" && strings.HasSuffix(st.Label, "s") {
+			t.Fatalf("stat reads %q %q", st.Text, st.Label)
+		}
+	}
+	for _, sc := range []Scene{one, DeriveRepo("acme", mods(), Options{})} {
+		for _, c := range append(sc.Chips, func() []string {
+			var out []string
+			for _, st := range sc.Stats {
+				out = append(out, st.Text+" "+st.Label)
+			}
+			return out
+		}()...) {
+			if strings.Contains(c, "dependencys") || strings.Contains(c, "callss") ||
+				strings.HasPrefix(c, "1 modules") || strings.Contains(c, "pairs calling") && strings.HasPrefix(c, "1 ") {
+				t.Fatalf("count disagrees with its noun: %q", c)
 			}
 		}
 	}

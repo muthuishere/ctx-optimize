@@ -121,6 +121,11 @@ type Link struct {
 	Relation string `json:"relation"`
 	Label    string `json:"label"`
 	Weight   int    `json:"weight"`
+	// Detail NAMES what the arrow stands for, when a count alone would leave
+	// the reader guessing. "SHARES 12" between a UI and an API reads as "the UI
+	// calls the API"; it is in fact twelve THIRD PARTIES both of them call, and
+	// only the names say so. Empty where the relation is self-explanatory.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Door is ONE port, named. Never a value — Label is the env-var NAME, the
@@ -1048,6 +1053,38 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 	sc.Links = append(links, wlinks...)
 	sc.LiftedShown = len(sc.Links)
 	sc.LiftedTotal = len(lifted) + len(pwAll)
+
+	// A transport plate with no arrow to any card is the norm on a big repo,
+	// not a bug: on linux the 25 config.env ports are opened from 122
+	// directories and not one of them is among the seven drawn. But an
+	// unconnected plate LOOKS like a broken link, so it says which it is —
+	// counting the directories that really do open it, so the reader knows the
+	// ports are attached to something even though the something is off screen.
+	drawnTo := map[string]bool{}
+	for _, l := range wlinks {
+		drawnTo[l.To] = true
+	}
+	openers := map[string]map[string]bool{}
+	for k := range pwAll {
+		if openers[k.to] == nil {
+			openers[k.to] = map[string]bool{}
+		}
+		openers[k.to][k.from] = true
+	}
+	var orphan []string
+	for _, w := range sc.World {
+		if drawnTo["world:"+w.Transport] {
+			continue
+		}
+		orphan = append(orphan, w.Transport+" ("+itoa(len(openers["world:"+w.Transport]))+" directories)")
+	}
+	if len(orphan) > 0 {
+		sort.Strings(orphan)
+		sc.Notes = append(sc.Notes,
+			"no arrow reaches "+strings.Join(orphan, ", ")+
+				" — those ports are opened from directories that are not among the ones drawn. "+
+				"The ports are real; the arrow is not drawn because its other end is off screen")
+	}
 
 	// ---- 10. header stats + chips + the honesty notes.
 	sc.Stats = []Stat{
