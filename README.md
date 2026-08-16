@@ -85,8 +85,10 @@ useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
    INFERRED and `process.exec` is AMBIGUOUS because `os.Getenv(varName)` and
    `exec.Command(bin)` hide the value behind a variable — we report the site and
    refuse to invent the name. Two more limits worth stating: `scope` says
-   `external` on every consumed port today (the internal/external join compares
-   hosts against route paths and never matches), and `query` cannot retrieve
+   `internal` or says nothing — there is no `external` value, because the join
+   that would prove one compares consumed HOSTS against provided ROUTE PATHS
+   and so has no input on the default rules; absence means "not proven
+   internal", never "third-party". And `query` cannot retrieve
    these — use `boundaries` or `nodes --kind port`. `--json` carries the
    `otel.*` keys under their OpenTelemetry semconv names, so a static boundary
    joins a runtime trace on the same key.

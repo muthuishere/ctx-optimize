@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "boundaries": [
+    {
+      "id": "http-same-origin-fetch",
+      "transport": "network.http",
+      "direction": "consumes",
+      "when": { "ext": [".ts", ".tsx", ".js"] },
+      "ast": [{ "shape": "call", "name": "fetch", "arg": 0, "identifier_prefix": "/" }]
+    }
+  ]
+}

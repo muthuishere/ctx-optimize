@@ -20,17 +20,20 @@ import (
 // narrowQuery applies the shared predicate to the graph BEFORE query ranking
 // (pre-rank narrowing, ADR 2026-07-24): "top react files" ranks WITHIN
 // --kind file, so the budget isn't spent on higher-scoring other kinds.
-func narrowQuery(f *flags, nodes []schema.Node, edges []schema.Edge) ([]schema.Node, []schema.Edge, error) {
+func narrowQuery(f *flags, nodes []schema.Node, edges []schema.Edge) ([]schema.Node, []schema.Edge, *discloser, error) {
 	pred, err := graphfilter.ParsePred(f.strs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
+	// The discloser keeps the PRE-narrow streams: only they can say what the
+	// store actually holds when the narrowed ones come back empty.
+	d := newDiscloser(pred, nodes, edges, true, true)
 	n, e := graphfilter.Apply(nodes, edges, pred)
-	return n, e, nil
+	return n, e, d, nil
 }
 
 // cmdNodes lists/filters nodes by kind/file-type/id-prefix/label/scope/where.
-func cmdNodes(args []string, stdout io.Writer) error {
+func cmdNodes(args []string, stdout, stderr io.Writer) error {
 	f := parseFlags(args)
 	pred, err := graphfilter.ParsePred(f.strs)
 	if err != nil {
@@ -52,11 +55,18 @@ func cmdNodes(args []string, stdout io.Writer) error {
 		}
 	}
 	graphfilter.SortNodes(out)
-	return emitNodes(cw, out, graphfilter.Fields(f.strs["select"]), f.bools["ndjson"], f.bools["json"])
+	// `nodes` reads only the node stream, so it never reports about relations.
+	disc := newDiscloser(pred, nodes, nil, true, false).explain(len(out) == 0)
+	machine := f.bools["ndjson"] || f.bools["json"]
+	if machine {
+		emitDisclosure(stderr, disc)
+		disc = nil
+	}
+	return emitNodes(cw, out, graphfilter.Fields(f.strs["select"]), f.bools["ndjson"], f.bools["json"], disc)
 }
 
 // cmdEdges lists/filters edges by relation/confidence/from/to/id-prefix/where.
-func cmdEdges(args []string, stdout io.Writer) error {
+func cmdEdges(args []string, stdout, stderr io.Writer) error {
 	f := parseFlags(args)
 	pred, err := graphfilter.ParsePred(f.strs)
 	if err != nil {
@@ -78,13 +88,19 @@ func cmdEdges(args []string, stdout io.Writer) error {
 		}
 	}
 	graphfilter.SortEdges(out)
-	return emitEdges(cw, out, graphfilter.Fields(f.strs["select"]), f.bools["ndjson"], f.bools["json"])
+	disc := newDiscloser(pred, nil, edges, false, true).explain(len(out) == 0)
+	machine := f.bools["ndjson"] || f.bools["json"]
+	if machine {
+		emitDisclosure(stderr, disc)
+		disc = nil
+	}
+	return emitEdges(cw, out, graphfilter.Fields(f.strs["select"]), f.bools["ndjson"], f.bools["json"], disc)
 }
 
 // cmdDeps is `nodes --kind dependency` with dependency-shaped ergonomics:
 // --scope narrows by runtime/dev/…, --importers appends the files that import
 // each dependency (file --imports--> module:// --resolves_to--> dep:).
-func cmdDeps(args []string, stdout io.Writer) error {
+func cmdDeps(args []string, stdout, stderr io.Writer) error {
 	f := parseFlags(args)
 	pred, err := graphfilter.ParsePred(f.strs)
 	if err != nil {
@@ -139,12 +155,20 @@ func cmdDeps(args []string, stdout io.Writer) error {
 			}
 		}
 	}
-	return emitDepsWithImporters(cw, deps, importers, f.bools["importers"], f.bools["ndjson"], f.bools["json"])
+	// `deps` FORCES --kind dependency, so the disclosure also answers "this
+	// store holds no dependency nodes at all" — the same shape as `--kind route`.
+	disc := newDiscloser(pred, nodes, nil, true, false).explain(len(deps) == 0)
+	machine := f.bools["ndjson"] || f.bools["json"]
+	if machine {
+		emitDisclosure(stderr, disc)
+		disc = nil
+	}
+	return emitDepsWithImporters(cw, deps, importers, f.bools["importers"], f.bools["ndjson"], f.bools["json"], disc)
 }
 
 // ---- emitters ----
 
-func emitNodes(w io.Writer, ns []schema.Node, fields []string, ndjson, jsonArr bool) error {
+func emitNodes(w io.Writer, ns []schema.Node, fields []string, ndjson, jsonArr bool, disc *graphfilter.Disclosure) error {
 	switch {
 	case ndjson:
 		enc := json.NewEncoder(w)
@@ -176,12 +200,12 @@ func emitNodes(w io.Writer, ns []schema.Node, fields []string, ndjson, jsonArr b
 			// Repo-derived; a newline in a label would forge a row (safetext.go).
 			fmt.Fprintf(w, "%s  [%s]  %s%s\n", analyze.SafeLine(n.Label), analyze.SafeLine(n.Kind), analyze.SafeLine(n.ID), loc)
 		}
-		fmt.Fprintf(w, "(%d nodes)\n", len(ns))
+		fmt.Fprintf(w, "(%d nodes)%s\n", len(ns), disc.Note())
 		return nil
 	}
 }
 
-func emitEdges(w io.Writer, es []schema.Edge, fields []string, ndjson, jsonArr bool) error {
+func emitEdges(w io.Writer, es []schema.Edge, fields []string, ndjson, jsonArr bool, disc *graphfilter.Disclosure) error {
 	switch {
 	case ndjson:
 		enc := json.NewEncoder(w)
@@ -208,12 +232,12 @@ func emitEdges(w io.Writer, es []schema.Edge, fields []string, ndjson, jsonArr b
 		for _, e := range es {
 			fmt.Fprintf(w, "%s  --%s-->  %s  [%s]\n", e.Source, e.Relation, e.Target, e.Confidence)
 		}
-		fmt.Fprintf(w, "(%d edges)\n", len(es))
+		fmt.Fprintf(w, "(%d edges)%s\n", len(es), disc.Note())
 		return nil
 	}
 }
 
-func emitDepsWithImporters(w io.Writer, deps []schema.Node, importers map[string][]string, withImporters, ndjson, jsonArr bool) error {
+func emitDepsWithImporters(w io.Writer, deps []schema.Node, importers map[string][]string, withImporters, ndjson, jsonArr bool, disc *graphfilter.Disclosure) error {
 	type depOut struct {
 		ID        string    `json:"id"`
 		Label     string    `json:"label"`
@@ -266,7 +290,7 @@ func emitDepsWithImporters(w io.Writer, deps []schema.Node, importers map[string
 				fmt.Fprintf(w, "%s  [%s]  %s\n", r.Label, scope, r.ID)
 			}
 		}
-		fmt.Fprintf(w, "(%d dependencies)\n", len(rows))
+		fmt.Fprintf(w, "(%d dependencies)%s\n", len(rows), disc.Note())
 		return nil
 	}
 }

@@ -155,6 +155,8 @@ Three verbs read the graph as data. Table output by default, `--json`/`--ndjson`
 | edges [--relation R] [--confidence C] [--from ID] [--to ID] [--id-prefix P] [--where k=v] [--select f1,f2] | List/filter graph **edges**. e.g. `edges --relation resolves_to`, or `edges --relation calls --confidence AMBIGUOUS --to <id>` to see the shortlist a traversal verb held back. |
 | deps [--scope runtime\|dev\|peer\|…] [--importers] | Dependencies with their scope; `--importers` adds the files that import each — one command instead of a jq join. |
 
+**An impossible filter now says so.** `--kind` and `--relation` are OPEN vocabularies (adapters mint their own), so an unknown value is not an error — but when a filter value appears NOWHERE in the store, the verb discloses it and names what does exist: `(0 nodes)  — no node in this store has kind "route"; kinds present: file, function, method, port, section, …`. Exit code stays 0. A REAL value narrowed to nothing by the rest of your filter is a legitimate empty answer and is NOT decorated — so the note means something. Applies to `--kind`, `--file-type`, `--relation`, `--confidence`, `--producer`, `--scope` and `--where k=v` (both the key and the value) on `nodes`, `edges`, `deps`, `query`, `affected`, `hubs`, `report` and `export`. In `--json`/`--ndjson` mode stdout is left untouched and the disclosure arrives on **stderr** as one JSON line, `{"filter_disclosure":{"misses":[…]}}`.
+
 ### Manage & share
 
 | command | what it does |

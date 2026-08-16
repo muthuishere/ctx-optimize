@@ -41,10 +41,19 @@ reserved metadata (validated fail-closed, like schema.Validate today):
               process.exec, ipc.*, ffi.*, ui.action, ui.screen,
               mobile.deeplink, …   (a string, never a Go enum)
   identifier  the external name, normalized per transport (D5)
-  scope       internal | external — decided by JOIN, never by guess:
+  scope       internal, or ABSENT — decided by JOIN, never by guess:
               internal iff the identifier matches a `provides` port in this
-              workspace (that IS the monorepo ui→api link). Recomputed each
-              gather, so moving a service in/out of the repo flips it.
+              same gather. Recomputed each gather, so moving a service in/out
+              of the repo flips it.
+              SUPERSEDED IN PART by ADR 2026-08-15-scope-join-broken: this
+              line originally read "internal | external", and the `external`
+              half was the defect. It was written on every miss, and the join
+              had never matched on any real repo — 56/0 here, 163/0 across
+              reqsume — because the shipped consumes rules yield HOSTS and the
+              shipped provides rules yield ROUTE PATHS. A miss is undecidable,
+              not external, so a miss now emits NO key. The claim that this IS
+              the monorepo ui→api link was also wrong and is withdrawn: the
+              measurement is in ADR 16 §Measurements.
   tier        EXTRACTED | INFERRED | AMBIGUOUS — existing tiers, unchanged
 relations: provides / consumes   (file|function → port)
 ```

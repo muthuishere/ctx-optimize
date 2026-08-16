@@ -1,6 +1,7 @@
 package analyze
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
@@ -27,8 +28,8 @@ func bnedge(src, dst, rel, conf, site string) schema.Edge {
 // otherwise a monorepo reports its egress N times and the count lies.
 func TestFederatedPortsFoldByIdentifierNotID(t *testing.T) {
 	nodes := []schema.Node{
-		bport("apps/api/port:network.http:>api.openai.com", "consumes", "network.http", "api.openai.com", map[string]string{"scope": "external"}),
-		bport("apps/ui/port:network.http:>api.openai.com", "consumes", "network.http", "api.openai.com", map[string]string{"scope": "external"}),
+		bport("apps/api/port:network.http:>api.openai.com", "consumes", "network.http", "api.openai.com", nil),
+		bport("apps/ui/port:network.http:>api.openai.com", "consumes", "network.http", "api.openai.com", nil),
 	}
 	edges := []schema.Edge{
 		bnedge("apps/api/openai.go", "apps/api/port:network.http:>api.openai.com", "consumes", schema.Extracted, "openai.go:L42"),
@@ -109,17 +110,22 @@ func TestBudgetAlwaysReportsWhatItWithheld(t *testing.T) {
 
 // Secrets lead, then egress, then alphabetical — a reader scanning for "what
 // leaks" should not have to page. Also pins determinism.
+//
+// "Egress first" is now expressed as "NOT proven internal first" (ADR
+// 2026-08-15-scope-join-broken): scope carries only `internal`, so MMM_INT
+// sorts BEHIND the alphabetically-later ZZZ_PLAIN precisely because it is the
+// one port the join proved stays inside.
 func TestEntryOrderSecretsThenExternalThenName(t *testing.T) {
 	nodes := []schema.Node{
 		bport("p1", "consumes", "config.env", "ZZZ_PLAIN", nil),
 		bport("p2", "consumes", "config.env", "AAA_SECRET", map[string]string{"sensitive": "true"}),
-		bport("p3", "consumes", "config.env", "MMM_EXT", map[string]string{"scope": "external"}),
+		bport("p3", "consumes", "config.env", "MMM_INT", map[string]string{"scope": "internal"}),
 	}
 	var edges []schema.Edge
 	for _, id := range []string{"p1", "p2", "p3"} {
 		edges = append(edges, bnedge("f.go", id, "consumes", schema.Inferred, "f.go:L1"))
 	}
-	want := []string{"AAA_SECRET", "MMM_EXT", "ZZZ_PLAIN"}
+	want := []string{"AAA_SECRET", "ZZZ_PLAIN", "MMM_INT"}
 	for i := 0; i < 3; i++ { // repeat: map iteration must not leak into order
 		r := Boundaries(nodes, edges, BoundaryOptions{})
 		for j, e := range r.Consumes[0].Entries {
@@ -134,15 +140,19 @@ func TestEntryOrderSecretsThenExternalThenName(t *testing.T) {
 // expose" are different questions.
 func TestDirectionSplitAndFilters(t *testing.T) {
 	nodes := []schema.Node{
-		bport("p1", "consumes", "network.http", "api.example.com", map[string]string{"scope": "external"}),
+		bport("p1", "consumes", "network.http", "api.example.com", nil),
 		bport("p2", "provides", "network.http", "/health", nil),
 		bport("p3", "consumes", "process.exec", "git", nil),
+		// The only port PROVEN internal: the join found /health provided here.
+		// Nothing else carries a scope, because a miss is undecidable rather
+		// than external (ADR 2026-08-15-scope-join-broken).
+		bport("p4", "consumes", "network.http", "/health", map[string]string{"scope": "internal"}),
 	}
 	var edges []schema.Edge
-	for _, id := range []string{"p1", "p2", "p3"} {
-		edges = append(edges, bnedge("f.go", id, map[string]string{"p2": "provides"}[id]+"", schema.Extracted, "f.go:L1"))
+	for _, id := range []string{"p1", "p2", "p3", "p4"} {
+		edges = append(edges, bnedge("f.go", id, "consumes", schema.Extracted, "f.go:L1"))
 	}
-	edges[0].Relation, edges[1].Relation, edges[2].Relation = "consumes", "provides", "consumes"
+	edges[1].Relation = "provides"
 
 	r := Boundaries(nodes, edges, BoundaryOptions{})
 	if len(r.Consumes) != 2 || len(r.Provides) != 1 {
@@ -157,9 +167,24 @@ func TestDirectionSplitAndFilters(t *testing.T) {
 	if len(fam.Consumes) != 1 || fam.Consumes[0].Transport != "network.http" {
 		t.Errorf("--transport network should match network.http, got %+v", fam.Consumes)
 	}
+	// `internal` is the only value the join can prove, so the group's Internal
+	// count is 1 of 2 and there is no External counter to disagree with it.
+	if g := fam.Consumes[0]; g.Total != 2 || g.Internal != 1 {
+		t.Errorf("network.http group should be 2 total / 1 internal, got %+v", g)
+	}
+	// --external is "everything not PROVEN internal": it drops /health and
+	// keeps both the unjoined host and the unjoinable process port. Asserting
+	// scope=="external" would be asserting a value nothing emits.
 	ext := Boundaries(nodes, edges, BoundaryOptions{OnlyExt: true})
-	if len(ext.Consumes) != 1 || ext.Consumes[0].Entries[0].Identifier != "api.example.com" {
-		t.Errorf("--external should keep only scope=external, got %+v", ext.Consumes)
+	var got []string
+	for _, g := range ext.Consumes {
+		for _, e := range g.Entries {
+			got = append(got, e.Identifier)
+		}
+	}
+	sort.Strings(got)
+	if len(got) != 2 || got[0] != "api.example.com" || got[1] != "git" {
+		t.Errorf("--external should keep everything not proven internal, got %v", got)
 	}
 }
 

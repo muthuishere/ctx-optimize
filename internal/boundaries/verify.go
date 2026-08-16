@@ -214,10 +214,12 @@ func VerifyWith(root string, src HitSource) (*Report, error) {
 }
 
 func verifyRule(root string, r *Rule, emitted map[Site]bool) RuleResult {
-	res := RuleResult{Rule: r.ID, Transport: r.Transport, Tier: r.Tier}
-	if res.Tier == "" {
-		res.Tier = "EXTRACTED"
-	}
+	// The reported tier must be the tier the rule's sites are actually emitted
+	// at — an unmeasured rule reads AMBIGUOUS here as well as in the graph
+	// (tier.go, ADR 2026-08-15-authoring-loop-unenforced D1). Reporting
+	// EXTRACTED for a rule the engine demotes would put the lie in the very
+	// verb whose job is holding a rule to its evidence.
+	res := RuleResult{Rule: r.ID, Transport: r.Transport, Tier: defaultedTier(r)}
 
 	var vb verifiedBlock
 	if len(r.Verified) == 0 {

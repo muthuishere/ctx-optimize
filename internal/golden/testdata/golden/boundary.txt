@@ -1,16 +1,19 @@
-== ports (11)
-P port:config.env:>OPENAI_API_KEY | dir=consumes | transport=config.env | identifier=OPENAI_API_KEY | scope=external | sensitive=true
-P port:config.env:>PAYMENTS_API_KEY | dir=consumes | transport=config.env | identifier=PAYMENTS_API_KEY | scope=external | sensitive=true
-P port:config.env:>SERVICE_TIER | dir=consumes | transport=config.env | identifier=SERVICE_TIER | scope=external | sensitive=-
+== ports (14)
+P port:config.env:>OPENAI_API_KEY | dir=consumes | transport=config.env | identifier=OPENAI_API_KEY | scope=- | sensitive=true
+P port:config.env:>PAYMENTS_API_KEY | dir=consumes | transport=config.env | identifier=PAYMENTS_API_KEY | scope=- | sensitive=true
+P port:config.env:>SERVICE_TIER | dir=consumes | transport=config.env | identifier=SERVICE_TIER | scope=- | sensitive=-
 P port:network.http:</healthz | dir=provides | transport=network.http | identifier=/healthz | scope=- | sensitive=-
 P port:network.http:</orders | dir=provides | transport=network.http | identifier=/orders | scope=- | sensitive=-
 P port:network.http:</status | dir=provides | transport=network.http | identifier=/status | scope=- | sensitive=-
 P port:network.http:</upload | dir=provides | transport=network.http | identifier=/upload | scope=- | sensitive=-
-P port:network.http:>api.openai.com | dir=consumes | transport=network.http | identifier=api.openai.com | scope=external | sensitive=-
-P port:network.http:>api.weather.example | dir=consumes | transport=network.http | identifier=api.weather.example | scope=external | sensitive=-
-P port:process.exec:>git | dir=consumes | transport=process.exec | identifier=git | scope=external | sensitive=-
-P port:storage.local:>session_token | dir=consumes | transport=storage.local | identifier=session_token | scope=external | sensitive=-
-== boundary edges (12)
+P port:network.http:>/nowhere | dir=consumes | transport=network.http | identifier=/nowhere | scope=- | sensitive=-
+P port:network.http:>/orders | dir=consumes | transport=network.http | identifier=/orders | scope=internal | sensitive=-
+P port:network.http:>/status | dir=consumes | transport=network.http | identifier=/status | scope=internal | sensitive=-
+P port:network.http:>api.openai.com | dir=consumes | transport=network.http | identifier=api.openai.com | scope=- | sensitive=-
+P port:network.http:>api.weather.example | dir=consumes | transport=network.http | identifier=api.weather.example | scope=- | sensitive=-
+P port:process.exec:>git | dir=consumes | transport=process.exec | identifier=git | scope=- | sensitive=-
+P port:storage.local:>session_token | dir=consumes | transport=storage.local | identifier=session_token | scope=- | sensitive=-
+== boundary edges (15)
 E ai/agent.py -consumes-> port:config.env:>OPENAI_API_KEY | INFERRED | rule=env-py | site=ai/agent.py:L4
 E ai/agent.py -consumes-> port:network.http:>api.openai.com | EXTRACTED | rule=service:openai | site=ai/agent.py:L8
 E api/main.go -consumes-> port:config.env:>PAYMENTS_API_KEY | INFERRED | rule=env-go | site=api/main.go:L12
@@ -22,4 +25,7 @@ E pyproject.toml -consumes-> port:network.http:>api.openai.com | INFERRED | rule
 E web/app.ts -provides-> port:network.http:</status | INFERRED | rule=routes-express | site=web/app.ts:L5
 E web/app.ts -provides-> port:network.http:</upload | INFERRED | rule=routes-express | site=web/app.ts:L6
 E web/app.ts -consumes-> port:storage.local:>session_token | INFERRED | rule=webstorage | site=web/app.ts:L9
+E web/client.ts -consumes-> port:network.http:>/nowhere | AMBIGUOUS | rule=http-same-origin-fetch | site=web/client.ts:L22
+E web/client.ts -consumes-> port:network.http:>/orders | AMBIGUOUS | rule=http-same-origin-fetch | site=web/client.ts:L10
+E web/client.ts -consumes-> port:network.http:>/status | AMBIGUOUS | rule=http-same-origin-fetch | site=web/client.ts:L15
 E worker/worker.go -consumes-> port:network.http:>api.weather.example | INFERRED | rule=http-url-literal | site=worker/worker.go:L7

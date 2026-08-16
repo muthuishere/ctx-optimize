@@ -10,6 +10,63 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+- **A filter that cannot possibly match now says so, instead of returning a
+  plausible empty answer.** Third instance of the same defect class (after the
+  silently-ignored unknown flag and the silently-dropped repeated `--where`, both
+  fixed in `1c2e9bf`): `ctx-optimize nodes --kind route` printed `(0 nodes)` and
+  exited 0. There is no `route` kind — a served route is a `port` node with
+  `direction=provides` — and our own shipped authoring guide taught that exact
+  command, so an agent following our instructions concluded the repo serves
+  nothing. `--kind` is deliberately an OPEN vocabulary (adapters mint their own),
+  so rejecting an unknown value would be wrong; **disclosure** is the fix. When a
+  result is empty AND a filter value appears NOWHERE in the store, the verb names
+  it and lists what does exist — `(0 nodes)  — no node in this store has kind
+  "route"; kinds present: file, function, method, port, section, …`. A REAL value
+  narrowed to nothing by the rest of the predicate is a legitimate empty answer
+  and is **not** decorated, which is what keeps the note worth reading. Covers
+  `--kind`, `--file-type`, `--relation`, `--confidence`, `--producer`, `--scope`
+  and `--where k=v` (key and value) across `nodes`, `edges`, `deps`, `query`,
+  `affected`, `hubs`, `report`, `export`. **Exit code stays 0** — an empty result
+  is a legitimate answer and scripts depend on it. Suggestion lists are sorted,
+  capped at 20 with `(+N more)`, and suppressed rather than guessed for a
+  high-cardinality key. In `--json`/`--ndjson` mode stdout is left byte-identical
+  (a bare array stays a bare array) and the disclosure is written to **stderr** as
+  one JSON line, `{"filter_disclosure":{"misses":[…]}}`. Costs nothing on the fast
+  path: the enumeration runs only on an empty result, over the graph the verb had
+  already loaded — measured on the 2.85M-node linux store, `card` 26ms → 26ms and
+  `nodes --kind file` (58,671 hits) unchanged within noise.
+
+- **`scope` on a port stops lying: it says `internal`, or it says nothing.**
+  ADR 1 documented `scope` as "internal | external — decided by JOIN, never by
+  guess". Measured on two real stores, the join had **never once matched**:
+  56 external / 0 internal here, 163 external / 0 internal across reqsume's
+  seven modules. The cause is structural — every shipped `consumes` rule on
+  `network.http` yields a **host** (`api.openai.com`) and every shipped
+  `provides` rule yields a **route path** (`/orders`), so string equality
+  between them is unsatisfiable and the join was a no-op that read as a
+  computation. Three repairs were measured before choosing (numbers in
+  `openspec/changes/2026-08-15-scope-join-broken/`); none could produce
+  `internal` without guessing, so the constant is removed rather than
+  reproduced. The producer now writes `scope: internal` **only when the join
+  actually fires** and writes nothing on a miss, because "not provided here" is
+  undecidable, not false. Consequences you will see:
+  - re-gathering drops the `scope` key from every consumed port on the default
+    rule set — the field's absence is the honest reading, "not proven internal";
+  - `boundaries` no longer prints an `N external` count per transport (it was
+    always N-of-N); `N internal` still prints when there is one;
+  - `--external` now means "everything not proven internal", which is what it
+    was always understood to mean;
+  - the `external` value is still accepted at the `add --json` door, so an
+    adapter that genuinely knows a port is third-party can still say so.
+  A repo whose rules put both sides in the same namespace — a same-origin
+  `fetch("/orders")` matcher, say — gets a real `internal`, and that is now the
+  gated case: the golden boundary fixture contains a module that provides
+  `/orders` and another that consumes it, asserts `internal`, asserts that a
+  MISS emits no key, and asserts that no port anywhere carries any other value.
+  The old fixture pinned `scope` per port and passed while asserting the bug,
+  because its expectations were recorded from the broken output — the same
+  failure shape as the perf gate that recorded its own measurement.
+
 - **`serve` gets a second viewer, and a switcher to reach it: Flow — the
   architecture, DERIVED.** The dashboard's only picture was the force-directed
   graph, which on a real store is a hairball. The new **Flow** viewer draws the
@@ -77,6 +134,48 @@ embeddings, no MCP, no network except your configured remote.**
   and print that verb's own block sliced out of the same `help` text (so the two
   cannot drift) plus its accepted flags — writing nothing, anywhere (ADR
   2026-08-15-skills-on-by-default, D2).
+
+- **The skill installs itself on FIRST RUN, and says exactly what it wrote.**
+  `npm install -g @muthuishere/ctx-optimize` used to leave a CLI the user's
+  agent never calls, because `install --skills` was a second command nobody
+  runs — the graph got built, was correct, and was invisible. The first time any
+  verb runs with no skill present, the binary installs the skill
+  (`~/.claude/skills/ctx-optimize`, `~/.agents/skills/ctx-optimize`) and the
+  prompt hooks, prints **one line naming every path it wrote** plus the undo
+  (`ctx-optimize uninstall`), and records it, so the second run is silent.
+  Deliberately NOT an npm postinstall (D0): that is the supply-chain shape teams
+  block, `npm ci --ignore-scripts` skips it for exactly the users most likely to
+  care, and it would cover only one channel — running the binary is the act of
+  consent, and every channel shares it. It is **suppressed entirely** in CI (any
+  of `CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, … set), when stdout is not a terminal,
+  or with `CTX_OPTIMIZE_NO_AUTO_INSTALL=1`. "Not a terminal" is the kernel's
+  terminal ioctl, not the file mode: `/dev/null` IS a character device, so a
+  mode test called it a terminal and `ctx-optimize add . >/dev/null 2>&1` in a
+  cron job or a Dockerfile RUN line wrote 40 files into `$HOME` — measured, and
+  now pinned by a `/dev/null` case beside the regular-file and pipe ones.
+  `uninstall` removes the skill, the hooks and the global rule but deliberately
+  KEEPS the first-run record `~/.config/ctx-optimize/auto-install.json`, and now
+  says so: without it the next command would reinstall what you just removed.
+  It runs **after** the `--help` check, so
+  asking a question never installs anything; it **never touches a repo** (the
+  committed `CLAUDE.md`/`AGENTS.md` pointer block stays with `init`); and it
+  **never writes the global always-on rule** into `~/.claude/CLAUDE.md` /
+  `~/.codex/AGENTS.md` — that larger claim on the user's machine stays with the
+  explicit `install` verb, and first run only says the verb exists. The notice
+  goes to stderr, so a first `query --json` still puts nothing but JSON on
+  stdout (ADR 2026-08-15-skills-on-by-default, D1).
+
+- **Fixed: an unmeasured boundary rule claimed the highest confidence.** A rule
+  with no `verified` block loaded without complaint, and an omitted `tier`
+  defaulted to **EXTRACTED** — the tier that asserts parsed certainty was what a
+  rule got for providing no evidence at all, while every other confidence
+  decision in this product fails toward doubt. An unmeasured rule now defaults
+  to **AMBIGUOUS**; a rule that ships its measurement but omits the tier still
+  defaults to EXTRACTED, and a declared tier always wins. All 16 shipped rules
+  declare both, so nothing moved — proven by diffing every emitted port edge on
+  this repo before and after (125 edges: 35 AMBIGUOUS + 90 INFERRED, identical),
+  and pinned by a test that fails if a future shipped rule omits either (ADR
+  2026-08-15-authoring-loop-unenforced, D1, option b).
 
 ## [0.14.0] — 2026-08-15
 
@@ -265,10 +364,12 @@ Re-gathering an existing repo will also move some numbers, all deliberately:
 - **Some citations move to wider, more correct ranges** — a symbol that pointed
   at a 2-line prototype may now point at its 72-line body.
 - **New `port` nodes appear**, which is the boundary lane.
-- **`scope` on consumed ports is always `external` today.** The internal/external
-  join compares hostnames against route paths and can never match; it is
-  documented in `openspec/changes/2026-08-15-scope-join-broken/` rather than
-  quietly left to look like a computation.
+- **`scope` on consumed ports is always `external` in this release.** The
+  internal/external join compares hostnames against route paths and can never
+  match; it is documented in `openspec/changes/2026-08-15-scope-join-broken/`
+  rather than quietly left to look like a computation. *(Fixed in Unreleased:
+  the field is now written only when the join fires, and there is no `external`
+  value.)*
 
 ### Added — testing
 

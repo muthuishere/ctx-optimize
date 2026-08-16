@@ -94,12 +94,13 @@ func printBoundaries(w io.Writer, r *analyze.BoundaryReport) {
 }
 
 // groupCounts is the line that makes the summary readable before any entry is:
-// how many, how many leave the workspace, how many are secrets.
+// how many, how many stay inside the workspace, how many are secrets.
+//
+// There is no "N external" count. `scope` is emitted only when the join
+// PROVES a port internal (ADR 2026-08-15-scope-join-broken); printing the
+// remainder as external would restate the constant this ADR removed.
 func groupCounts(g analyze.BoundaryGroup) string {
 	parts := []string{fmt.Sprintf("%d", g.Total)}
-	if g.External > 0 {
-		parts = append(parts, fmt.Sprintf("%d external", g.External))
-	}
 	if g.Internal > 0 {
 		parts = append(parts, fmt.Sprintf("%d internal", g.Internal))
 	}

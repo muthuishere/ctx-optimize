@@ -86,8 +86,16 @@ rules over the shipped defaults, **by rule id**, so you can narrow or replace a 
 without forking anything.
 
 :::caution
-Two honest limits. **`scope` on a consumed port is always `external`** — the join compares
-hostnames against route paths and cannot match. And a **port list is a floor, not a
-census**: a host assembled by string concatenation is not a literal, so it is reported as
-AMBIGUOUS or not at all. The rules say what they miss.
+Two honest limits. **`scope` says `internal` or says nothing.** It is written only when the
+join actually fires — when a consumed identifier matches a `provides` port in the same
+gather. Absence means *not proven internal*, which is usually because the two sides are
+different namespaces: every shipped `consumes` rule on HTTP yields a **host**
+(`api.openai.com`) and every shipped `provides` rule yields a **route path** (`/orders`).
+There is no `external` value, because "we did not find it here" is not evidence that a
+call leaves the building. On the default rule set you will therefore see no `scope` at
+all; a repo that authors a rule sharing the provides namespace — a same-origin
+`fetch("/orders")` rule, say — gets a real `internal`.
+
+And a **port list is a floor, not a census**: a host assembled by string concatenation is
+not a literal, so it is reported as AMBIGUOUS or not at all. The rules say what they miss.
 :::

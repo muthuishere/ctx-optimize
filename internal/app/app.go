@@ -75,6 +75,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		verbHelp(stdout, cmd)
 		return 0
 	}
+	// First run with no skill installed: install it, name every path written,
+	// record it so the second run is silent. AFTER the --help check above —
+	// `--help` must never trigger an install — and suppressed entirely in CI,
+	// off a TTY, or under CTX_OPTIMIZE_NO_AUTO_INSTALL. See firstrun.go
+	// (ADR 2026-08-15-skills-on-by-default, D1).
+	maybeFirstRunInstall(cmd, stdout, stderr)
 	// Lever 3 — lazy autosync (ADR 2026-07-24-lazy-autosync): a read verb on a
 	// stale store either resyncs inline (block) or spawns a detached child and
 	// answers now (lazy). Config-gated, default off — a no-op unless opted in.
@@ -100,7 +106,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "adapters":
 		err = cmdAdapters(rest, stdout)
 	case "query", "ask": // `ask` — same verb graphify users reach for
-		err = cmdQuery(rest, stdout)
+		err = cmdQuery(rest, stdout, stderr)
 	case "search": // cross-OS literal sweep — same RE2 + file set as boundary rules (ADR 2026-08-13)
 		err = cmdSearch(rest, stdout)
 	case "services": // D5 services registry — the dependency IS the boundary (ADR 2026-08-13)
@@ -126,27 +132,27 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "verify":
 		err = cmdVerify(rest, stdout)
 	case "affected", "impact":
-		err = cmdAffected(rest, stdout)
+		err = cmdAffected(rest, stdout, stderr)
 	case "change-plan", "plan":
 		err = cmdChangePlan(rest, stdout)
 	case "hubs":
-		err = cmdHubs(rest, stdout)
+		err = cmdHubs(rest, stdout, stderr)
 	case "drift": // D6 boundary-surface disagreements — EXTRACTED×EXTRACTED findings only (ADR 2026-08-13)
 		err = cmdDrift(rest, stdout)
 	case "report":
-		err = cmdReport(rest, stdout)
+		err = cmdReport(rest, stdout, stderr)
 	case "wiki":
 		err = cmdWiki(rest, stdout)
 	case "merge":
 		err = cmdMerge(rest, stdout)
 	case "nodes":
-		err = cmdNodes(rest, stdout)
+		err = cmdNodes(rest, stdout, stderr)
 	case "edges":
-		err = cmdEdges(rest, stdout)
+		err = cmdEdges(rest, stdout, stderr)
 	case "deps":
-		err = cmdDeps(rest, stdout)
+		err = cmdDeps(rest, stdout, stderr)
 	case "export":
-		err = cmdExport(rest, stdout)
+		err = cmdExport(rest, stdout, stderr)
 	case "serve", "dashboard":
 		err = cmdServe(rest, stdout)
 	case "languages", "grammar": // `grammar` kept as an alias
@@ -1107,7 +1113,7 @@ func cmdAdapters(args []string, stdout io.Writer) error {
 	return fmt.Errorf("usage: ctx-optimize adapters <list | run [name] | help <scheme>>")
 }
 
-func cmdQuery(args []string, stdout io.Writer) error {
+func cmdQuery(args []string, stdout, stderr io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) == 0 {
 		return fmt.Errorf("usage: ctx-optimize query \"<question>\" [--budget N] [--json] [--modules all|a,b] [--root] [--include-content]")
@@ -1146,7 +1152,8 @@ func cmdQuery(args []string, stdout io.Writer) error {
 			return err
 		}
 		var qperr error
-		nodes, edges, qperr = narrowQuery(f, nodes, edges)
+		var qd *discloser
+		nodes, edges, qd, qperr = narrowQuery(f, nodes, edges)
 		if qperr != nil {
 			return qperr
 		}
@@ -1155,10 +1162,13 @@ func cmdQuery(args []string, stdout io.Writer) error {
 			hydrateHits(res.Hits, bodyRootFor(sc))
 		}
 		defer func() { served(s, "query", q, len(res.Hits), cw, t0) }()
+		disc := qd.explain(len(res.Hits) == 0)
 		if f.bools["json"] {
+			emitDisclosure(stderr, disc)
 			return emit(cw, res)
 		}
 		fmt.Fprint(cw, query.Render(res))
+		fmt.Fprint(cw, disc.Block())
 		return nil
 	}
 
@@ -1178,7 +1188,7 @@ func cmdQuery(args []string, stdout io.Writer) error {
 			return err
 		}
 		var qperr error
-		nodes, edges, qperr = narrowQuery(f, nodes, edges)
+		nodes, edges, _, qperr = narrowQuery(f, nodes, edges)
 		if qperr != nil {
 			return qperr
 		}
@@ -1197,7 +1207,7 @@ func cmdQuery(args []string, stdout io.Writer) error {
 		}
 		fmt.Fprintf(cw, "[%s] no hits — escalating to root\n", sc.moduleName)
 	}
-	return federatedQuery(sc, storeRoot, f, q, budget, cw, t0)
+	return federatedQuery(sc, storeRoot, f, q, budget, cw, stderr, t0)
 }
 
 // federatedQuery answers from the multi-module root: EVERY module store (+
@@ -1205,7 +1215,7 @@ func cmdQuery(args []string, stdout io.Writer) error {
 // one-graph-one-search simplicity, kept because it's cheap (beam's 310
 // modules / 188k nodes load + rank in ~0.6s). No ranking gate, no widen
 // dance; --modules a,b narrows explicitly when the user wants less.
-func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int, cw *countingWriter, t0 time.Time) error {
+func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int, cw *countingWriter, stderr io.Writer, t0 time.Time) error {
 	if len(sc.modules) == 0 {
 		mods, err := expandRootModules(sc)
 		if err != nil {
@@ -1237,7 +1247,8 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 		return err
 	}
 	var qperr error
-	nodes, edges, qperr = narrowQuery(f, nodes, edges)
+	var qd *discloser
+	nodes, edges, qd, qperr = narrowQuery(f, nodes, edges)
 	if qperr != nil {
 		return qperr
 	}
@@ -1248,11 +1259,14 @@ func federatedQuery(sc *scope, storeRoot string, f *flags, q string, budget int,
 	if rs, err := store.Open(storeRoot, sc.rootKey); err == nil {
 		defer func() { served(rs, "query", q, len(res.Hits), cw, t0) }()
 	}
+	disc := qd.explain(len(res.Hits) == 0)
 	if f.bools["json"] {
+		emitDisclosure(stderr, disc)
 		return emit(cw, map[string]any{"scope": scopeLabel, "result": res})
 	}
 	fmt.Fprintf(cw, "[%s]\n", scopeLabel)
 	fmt.Fprint(cw, query.Render(res))
+	fmt.Fprint(cw, disc.Block())
 	return nil
 }
 
@@ -2180,7 +2194,7 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 	}
 }
 
-func cmdAffected(args []string, stdout io.Writer) error {
+func cmdAffected(args []string, stdout, stderr io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) != 1 {
 		return fmt.Errorf(`usage: ctx-optimize affected "X" [--depth N] [--relation R] [--root]`)
@@ -2225,6 +2239,7 @@ func cmdAffected(args []string, stdout io.Writer) error {
 	}
 	// Post-filter the blast set by the shared predicate (e.g. --kind test →
 	// "which impacted nodes are tests"). Node-dims only; ordering preserved.
+	var disc *graphfilter.Disclosure
 	if pred, perr := graphfilter.ParsePred(f.strs); perr != nil {
 		return perr
 	} else if !pred.Empty() {
@@ -2235,12 +2250,16 @@ func cmdAffected(args []string, stdout io.Writer) error {
 			}
 		}
 		impacts = kept
+		// The blast set is post-filtered on NODE dims only, so the disclosure
+		// speaks about nodes and is measured against the whole store.
+		disc = newDiscloser(pred, nodes, nil, true, false).explain(len(impacts) == 0)
 	}
 	note := ""
 	if sc != nil && sc.kind == scopeModule && crossModuleEcho(sc, storeRoot, target.Label) {
 		note = boundaryNote
 	}
 	if f.bools["ndjson"] {
+		emitDisclosure(stderr, disc)
 		enc := json.NewEncoder(stdout)
 		for _, im := range impacts {
 			if err := enc.Encode(im); err != nil {
@@ -2257,6 +2276,7 @@ func cmdAffected(args []string, stdout io.Writer) error {
 		if scopeNote != "" {
 			out["scope"] = scopeNote
 		}
+		emitDisclosure(stderr, disc)
 		return emit(stdout, out)
 	}
 	if scopeNote != "" {
@@ -2280,6 +2300,7 @@ func cmdAffected(args []string, stdout io.Writer) error {
 	if note != "" {
 		fmt.Fprintln(stdout, note)
 	}
+	fmt.Fprint(stdout, disc.Block())
 	return nil
 }
 
@@ -2287,7 +2308,7 @@ func cmdAffected(args []string, stdout io.Writer) error {
 // seams between subsystems, and what the graph could NOT resolve. The last
 // section is the one no comparable tool prints; see internal/analyze/report.go
 // for why we report gaps instead of graphify-style "surprising connections".
-func cmdReport(args []string, stdout io.Writer) error {
+func cmdReport(args []string, stdout, stderr io.Writer) error {
 	f := parseFlags(args)
 	nodes, edges, err := loadGraph(f)
 	if err != nil {
@@ -2298,22 +2319,27 @@ func cmdReport(args []string, stdout io.Writer) error {
 	stdout = cw
 	st, _ := openStore(f)
 	defer func() { served(st, "report", "", 1, cw, t0) }()
+	var disc *graphfilter.Disclosure
 	if pred, perr := graphfilter.ParsePred(f.strs); perr != nil {
 		return perr
 	} else if !pred.Empty() {
+		all, allE := nodes, edges
 		nodes, edges = graphfilter.Apply(nodes, edges, pred)
+		disc = newDiscloser(pred, all, allE, true, true).explain(len(nodes) == 0 || len(edges) == 0)
 	}
 	r := analyze.Report(nodes, edges)
 	if f.bools["json"] {
+		emitDisclosure(stderr, disc)
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(r)
 	}
 	fmt.Fprint(stdout, analyze.RenderReport(r))
+	fmt.Fprint(stdout, disc.Block())
 	return nil
 }
 
-func cmdHubs(args []string, stdout io.Writer) error {
+func cmdHubs(args []string, stdout, stderr io.Writer) error {
 	f := parseFlags(args)
 	nodes, edges, err := loadGraph(f)
 	if err != nil {
@@ -2332,13 +2358,17 @@ func cmdHubs(args []string, stdout io.Writer) error {
 	}
 	// Pre-filter so hubs rank WITHIN the kind (e.g. --kind file → top file
 	// hubs), not "top hubs, keep files".
+	var disc *graphfilter.Disclosure
 	if pred, perr := graphfilter.ParsePred(f.strs); perr != nil {
 		return perr
 	} else if !pred.Empty() {
+		all, allE := nodes, edges
 		nodes, edges = graphfilter.Apply(nodes, edges, pred)
+		disc = newDiscloser(pred, all, allE, true, true).explain(len(nodes) == 0 || len(edges) == 0)
 	}
 	hubs := analyze.Hubs(nodes, edges, top, ambOpts(f)...)
 	if f.bools["ndjson"] {
+		emitDisclosure(stderr, disc)
 		enc := json.NewEncoder(stdout)
 		for _, h := range hubs {
 			if err := enc.Encode(h); err != nil {
@@ -2348,11 +2378,13 @@ func cmdHubs(args []string, stdout io.Writer) error {
 		return nil
 	}
 	if f.bools["json"] {
+		emitDisclosure(stderr, disc)
 		return emit(stdout, map[string]any{"hubs": hubs})
 	}
 	for _, h := range hubs {
 		fmt.Fprintf(stdout, "%4d (%d in / %d out)  %s  [%s]  %s\n", h.In+h.Out, h.In, h.Out, h.Node.Label, h.Node.Kind, h.Node.Source)
 	}
+	fmt.Fprint(stdout, disc.Block())
 	return nil
 }
 
@@ -2498,7 +2530,7 @@ func cmdMerge(args []string, stdout io.Writer) error {
 // cmdExport dumps the graph for other tools: json (default), dot (Graphviz),
 // graphml (yEd/Gephi/networkx), csv (nodes.csv + edges.csv), obsidian (a
 // wikilinked vault — requires --out DIR), or all (every format under --out DIR).
-func cmdExport(args []string, stdout io.Writer) error {
+func cmdExport(args []string, stdout, stderr io.Writer) error {
 	f := parseFlags(args)
 	s, err := openStore(f)
 	if err != nil {
@@ -2519,7 +2551,14 @@ func cmdExport(args []string, stdout io.Writer) error {
 	if perr != nil {
 		return perr
 	}
+	allN, allE := nodes, edges
 	nodes, edges = graphfilter.Apply(nodes, edges, pred)
+	// export's stdout is a DATA DOCUMENT in any of six formats (and may be a
+	// file via --out), so the disclosure always goes to stderr as JSON.
+	// Apply leaves a stream untouched when the predicate names no dimension
+	// for it, so "empty" means EITHER stream came back empty — a --kind that
+	// wipes every node still leaves the edge stream whole.
+	emitDisclosure(stderr, newDiscloser(pred, allN, allE, true, true).explain(len(nodes) == 0 || len(edges) == 0))
 	out := f.strs["out"]
 	format := f.strs["format"]
 	if format == "" {
@@ -3309,6 +3348,17 @@ func cmdUninstall(args []string, stdout io.Writer) error {
 			fmt.Fprintf(stdout, "removed global rule from: %s\n", t)
 		}
 	}
+	// The first-run stamp deliberately SURVIVES uninstall — it is the record
+	// that says "we already did this once", and the next verb reads it before
+	// deciding whether to auto-install. Deleting it here would make the very
+	// next command put back what the user just removed: an undo that undoes
+	// itself. Say so out loud rather than leaving an unexplained file behind
+	// (firstrun.go, ADR 2026-08-15-skills-on-by-default D1).
+	if stamp, err := firstRunStampPath(); err == nil {
+		if _, err := os.Stat(stamp); err == nil {
+			fmt.Fprintf(stdout, "kept:          %s — the first-run record. It is what stops the next command reinstalling; delete it to opt back into auto-install\n", stamp)
+		}
+	}
 	fmt.Fprintln(stdout, "stores at ~/ctxoptimize untouched (delete manually if wanted); committed repo pointer blocks go inert without the binary")
 	return nil
 }
@@ -3562,6 +3612,13 @@ commands:
                               cwd = repo root; non-zero exit fails the verb
   install                     skills + hooks for every agent CLI detected; report per platform
     --claude|--codex|--copilot|--devin   select platforms · --skills / --hooks narrow scope
+                              ALSO writes the global always-on rule into
+                              ~/.claude/CLAUDE.md + ~/.codex/AGENTS.md. The
+                              FIRST run of any verb on a terminal installs the
+                              skill + hook alone (never the global rule, never a
+                              repo), names every path, and records it; suppressed
+                              in CI, off a TTY, or with
+                              CTX_OPTIMIZE_NO_AUTO_INSTALL=1
   update                      update EVERYTHING: the binary itself (npm installs
                               via npm, standalone via GitHub Releases, sha256-
                               verified; dev builds left alone), then skills +

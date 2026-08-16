@@ -135,6 +135,12 @@ func TestASTVendoredTreesExcluded(t *testing.T) {
 	}
 }
 
+// A consumed HOST and a provided ROUTE PATH are different namespaces, so the
+// join has no possible input here. It must therefore write NOTHING (ADR
+// 2026-08-15-scope-join-broken): the old `external` was a constant that read
+// as a computation — 56/0 on this repo, 163/0 across reqsume. The positive
+// half of the join is gated by TestNormalizationJoinsSpellingsAtEmit and by
+// the golden boundary fixture's scope-join class.
 func TestASTScopeIsComputedByJoin(t *testing.T) {
 	b := bnd(t, map[string]string{
 		"s.go": `package s
@@ -144,8 +150,12 @@ func init() {
 }`,
 	})
 	ex := port(b, "port:network.http:>api.external.test")
-	if ex == nil || ex.Metadata["scope"] != "external" {
-		t.Fatalf("unjoined consumer not external: %+v", ex)
+	if ex == nil {
+		t.Fatalf("consumer port missing: %+v", ex)
+	}
+	if s, ok := ex.Metadata["scope"]; ok {
+		t.Fatalf("a host that no `provides` port could ever match carries scope=%q — "+
+			"the join did not run, so the only honest output is an absent field", s)
 	}
 	in := port(b, "port:network.http:</internal")
 	if in == nil || in.Metadata["direction"] != "provides" {
@@ -217,7 +227,7 @@ func TestASTServiceDepTierAndConfigHint(t *testing.T) {
 	if p == nil {
 		t.Fatalf("dep-declared service port missing; nodes: %d", len(b.Nodes))
 	}
-	if p.Metadata["svc.id"] != "firebase" || p.Metadata["scope"] != "external" {
+	if p.Metadata["svc.id"] != "firebase" || p.Metadata["scope"] != "" {
 		t.Fatalf("service port metadata wrong: %+v", p.Metadata)
 	}
 	if port(b, "port:config.env:>VITE_FIREBASE_API_KEY") == nil {

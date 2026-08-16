@@ -76,7 +76,7 @@ type Rule struct {
 		Set                   map[string]string `json:"set"`
 	} `json:"flag,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`
-	Tier     string            `json:"tier,omitempty"` // default EXTRACTED; authoring derives it
+	Tier     string            `json:"tier,omitempty"` // omitted: EXTRACTED if `verified` is present, else AMBIGUOUS (tier.go)
 	Verified json.RawMessage   `json:"verified,omitempty"`
 
 	res  []*regexp.Regexp
@@ -457,10 +457,7 @@ func emit(r *Rule, s Hit, nodes map[string]schema.Node, edges map[edgeKey]schema
 	if ident == "" {
 		return
 	}
-	tier := r.Tier
-	if tier == "" {
-		tier = schema.Extracted
-	}
+	tier := defaultedTier(r) // unmeasured rule ⇒ AMBIGUOUS, not EXTRACTED (tier.go)
 	meta := map[string]string{}
 	// A computed identifier is an admission, not a fact: the graph reports it
 	// AMBIGUOUS and keeps the template shape. The matcher marks a non-literal
@@ -556,9 +553,26 @@ func Assemble(root string, exclude []string, rules []Rule, sites []Hit) (*schema
 }
 
 // markScope computes scope BY JOIN (ADR D1): a consumes port is internal iff
-// its identifier is provided somewhere in this same gather; external
-// otherwise. Recomputed every gather, so moving a service in or out of the
-// repo flips it without touching any rule.
+// its identifier is provided somewhere in this same gather. Recomputed every
+// gather, so moving a service in or out of the repo flips it without touching
+// any rule.
+//
+// `scope` IS EMITTED ONLY ON A HIT — a miss writes nothing (ADR
+// 2026-08-15-scope-join-broken, D1). It used to write `external` on every
+// miss, which measured as 56 external / 0 internal on this repo and
+// 163 external / 0 internal across reqsume's seven modules: a constant that
+// READ as a computation. The miss is not evidence of externality, because the
+// two sides are usually different namespaces — every shipped `consumes` rule
+// on network.http yields a HOST (`api.openai.com`) and every shipped
+// `provides` rule yields a ROUTE PATH (`/orders`), so the join has no
+// possible input and "not provided here" is undecidable rather than false.
+//
+// Absence therefore means exactly "not proven internal", which is always
+// true. `internal` means a `provides` port in this same gather carries the
+// same transport and the same normalized identifier — a fact, never a guess.
+// Repos that author a rule whose consumes side shares the provides namespace
+// (a same-origin `fetch("/orders")` rule, say) get a real `internal`; that is
+// the case the golden fixture pins.
 func markScope(b *schema.Batch) {
 	provided := map[string]bool{}
 	for _, n := range b.Nodes {
@@ -572,8 +586,6 @@ func markScope(b *schema.Batch) {
 		}
 		if provided[n.Metadata["transport"]+"\x00"+n.Metadata["identifier"]] {
 			b.Nodes[i].Metadata["scope"] = "internal"
-		} else {
-			b.Nodes[i].Metadata["scope"] = "external"
 		}
 	}
 }

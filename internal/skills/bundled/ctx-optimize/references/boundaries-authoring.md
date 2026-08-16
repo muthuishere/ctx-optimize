@@ -86,11 +86,20 @@ ctx-optimize query "http client wrapper" --json
 ```
 
 There is **no `route` kind** — a served route is a `port` with
-`direction=provides`. This matters more than it reads: `--kind` is an OPEN
-vocabulary (adapters mint their own), so `nodes --kind route` does not error,
-it prints `(0 nodes)` and exits 0. **An empty result is not evidence of
-absence** until you have confirmed the kind exists — cross-check with
-`nodes --kind port` before concluding a repo serves nothing.
+`direction=provides`. `--kind` is an OPEN vocabulary (adapters mint their own),
+so `nodes --kind route` does not error and still exits 0 — but it no longer
+answers in silence: an empty result whose value exists nowhere in the store now
+DISCLOSES that, and names the kinds that do exist.
+
+```
+$ ctx-optimize nodes --kind route
+(0 nodes)  — no node in this store has kind "route";
+            kinds present: … port …
+```
+
+Read that note. When it is ABSENT, the value is real and the empty result is a
+genuine "nothing matched". When it is present, you asked an impossible question
+— cross-check with `nodes --kind port` before concluding a repo serves nothing.
 
 A kind that is *present* but never *connected* is the work list. So is a
 dependency in `deps` with no matching `port`.
@@ -298,13 +307,21 @@ Field notes that are easy to get wrong:
   the zero value and reads as group 1, so a rule meaning "the whole match"
   quietly gets the first group instead. Always write the group you mean.)
 - `direction` is `provides` (this repo serves it) or `consumes` (this repo
-  calls it). **`scope` is NOT yours to set** — the engine computes it. Be aware
-  of what it currently produces: the join intends `internal` when a consumed
-  identifier matches a `provides` port in the workspace, but consumed
-  identifiers are HOSTS and provided ones are ROUTE PATHS, so nothing matches
-  and **every consumed port is `external` today**. Do not design a rule around
-  `scope`, and do not report `external` as evidence that a call is
+  calls it). **`scope` is NOT yours to set** — the engine computes it, by JOIN:
+  a consumed identifier that matches a `provides` port in the same gather gets
+  `scope: internal`, and **a miss gets no `scope` key at all**. There is no
+  `external` value. It used to write `external` on every miss, which measured
+  as 56/56 on this repo and 163/163 across a seven-module monorepo — a constant
+  dressed as a computation (ADR 2026-08-15-scope-join-broken). Absence means
+  "not proven internal"; never report it as evidence that a call is
   third-party.
+
+  The join only has an input when both sides share a namespace. Every shipped
+  `consumes` rule on `network.http` takes a **host**, and every shipped
+  `provides` rule takes a **route path**, so the default set produces no
+  internals at all. If you want them, author a rule whose consumed identifier
+  IS a path — a same-origin `fetch("/orders")` matcher is the worked example,
+  and it lives in `internal/golden/testdata/repos/boundary/.ctxoptimize/`.
 - `metadata` values may interpolate `$identifier`. Open keys must be
   **namespaced** (`otel.*`, `pack.*`, `org.*`) and this one IS enforced
   fail-closed — a bare `"owner": "me"` fails the batch loudly at the schema
@@ -324,8 +341,11 @@ Field notes that are easy to get wrong:
   accepted and renders as its own group in the `boundaries` summary,
   indistinguishable from a real transport. Copy the string from an existing
   rule rather than typing it.
-- `tier` omitted defaults to EXTRACTED. **Always set it explicitly** from your
-  measurement.
+- `tier` omitted falls back to your EVIDENCE: a rule that ships a `verified`
+  block defaults to EXTRACTED, and an **unmeasured** rule (no `verified`)
+  defaults to **AMBIGUOUS** — the highest confidence is never what a rule gets
+  for providing no evidence at all (ADR 2026-08-15-authoring-loop-unenforced
+  D1). **Always set it explicitly** from your measurement.
 - Identifiers are normalized at emit for `network.*` transports (case, trailing
   slash, `{id}`≡`:id`≡`<id>` → `*`); the source spelling survives in metadata
   `raw`. Other transports are verbatim — env keys are case-sensitive facts.

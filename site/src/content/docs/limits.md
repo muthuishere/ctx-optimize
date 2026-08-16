@@ -49,9 +49,12 @@ stored, or printed.
 
 ## Known gaps in the current release
 
-- **`scope` on a consumed port is always `external`.** The internal/external join compares
-  hostnames against route paths and can never match. It is documented in the repo rather
-  than quietly left to look like a computation.
+- **`scope` on a consumed port is almost always absent, and there is no `external` value.**
+  It used to say `external` on every port of every repo — 56 of 56 here, 163 of 163 across a
+  seven-module monorepo — because the join compares a consumed *host* against a provided
+  *route path* and can never match. A constant that reads as a computation is worse than a
+  gap, so the field is now written only when the join genuinely fires. Absence means "not
+  proven internal", never "external".
 - **Concept phrasing does not retrieve.** "What does it shell out to" returns nothing from
   lexical search; the routing table sends that question to `boundaries` instead. We will not
   fix it with embeddings — that would cost the determinism the product rests on.

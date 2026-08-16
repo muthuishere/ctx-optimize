@@ -163,6 +163,55 @@ escalate repo-wide); at a monorepo root, queries federate via the navigator
 (`--modules all|a,b`, `--root`). Name resolution is honest: fuzzy matches
 announce themselves, fuzzy ties refuse with candidates (`--fuzzy` overrides).
 
+### A filter that cannot possibly match says so
+
+`--kind` and `--relation` are OPEN vocabularies — adapters mint their own — so
+an unknown value must NOT be rejected. But an unknown value used to come back as
+a plausible empty answer: `nodes --kind route` printed `(0 nodes)`, exit 0, and a
+reader concluded the repo serves nothing. (There is no `route` kind. A served
+route is a `port` node with `direction=provides`.)
+
+The fix is disclosure, not rejection. When a result is empty AND a value in the
+filter appears NOWHERE in the store, the verb names it and lists what does
+exist:
+
+```
+$ ctx-optimize nodes --kind route
+(0 nodes)  — no node in this store has kind "route";
+            kinds present: class, config, dependency, document, file, function,
+            method, module, port, section, service, type
+```
+
+- **Exit code stays 0.** An empty result is a legitimate answer and scripts
+  depend on that. This is disclosure, never an error.
+- **A legitimate empty is never decorated.** `--kind file --label zzz` returns a
+  bare `(0 nodes)`: `file` exists, the filter simply matched nothing. Only a
+  value that is present on no record at all gets the note — otherwise the note
+  would be noise and readers would learn to skip it.
+- **Covered dimensions:** `--kind`, `--file-type`, `--relation`, `--confidence`,
+  `--producer`, `--scope`, and `--where k=v` — the KEY (`no node carries the key
+  "transprt"`, with the keys that exist) and the VALUE (`no node has
+  direction="provded"`, with the values that exist). `--label` and `--id-prefix`
+  are free-text searches and are deliberately left alone.
+- **Covered verbs:** `nodes`, `edges`, `deps`, `query`, `affected`, `hubs`,
+  `report`, `export`.
+- **Suggestions are bounded and deterministic** — sorted, capped at 20, with
+  `(+N more)` when capped, and suppressed entirely for a high-cardinality key
+  rather than guessing from an arbitrary sample.
+- **`--json` / `--ndjson` never touch stdout.** `nodes`/`edges`/`deps` emit a
+  bare array and `export` emits a data document, so there is no envelope to add
+  a field to without breaking every existing parse. The disclosure is written to
+  **stderr** as one JSON line:
+
+  ```json
+  {"filter_disclosure":{"misses":[{"dimension":"kind","stream":"node","value":"route",
+    "present":["file","function","port"],"omitted":0,
+    "message":"no node in this store has kind \"route\""}]}}
+  ```
+
+- **Cost:** nothing on the fast path. The scan that enumerates what exists runs
+  ONLY when the result is empty, over the graph the verb had already loaded.
+
 ### These verbs answer with facts only — and say when that isn't everything
 
 Call sites the extractor could not attribute are held back as an AMBIGUOUS
@@ -252,10 +301,13 @@ Read it honestly:
   because `os.Getenv(varName)` and `exec.Command(bin)` hide the value behind a
   variable. We report the site and refuse to invent the name.
 - **Secrets are NAMES.** A value is never read, stored, or printed.
-- **`scope` is `external` on every consumed port today.** The join that would
-  mark one `internal` compares consumed hosts against provided route paths,
-  which cannot match — so `external` is not evidence that something is
-  third-party, and `--where scope=internal` matches nothing.
+- **`scope` says `internal`, or says nothing.** There is no `external` value.
+  The field is written only when the join fires — a consumed identifier
+  matching a `provides` port in the same gather — and on the shipped rules it
+  never fires, because consumed identifiers are hosts and provided ones are
+  route paths. Absence therefore means "not proven internal" and is NOT
+  evidence that a call is third-party. `--external` means "everything not
+  proven internal".
 - **`query` will not find these.** A hostname scores as prose; use this verb or
   `nodes --kind port`.
 - Truncation is always stated (`… 15 more not shown (of 30)`), never silent.

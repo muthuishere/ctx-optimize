@@ -4,10 +4,15 @@
 //
 // THE MODEL IS C4's system-context / container view, deliberately: CONSUMES is
 // what this system calls out to, PROVIDES is what it exposes, and
-// scope=internal marks a partner that lives inside this workspace. That
-// internal/external split is the monorepo architecture answer (ui → api), and
-// it is computed by JOIN at emit time — an identifier is internal iff some
-// `provides` port in the workspace bears it — never guessed here.
+// scope=internal marks a partner that lives inside this workspace. It is
+// computed by JOIN at emit time — an identifier is internal iff some
+// `provides` port in the same gather bears it — never guessed here.
+//
+// scope is PRESENT ONLY WHEN THAT JOIN HIT (ADR 2026-08-15-scope-join-broken).
+// There is no `external` value: a miss means the two sides were different
+// namespaces (a consumed HOST against a provided ROUTE PATH), which makes
+// "external" undecidable rather than true. So absence reads as "not proven
+// internal", and `--external` means "everything not proven internal".
 //
 // OPEN METADATA RIDES OpenTelemetry semantic conventions, which the port model
 // already carries: otel.server.address, otel.http.route, otel.http.request.method.
@@ -45,7 +50,7 @@ type BoundarySite struct {
 // different (ADR 15 D2).
 type BoundaryEntry struct {
 	Identifier string            `json:"identifier"`
-	Scope      string            `json:"scope,omitempty"` // internal | external
+	Scope      string            `json:"scope,omitempty"` // "internal", or absent = not proven internal
 	Tier       string            `json:"tier"`
 	MixedTiers bool              `json:"mixed_tiers,omitempty"`
 	Sensitive  bool              `json:"sensitive,omitempty"`
@@ -60,9 +65,12 @@ type BoundaryEntry struct {
 // config.env, process.exec — with the counts that make the summary readable
 // before any entry is.
 type BoundaryGroup struct {
-	Transport string          `json:"transport"`
-	Total     int             `json:"total"`
-	External  int             `json:"external,omitempty"`
+	Transport string `json:"transport"`
+	Total     int    `json:"total"`
+	// Internal counts the ports whose identifier JOINED a `provides` port in
+	// this workspace. There is deliberately no External counter: a port that
+	// did not join is not thereby external (ADR 2026-08-15-scope-join-broken),
+	// and `Total - Internal` is the honest reading — "not proven internal".
 	Internal  int             `json:"internal,omitempty"`
 	Sensitive int             `json:"sensitive,omitempty"`
 	Dynamic   int             `json:"dynamic,omitempty"`
@@ -213,7 +221,9 @@ func Boundaries(nodes []schema.Node, edges []schema.Edge, opt BoundaryOptions) *
 			!strings.HasPrefix(k.transport, opt.Transport+".") {
 			continue
 		}
-		if opt.OnlyExt && a.scope != "external" {
+		// --external is "everything not PROVEN internal". It cannot be
+		// `scope == "external"`, because nothing emits that value any more.
+		if opt.OnlyExt && a.scope == "internal" {
 			continue
 		}
 		if opt.OnlySens && !a.sensitive {
@@ -226,10 +236,7 @@ func Boundaries(nodes []schema.Node, edges []schema.Edge, opt BoundaryOptions) *
 			groups[gk] = g
 		}
 		g.Total++
-		switch a.scope {
-		case "external":
-			g.External++
-		case "internal":
+		if a.scope == "internal" {
 			g.Internal++
 		}
 		if a.sensitive {
@@ -299,16 +306,16 @@ func Boundaries(nodes []schema.Node, edges []schema.Edge, opt BoundaryOptions) *
 }
 
 // sortBoundaryEntries: the ones a reader needs first, deterministically.
-// Sensitive leads (a secret is the thing you scan for), then external over
-// internal (egress is the question people ask), then identifier.
+// Sensitive leads (a secret is the thing you scan for), then not-proven-
+// internal over internal (egress is the question people ask), then identifier.
 func sortBoundaryEntries(es []BoundaryEntry) {
 	sort.Slice(es, func(i, j int) bool {
 		a, b := es[i], es[j]
 		if a.Sensitive != b.Sensitive {
 			return a.Sensitive
 		}
-		if (a.Scope == "external") != (b.Scope == "external") {
-			return a.Scope == "external"
+		if (a.Scope == "internal") != (b.Scope == "internal") {
+			return b.Scope == "internal"
 		}
 		return a.Identifier < b.Identifier
 	})

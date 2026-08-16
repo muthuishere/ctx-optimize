@@ -103,8 +103,9 @@ legacy/hostile code" as a published-benchmark secondary claim.
    returns nothing), and a dotted-label 5x downrank written for child
    declarations still penalises every hostname on PARTIAL queries.
 
-11. **`scope=internal` has never been produced** (found 2026-08-15 by the
-   `boundaries` verb). ADR 1 D1 promises internal/external "decided by JOIN".
+11. **`scope=internal` had never been produced** — FIXED 2026-08-16, see the
+   resolution at the end of this entry (found 2026-08-15 by the
+   `boundaries` verb). ADR 1 D1 promised internal/external "decided by JOIN".
    Measured: ctx-optimize 56 external / 0 internal, reqsume 163 / 0. The join
    compares consumes identifiers (HOSTS) against provides identifiers (ROUTE
    PATHS) — unsatisfiable by construction. So reqsume, whose UI calls its own
@@ -112,7 +113,18 @@ legacy/hostile code" as a published-benchmark secondary claim.
    external. The fixture gate passes because its expectations were recorded
    from actual output: a gate that records reality cannot detect that reality
    is wrong — the same shape as the perf gate that recorded its own timing.
-   See ADR 16.
+
+   **Resolved 2026-08-16.** All three repairs ADR 16 named were measured on
+   both stores. The only non-guessing form of the path join finds **0** sites
+   on either repo (every call goes through a user-defined wrapper); the
+   permissive form is 89.4% precise and inflates the census 8x; a host registry
+   is 100% precise but flips 11 of 163 ports, cannot be derived without
+   guessing, and has **zero** recall on the ui→api case that motivated the
+   lane; module-to-module edges are derivable from the graph **0** times across
+   42 ordered module pairs. So the constant was removed rather than
+   reproduced: `scope` is written only when the join fires, `external` is no
+   longer emitted, and the fixture now contains a genuinely internal boundary
+   whose gate was proven red four ways. See ADR 16.
 
 ## Kill criteria (pre-committed)
 Thin slice (cards + deterministic wiki) on kernel + one true legacy repo:

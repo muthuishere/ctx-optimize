@@ -45,15 +45,15 @@ func TestGoldenBoundaryRepo(t *testing.T) {
 	// as broken as one that flags nothing, and only a negative case catches it.
 	classPort(t, ports, "boundary/config", "port:config.env:>PAYMENTS_API_KEY", portFact{
 		Direction: "consumes", Transport: "config.env",
-		Identifier: "PAYMENTS_API_KEY", Scope: "external", Sensitive: "true",
+		Identifier: "PAYMENTS_API_KEY", Sensitive: "true",
 	})
 	classPort(t, ports, "boundary/config", "port:config.env:>OPENAI_API_KEY", portFact{
 		Direction: "consumes", Transport: "config.env",
-		Identifier: "OPENAI_API_KEY", Scope: "external", Sensitive: "true",
+		Identifier: "OPENAI_API_KEY", Sensitive: "true",
 	})
 	classPort(t, ports, "boundary/config", "port:config.env:>SERVICE_TIER", portFact{
 		Direction: "consumes", Transport: "config.env",
-		Identifier: "SERVICE_TIER", Scope: "external", Sensitive: "",
+		Identifier: "SERVICE_TIER", Sensitive: "",
 	})
 
 	// ---- class: boundary/egress ------------------------------------------
@@ -61,23 +61,23 @@ func TestGoldenBoundaryRepo(t *testing.T) {
 	// the file — the case only the services registry can see.
 	classPort(t, ports, "boundary/egress", "port:network.http:>api.weather.example", portFact{
 		Direction: "consumes", Transport: "network.http",
-		Identifier: "api.weather.example", Scope: "external",
+		Identifier: "api.weather.example",
 	})
 	classPort(t, ports, "boundary/egress", "port:network.http:>api.openai.com", portFact{
 		Direction: "consumes", Transport: "network.http",
-		Identifier: "api.openai.com", Scope: "external",
+		Identifier: "api.openai.com",
 	})
 
 	// ---- class: boundary/process -----------------------------------------
 	classPort(t, ports, "boundary/process", "port:process.exec:>git", portFact{
 		Direction: "consumes", Transport: "process.exec",
-		Identifier: "git", Scope: "external",
+		Identifier: "git",
 	})
 
 	// ---- class: boundary/storage -----------------------------------------
 	classPort(t, ports, "boundary/storage", "port:storage.local:>session_token", portFact{
 		Direction: "consumes", Transport: "storage.local",
-		Identifier: "session_token", Scope: "external",
+		Identifier: "session_token",
 	})
 
 	// ---- class: api-surface ----------------------------------------------
@@ -86,6 +86,54 @@ func TestGoldenBoundaryRepo(t *testing.T) {
 		classPort(t, ports, "api-surface", "port:network.http:<"+route, portFact{
 			Direction: "provides", Transport: "network.http", Identifier: route,
 		})
+	}
+
+	// ---- class: scope-join ------------------------------------------------
+	// THE GATE THAT COULD NOT FAIL BEFORE (ADR 2026-08-15-scope-join-broken,
+	// D2). Every `scope` expectation above used to read "external", recorded
+	// from output that was external for every port on every repo ever
+	// gathered — 56/0 here, 163/0 across reqsume's seven modules. A gate that
+	// records reality cannot detect that reality is a constant, which is the
+	// same shape as the perf gate that recorded its own measurement.
+	//
+	// So the fixture now contains a boundary that is GENUINELY internal:
+	// web/client.ts calls `fetch("/orders")`, and `/orders` is provided by
+	// api/main.go — a different module of the same workspace. The rule that
+	// reads a same-origin fetch path lives in the fixture's own
+	// .ctxoptimize/boundaries.json, because no SHIPPED rule pair shares a
+	// namespace (shipped consumes → hosts, shipped provides → route paths).
+	// That asymmetry is itself pinned below, so adding a namespace-sharing
+	// default rule has to come through here.
+	classPort(t, ports, "scope-join", "port:network.http:>/orders", portFact{
+		Direction: "consumes", Transport: "network.http",
+		Identifier: "/orders", Scope: "internal",
+	})
+	classPort(t, ports, "scope-join", "port:network.http:>/status", portFact{
+		Direction: "consumes", Transport: "network.http",
+		Identifier: "/status", Scope: "internal",
+	})
+	// The negative half, and it is not optional: a MISS must emit nothing.
+	// `/nowhere` is fetched and provided by nobody here — "external" would be
+	// a claim about a path a proxy may well serve, so the honest output is an
+	// absent field.
+	classPort(t, ports, "scope-join", "port:network.http:>/nowhere", portFact{
+		Direction: "consumes", Transport: "network.http",
+		Identifier: "/nowhere", Scope: "",
+	})
+	// And the constant must never come back: across EVERY port in the fixture,
+	// the only scope value that may appear is "internal".
+	for id, n := range ports {
+		if s := n.Metadata["scope"]; s != "" && s != "internal" {
+			t.Errorf("scope-join: %s carries scope=%q — the only value a JOIN can prove is \"internal\"; "+
+				"anything else is a claim the producer cannot make", id, s)
+		}
+	}
+	// The `boundaries` verb must SHOW it, not merely store it, and must not
+	// reprint the removed constant as a summary count.
+	if out := runCLI(t, "boundaries", "--path", repo, "--store", storeRoot); !strings.Contains(out, "internal") {
+		t.Errorf("scope-join: `boundaries` never says \"internal\" though the fixture has two internal ports\n%s", out)
+	} else if strings.Contains(out, "external") {
+		t.Errorf("scope-join: `boundaries` still prints \"external\" — that count was the constant ADR 16 removed\n%s", out)
 	}
 
 	// The HTTP METHOD lives on the AST route node, not on the port (the port
