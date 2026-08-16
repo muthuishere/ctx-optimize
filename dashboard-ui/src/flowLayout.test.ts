@@ -9,6 +9,7 @@ function scene(): Scene {
     module: 'demo',
     title: 'demo',
     root: '',
+    level: 'directory',
     crumbs: [{ label: 'demo', root: '' }],
     questions: [],
     total_nodes: 100,
@@ -18,10 +19,10 @@ function scene(): Scene {
     lifted_total: 9,
     lifted_shown: 5,
     cards: [
-      { id: 'a', label: 'a', dir: 'src/a', files: 3, decls: 9, in: 0, out: 20, layer: 0, row: 0, detail: 'A', glyph: '⇄', hub: false, children: 2, top: 'Fn' },
-      { id: 'b', label: 'b', dir: 'src/b', files: 3, decls: 9, in: 20, out: 6, layer: 0, row: 1, detail: 'B', glyph: '◇', hub: false, children: 0, top: 'Fn' },
-      { id: 'c', label: 'c', dir: 'src/c', files: 3, decls: 9, in: 26, out: 4, layer: 1, row: 0, detail: 'C', glyph: '◇', hub: false, children: 3, top: 'Fn' },
-      { id: 'd', label: 'd', dir: 'src/d', files: 3, decls: 9, in: 30, out: 0, layer: 2, row: 0, detail: 'D', glyph: '⚙', hub: true, children: 0, top: 'Fn' },
+      { id: 'a', label: 'a', dir: 'src/a', files: 3, decls: 9, in: 0, out: 20, ext_in: 0, ext_out: 0, layer: 0, row: 0, detail: 'A', glyph: '⇄', hub: false, children: 2, top: 'Fn' },
+      { id: 'b', label: 'b', dir: 'src/b', files: 3, decls: 9, in: 20, out: 6, ext_in: 0, ext_out: 0, layer: 0, row: 1, detail: 'B', glyph: '◇', hub: false, children: 0, top: 'Fn' },
+      { id: 'c', label: 'c', dir: 'src/c', files: 3, decls: 9, in: 26, out: 4, ext_in: 0, ext_out: 0, layer: 1, row: 0, detail: 'C', glyph: '◇', hub: false, children: 3, top: 'Fn' },
+      { id: 'd', label: 'd', dir: 'src/d', files: 3, decls: 9, in: 30, out: 0, ext_in: 0, ext_out: 0, layer: 2, row: 0, detail: 'D', glyph: '⚙', hub: true, children: 0, top: 'Fn' },
     ],
     links: [
       { from: 'a', to: 'c', relation: 'calls', label: 'CALLS', weight: 20 },
@@ -108,5 +109,48 @@ describe('flowLayout', () => {
     const l = layout({ module: 'x', title: 'x' } as unknown as Scene)
     expect(l.boxes).toHaveLength(0)
     expect(l.curves).toHaveLength(0)
+  })
+})
+
+// Four cards in one column silently overlapped: the band was divided by the
+// count, and (596-254)/3 is 114 against a card height of 118. Seen on
+// mm/kasan/common.c, where the declaration level puts four cards in a column.
+describe('flowLayout never overlaps cards in a column', () => {
+  it('keeps a gap between stacked cards however many there are', () => {
+    for (const n of [2, 3, 4, 6, 9]) {
+      const s = scene()
+      s.cards = Array.from({ length: n }, (_, i) => ({
+        ...s.cards[0], id: 'c' + i, label: 'c' + i, dir: 'src/c' + i,
+        layer: 0, row: i, hub: false,
+      }))
+      s.links = []
+      const boxes = layout(s).boxes.filter((b) => b.kind === 'card')
+        .sort((a, b) => a.y - b.y)
+      for (let i = 1; i < boxes.length; i++) {
+        const gap = boxes[i].y - (boxes[i - 1].y + boxes[i - 1].h)
+        expect(gap, `${n} cards: card ${i} overlaps the one above by ${-gap}`).toBeGreaterThanOrEqual(0)
+      }
+    }
+  })
+})
+
+// Fixing the card overlap created a second one: a taller column ran straight
+// into the outer-world plates, which sat at a fixed Y. Seen on
+// mm/kasan/common.c the moment the column grew to hold four cards.
+describe('flowLayout keeps the outer world clear of the cards', () => {
+  it('drops the world band below the lowest card', () => {
+    const s = scene()
+    s.cards = Array.from({ length: 5 }, (_, i) => ({
+      ...s.cards[0], id: 'c' + i, label: 'c' + i, dir: 'src/c' + i,
+      layer: 0, row: i, hub: false,
+    }))
+    const lay = layout(s)
+    const cards = lay.boxes.filter((b) => b.kind === 'card' || b.kind === 'hub')
+    const worlds = lay.boxes.filter((b) => b.kind === 'world')
+    expect(worlds.length).toBeGreaterThan(0)
+    const lowestCard = Math.max(...cards.map((b) => (b.kind === 'hub' ? b.y + b.r : b.y + b.h)))
+    for (const w of worlds) {
+      expect(w.y, 'a world plate sits on top of a card').toBeGreaterThan(lowestCard)
+    }
   })
 })

@@ -345,6 +345,34 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       return hover === hits.length - 1
     }
 
+    // drawOutside prints the edges whose other end is off-scene, as a chip
+    // rather than an arrow. Silent when there are none: a zero here is not a
+    // fact worth the space.
+    function outsideLabel(c: { ext_in: number; ext_out: number }): string {
+      const bits: string[] = []
+      if (c.ext_in > 0) bits.push(`↘${c.ext_in.toLocaleString()}`)
+      if (c.ext_out > 0) bits.push(`${c.ext_out.toLocaleString()}↗`)
+      return bits.length === 0 ? '' : bits.join(' ') + ' out'
+    }
+    const outsideWidth = (c: { ext_in: number; ext_out: number }) => {
+      const l = outsideLabel(c)
+      return l === '' ? 0 : measure(l, 9, 700, MONO) + 16
+    }
+
+    function drawOutside(c: { ext_in: number; ext_out: number }, x: number, y: number, maxW: number) {
+      const label = outsideLabel(c)
+      if (label === '') return
+      const w = Math.min(maxW, measure(label, 9, 700, MONO) + 16)
+      const p = T(x, y)
+      ctx!.fillStyle = mix(pal.panel, pal.amber, .12)
+      rr(p.x, p.y, S(w), S(15), S(7.5)); ctx!.fill()
+      ctx!.strokeStyle = rgba(pal.amber, .5); ctx!.lineWidth = Math.max(1, S(1))
+      rr(p.x, p.y, S(w), S(15), S(7.5)); ctx!.stroke()
+      text(label, x + w / 2, y + 11, {
+        size: 9, weight: 700, font: MONO, align: 'center', color: pal.amber, max: w - 8,
+      })
+    }
+
     function drawCard(b0: Box) {
       const o = off(b0.id)
       const b = o === ZERO ? b0 : { ...b0, x: b0.x + o.dx, y: b0.y + o.dy }
@@ -370,12 +398,22 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
 
       const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, c.dir, c.children > 0)
       text(c.dir, b.x + 18, b.y + 91, { size: 10.5, color: pal.dim, font: MONO, max: b.w - 36 })
+      // The outside chip and the detail line share the bottom row, so the
+      // detail yields exactly the width the chip takes. Drawn over the path
+      // subtitle, the chip hid the one thing that says WHICH file a card is.
+      const outW = outsideWidth(c)
       text(c.detail || `${c.files} files`, b.x + 18, b.y + b.h - 15,
-        { size: 11.5, color: MUTED, max: b.w - 36 })
+        { size: 11.5, color: MUTED, max: b.w - 36 - (outW > 0 ? outW + 10 : 0) })
+      drawOutside(c, b.x + b.w - 18 - outW, b.y + b.h - 26, outW)
 
       // in/out counters, top-right — the numbers that decided the column
       text(`${c.out}↗`, b.x + b.w - 18, b.y + 26, { size: 10, color: pal.dim, font: MONO, align: 'right' })
       text(`↘${c.in}`, b.x + b.w - 18, b.y + 40, { size: 10, color: pal.dim, font: MONO, align: 'right' })
+      // Traffic that LEAVES the picture. It is never an arrow — the other end
+      // is not on screen, and an arrow to nothing is what the world view was
+      // killed for — but inside one file a function's 3 local callers can be a
+      // hundred repo-wide, and that is the number that says whether it matters.
+
       if (c.children > 0) {
         // Top strip, beside the ordinal — the only band on a card that carries
         // no text of its own. Drawn AFTER the title so it can share its hover.
@@ -424,6 +462,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
       text(c.detail, b.x, b.y + 20, { size: 11, color: MUTED, align: 'center', max: b.r * 1.8 })
       text(`${c.in} in · ${c.out} out`, b.x, b.y + 44, { size: 11, color: DOT, font: MONO, align: 'center', weight: 700 })
       text(`${c.files} files · ${c.decls} decls`, b.x, b.y + 62, { size: 10, color: pal.dim, font: MONO, align: 'center' })
+      drawOutside(c, b.x - outsideWidth(c) / 2, b.y + 78, outsideWidth(c))
       if (c.children > 0) drawEnter(b.x, b.y + b.r - 34, c.children, on || titleOn, 'center')
     }
 
@@ -565,7 +604,7 @@ export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
         VW - 62, 118, { size: 62, weight: 800, align: 'right', max: 700 })
       text('The architecture, derived from the store — not drawn by hand.', VW - 62, 152,
         { size: 15, color: pal.muted, align: 'right' })
-      text(`every card is a directory · every arrow is real ${''}imports/calls edges, summed`,
+      text(`every card is a ${scene!.level} · every arrow is real ${''}imports/calls edges, summed`,
         VW - 62, 176, { size: 15, weight: 600, align: 'right' })
       text(`ctx-optimize · ${scene!.total_nodes.toLocaleString()} nodes · ${scene!.total_edges.toLocaleString()} edges`,
         VW - 62, 202, { size: 12, color: ACC, align: 'right', weight: 700, spacing: 0.6 })

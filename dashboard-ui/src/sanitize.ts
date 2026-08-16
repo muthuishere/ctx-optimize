@@ -75,6 +75,7 @@ export function sanitizeScene(s: any): Scene {
     chips: arr<string>(s?.chips),
     notes: arr<string>(s?.notes),
     root: String(s?.root ?? ''),
+    level: String(s?.level ?? 'directory'),
     // A scene with no crumbs is a level you cannot leave, so the trail back to
     // the whole repo is synthesised rather than trusted.
     questions: arr<SceneQuestion>(s?.questions),

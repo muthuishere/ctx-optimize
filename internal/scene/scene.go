@@ -49,13 +49,20 @@ const DefaultDoors = 6
 
 // Card is one subsystem — a directory — drawn as a numbered box.
 type Card struct {
-	ID     string `json:"id"`     // the directory path, the stable key
-	Label  string `json:"label"`  // last path segment (the display name)
-	Dir    string `json:"dir"`    // full directory, shown as the card's subtitle
-	Files  int    `json:"files"`  // file nodes under it
-	Decls  int    `json:"decls"`  // declaration nodes under it
-	In     int    `json:"in"`     // lifted edges arriving (how depended-upon)
-	Out    int    `json:"out"`    // lifted edges leaving (how dependent)
+	ID    string `json:"id"`    // the directory path, the stable key
+	Label string `json:"label"` // last path segment (the display name)
+	Dir   string `json:"dir"`   // full directory, shown as the card's subtitle
+	Files int    `json:"files"` // file nodes under it
+	Decls int    `json:"decls"` // declaration nodes under it
+	In    int    `json:"in"`    // lifted edges arriving (how depended-upon)
+	Out   int    `json:"out"`   // lifted edges leaving (how dependent)
+	// ExtIn/ExtOut are real edges whose OTHER END is outside this scene — the
+	// callers a function has elsewhere in the repo, the things a file reaches
+	// beyond its directory. They are never drawn as arrows (the other end is
+	// not on screen) but they are usually the number that says whether a card
+	// matters, so they are printed.
+	ExtIn  int    `json:"ext_in"`
+	ExtOut int    `json:"ext_out"`
 	Layer  int    `json:"layer"`  // longest-path depth in the lifted DAG
 	Row    int    `json:"row"`    // slot within the layer
 	Detail string `json:"detail"` // top declarations by degree, " · " joined
@@ -146,7 +153,8 @@ type Scene struct {
 	Stats           []Stat     `json:"stats"`
 	Chips           []string   `json:"chips"`
 	Notes           []string   `json:"notes"` // honesty lines, printed on screen
-	Root            string     `json:"root"`  // the directory this scene is scoped to ("" = whole repo)
+	Root            string     `json:"root"`  // what this scene is scoped to ("" = whole repo)
+	Level           string     `json:"level"` // what a card stands for: directory | file | declaration
 	Crumbs          []Crumb    `json:"crumbs"`
 	Questions       []Question `json:"questions"`
 	Empty           string     `json:"empty,omitempty"`
@@ -218,6 +226,106 @@ func subsystemOf(n schema.Node) string {
 		return "(root)"
 	}
 	return d
+}
+
+// Level is what a card stands for at the current root. A leaf DIRECTORY is not
+// a leaf: mm/kasan has no subdirectories and 17 files, 330 functions and 361
+// real `calls` edges inside it (ADR 21). So the drill keeps going — the unit
+// becomes the file, and then the declaration — and everything downstream
+// (lifting, ranking, layering, hub) is unchanged, because all of it keys off
+// `owner` and only the grain of `owner` moves.
+type Level int
+
+const (
+	LevelDir  Level = iota // cards are directories
+	LevelFile              // cards are files inside one directory
+	LevelDecl              // cards are declarations inside one file
+)
+
+func (l Level) String() string {
+	switch l {
+	case LevelFile:
+		return "file"
+	case LevelDecl:
+		return "declaration"
+	}
+	return "directory"
+}
+
+// levelFor decides the grain from what `root` NAMES: nothing or a directory
+// with subdirectories keeps directory grain; a directory with none descends to
+// its files; a file descends to its declarations.
+func levelFor(root string, dirs, files map[string]bool) Level {
+	if root == "" {
+		return LevelDir
+	}
+	if files[root] {
+		return LevelDecl
+	}
+	for d := range dirs {
+		if d != root && strings.HasPrefix(d, root+"/") {
+			return LevelDir
+		}
+	}
+	if dirs[root] {
+		return LevelFile
+	}
+	return LevelDir // unknown root: the empty-scene path reports it
+}
+
+// unitLabel is what a card is CALLED at this grain: the directory or file's
+// last path segment, or a declaration's own name.
+func unitLabel(unit string, level Level, byID map[string]schema.Node) string {
+	if level == LevelDecl {
+		if n, ok := byID[unit]; ok && n.Label != "" {
+			return n.Label
+		}
+	}
+	return path.Base(unit)
+}
+
+// unitDir is the card's subtitle: where the thing lives.
+func unitDir(unit string, level Level, byID map[string]schema.Node) string {
+	if level == LevelDecl {
+		if n, ok := byID[unit]; ok {
+			d := srcPath(n.Source)
+			if n.Location != "" {
+				return d + " " + n.Location
+			}
+			return d
+		}
+	}
+	return unit
+}
+
+// srcPath normalises a node source to forward slashes.
+func srcPath(s string) string { return strings.ReplaceAll(s, "\\", "/") }
+
+// unitOf maps a node to the card it belongs to at this grain, or "" when it
+// takes no part in the scene.
+func unitOf(n schema.Node, root string, level Level) string {
+	src := srcPath(n.Source)
+	switch level {
+	case LevelFile:
+		// files sitting directly in root; the file node and everything declared
+		// in it both belong to the file
+		if src == "" || path.Dir(src) != root {
+			return ""
+		}
+		return src
+	case LevelDecl:
+		// one card per declaration in the file
+		if src != root || !declKinds[n.Kind] {
+			return ""
+		}
+		return n.ID
+	default:
+		full := subsystemOf(n)
+		if full == "" {
+			return ""
+		}
+		return scopeTo(root, full)
+	}
 }
 
 // scopeTo collapses a node's full directory to the subsystem key for a scene
@@ -415,11 +523,27 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		Crumbs:     crumbsFor(titleOf(module), opt.Root),
 	}
 
-	// ---- 1. every node to its subsystem, and node degree for detail lines.
+	// ---- 0. what exists, so the grain can be chosen before anything is bucketed.
+	allDirs := map[string]bool{} // every real directory, at full depth
+	allFiles := map[string]bool{}
+	for _, n := range nodes {
+		if n.Kind == "port" {
+			continue
+		}
+		if d := subsystemOf(n); d != "" {
+			allDirs[d] = true
+		}
+		if n.Kind == "file" && n.Source != "" {
+			allFiles[srcPath(n.Source)] = true
+		}
+	}
+	level := levelFor(opt.Root, allDirs, allFiles)
+	sc.Level = level.String()
+
+	// ---- 1. every node to its unit, and node degree for detail lines.
 	owner := make(map[string]string, len(nodes))
 	byID := make(map[string]schema.Node, len(nodes))
 	subs := map[string]*agg{}
-	allDirs := map[string]bool{} // every real directory in scope, at full depth
 	ports := map[string]schema.Node{}
 	for _, n := range nodes {
 		byID[n.ID] = n
@@ -427,15 +551,10 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			ports[n.ID] = n
 			continue
 		}
-		full := subsystemOf(n)
-		if full == "" {
-			continue
-		}
-		d := scopeTo(opt.Root, full)
+		d := unitOf(n, opt.Root, level)
 		if d == "" {
-			continue // outside the drilled root
+			continue // outside the drilled root, or not a unit at this grain
 		}
-		allDirs[full] = true
 		owner[n.ID] = d
 		a := subs[d]
 		if a == nil {
@@ -468,16 +587,37 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 	drop := func(d string) bool { return !opt.IncludeTests && isTestPath(d) }
 	type lk struct{ from, to, rel string }
 	lifted := map[lk]int{}
+	// Edges that CROSS the scope boundary. Inside mm/kasan/common.c,
+	// check_page_allocation shows 3 callers — but that counts only the callers
+	// in this file. It may be called from a hundred places in the kernel, and
+	// that is the number that says whether it is load-bearing.
+	//
+	// They cannot be drawn as arrows, because the other end is not on screen,
+	// and drawing an arrow to nothing is exactly the sin the world view was
+	// killed for. So they are COUNTED and printed on the card instead: real
+	// edges, honestly labelled as leaving the picture.
+	extIn := map[string]int{}
+	extOut := map[string]int{}
 	for _, e := range edges {
 		rel, ok := liftedRelations[e.Relation]
 		if !ok || e.Confidence == schema.Ambiguous {
 			continue
 		}
 		a, b := owner[e.Source], owner[e.Target]
-		if a == "" || b == "" || a == b || drop(a) || drop(b) {
-			continue
+		switch {
+		case a == "" && b == "":
+			continue // neither end is in this scene
+		case drop(a) || drop(b):
+			continue // excluded tree; the notes already say it is excluded
+		case a == "":
+			extIn[b]++ // arrives from outside the scope
+		case b == "":
+			extOut[a]++ // leaves the scope
+		case a == b:
+			continue // internal to one card: not a relationship between cards
+		default:
+			lifted[lk{a, b, rel}] += 1
 		}
-		lifted[lk{a, b, rel}] += 1
 	}
 	for k, w := range lifted {
 		subs[k.from].out += w
@@ -668,24 +808,44 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		touch[d][e.Relation+":"+p.Metadata["transport"]] = true
 	}
 
-	// Children counts a card's IMMEDIATE subdirectories, from the full-depth
-	// directory set rather than from the cards on screen: a card is enterable
+	// Children is "is there another level inside this card", counted from what
+	// EXISTS rather than from what is drawn beside it: a card is enterable
 	// because the code has structure under it, not because that structure
-	// happened to rank high enough to be drawn beside it.
-	kids := map[string]map[string]bool{}
-	for _, r := range chosen {
-		if r.dir == opt.Root {
-			// The card standing for files directly inside the current root. It is
-			// a real subsystem and belongs on screen, but it is not a way IN —
-			// entering it would re-derive the scene you are already looking at.
-			continue
-		}
-		for d := range allDirs {
-			if child := scopeTo(r.dir, d); child != "" && child != r.dir {
-				if kids[r.dir] == nil {
-					kids[r.dir] = map[string]bool{}
+	// happened to rank high enough to appear.
+	//
+	// At directory grain that is immediate subdirectories, and a directory with
+	// none is NOT a leaf — it opens onto its files (ADR 21). At file grain it is
+	// the declarations in the file. A declaration is the floor.
+	kids := map[string]int{}
+	switch level {
+	case LevelDir:
+		for _, r := range chosen {
+			if r.dir == opt.Root {
+				// the card for files directly inside the current root: a real
+				// subsystem, but not a way IN — entering re-derives this scene
+				continue
+			}
+			seen := map[string]bool{}
+			for d := range allDirs {
+				if child := scopeTo(r.dir, d); child != "" && child != r.dir {
+					seen[child] = true
 				}
-				kids[r.dir][child] = true
+			}
+			if len(seen) > 0 {
+				kids[r.dir] = len(seen)
+				continue
+			}
+			// no subdirectories — count the files, which is the next level down
+			for f := range allFiles {
+				if path.Dir(f) == r.dir {
+					kids[r.dir]++
+				}
+			}
+		}
+	case LevelFile:
+		for _, n := range nodes {
+			if declKinds[n.Kind] && srcPath(n.Source) != "" {
+				kids[srcPath(n.Source)]++
 			}
 		}
 	}
@@ -693,14 +853,15 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 	row := rowOrder(chosen, links, layer)
 	for _, r := range chosen {
 		sc.Cards = append(sc.Cards, Card{
-			ID: r.dir, Label: path.Base(r.dir), Dir: r.dir,
+			ID: r.dir, Label: unitLabel(r.dir, level, byID), Dir: unitDir(r.dir, level, byID),
 			Files: r.a.files, Decls: r.a.decls,
 			In: r.a.in, Out: r.a.out,
+			ExtIn: extIn[r.dir], ExtOut: extOut[r.dir],
 			Layer: layer[r.dir], Row: row[r.dir],
 			Detail:   detailOf(top[r.dir]),
 			Glyph:    glyphOf(touch[r.dir]),
 			Hub:      r.dir == hub,
-			Children: len(kids[r.dir]),
+			Children: kids[r.dir],
 			Top:      topDecl(top[r.dir]),
 		})
 	}
@@ -782,7 +943,12 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 	}
 
 	scope := "directories"
-	if opt.Root != "" {
+	switch {
+	case level == LevelDecl:
+		scope = "declarations in " + opt.Root
+	case level == LevelFile:
+		scope = "files in " + opt.Root
+	case opt.Root != "":
 		scope = "subdirectories of " + opt.Root
 	}
 	sc.Notes = append(sc.Notes,
@@ -817,8 +983,33 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		}
 	}
 	if leaves == len(sc.Cards) && len(sc.Cards) > 0 {
+		if level == LevelDecl {
+			sc.Notes = append(sc.Notes,
+				"these are declarations inside one file — this is the floor, there is nothing further to open")
+		} else {
+			sc.Notes = append(sc.Notes,
+				"nothing here has another level inside it — this is as deep as the store goes")
+		}
+	}
+	if level != LevelDir {
 		sc.Notes = append(sc.Notes,
-			"every directory here is a leaf — there is nothing further to open at this level")
+			"a card here is a "+level.String()+", not a directory; arrows are real edges between "+
+				level.String()+"s")
+	}
+	// What "outside" means depends on the grain, and a number whose meaning the
+	// reader has to guess is not a fact. Say it.
+	ext := 0
+	for _, c := range sc.Cards {
+		ext += c.ExtIn + c.ExtOut
+	}
+	if ext > 0 {
+		where := "outside `" + opt.Root + "`"
+		if opt.Root == "" {
+			where = "outside this repo's own code (external modules and dependencies)"
+		}
+		sc.Notes = append(sc.Notes,
+			itoa(ext)+" edges on these cards reach "+where+
+				" — counted on the card, never drawn, because the other end is not on screen")
 	}
 	sc.Questions = questionsFor(sc, ports)
 	return sc.finish()

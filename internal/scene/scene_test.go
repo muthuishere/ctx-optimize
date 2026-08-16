@@ -557,9 +557,13 @@ func TestDrillRederivesRatherThanFilters(t *testing.T) {
 	if hub != "src/app/data" {
 		t.Errorf("hub inside src/app = %q, want src/app/data (8 in, 0 out)", hub)
 	}
-	// a leaf must not invite a click
-	if d := cardByID(in, "src/app/data"); d == nil || d.Children != 0 {
-		t.Errorf("src/app/data should be a leaf (Children 0), got %+v", d)
+	// ADR 21: a directory with no SUBDIRECTORIES is not a leaf — it opens onto
+	// its files. src/app/data holds one file, so it is still a way in. This
+	// assertion previously demanded the opposite, which is the belief the ADR
+	// overturns: mm/kasan has no subdirectories and 17 files, 330 functions and
+	// 361 real call edges inside it.
+	if d := cardByID(in, "src/app/data"); d == nil || d.Children != 1 {
+		t.Errorf("src/app/data holds 1 file and should open onto it, got %+v", d)
 	}
 }
 
@@ -711,22 +715,224 @@ func TestQuestionsFollowTheScene(t *testing.T) {
 // TestDeriveSaysWhenEveryDirectoryIsALeaf — on linux/mm all four subsystems are
 // genuinely leaf directories, and the level read as though drill-down were
 // broken. A leaf is a fact about the code and has to say so.
-func TestDeriveSaysWhenEveryDirectoryIsALeaf(t *testing.T) {
-	nodes, edges := nested()
-	in := Derive("demo", nodes, edges, Options{Root: "src/app"})
-	leaf := false
+// oneFile is a single file with real internal call structure — three functions
+// where `handle` calls `parse` and `store`, and `store` calls `parse`. This is
+// the shape ADR 21 exists for: at directory grain none of it is visible,
+// because every one of these edges is internal to a single card.
+func oneFile() ([]schema.Node, []schema.Edge) {
+	const src = "src/app/web/f.go"
+	nodes := []schema.Node{
+		{ID: src, Label: "f.go", Kind: "file", Source: src},
+		{ID: src + "::handle", Label: "handle", Kind: "function", Source: src, Location: "L10-L20"},
+		{ID: src + "::parse", Label: "parse", Kind: "function", Source: src, Location: "L22-L30"},
+		{ID: src + "::store", Label: "store", Kind: "function", Source: src, Location: "L32-L40"},
+	}
+	call := func(a, b string, n int) []schema.Edge {
+		var out []schema.Edge
+		for i := 0; i < n; i++ {
+			out = append(out, schema.Edge{
+				Source: src + "::" + a, Target: src + "::" + b,
+				Relation: "calls", Confidence: schema.Inferred,
+			})
+		}
+		return out
+	}
+	var edges []schema.Edge
+	edges = append(edges, call("handle", "parse", 3)...)
+	edges = append(edges, call("handle", "store", 2)...)
+	edges = append(edges, call("store", "parse", 4)...)
+	return nodes, edges
+}
+
+// TestDrillReachesTheDeclarations is the whole of ADR 21: a file is not a wall.
+// At directory grain these three functions are one card and their seven call
+// edges are invisible; scoped to the file they are the scene.
+func TestDrillReachesTheDeclarations(t *testing.T) {
+	nodes, edges := oneFile()
+	s := Derive("demo", nodes, edges, Options{Root: "src/app/web/f.go"})
+	if s.Level != "declaration" {
+		t.Fatalf("level = %q, want declaration", s.Level)
+	}
+	if s.Empty != "" {
+		t.Fatalf("a file with three functions calling each other drew nothing: %q", s.Empty)
+	}
+	got := map[string]*Card{}
+	for i := range s.Cards {
+		got[s.Cards[i].Label] = &s.Cards[i]
+	}
+	for _, want := range []string{"handle", "parse", "store"} {
+		if got[want] == nil {
+			t.Errorf("declaration %q is missing; cards = %v", want, s.Cards)
+		}
+	}
+	// `parse` is called by both others (3 + 4) and calls nothing: it is the hub
+	if p := got["parse"]; p == nil || !p.Hub || p.In != 7 {
+		t.Errorf("parse should be the hub with 7 edges in, got %+v", p)
+	}
+	// a declaration carries its file AND its line range, which is the point of
+	// descending this far
+	if p := got["parse"]; p != nil && !strings.Contains(p.Dir, "L22-L30") {
+		t.Errorf("declaration card does not carry its location: %q", p.Dir)
+	}
+	// and it is the floor
+	for _, c := range s.Cards {
+		if c.Children != 0 {
+			t.Errorf("a declaration claims something is inside it: %+v", c)
+		}
+	}
+}
+
+func TestDeriveSaysWhenItHasRunOutOfLevels(t *testing.T) {
+	nodes, edges := oneFile()
+	// Declaration grain IS the floor, and has to say so.
+	decl := Derive("demo", nodes, edges, Options{Root: "src/app/web/f.go"})
+	if decl.Level != "declaration" {
+		t.Fatalf("scoping to a file gave level %q, want declaration", decl.Level)
+	}
+	floor := false
+	for _, n := range decl.Notes {
+		if strings.Contains(n, "floor") {
+			floor = true
+		}
+	}
+	if !floor {
+		t.Errorf("the deepest level does not say it is the deepest; notes = %q", decl.Notes)
+	}
+	// and a level with somewhere to go must NOT claim it has run out
+	nn, ne := nested()
+	for _, n := range Derive("demo", nn, ne, Options{}).Notes {
+		if strings.Contains(n, "as deep as the store goes") || strings.Contains(n, "floor") {
+			t.Errorf("a level with an enterable card claims it is the floor: %q", n)
+		}
+	}
+}
+
+// TestDrillReachesTheFiles — the level between directories and declarations.
+// A directory with no SUBDIRECTORIES was reported as a leaf, which is how
+// mm/kasan (17 files, 330 functions, 361 real call edges) came to be a wall.
+func TestDrillReachesTheFiles(t *testing.T) {
+	// two files in one directory, calling each other; no subdirectories
+	const dir = "src/leafdir"
+	a, b := dir+"/a.go", dir+"/b.go"
+	nodes := []schema.Node{
+		{ID: a, Label: "a.go", Kind: "file", Source: a},
+		{ID: b, Label: "b.go", Kind: "file", Source: b},
+		{ID: a + "::A", Label: "A", Kind: "function", Source: a, Location: "L1-L5"},
+		{ID: b + "::B", Label: "B", Kind: "function", Source: b, Location: "L1-L5"},
+		// something outside, so the directory is reachable at the top level
+		{ID: "src/other/c.go", Label: "c.go", Kind: "file", Source: "src/other/c.go"},
+		{ID: "src/other/c.go::C", Label: "C", Kind: "function", Source: "src/other/c.go", Location: "L1-L5"},
+	}
+	var edges []schema.Edge
+	for i := 0; i < 6; i++ {
+		edges = append(edges, schema.Edge{Source: a + "::A", Target: b + "::B",
+			Relation: "calls", Confidence: schema.Inferred})
+	}
+	for i := 0; i < 2; i++ {
+		edges = append(edges, schema.Edge{Source: "src/other/c.go::C", Target: a + "::A",
+			Relation: "calls", Confidence: schema.Inferred})
+	}
+
+	top := Derive("demo", nodes, edges, Options{})
+	leaf := cardByID(top, dir)
+	if leaf == nil {
+		t.Fatalf("%s is missing from the top level; cards = %v", dir, top.Cards)
+	}
+	// it has NO subdirectories, and it is still a way in — 2 files
+	if leaf.Children != 2 {
+		t.Errorf("%s has no subdirectories but 2 files; Children = %d, want 2", dir, leaf.Children)
+	}
+
+	in := Derive("demo", nodes, edges, Options{Root: dir})
+	if in.Level != "file" {
+		t.Fatalf("scoping to a directory with no subdirectories gave level %q, want file", in.Level)
+	}
+	if in.Empty != "" {
+		t.Fatalf("a directory with two files calling each other drew nothing: %q", in.Empty)
+	}
+	names := map[string]*Card{}
+	for i := range in.Cards {
+		names[in.Cards[i].Label] = &in.Cards[i]
+	}
+	if names["a.go"] == nil || names["b.go"] == nil {
+		t.Fatalf("file cards missing; got %v", in.Cards)
+	}
+	// the 6 A->B calls lift to one a.go -> b.go arrow
+	l := linkOf(in, a, b, "calls")
+	if l == nil || l.Weight != 6 {
+		t.Errorf("file-to-file arrow should be 6 real calls, got %+v", l)
+	}
+	// the edge that LEAVES the directory must not be drawn at this level
+	for _, lk := range in.Links {
+		if strings.HasPrefix(lk.From, "src/other") || strings.HasPrefix(lk.To, "src/other") {
+			t.Errorf("drew an edge from outside the directory: %+v", lk)
+		}
+	}
+	// each file opens onto its declarations
+	if names["a.go"].Children != 1 {
+		t.Errorf("a.go holds 1 declaration; Children = %d", names["a.go"].Children)
+	}
+	// and the level says what a card now means
+	said := false
 	for _, n := range in.Notes {
-		if strings.Contains(n, "leaf") {
-			leaf = true
+		if strings.Contains(n, "a card here is a file") {
+			said = true
 		}
 	}
-	if !leaf {
-		t.Errorf("a level where nothing can be opened does not say so; notes = %q", in.Notes)
+	if !said {
+		t.Errorf("the file level does not say a card is a file; notes = %q", in.Notes)
 	}
-	// and the top level, which HAS an enterable directory, must not claim it
-	for _, n := range Derive("demo", nodes, edges, Options{}).Notes {
-		if strings.Contains(n, "every directory here is a leaf") {
-			t.Errorf("a level with an enterable directory claims every one is a leaf")
+}
+
+// TestCardsCountTrafficLeavingTheScene — inside one file, a function's callers
+// in that file are usually a small fraction of its callers in the repo, and the
+// repo-wide number is the one that says whether it is load-bearing. Those edges
+// cannot be DRAWN (the other end is not on screen) but they must be counted.
+func TestCardsCountTrafficLeavingTheScene(t *testing.T) {
+	const src = "src/app/web/f.go"
+	nodes, edges := oneFile()
+	// something far away calls `parse` 100 times and `handle` calls out twice
+	nodes = append(nodes,
+		schema.Node{ID: "src/far/g.go", Label: "g.go", Kind: "file", Source: "src/far/g.go"},
+		schema.Node{ID: "src/far/g.go::G", Label: "G", Kind: "function", Source: "src/far/g.go", Location: "L1-L2"},
+	)
+	for i := 0; i < 100; i++ {
+		edges = append(edges, schema.Edge{Source: "src/far/g.go::G", Target: src + "::parse",
+			Relation: "calls", Confidence: schema.Inferred})
+	}
+	for i := 0; i < 2; i++ {
+		edges = append(edges, schema.Edge{Source: src + "::handle", Target: "src/far/g.go::G",
+			Relation: "calls", Confidence: schema.Inferred})
+	}
+
+	s := Derive("demo", nodes, edges, Options{Root: src})
+	byLabel := map[string]*Card{}
+	for i := range s.Cards {
+		byLabel[s.Cards[i].Label] = &s.Cards[i]
+	}
+	parse, handle := byLabel["parse"], byLabel["handle"]
+	if parse == nil || handle == nil {
+		t.Fatalf("missing declarations; cards = %v", s.Cards)
+	}
+	// in-scene numbers are unchanged: 3 + 4 calls to parse from this file
+	if parse.In != 7 {
+		t.Errorf("parse.In = %d, want 7 (the calls inside this file)", parse.In)
+	}
+	// and the 100 callers from elsewhere are counted, not lost
+	if parse.ExtIn != 100 {
+		t.Errorf("parse.ExtIn = %d, want 100 (callers outside this file)", parse.ExtIn)
+	}
+	if handle.ExtOut != 2 {
+		t.Errorf("handle.ExtOut = %d, want 2 (calls leaving this file)", handle.ExtOut)
+	}
+	// crossing edges are NEVER drawn as arrows — the other end is not on screen
+	for _, l := range s.Links {
+		if strings.Contains(l.From, "src/far") || strings.Contains(l.To, "src/far") {
+			t.Errorf("drew an arrow to something not in the scene: %+v", l)
 		}
+	}
+	// a declaration calling itself-in-file must not be double counted as external
+	if handle.ExtIn != 0 {
+		t.Errorf("handle.ExtIn = %d, want 0", handle.ExtIn)
 	}
 }

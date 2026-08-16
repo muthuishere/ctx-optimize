@@ -162,6 +162,8 @@ export interface SceneCard {
   decls: number
   in: number
   out: number
+  ext_in: number
+  ext_out: number
   layer: number
   row: number
   detail: string
@@ -227,6 +229,7 @@ export interface Scene {
   stats: SceneStat[]
   chips: string[]
   root: string
+  level: string
   crumbs: SceneCrumb[]
   questions: SceneQuestion[]
   notes: string[]
