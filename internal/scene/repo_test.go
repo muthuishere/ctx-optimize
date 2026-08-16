@@ -403,7 +403,10 @@ func TestDeriveNamesWhoOpensAnUnconnectedPlate(t *testing.T) {
 	edges = append(edges, schema.Edge{Source: "scripts/build.sh", Target: "port:config.env:>CI_TOKEN",
 		Relation: "consumes", Confidence: schema.Inferred})
 
-	sc := Derive("m", nodes, edges, Options{Cards: 2})
+	// Cards is how many are drawn BESIDES the hub, so 1 gives core+util and
+	// leaves scripts — the directory that actually opens the port — off screen,
+	// which is the whole point of the fixture.
+	sc := Derive("m", nodes, edges, Options{Cards: 1})
 	if len(sc.World) != 1 {
 		t.Fatalf("world = %+v, want the one config.env group", sc.World)
 	}

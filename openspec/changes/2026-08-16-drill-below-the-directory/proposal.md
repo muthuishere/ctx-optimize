@@ -71,3 +71,40 @@ uninformative — every file with the same in/out because `contains` dominates �
 then file grain is a list in a costume and this stops at directories. Measured
 on `mm/kasan`: 361 `calls` edges against 636 `contains`, and `contains` is not
 a lifted relation, so the ranking is driven by real call structure.
+
+
+## Amendment 2026-08-16 — a level with no edges is not an empty level
+
+Owner, having drilled into `clis/go/brain`: *"two subdirectories, why can't it
+just show it."*
+
+It held `brain` and `skill`, neither importing the other, and the level
+rendered as a paragraph explaining that while the two of them appeared as pill
+links underneath it. Two real directories, and the answer was a sentence.
+
+The rule that produced it was right when it was written: a scene was a flow
+chart, x was longest-path depth in the lifted DAG, and a card with no arrow had
+no column to stand in — drawing one would have been exactly the "list in a
+costume" the wall view was killed for. So `Derive` dropped every subsystem with
+`in+out == 0` before ranking, and reported the level as Empty.
+
+That premise is gone. The clustered layout (ADR 22 D5) places a SET without
+claiming a direction, and says so on screen. So:
+
+- **An edgeless subsystem is still a subsystem.** It stays in the pool, ranked
+  below the ones with edges, so nothing that had a place loses it.
+- **`Empty` keeps only its two real jobs**: a root that names nothing (a typo,
+  which must never look like a fact about the code), and a level that genuinely
+  holds nothing.
+- **`children` alone is the door.** `inner > 0` gated it as well — "there is
+  something to SEE in there" — and that was true only while an edgeless level
+  drew nothing. `include/net/sctp/structs.h` now opens onto its eleven
+  declarations, which is a better answer than "nothing to draw". Inner stays as
+  INFORMATION on the card ("2 inside · no links"), because knowing that nothing
+  in there references anything else in there is worth having before you click.
+
+Three tests encoded the old rule and were changed to the new intent, each
+saying so in place: `TestDeriveEmptyGraphRefusesToPretend` (now
+`TestDeriveWithNoFlowStillShowsWhatIsThere`, and it still refuses to invent a
+link), the leaf half of `TestDrillCrumbsAlwaysLeadOut`, and the b.go assertion
+in `TestCardOnlyOffersALevelWorthOpening`.

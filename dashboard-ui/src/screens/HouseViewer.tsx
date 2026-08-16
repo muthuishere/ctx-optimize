@@ -287,7 +287,7 @@ export default function HouseViewer({ module, root, grain, onRoot, onModule }: V
       if (pillar) {
         text('LOAD-BEARING', r.x + pad + 26, r.y + 22, { size: 8, color: ACC, spacing: 1.2, weight: 700 })
       }
-      const titleOn = titleLink(c.label, r.x + pad, r.y + 44, 15, r.w - pad * 2, (scene!.level === 'module' ? c.id : c.dir), c.children > 0 && c.inner > 0, c.enter_grain)
+      const titleOn = titleLink(c.label, r.x + pad, r.y + 44, 15, r.w - pad * 2, (scene!.level === 'module' ? c.id : c.dir), c.children > 0, c.enter_grain)
       if (r.h > 74) {
         text(`${c.files} files · ${c.decls} decls`, r.x + pad, r.y + 64,
           { size: 10, color: MUTED, font: MONO, max: r.w - pad * 2 })
@@ -300,7 +300,7 @@ export default function HouseViewer({ module, root, grain, onRoot, onModule }: V
         text(`↘${c.in}  ${c.out}↗`, r.x + r.w - pad, r.y + r.h - 12,
           { size: 9.5, color: pal.dim, font: MONO, align: 'right' })
       }
-      if (c.children > 0 && c.inner > 0) {
+      if (c.children > 0) {
         const label = `${c.children} inside`
         const w = measure(label, 9, 700, MONO) + 24
         const bx = r.x + r.w - w - 8, by = r.y + 8

@@ -734,9 +734,16 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			skippedTests++
 			continue
 		}
-		if a.in+a.out == 0 {
-			continue // no cross-subsystem edge: nothing to draw it with
-		}
+		// A subsystem with no cross-directory edge is still a subsystem. It used
+		// to be dropped here — "nothing to draw it with" — which was true only
+		// while a scene was a flow chart: with no arrow, a card had no column to
+		// stand in. clis/go/brain holds `brain` and `skill`, neither importing
+		// the other, and the whole level collapsed to a sentence saying so with
+		// the two of them reduced to pill links underneath.
+		//
+		// The layout can place a SET now (clustered, no direction claimed), so
+		// the cards are drawn and the arrows are simply absent. Edged subsystems
+		// still rank first, so nothing that had a place loses it.
 		pool = append(pool, ranked{d, a})
 	}
 	sort.Slice(pool, func(i, j int) bool {
@@ -744,8 +751,24 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		if di != dj {
 			return di > dj
 		}
+		// Among subsystems with no edges at all, the bigger one is the more
+		// likely to be worth looking at.
+		if pool[i].a.files+pool[i].a.decls != pool[j].a.files+pool[j].a.decls {
+			return pool[i].a.files+pool[i].a.decls > pool[j].a.files+pool[j].a.decls
+		}
 		return pool[i].dir < pool[j].dir
 	})
+	// A level with subsystems but no edges between them is NOT empty. It used
+	// to be reported as empty and the cards thrown away, because a scene was a
+	// flow chart and a card with no arrow had no column to stand in — the
+	// reader drilled into clis/go/brain, which holds `brain` and `skill`, and
+	// got a sentence explaining that neither imports the other while the two of
+	// them were reduced to pill links underneath it.
+	//
+	// The layout places a SET now, and says on screen that x no longer carries
+	// direction. So the cards are drawn, the arrows are simply absent, and
+	// Empty is kept for what it was always for: a root that names nothing, and
+	// a level that really does hold nothing.
 	if len(pool) == 0 {
 		if opt.Root != "" && len(owner) == 0 {
 			// The root matched nothing at all. Distinguishing this from "a real

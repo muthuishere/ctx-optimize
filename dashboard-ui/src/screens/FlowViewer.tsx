@@ -456,7 +456,12 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       // SEE. A header holding eleven declarations that never reference each
       // other is not a door — offering one promises a screen whose only
       // content is "nothing to draw".
-      if (!b.card || b.card.children <= 0 || b.card.inner <= 0) return false
+      // Children is the door. `inner > 0` used to gate it as well — "there is
+      // something to SEE in there" — but that was true only while a level with
+      // no edges drew nothing. It now draws its subsystems, so a directory
+      // holding two subdirectories that never reference each other is worth
+      // opening: the two of them are the answer.
+      if (!b.card || b.card.children <= 0) return false
       hits.push({ x, y, w, h, root: enterKey(b.card), kind: 'card', grain: b.card.enter_grain })
       return hover === hits.length - 1
     }
@@ -512,7 +517,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       text(b.n, b.x + 18, b.y + (tight ? b.h / 2 + 5 : 36),
         { size: tight ? 13 : 19, weight: 300, color: pal.dim, font: MONO })
       if (tight) {
-        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, enterKey(c), c.children > 0 && c.inner > 0, 'left', c.enter_grain)
+        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, enterKey(c), c.children > 0, 'left', c.enter_grain)
         if (c.children > 0) drawEnter(b.x + b.w - 10, b.y + 6, c.children, on || on2, 'right')
         return
       }
@@ -523,7 +528,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       text(c.glyph, b.x + 31, b.y + 66, { size: 13, color: pal.muted, align: 'center', font: MONO })
 
       const rows = cardRows(b.h)
-      const titleOn = titleLink(c.label, b.x + 54, b.y + rows.titleBase, 16, b.w - 70, enterKey(c), c.children > 0 && c.inner > 0, 'left', c.enter_grain)
+      const titleOn = titleLink(c.label, b.x + 54, b.y + rows.titleBase, 16, b.w - 70, enterKey(c), c.children > 0, 'left', c.enter_grain)
       // The lower lines stack UP from the bottom, so a short card drops one
       // rather than printing it through the other.
       if (rows.showDir) {
@@ -547,7 +552,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       // killed for — but inside one file a function's 3 local callers can be a
       // hundred repo-wide, and that is the number that says whether it matters.
 
-      if (c.children > 0 && c.inner > 0) {
+      if (c.children > 0) {
         // Top strip, beside the ordinal — the only band on a card that carries
         // no text of its own. Drawn AFTER the title so it can share its hover.
         drawEnter(b.x + b.w - 14, b.y + 12, c.children, on || titleOn, 'right')
@@ -601,7 +606,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       text('MOST DEPENDED ON', b.x, b.y - (roomy ? 46 : 34),
         { size: 8.5, color: MUTED, align: 'center', spacing: 1.3, weight: 700 })
       const titleOn = titleLink(c.label, b.x, b.y - (roomy ? 20 : 12),
-        roomy ? 19 : 15, b.r * 1.7, enterKey(c), c.children > 0 && c.inner > 0, 'center', c.enter_grain)
+        roomy ? 19 : 15, b.r * 1.7, enterKey(c), c.children > 0, 'center', c.enter_grain)
       if (!tight) {
         text(c.dir, b.x, b.y + (roomy ? -2 : 4),
           { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.75 })
@@ -622,7 +627,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         text(`${c.files} files · ${c.decls} decls`, b.x, b.y + 60,
           { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.4 })
       }
-      if (c.children > 0 && c.inner > 0) drawEnter(b.x, b.y + b.r - (roomy ? 30 : 22), c.children, on || titleOn, 'center')
+      if (c.children > 0) drawEnter(b.x, b.y + b.r - (roomy ? 30 : 22), c.children, on || titleOn, 'center')
     }
 
     // The outer world: one dashed PLATE per transport, holding a bounded
