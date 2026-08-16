@@ -130,3 +130,44 @@ is that a store gathered before this build reports the old transport until
 someone forces a re-gather, and `boundaries --transport storage.browser` will
 find nothing there. Worth knowing before reading a stale store's answer as a
 statement about the code.
+
+
+## Amendment — the coverage answer is authoring, not re-gathering
+
+> "that's totally okay if they don't — they can create their own boundary,
+> everyone"
+
+Decided: no bulk re-gather of existing stores. A store built before a rule
+change keeps its old answer until someone forces a gather, and that is fine
+because the real answer to "the picture is missing my queue / my cache / my
+SDK" was never "wait for us to ship a rule".
+
+**Verified end to end rather than asserted.** A repo dropped this into
+`.ctxoptimize/boundaries.json`:
+
+```json
+{ "id": "house-idb", "transport": "storage.browser.indexeddb",
+  "ast": [{ "shape": "call", "name": "open", "receiver": "indexedDB", "arg": 0 }] }
+```
+
+and the gather emitted `storage.browser.indexeddb → volentis_cache` at
+`web/app.ts:L16` — a transport this binary has never heard of, with the
+database name and a file:line. The viewer handled it with no change: the
+`storage.` prefix gives it the family's colour, and it lands on "the browser's
+own storage" rather than the unknown fallback, which is exactly what the
+prefix-keyed palette exists for.
+
+Rules merge over the shipped set BY ID, so a new id ADDS a rule and a shipped
+id OVERRIDES one. The ladder is embedded defaults → `~/.config/ctx-optimize/
+boundaries/*.json` → the repo's own file.
+
+**The gap was documentation, and it was total.** `instructions.md` — the
+committed usage card every repo gets, and the deep doc the agent block points
+at — covered sources, remote, verify discipline and tool choice, and said
+NOTHING about authoring a boundary rule. A door nobody is told about is not a
+door. The card now carries the section, with the two rules that make an authored
+rule worth citing: `verified` is required (a rule with no ground truth is
+reported unexercised, never passed) and unmeasured never claims EXTRACTED.
+
+A test pins it, because a card that silently loses the section is the same
+failure as never having written it.
