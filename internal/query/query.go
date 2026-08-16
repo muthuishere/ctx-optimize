@@ -169,7 +169,36 @@ func exactMatch(n *schema.Node, normQ string) bool {
 
 // Run scores every node against the question and returns the top hits with
 // their 1-hop neighborhoods, truncated to ~budget tokens (chars/4).
+// Neighbors fetches the edges touching one node, in the order edges.ndjson
+// lists them. Returning ok=false means "no index" and the caller falls back to
+// the scan — which must be SAID, not silently absorbed.
+//
+// It exists because `query` read all 5.5M of linux's edges and built a
+// whole-graph adjacency map on every call, 11M appends, to attach at most 12
+// neighbours to at most 20 hits: measured 2.37s of a 3.93s verb. The same 37
+// neighbours through the index card already uses cost 39.5ms.
+type Neighbors interface {
+	EdgesTouchingOrdered(id string) ([]schema.Edge, bool, error)
+}
+
+// Run answers from a fully-read graph. Kept as the fallback path and as the
+// definition of the answer: RunIndexed must agree with it byte for byte.
 func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) *Result {
+	return run(nodes, edges, nil, question, budget)
+}
+
+// RunIndexed answers without reading the edges, fetching only the neighbours of
+// the hits it is about to return. The ANSWER is identical — same hits, same
+// order, same neighbours in the same order — because the index lane preserves
+// file order (store.EdgesTouchingOrdered) and this is the only thing it
+// changes. ADR 25 slice 0, invariant I1.
+//
+// nb == nil, or a store whose index is missing or stale, falls back to `edges`.
+func RunIndexed(nodes []schema.Node, edges []schema.Edge, nb Neighbors, question string, budget int) *Result {
+	return run(nodes, edges, nb, question, budget)
+}
+
+func run(nodes []schema.Node, edges []schema.Edge, nb Neighbors, question string, budget int) *Result {
 	if budget <= 0 {
 		budget = 2000
 	}
@@ -303,18 +332,57 @@ func Run(nodes []schema.Node, edges []schema.Edge, question string, budget int) 
 		}
 	}
 
-	// Adjacency for neighborhoods.
-	out := map[string][]Neighbor{}
-	for _, e := range edges {
-		out[e.Source] = append(out[e.Source], Neighbor{ID: e.Target, Relation: e.Relation, Dir: "out"})
-		out[e.Target] = append(out[e.Target], Neighbor{ID: e.Source, Relation: e.Relation, Dir: "in"})
+	// Neighbourhoods. The indexed lane fetches only what the hits need; the
+	// scanning lane builds the whole-graph map it always did. Both produce the
+	// same list for the same node, in the same order.
+	var out map[string][]Neighbor
+	indexed := nb != nil
+	if indexed {
+		// Probe once on a node we will certainly ask about, so a missing or
+		// stale index falls back BEFORE we start answering, not halfway.
+		if len(candidates) > 0 {
+			if _, ok, err := nb.EdgesTouchingOrdered(nodes[candidates[0].idx].ID); err != nil || !ok {
+				indexed = false
+			}
+		} else {
+			indexed = false
+		}
+	}
+	if !indexed {
+		out = map[string][]Neighbor{}
+		for _, e := range edges {
+			out[e.Source] = append(out[e.Source], Neighbor{ID: e.Target, Relation: e.Relation, Dir: "out"})
+			out[e.Target] = append(out[e.Target], Neighbor{ID: e.Source, Relation: e.Relation, Dir: "in"})
+		}
+	}
+	// neighborsOf reproduces exactly what the scan's map holds for one id: every
+	// edge touching it in FILE order, a self-edge contributing both directions
+	// with out first — which is the order the scan's two appends produce.
+	neighborsOf := func(id string) []Neighbor {
+		if !indexed {
+			return out[id]
+		}
+		es, ok, err := nb.EdgesTouchingOrdered(id)
+		if err != nil || !ok {
+			return nil
+		}
+		list := make([]Neighbor, 0, len(es))
+		for _, e := range es {
+			if e.Source == id {
+				list = append(list, Neighbor{ID: e.Target, Relation: e.Relation, Dir: "out"})
+			}
+			if e.Target == id {
+				list = append(list, Neighbor{ID: e.Source, Relation: e.Relation, Dir: "in"})
+			}
+		}
+		return list
 	}
 
 	res := &Result{Query: question}
 	spent := 0
 	for _, c := range candidates {
 		n := nodes[c.idx]
-		neighbors := out[n.ID]
+		neighbors := neighborsOf(n.ID)
 		if len(neighbors) > 12 { // hubs: cap, don't dump
 			neighbors = neighbors[:12]
 		}

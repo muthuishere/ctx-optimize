@@ -1153,11 +1153,12 @@ func cmdQuery(args []string, stdout, stderr io.Writer) error {
 		}
 		var qperr error
 		var qd *discloser
+		edgesBefore := len(edges)
 		nodes, edges, qd, qperr = narrowQuery(f, nodes, edges)
 		if qperr != nil {
 			return qperr
 		}
-		res := query.Run(nodes, edges, q, budget)
+		res := query.RunIndexed(nodes, edges, neighborsFor(s, edgesBefore, len(edges)), q, budget)
 		if includeContent {
 			hydrateHits(res.Hits, bodyRootFor(sc))
 		}
@@ -3676,4 +3677,19 @@ at run time (values are never written or printed).
 The binary is deterministic: no LLM, no DB, and network ONLY when you ask —
 your remote (push/pull), update (releases), grammar build (zig, once).
 `
+}
+
+// neighborsFor returns the store as query's neighbour source ONLY when the
+// graph reaching query is the whole graph.
+//
+// `--where`/`--kind`/scope filters narrow nodes and edges before ranking, and a
+// narrowed query must see neighbours from the NARROWED graph. The index knows
+// only the complete one, so serving it after a filter would attach edges the
+// caller explicitly excluded — a wrong answer, not a slow one. Cheap to get
+// right, silent to get wrong.
+func neighborsFor(s *store.Store, edgesBefore, edgesAfter int) query.Neighbors {
+	if edgesBefore != edgesAfter {
+		return nil // narrowed: the scan is the only correct lane
+	}
+	return s
 }

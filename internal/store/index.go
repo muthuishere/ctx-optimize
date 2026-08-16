@@ -705,3 +705,53 @@ func (s *Store) EdgesTouching(id string) ([]schema.Edge, error) {
 	}
 	return out, nil
 }
+
+// EdgesTouchingOrdered returns every edge with id as source or target, in the
+// order they appear in edges.ndjson — the order a full scan would produce.
+//
+// EdgesTouching cannot serve this: it concatenates from-edges then to-edges and
+// deduplicates by CONTENT, which reorders a node's edges and collapses a
+// self-edge. `query` caps a node's neighbours at 12, so order decides WHICH
+// twelve survive; an indexed lane that returns a different order returns a
+// different answer. This one merges the two offset lists and sorts by offset,
+// so the indexed and scanning lanes agree byte for byte (ADR 25 slice 0, I1).
+//
+// A self-edge appears ONCE here — it is one line — and callers that treat
+// source and target separately expand it, exactly as a scan over the file does.
+//
+// ok=false means no index, or an index stale against the graph. The caller
+// falls back to the scan and must SAY so (I3): a silent fallback is a 56x
+// regression that looks like ordinary slowness.
+func (s *Store) EdgesTouchingOrdered(id string) ([]schema.Edge, bool, error) {
+	fs, bs, zs, oks := openIndex(filepath.Join(s.indexDir(), edgesBySrc), s.edgesPath())
+	ft, bt, zt, okt := openIndex(filepath.Join(s.indexDir(), edgesByTgt), s.edgesPath())
+	if !oks || !okt {
+		if oks {
+			fs.Close()
+		}
+		if okt {
+			ft.Close()
+		}
+		return nil, false, nil
+	}
+	from, _ := lookupOffsets(fs, bs, zs, id)
+	to, _ := lookupOffsets(ft, bt, zt, id)
+	fs.Close()
+	ft.Close()
+
+	seen := make(map[int64]bool, len(from)+len(to))
+	offs := make([]int64, 0, len(from)+len(to))
+	for _, o := range append(from, to...) {
+		if seen[o] {
+			continue // a self-edge is one line, listed in both indexes
+		}
+		seen[o] = true
+		offs = append(offs, o)
+	}
+	sort.Slice(offs, func(i, j int) bool { return offs[i] < offs[j] }) // file order
+	edges, err := readAt[schema.Edge](s.edgesPath(), offs)
+	if err != nil {
+		return nil, false, err
+	}
+	return edges, true, nil
+}
