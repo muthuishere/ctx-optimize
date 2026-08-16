@@ -38,6 +38,11 @@ func extractPyproject(c *collector, rel, content string) {
 		}
 		path := e.Path()
 		switch {
+		// what this distribution IS (ADR 22 D0): [project] name, and poetry's
+		// [tool.poetry] name. Table-anchored, so a `name` inside a dependency
+		// table cannot be mistaken for the package's own.
+		case (path == "project" || path == "tool.poetry") && e.Key == "name":
+			c.publishes(pypiNS, tomlwalk.Unquote(e.Val), rel)
 		// PEP 621 / PEP 735 / build-system: arrays of PEP 508 requirements.
 		case path == "project" && e.Key == "dependencies":
 			addPypiRequirements(c, rel, e.Val, "dependencies")

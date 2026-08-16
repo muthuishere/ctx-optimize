@@ -194,6 +194,68 @@ Ruby/PHP are not covered (adapter door) and pip-compile locks are skipped on
 purpose (transitive pins, not declarations) — so `(0 dependencies)` means
 "nothing recognized", never "none declared".
 
+## Teaching it a boundary it does not know
+
+The shipped rules cover env vars, HTTP routes and clients, websockets, spawned
+processes, and browser storage (local / session / cookie). Anything else this
+codebase talks to — a queue, a cache, IndexedDB, an in-house SDK — is not
+missing because it could not be found. It is missing because nobody has written
+the rule, and the store never invents one.
+
+Add it in `.ctxoptimize/boundaries.json` and commit it. Rules merge over the
+shipped set BY ID, so a new id adds a rule and a shipped id overrides one:
+
+```json
+{
+  "version": 1,
+  "boundaries": [
+    {
+      "id": "house-idb",
+      "transport": "storage.browser.indexeddb",
+      "direction": "consumes",
+      "when": { "ext": [".ts", ".tsx", ".js"] },
+      "tier": "INFERRED",
+      "verified": {
+        "at": "2026-08-16",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'indexedDB\\.open\\(' --ext .ts,.js --count",
+          "re": "indexedDB\\.open\\(",
+          "ext": [".ts", ".js"],
+          "corpora": ["local"]
+        },
+        "expected": 1, "matched": 1, "sampled": 1, "confirmed": 1,
+        "known_misses": []
+      },
+      "ast": [{ "shape": "call", "name": "open", "receiver": "indexedDB", "arg": 0 }]
+    }
+  ]
+}
+```
+
+`transport` is free text and is read as `family.kind` — an unknown family is
+drawn and described honestly rather than guessed at, so inventing
+`queue.internal` is safe. Shapes available: `call` (with `receiver`,
+`arg`), `member` (a `path` like `["process","env"]`, naming the property AFTER
+it), `subscript`, `literal`, `new`, `annotation`.
+
+Two rules that are not negotiable, because they are what makes the answer worth
+citing:
+
+- **`verified` is required.** A rule with no recorded ground truth is reported
+  UNEXERCISED, never passed. `boundaries verify` re-runs each rule's own
+  evidence against this repo, and `--strict` exits nonzero when recall drops —
+  so a rule that quietly stops matching fails CI instead of quietly shrinking
+  the picture.
+- **Unmeasured never claims EXTRACTED.** Cap the tier at `INFERRED` unless the
+  ground truth was actually sampled and confirmed.
+
+A rule file that does not parse fails the gather loudly. A silently dropped
+rule would make every later count a lie.
+
+Machine-wide rules (every repo on this box) go in
+`~/.config/ctx-optimize/boundaries/*.json`, merged before the repo's own.
+
 ## Sharing — remote push/pull
 
 `remote push` / `remote pull` run the commands declared in

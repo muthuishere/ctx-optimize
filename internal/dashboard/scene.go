@@ -78,6 +78,7 @@ func (s *server) handleScene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sc := scene.Derive(module, nodes, edges, opt)
+	sc = withRepoCrumb(s.root, module, sc)
 	if ok {
 		s.scenes.put(key, stamp, sc)
 	}

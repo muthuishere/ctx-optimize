@@ -44,6 +44,20 @@ export interface Layout {
   byId: Map<string, Box>
   curves: Curve[]
   maxWeight: number
+  /**
+   * true when the cards were CLUSTERED rather than placed by dependency depth.
+   * A column's x is the longest-path depth in the lifted DAG — but a scene with
+   * no directed edges has no DAG, and every card lands in layer 0. Seven cards
+   * in one column then overflow a fixed frame and overlap each other, which is
+   * what a multi-module repo with no cross-module dependency looked like.
+   *
+   * Clustering keeps position meaningful without inventing a direction:
+   * cards that touch each other are drawn near each other, and modules nothing
+   * connects to are set aside rather than padded into a row. The flag travels
+   * so the picture can SAY that x is no longer dependency depth here — the
+   * killed wall view died of position that meant nothing and did not admit it.
+   */
+  clustered: boolean
 }
 
 // The composition adapts to the STAGE. It used to be a fixed 1600x1000 letter-
@@ -67,7 +81,12 @@ const CARD_H_MIN = 56
 // — the card band collapsed to 7 units and the hub landed on the title.
 const headerH = (vh: number) => Math.max(132, Math.min(254, vh * 0.26))
 const footerH = (vh: number) => Math.max(64, Math.min(112, vh * 0.13))
-const worldH = (vh: number) => Math.max(92, Math.min(WORLD_H, vh * 0.16))
+// An OPEN plate has to fit its heading and at least one row of door names.
+// 92 did not: (92-76)/24 rounds to zero rows, so an expanded plate printed
+// "showing 0 of 25" — it took the space, hid the names, and told the reader
+// the store had nothing, which was false. A plate that cannot show a name is
+// strictly worse than the chip it replaced.
+const worldH = (vh: number) => Math.max(112, Math.min(WORLD_H, vh * 0.16))
 const HUB_R = 100
 // The outer world is a PLATE, not a ring: a transport with 205 ports needs its
 // door names in rows, and the killed wall view proved a perimeter of names is
@@ -78,14 +97,154 @@ const HUB_R = 100
 // structure, `provides`/`consumes` leave the system entirely. They were all the
 // same grey with the same blue dots, which threw away the one thing the store
 // knows about an edge that its thickness does not say.
-export const RELATION_STYLE: Record<string, { line: string; flow: string; label: string }> = {
+export const RELATION_STYLE: Record<string, { line: string; flow: string; label: string; dashed?: boolean }> = {
   calls:    { line: '#b9a9d8', flow: '#6d4ec4', label: '#6d4ec4' },
   imports:  { line: '#c9cec2', flow: '#7f8c74', label: '#7f8c74' },
+  // Doc links: a dependency written by a human, not the compiler. Its own ink
+  // so it is never mistaken for code structure.
+  references: { line: '#d9c6a0', flow: '#8a6d3b', label: '#8a6d3b' },
   provides: { line: '#a8cbb4', flow: '#1f8a55', label: '#1f8a55' },
   consumes: { line: '#e3c48f', flow: '#b9761a', label: '#b9761a' },
+  // Module grain (ADR 22). `depends` is the strongest edge in the store — two
+  // manifests, both EXTRACTED — so it gets the strongest ink. `shares` means
+  // "both call the same external service" and is NOT a call between them; it
+  // is drawn dashed and pale so it can never be misread as one.
+  depends:  { line: '#9db4d8', flow: '#2f5fa8', label: '#2f5fa8' },
+  shares:   { line: '#d8cfc2', flow: '#9a8f7e', label: '#9a8f7e', dashed: true },
+  // one module CONSUMES a port another PROVIDES: a real call between them, so
+  // it reads like `calls` does everywhere else rather than inventing a colour
 }
-export const RELATION_FALLBACK = { line: '#cfcabf', flow: '#4a5cd0', label: '#8a857c' }
-export const relationStyle = (rel: string) => RELATION_STYLE[rel] || RELATION_FALLBACK
+export const RELATION_FALLBACK = { line: '#cfcabf', flow: '#4a5cd0', label: '#8a857c', dashed: false }
+
+// TRANSPORT PALETTE. A port-derived line and the outer-world plate it belongs
+// to are the same fact seen twice, so they are the same colour — the picture
+// used one amber for every plate and one grey for every line, which threw away
+// the one thing the store knows about a boundary that its position does not.
+//
+// Keyed by PREFIX, so a transport this build has never seen (`queue.kafka`,
+// `db.postgres`) still lands in the right family instead of falling back to
+// grey. An unknown family is grey and is meant to be: inventing a colour for
+// something we cannot name is how a legend starts lying.
+export const TRANSPORT_STYLE: Record<string, { line: string; flow: string; label: string }> = {
+  'network.': { line: '#8fb8d8', flow: '#2f6ea8', label: '#2f6ea8' },
+  'config.':  { line: '#e3c48f', flow: '#b9761a', label: '#b9761a' },
+  'process.': { line: '#c9a8d8', flow: '#7a44a8', label: '#7a44a8' },
+  'storage.': { line: '#a8cbb4', flow: '#1f8a55', label: '#1f8a55' },
+  'db.':      { line: '#a8cbb4', flow: '#1f8a55', label: '#1f8a55' },
+  'queue.':   { line: '#d8a8a8', flow: '#a83f3f', label: '#a83f3f' },
+}
+
+export function transportStyle(transport: string) {
+  for (const [prefix, st] of Object.entries(TRANSPORT_STYLE)) {
+    if (transport.startsWith(prefix)) return st
+  }
+  return RELATION_FALLBACK
+}
+
+/**
+ * The ink for one link. Transport wins when there is one, because that is the
+ * more specific fact: `calls` over HTTP and `calls` over a spawned process are
+ * both calls and are not the same thing to anyone reading the picture.
+ */
+export const relationStyle = (rel: string, transport = '') => {
+  const base = RELATION_STYLE[rel] || RELATION_FALLBACK
+  if (!transport) return base
+  const t = transportStyle(transport)
+  return { ...base, line: t.line, flow: t.flow, label: t.label }
+}
+
+/** One row of the legend: what a mark on the canvas means. */
+export interface LegendRow {
+  /** the transport, exactly as the curve is labelled */
+  label: string
+  /** what that mark means, in a sentence */
+  meaning: string
+  color: string
+  dashed: boolean
+  /** false for a symmetric link, which has no arrowhead to explain */
+  arrow: boolean
+}
+
+/**
+ * What a MODE is, in the reader's words. `network.http` already says it; this
+ * is for the reader who has not met the vocabulary.
+ */
+function meaningOf(transport: string, relation: string): string {
+  if (!transport) {
+    if (relation === 'depends') return 'a package one declares and another publishes'
+    if (relation === 'references') return 'a link one document makes to another'
+    return relation
+  }
+  if (transport.startsWith('network.')) return 'calls over the network'
+  if (transport.startsWith('config.')) return 'settings read from the environment'
+  if (transport.startsWith('process.')) return 'binaries run as processes'
+  // Named per SUB-family, because the families differ in kind and one blanket
+  // line would say something untrue about most of them. `storage.browser` is
+  // the only one shipped today; the others are named here so a rule that adds
+  // one lands on a sentence instead of the fallback.
+  if (transport === 'storage.browser.local') return 'browser storage that outlives the tab'
+  if (transport === 'storage.browser.session') return 'browser storage that dies with the tab'
+  if (transport === 'storage.browser.cookie') return 'cookies — sent to the server on every request'
+  if (transport.startsWith('storage.browser')) return 'the browser’s own storage'
+  if (transport === 'storage.file') return 'files on disk'
+  if (transport === 'storage.bucket') return 'object storage'
+  if (transport.startsWith('storage.')) return 'stored data'
+  if (transport.startsWith('db.')) return 'databases'
+  if (transport.startsWith('queue.')) return 'queues and topics'
+  return 'a boundary of the system'
+}
+
+/**
+ * legendFor is one row per MODE — the thing a line's colour stands for — and
+ * nothing else.
+ *
+ * It used to be a row per (mode × claim), which put `network.http` on screen
+ * three times: once for "both reach the same service", once for "opens it to
+ * the outside", once for "reaches out to a service". Ten rows to explain four
+ * colours. The colour only ever encoded the mode; the claim is in the line's
+ * SHAPE, which is one sentence for the whole key rather than a row apiece.
+ *
+ * Built from what is ACTUALLY on screen, never a fixed list: a legend naming a
+ * mode this scene does not contain teaches a code the reader will not see, and
+ * one that omits a mode they can see is worse.
+ */
+export function legendFor(scene: Scene): LegendRow[] {
+  const rows = new Map<string, LegendRow>()
+  for (const l of scene.links || []) {
+    const transport = l.transport || ''
+    const name = transport || l.relation
+    if (rows.has(name)) continue
+    rows.set(name, {
+      label: name,
+      meaning: meaningOf(transport, l.relation),
+      color: relationStyle(l.relation, transport).label,
+      // The swatch shows the mode's ink. Shape is explained once, underneath,
+      // because one mode is drawn in every shape the scene needs.
+      dashed: false,
+      arrow: false,
+    })
+  }
+  return [...rows.values()].sort((a, b) => a.label.localeCompare(b.label))
+}
+
+/**
+ * The one sentence that explains SHAPE, for a scene that draws more than one.
+ * Empty when every line on screen has the same shape — a key to a distinction
+ * the reader cannot see is worse than none.
+ */
+export function shapeNote(scene: Scene): string {
+  let directed = false, symmetric = false, world = false
+  for (const l of scene.links || []) {
+    if (l.to.startsWith('world:')) world = true
+    else if (l.relation === 'shares') symmetric = true
+    else directed = true
+  }
+  const bits: string[] = []
+  if (directed) bits.push('solid, with a head — one end acts on the other')
+  if (world) bits.push('dashed, with a head — leaves the repo')
+  if (symmetric) bits.push('dashed, no head — both ends reach the same thing, NOT each other')
+  return bits.length > 1 ? bits.join('   ·   ') : ''
+}
 
 // A world group is a CHIP until you ask for it. Expanded plates were taking a
 // third of the canvas to show six sampled port names — detail — while the
@@ -97,6 +256,34 @@ export const CHIP_H = 34
 
 export const WORLD_W = 288
 export const WORLD_H = 142
+
+/**
+ * cardRows is where a card's lines of text go, for a card of this height.
+ *
+ * They used to be fixed offsets with independent height guards — the path at
+ * y+91 if h>=100, the detail at y+h-15 if h>=86 — and at any height between
+ * 100 and 118 those two ARE each other: at h=100 the path sits at 91 and the
+ * detail at 85, printed straight through it. Every card in a clustered scene
+ * is in that band, so every card on screen had two lines of text on one line.
+ *
+ * Stacking up from the bottom makes the collision impossible rather than
+ * guarded against, and returns what each row can afford so the caller drops a
+ * line instead of overprinting one.
+ */
+export function cardRows(h: number) {
+  const TITLE_BASE = 67   // the name's baseline, from the card's top
+  const CLEAR = 15        // the name's descender plus a hair
+  const detail = h - 15
+  const dir = detail - 16
+  return {
+    tight: h < 84,
+    titleBase: TITLE_BASE,
+    detailY: detail,
+    dirY: dir,
+    showDetail: detail >= TITLE_BASE + CLEAR,
+    showDir: dir >= TITLE_BASE + CLEAR,
+  }
+}
 
 /** rectOf is a box's bounding rectangle — the hub's circle included. */
 function rectOf(b: Box) {
@@ -227,7 +414,109 @@ export function layout(scene: Scene, vh: number = VH, expanded: string = ''): La
   // sized from the band it has to sit in, not from a constant.
   const hubR = Math.max(40, Math.min(HUB_R, (cardH * HUB_FACTOR) / 2))
 
+  // No topology to draw. One layer means no card depends on another, so there
+  // is no left-to-right to read; a column is then a flow chart of nothing, and
+  // past four cards it does not even fit the frame — seven modules stacked,
+  // overlapping, with the last one past the footer.
+  //
+  // What IS in the data is who touches whom. So the cards are CLUSTERED:
+  // connected ones sit together, and modules nothing connects to are set aside
+  // in their own column. Adjacency then means something — it is the only thing
+  // position can honestly carry when there is no direction to read.
+  const clustered = layers === 1 && cards.length > 3 && !cards.some((c) => c.hub)
   let ordinal = 0
+  if (clustered) {
+    const band = Math.max(CARD_H_MIN, bandBottom - bandTop)
+    const idx = new Map(cards.map((c, i) => [c.id, i]))
+    const deg = cards.map(() => 0)
+    const pairs: Array<[number, number]> = []
+    for (const lk of scene.links || []) {
+      const a = idx.get(lk.from), b = idx.get(lk.to)
+      if (a === undefined || b === undefined || a === b) continue
+      pairs.push([a, b]); deg[a]++; deg[b]++
+    }
+    const linkedCards = cards.filter((_, i) => deg[i] > 0)
+    const loners = cards.filter((_, i) => deg[i] === 0)
+
+    // The lone modules take a narrow column on the right; the connected ones
+    // get the rest. With none of either, the split costs nothing.
+    const loneW = loners.length > 0 ? Math.min(span * 0.28, CARD_W_MAX + 40) : 0
+    const mainW = span - loneW
+    const cw = Math.max(CARD_W_MIN, Math.min(CARD_W_MAX,
+      mainW / Math.max(2, Math.ceil(Math.sqrt(Math.max(1, linkedCards.length)))) - 26))
+    const ch = Math.max(CARD_H_MIN, Math.min(CARD_H_MAX,
+      band / Math.max(2, Math.ceil(Math.sqrt(Math.max(1, linkedCards.length)))) - GAP_Y))
+
+    // Seeded on a circle by rank, then a FIXED number of relaxation passes:
+    // linked pairs pull together, every pair pushes apart. Deterministic — no
+    // clock, no randomness — so the same scene always draws the same picture,
+    // which is what makes a saved arrangement worth saving.
+    const pos = new Map<string, { x: number; y: number }>()
+    const cx0 = left + mainW / 2
+    const cy0 = bandTop + band / 2
+    const rx = Math.max(cw, mainW / 2 - cw / 2 - 12)
+    const ry = Math.max(ch, band / 2 - ch / 2 - 12)
+    linkedCards.forEach((c, i) => {
+      const t = (i / Math.max(1, linkedCards.length)) * Math.PI * 2
+      pos.set(c.id, { x: cx0 + Math.cos(t) * rx * 0.7, y: cy0 + Math.sin(t) * ry * 0.7 })
+    })
+    for (let pass = 0; pass < 60; pass++) {
+      for (const [a, b] of pairs) {
+        const pa = pos.get(cards[a].id), pb = pos.get(cards[b].id)
+        if (!pa || !pb) continue
+        const dx = pb.x - pa.x, dy = pb.y - pa.y
+        const d = Math.hypot(dx, dy) || 1
+        const want = cw * 1.5
+        const k = ((d - want) / d) * 0.06
+        pa.x += dx * k; pa.y += dy * k; pb.x -= dx * k; pb.y -= dy * k
+      }
+      for (let i = 0; i < linkedCards.length; i++) {
+        for (let j = i + 1; j < linkedCards.length; j++) {
+          const pa = pos.get(linkedCards[i].id)!, pb = pos.get(linkedCards[j].id)!
+          const dx = pb.x - pa.x, dy = pb.y - pa.y
+          const d = Math.hypot(dx, dy) || 1
+          const min = Math.hypot(cw + 24, ch + GAP_Y)
+          if (d >= min) continue
+          const k = ((d - min) / d) * 0.5
+          pa.x += dx * k; pa.y += dy * k; pb.x -= dx * k; pb.y -= dy * k
+        }
+      }
+      for (const c of linkedCards) {
+        const p = pos.get(c.id)!
+        p.x = Math.min(left + mainW - cw / 2 - 8, Math.max(left + cw / 2 + 8, p.x))
+        p.y = Math.min(bandBottom - ch / 2, Math.max(bandTop + ch / 2, p.y))
+      }
+    }
+    for (const c of linkedCards) {
+      ordinal++
+      const p = pos.get(c.id)!
+      const b: Box = { id: c.id, kind: 'card', x: p.x - cw / 2, y: p.y - ch / 2, w: cw, h: ch, r: 0, card: c,
+        n: String(cards.indexOf(c) + 1).padStart(2, '0') }
+      boxes.push(b); byId.set(b.id, b)
+    }
+    // The lone column is a column only while there is a cluster to sit beside.
+    // With nothing connected at all — a repo of entirely independent modules —
+    // it is the whole picture, and squeezing it into 28% of the width stacked
+    // six cards into space for three. Then it is a grid across the full frame.
+    const laneW = linkedCards.length > 0 ? loneW : span
+    const laneX = linkedCards.length > 0 ? left + mainW : left
+    const lcols = linkedCards.length > 0
+      ? 1
+      : Math.min(loners.length, Math.max(1, Math.round(Math.sqrt((loners.length * (span / band)) / 2))))
+    const lrows = Math.max(1, Math.ceil(loners.length / lcols))
+    const cellW = laneW / lcols
+    const lw = Math.max(CARD_W_MIN, Math.min(CARD_W_MAX, cellW - 34))
+    // The row step has to fit the band: n cards and (n-1) gaps, never more.
+    const lh = Math.max(CARD_H_MIN, Math.min(ch, (band - (lrows - 1) * GAP_Y) / lrows))
+    const lstep = lrows > 1 ? Math.max(lh + GAP_Y, (band - lh) / (lrows - 1)) : 0
+    loners.forEach((c, i) => {
+      const x = laneX + cellW * ((i % lcols) + 0.5) - lw / 2
+      const y = bandTop + (lrows > 1 ? Math.floor(i / lcols) * lstep : band / 2 - lh / 2)
+      const b: Box = { id: c.id, kind: 'card', x, y, w: lw, h: lh, r: 0, card: c,
+        n: String(cards.indexOf(c) + 1).padStart(2, '0') }
+      boxes.push(b); byId.set(b.id, b)
+    })
+  } else
   for (let l = 0; l < layers; l++) {
     const col = (perLayer.get(l) || []).slice().sort((a, b) => a.row - b.row)
     const cx = left + colW * (l + 0.5)
@@ -368,7 +657,7 @@ export function layout(scene: Scene, vh: number = VH, expanded: string = ''): La
       p3,
     })
   }
-  return { vh, headerH: bandTop, footerY, boxes, byId, curves, maxWeight }
+  return { vh, headerH: bandTop, footerY, boxes, byId, curves, maxWeight, clustered }
 }
 
 export function bez(

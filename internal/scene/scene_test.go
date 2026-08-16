@@ -360,19 +360,36 @@ func TestDeriveSaysWhatItIsHiding(t *testing.T) {
 	}
 }
 
-// TestDeriveEmptyGraphRefusesToPretend: no cross-directory edge means there is
-// no flow, and the scene says so instead of drawing a list of boxes.
-func TestDeriveEmptyGraphRefusesToPretend(t *testing.T) {
+// TestDeriveWithNoFlowStillShowsWhatIsThere.
+//
+// CHANGED, deliberately, from TestDeriveEmptyGraphRefusesToPretend, which
+// required Empty and ZERO cards here. That rule was right while a scene was a
+// flow chart: x was dependency depth, so a card with no arrow had no column to
+// stand in, and drawing one would have been the "list in a costume" the wall
+// view was killed for.
+//
+// The layout now places a SET — clustered, and it says on screen that x
+// carries no direction here — so two real directories are two real cards, and
+// suppressing them was throwing away the answer. Measured on clis/go/brain:
+// it holds `brain` and `skill`, neither importing the other, and the level
+// rendered as a sentence explaining that while the two of them appeared as
+// pill links underneath it.
+//
+// What is still refused: pretending there is a FLOW. No links are invented.
+func TestDeriveWithNoFlowStillShowsWhatIsThere(t *testing.T) {
 	nodes := []schema.Node{
 		{ID: "a/f.go", Label: "f.go", Kind: "file", Source: "a/f.go"},
 		{ID: "b/f.go", Label: "f.go", Kind: "file", Source: "b/f.go"},
 	}
 	s := Derive("demo", nodes, nil, Options{})
-	if s.Empty == "" {
-		t.Fatal("a graph with no cross-directory edges must report Empty, not draw cards")
+	if s.Empty != "" {
+		t.Fatalf("two real directories are not an empty scene: %q", s.Empty)
 	}
-	if len(s.Cards) != 0 || len(s.Links) != 0 {
-		t.Fatalf("drew %d cards / %d links from a graph with no flow", len(s.Cards), len(s.Links))
+	if len(s.Cards) != 2 {
+		t.Fatalf("drew %d cards, want the two directories that exist", len(s.Cards))
+	}
+	if len(s.Links) != 0 {
+		t.Fatalf("invented %d links from a graph with no edges: %+v", len(s.Links), s.Links)
 	}
 }
 
@@ -592,18 +609,26 @@ func TestDrillCrumbsAlwaysLeadOut(t *testing.T) {
 			t.Errorf("root=%q: last crumb points at %q", root, last.Root)
 		}
 	}
-	// the two dead ends must be DIFFERENT messages: one is a typo, the other is
-	// the truth about the code.
-	leaf := Derive("demo", nodes, edges, Options{Root: "src/app/data"}).Empty
-	ghost := Derive("demo", nodes, edges, Options{Root: "src/nope"}).Empty
-	if leaf == "" || ghost == "" {
-		t.Fatalf("a dead end must say why: leaf=%q ghost=%q", leaf, ghost)
+	// A root that names NOTHING is still a dead end and still has to say so —
+	// that is a typo, and it must never look like the truth about the code.
+	//
+	// A real leaf is no longer a dead end at all: it draws what it holds. This
+	// assertion used to require BOTH to be Empty with different wording; the
+	// leaf half is gone because the level now has content, which is a better
+	// answer than any message.
+	ghost := Derive("demo", nodes, edges, Options{Root: "src/nope"})
+	if ghost.Empty == "" {
+		t.Fatal("a root that names nothing must say so, or a typo looks like a fact")
 	}
-	if leaf == ghost {
-		t.Errorf("a missing directory and a real leaf give the same message: %q", leaf)
+	if len(ghost.Cards) != 0 {
+		t.Fatalf("a root that names nothing drew %d cards", len(ghost.Cards))
 	}
-	if !strings.Contains(ghost, "no directory") {
-		t.Errorf("a missing root should say so, got %q", ghost)
+	leaf := Derive("demo", nodes, edges, Options{Root: "src/app/data"})
+	if leaf.Empty != "" && len(leaf.Cards) == 0 {
+		t.Fatalf("a real leaf shows neither content nor a reason: %q", leaf.Empty)
+	}
+	if !strings.Contains(ghost.Empty, "no directory") {
+		t.Errorf("a missing root should say so, got %q", ghost.Empty)
 	}
 }
 
@@ -1010,10 +1035,24 @@ func TestCardOnlyOffersALevelWorthOpening(t *testing.T) {
 	if bc.Inner != 0 {
 		t.Errorf("b.go.Inner = %d, want 0 — a header's types do not call each other", bc.Inner)
 	}
-	// and the level b.go would open really is empty, which is what makes
-	// offering it a lie rather than a judgement call
-	if e := Derive("demo", nodes, edges, Options{Root: b}).Empty; e == "" {
-		t.Error("opening b.go drew something after all; the fixture does not prove the point")
+	// CHANGED: opening b.go is no longer a lie. It used to draw NOTHING — a
+	// header whose types never reference each other — which is what made the
+	// green link a promise the next screen could not keep, and why `inner > 0`
+	// gated the door alongside `children > 0`.
+	//
+	// A level with no edges now draws its declarations, so b.go opens onto its
+	// two types. `children` alone is the door; Inner stays as information ("2
+	// inside · no links"), because "there is nothing in here that references
+	// anything else in here" is still worth knowing before you click.
+	bs := Derive("demo", nodes, edges, Options{Root: b})
+	if bs.Empty != "" {
+		t.Errorf("opening b.go says it is empty, but it holds two types: %q", bs.Empty)
+	}
+	if len(bs.Cards) != 2 {
+		t.Errorf("opening b.go drew %d cards, want its two types", len(bs.Cards))
+	}
+	if len(bs.Links) != 0 {
+		t.Errorf("opening b.go invented %d links between types that never touch", len(bs.Links))
 	}
 	if e := Derive("demo", nodes, edges, Options{Root: a}).Empty; e != "" {
 		t.Errorf("opening a.go should draw its call: %q", e)

@@ -105,6 +105,11 @@ type Question struct {
 type Crumb struct {
 	Label string `json:"label"`
 	Root  string `json:"root"`
+	// Module, when set, means this crumb leaves the current store entirely —
+	// it is the REPO above a module, and clicking it changes which graph you
+	// are looking at rather than which directory of this one. Empty on every
+	// crumb that is a directory of the store already open.
+	Module string `json:"module,omitempty"`
 }
 
 // Link is a lifted edge between two cards, or between a card and a transport
@@ -116,6 +121,17 @@ type Link struct {
 	Relation string `json:"relation"`
 	Label    string `json:"label"`
 	Weight   int    `json:"weight"`
+	// Transport is the KIND of boundary a port-derived link came through
+	// (network.http, config.env, process.exec …). It is what lets the picture
+	// colour a line by what it actually is, and it is the same value the outer
+	// world groups carry, so the two halves of the scene agree. Empty on links
+	// derived from code or manifests, which have no transport.
+	Transport string `json:"transport,omitempty"`
+	// Detail NAMES what the arrow stands for, when a count alone would leave
+	// the reader guessing. "SHARES 12" between a UI and an API reads as "the UI
+	// calls the API"; it is in fact twelve THIRD PARTIES both of them call, and
+	// only the names say so. Empty where the relation is self-explanatory.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Door is ONE port, named. Never a value — Label is the env-var NAME, the
@@ -137,6 +153,14 @@ type World struct {
 	Sensitive int    `json:"sensitive"`
 	Sample    []Door `json:"sample"`
 	Truncated bool   `json:"truncated"`
+	// Openers names the subsystems that actually open this group, and
+	// OpenerTotal how many there are. On a big repo almost no plate has an
+	// arrow: linux's 25 config.env ports are opened from 9 directories and not
+	// one of them is among the seven drawn, so the plate floats and reads as a
+	// broken link. Naming them puts the other end of the arrow on screen even
+	// when the card cannot be.
+	Openers     []string `json:"openers,omitempty"`
+	OpenerTotal int      `json:"opener_total,omitempty"`
 }
 
 // Stat is one segment of the terminal-style header strip. The field is `text`,
@@ -174,6 +198,11 @@ type Scene struct {
 	Inside    []Crumb    `json:"inside"`
 	Questions []Question `json:"questions"`
 	Empty     string     `json:"empty,omitempty"`
+	// Redirect names the store the reader should be looking at instead. A level
+	// with exactly one card is a chooser wearing a diagram — this ADR's own kill
+	// criterion — so rather than draw it, the scene says where the content is
+	// and the viewer moves the address there. Empty in every other case.
+	Redirect string `json:"redirect,omitempty"`
 }
 
 // Options tunes the derivation. Zero values mean the defaults.
@@ -216,6 +245,11 @@ var declKinds = map[string]bool{
 var liftedRelations = map[string]string{
 	"imports": "IMPORTS",
 	"calls":   "CALLS",
+	// Doc links are a real dependency between directories and were extracted
+	// all along — `card` prints them, `edges --relation references` lists them
+	// — but the picture never drew one, so the only relation a reader could SEE
+	// was code. An ADR that half the repo points at looked like an orphan.
+	"references": "DOCS",
 }
 
 var testSegments = map[string]bool{
@@ -705,9 +739,16 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			skippedTests++
 			continue
 		}
-		if a.in+a.out == 0 {
-			continue // no cross-subsystem edge: nothing to draw it with
-		}
+		// A subsystem with no cross-directory edge is still a subsystem. It used
+		// to be dropped here — "nothing to draw it with" — which was true only
+		// while a scene was a flow chart: with no arrow, a card had no column to
+		// stand in. clis/go/brain holds `brain` and `skill`, neither importing
+		// the other, and the whole level collapsed to a sentence saying so with
+		// the two of them reduced to pill links underneath.
+		//
+		// The layout can place a SET now (clustered, no direction claimed), so
+		// the cards are drawn and the arrows are simply absent. Edged subsystems
+		// still rank first, so nothing that had a place loses it.
 		pool = append(pool, ranked{d, a})
 	}
 	sort.Slice(pool, func(i, j int) bool {
@@ -715,8 +756,24 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		if di != dj {
 			return di > dj
 		}
+		// Among subsystems with no edges at all, the bigger one is the more
+		// likely to be worth looking at.
+		if pool[i].a.files+pool[i].a.decls != pool[j].a.files+pool[j].a.decls {
+			return pool[i].a.files+pool[i].a.decls > pool[j].a.files+pool[j].a.decls
+		}
 		return pool[i].dir < pool[j].dir
 	})
+	// A level with subsystems but no edges between them is NOT empty. It used
+	// to be reported as empty and the cards thrown away, because a scene was a
+	// flow chart and a card with no arrow had no column to stand in — the
+	// reader drilled into clis/go/brain, which holds `brain` and `skill`, and
+	// got a sentence explaining that neither imports the other while the two of
+	// them were reduced to pill links underneath it.
+	//
+	// The layout places a SET now, and says on screen that x no longer carries
+	// direction. So the cards are drawn, the arrows are simply absent, and
+	// Empty is kept for what it was always for: a root that names nothing, and
+	// a level that really does hold nothing.
 	if len(pool) == 0 {
 		if opt.Root != "" && len(owner) == 0 {
 			// The root matched nothing at all. Distinguishing this from "a real
@@ -1038,6 +1095,54 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 	sc.Links = append(links, wlinks...)
 	sc.LiftedShown = len(sc.Links)
 	sc.LiftedTotal = len(lifted) + len(pwAll)
+
+	// A transport plate with no arrow to any card is the norm on a big repo,
+	// not a bug: on linux the 25 config.env ports are opened from 122
+	// directories and not one of them is among the seven drawn. But an
+	// unconnected plate LOOKS like a broken link, so it says which it is —
+	// counting the directories that really do open it, so the reader knows the
+	// ports are attached to something even though the something is off screen.
+	drawnTo := map[string]bool{}
+	for _, l := range wlinks {
+		drawnTo[l.To] = true
+	}
+	openers := map[string]map[string]bool{}
+	for k := range pwAll {
+		if openers[k.to] == nil {
+			openers[k.to] = map[string]bool{}
+		}
+		openers[k.to][k.from] = true
+	}
+	var orphan []string
+	for i, w := range sc.World {
+		owners := openers["world:"+w.Transport]
+		if len(owners) > 0 {
+			names := make([]string, 0, len(owners))
+			for d := range owners {
+				names = append(names, d)
+			}
+			// By weight would be better, but the count per directory is not
+			// kept; alphabetical is at least STABLE, which a picture that is
+			// meant to be diffable needs more than it needs a ranking.
+			sort.Strings(names)
+			sc.World[i].OpenerTotal = len(names)
+			if len(names) > 3 {
+				names = names[:3]
+			}
+			sc.World[i].Openers = names
+		}
+		if drawnTo["world:"+w.Transport] {
+			continue
+		}
+		orphan = append(orphan, w.Transport+" ("+itoa(len(owners))+" directories)")
+	}
+	if len(orphan) > 0 {
+		sort.Strings(orphan)
+		sc.Notes = append(sc.Notes,
+			"no arrow reaches "+strings.Join(orphan, ", ")+
+				" — those ports are opened from directories that are not among the ones drawn. "+
+				"The ports are real; the arrow is not drawn because its other end is off screen")
+	}
 
 	// ---- 10. header stats + chips + the honesty notes.
 	sc.Stats = []Stat{
@@ -1423,7 +1528,7 @@ func glyphOf(t map[string]bool) string {
 		return "↗"
 	case t["consumes:config.env"]:
 		return "⚙"
-	case t["consumes:storage.local"] || t["provides:storage.local"]:
+	case t["consumes:storage.browser"] || t["provides:storage.browser"]:
 		return "⇪"
 	default:
 		return "◇"

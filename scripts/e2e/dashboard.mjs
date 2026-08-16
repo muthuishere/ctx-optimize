@@ -337,6 +337,96 @@ async function run(page) {
       h.includes('view=house') && h.includes('root='), h)
   }
 
+  // ---- MODULE GRAIN (ADR 22 D4): a repo scene whose cards are its modules,
+  // and a click that opens a DIFFERENT STORE rather than a directory of this
+  // one. Picked from live data: the first repo whose module index yields a
+  // `depends` arrow, so the check exercises the join and not just the level.
+  // A missing route and a repo that is not a monorepo both answer 404, and
+  // reporting "none" for either is how a STALE SERVER reads as a broken
+  // feature. Asking with no repo separates them: the route that exists rejects
+  // the empty name with a 400.
+  const probe = await fetch(`${BASE}/api/repo/scene?repo=`)
+  if (probe.status === 404) {
+    check('the running server has the module-grain route', false,
+      'GET /api/repo/scene is not routed — restart `ctx-optimize serve` from this build')
+  }
+  const repos = [...new Set(modules.map((m) => m.root || m.key))]
+  let repoScene = null
+  for (const r of repos) {
+    const res = await fetch(`${BASE}/api/repo/scene?repo=${encodeURIComponent(r)}`)
+    if (!res.ok) continue
+    const rs = await res.json()
+    if ((rs.links || []).some((l) => l.relation === 'depends')) { repoScene = { repo: r, sc: rs }; break }
+    if (!repoScene && (rs.cards || []).length > 1) repoScene = { repo: r, sc: rs }
+  }
+  check('a repo answers at module grain', !!repoScene,
+    repoScene ? `${repoScene.repo}: ${repoScene.sc.cards.length} modules, ${repoScene.sc.links.length} links` : 'none')
+
+  if (repoScene) {
+    // The way back UP, on the canvas. The chooser above the picture is not
+    // where a reader who has drilled three levels is looking, and a level you
+    // can enter and not leave is the failure ADR 21 named.
+    const inner = repoScene.sc.cards.find((c) => c.id !== repoScene.repo)
+    if (inner) {
+      const ms = await (await fetch(`${BASE}/api/scene?module=${encodeURIComponent(inner.id)}`)).json()
+      const up = (ms.crumbs || []).find((c) => c.module)
+      check('a module scene carries a crumb back to its repo',
+        !!up && up.module === repoScene.repo,
+        up ? `${up.label} -> ${up.module}` : `crumbs: ${JSON.stringify(ms.crumbs)}`)
+    }
+
+    check('module-grain cards are store keys the viewer can open',
+      repoScene.sc.cards.every((c) => modules.some((m) => m.key === c.id)),
+      repoScene.sc.cards.map((c) => c.id).slice(0, 3).join(', '))
+    // `shares` is symmetric — it must never be reported as a directed call.
+    const between = (repoScene.sc.links || []).filter((l) => !l.to.startsWith('world:'))
+    const bad = between.filter((l) => !['depends', 'calls', 'shares'].includes(l.relation))
+    check('module grain draws only relations it can defend', bad.length === 0,
+      bad.map((l) => l.relation).join(',') || 'depends/calls/shares only')
+    // A count is not an explanation: a line between a ui and an api that says
+    // only "12" reads as "the ui calls the api" when it is twelve third
+    // parties they both call. Every port-derived link has to name them.
+    const unnamed = between.filter(
+      (l) => (l.relation === 'shares' || l.relation === 'calls') && !l.detail)
+    check('port-derived links name what they stand for', unnamed.length === 0,
+      unnamed.length ? `${unnamed.length} unnamed` : 'all named')
+    // The module grain is the level that answers "what does this repo touch".
+    // It drew no outer world at all, so a service every module calls and one
+    // that exactly one module calls were equally invisible.
+    const worldLinks = (repoScene.sc.links || []).filter((l) => l.to.startsWith('world:'))
+    check('module grain shows the outer world', (repoScene.sc.world || []).length > 0,
+      (repoScene.sc.world || []).map((w) => `${w.total} ${w.transport}`).join(', ') || 'none')
+    check('every line carries the transport that colours it',
+      [...between, ...worldLinks].every((l) => l.relation === 'depends' || l.transport),
+      `${worldLinks.length} world links, ${between.length} between modules`)
+
+    await page.blank()
+    await page.goto(`#/viewer/${encodeURIComponent(repoScene.repo)}?view=flow`)
+    const rendered = await waitFor(page, 'painted()', 20000)
+    check(`renders the repo scene for ${repoScene.repo}`, rendered >= 0,
+      rendered >= 0 ? `${rendered}ms` : 'never painted')
+    await sleep(900)
+    const beforeRepo = await page.ev('location.hash')
+    const repoSpots = await page.findPointers()
+    let entered = ''
+    for (const spot of repoSpots) {
+      await page.click(spot.x, spot.y)
+      const after = await page.ev('location.hash')
+      // entering a MODULE changes the store in the address and carries no
+      // drill: it is a different graph, not a subdirectory of this one.
+      if (after !== beforeRepo && !after.includes('root=') &&
+          repoScene.sc.cards.some((c) => after.includes(encodeURIComponent(c.id)))) {
+        entered = after
+        break
+      }
+      await page.goto(`#/viewer/${encodeURIComponent(repoScene.repo)}?view=flow`)
+      await waitFor(page, 'painted()', 20000)
+      await sleep(500)
+    }
+    check('clicking a module opens that module\'s own store', entered !== '',
+      entered || `no module-opening target among ${repoSpots.length} regions`)
+  }
+
   // ---- nothing threw along the way
   check('no uncaught errors in the console', page.consoleErrors.length === 0,
     page.consoleErrors.slice(0, 2).join(' | ') || 'clean')

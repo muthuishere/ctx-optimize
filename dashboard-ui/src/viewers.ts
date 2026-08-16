@@ -24,6 +24,12 @@ export interface ViewerProps {
    * is already showing.
    */
   onRoot: (root: string, grain?: string) => void
+  /**
+   * open a MODULE. At module grain a card is not a directory of the store you
+   * are on — it is a different store, and entering it changes the address's
+   * module rather than its root (ADR 22 D4).
+   */
+  onModule: (key: string, grain?: string) => void
   /** the rest of the query, read-only — e.g. the graph viewer's ?center=. */
   params: URLSearchParams
 }

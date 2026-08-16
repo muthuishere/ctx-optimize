@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
 import { relationStyle } from '../flowLayout'
 import { houseLayout, HVH, HVW, type House, type Room } from '../houseLayout'
-import { sanitizeScene } from '../sanitize'
+import { fetchScene } from '../sceneApi'
 import type { Scene } from '../types'
 import { mix, readPalette, rgba } from '../theme'
 import type { ViewerProps } from '../viewers'
@@ -24,20 +23,25 @@ import type { ViewerProps } from '../viewers'
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
 
-export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps) {
+export default function HouseViewer({ module, root, grain, onRoot, onModule }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
   const [err, setErr] = useState('')
   const wrap = useRef<HTMLDivElement | null>(null)
   const cv = useRef<HTMLCanvasElement | null>(null)
 
+  // A level with one card is a chooser wearing a diagram — the server says so
+  // and names where the content is, and the address moves there. Doing it here
+  // rather than in the fetch keeps the URL honest: the reader lands on, and can
+  // share, the store they are actually looking at.
+  useEffect(() => {
+    if (scene?.redirect) onModule(scene.redirect)
+  }, [scene, onModule])
+
   useEffect(() => {
     setScene(null)
     setErr('')
-    const q = new URLSearchParams({ module })
-    if (root) q.set('root', root)
-    if (grain) q.set('grain', grain)
-    api<Scene>(`/api/scene?${q}`)
-      .then((s) => setScene(sanitizeScene(s)))
+    fetchScene(module, root, grain)
+      .then((s) => setScene(s))
       .catch((e) => setErr(String(e.message || e)))
   }, [module, root, grain])
 
@@ -91,7 +95,7 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
 
     // Hit regions live in VIRTUAL space: the camera pans and zooms between
     // frames, so a region measured in pixels would drift the moment it did.
-    type Hit = { x: number; y: number; w: number; h: number; root: string; kind?: 'reset'; grain?: string }
+    type Hit = { x: number; y: number; w: number; h: number; root: string; kind?: 'reset'; grain?: string; module?: string }
     let hits: Hit[] = []
     let hover = -1
     const hitAt = (vx: number, vy: number) =>
@@ -108,7 +112,12 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
     const onUp = (e: PointerEvent) => {
       const v = toVirtual(e)
       const i = hitAt(v.x, v.y)
-      if (i >= 0 && hits[i].kind !== 'reset') onRoot(hits[i].root, hits[i].grain || '')
+      if (i < 0 || hits[i].kind === 'reset') return
+      // Leaving the store is not a directory move — the repo crumb says so.
+      if (hits[i].module) { onModule(hits[i].module!); return }
+      // At module grain a card names a STORE, not a directory of this one.
+      if (scene.level === 'module') { onModule(hits[i].root, hits[i].grain || ''); return }
+      onRoot(hits[i].root, hits[i].grain || '')
     }
     const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
     canvas.addEventListener('pointermove', onMove)
@@ -229,7 +238,7 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
         const A = T(a.x, a.y), B = T(b.x, b.y)
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
         const M = T(mid.x, mid.y)
-        const rs = relationStyle(s.link.relation)
+        const rs = relationStyle(s.link.relation, s.link.transport || '')
         ctx!.strokeStyle = rs.line
         ctx!.lineWidth = Math.max(1, S(heft))
         ctx!.beginPath()
@@ -278,7 +287,7 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
       if (pillar) {
         text('LOAD-BEARING', r.x + pad + 26, r.y + 22, { size: 8, color: ACC, spacing: 1.2, weight: 700 })
       }
-      const titleOn = titleLink(c.label, r.x + pad, r.y + 44, 15, r.w - pad * 2, c.dir, c.children > 0 && c.inner > 0, c.enter_grain)
+      const titleOn = titleLink(c.label, r.x + pad, r.y + 44, 15, r.w - pad * 2, (scene!.level === 'module' ? c.id : c.dir), c.children > 0, c.enter_grain)
       if (r.h > 74) {
         text(`${c.files} files · ${c.decls} decls`, r.x + pad, r.y + 64,
           { size: 10, color: MUTED, font: MONO, max: r.w - pad * 2 })
@@ -291,7 +300,7 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
         text(`↘${c.in}  ${c.out}↗`, r.x + r.w - pad, r.y + r.h - 12,
           { size: 9.5, color: pal.dim, font: MONO, align: 'right' })
       }
-      if (c.children > 0 && c.inner > 0) {
+      if (c.children > 0) {
         const label = `${c.children} inside`
         const w = measure(label, 9, 700, MONO) + 24
         const bx = r.x + r.w - w - 8, by = r.y + 8
@@ -347,7 +356,7 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
 
     function drawCrumbs() {
       const crumbs = scene!.crumbs
-      if (crumbs.length <= 1) return
+      if (crumbs.length <= 1 && !crumbs.some((c) => c.module)) return
       let x = 62
       const y = 128
       crumbs.forEach((c, i) => {
@@ -355,7 +364,7 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
         const w = measure(c.label, 11.5, last ? 700 : 500) + 22
         if (!last) {
           const p = T(x, y)
-          hits.push({ x, y, w, h: 24, root: c.root, grain: '' })
+          hits.push({ x, y, w, h: 24, root: c.root, grain: '', module: c.module })
           const on = hover === hits.length - 1
           ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()

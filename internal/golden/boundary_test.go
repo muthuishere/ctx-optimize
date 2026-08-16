@@ -75,9 +75,26 @@ func TestGoldenBoundaryRepo(t *testing.T) {
 	})
 
 	// ---- class: boundary/storage -----------------------------------------
-	classPort(t, ports, "boundary/storage", "port:storage.local:>session_token", portFact{
-		Direction: "consumes", Transport: "storage.local",
+	// Three kinds of browser storage, three transports (ADR 24). They differ in
+	// LIFETIME and in who else can see them — sessionStorage dies with the tab,
+	// a cookie is sent to the server on every request — so collapsing them into
+	// one `storage.browser` was hiding the part that matters to a reader.
+	classPort(t, ports, "boundary/storage", "port:storage.browser.local:>session_token", portFact{
+		Direction: "consumes", Transport: "storage.browser.local",
 		Identifier: "session_token",
+	})
+	classPort(t, ports, "boundary/storage", "port:storage.browser.session:>tab_id", portFact{
+		Direction: "consumes", Transport: "storage.browser.session",
+		Identifier: "tab_id",
+	})
+	// The cookie rule matches CALL forms only (js-cookie, the Cookie Store
+	// API). A bare `document.cookie` is a two-element member chain with no
+	// trailing property to name, and the `member` shape takes the property
+	// AFTER its path — so it is deliberately not claimed rather than shipped as
+	// a rule that matches nothing.
+	classPort(t, ports, "boundary/storage", "port:storage.browser.cookie:>consent", portFact{
+		Direction: "consumes", Transport: "storage.browser.cookie",
+		Identifier: "consent",
 	})
 
 	// ---- class: api-surface ----------------------------------------------
@@ -197,7 +214,7 @@ func TestGoldenBoundaryRepo(t *testing.T) {
 	// noise and hide the real defect.
 	for _, probe := range []struct{ q, want string }{
 		{"git process exec", "port:process.exec:>git"},
-		{"session token storage", "port:storage.local:>session_token"},
+		{"session token storage", "port:storage.browser.local:>session_token"},
 		{"orders route", "port:network.http:</orders"},
 	} {
 		top := queryTop(t, storeRoot, repo, probe.q, 3)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
-import { sanitizeScene } from '../sanitize'
-import { bez, bezT, CHIP_H, layout, relationStyle, VW, type Box } from '../flowLayout'
+import { arrangementKey, clearArrangement, loadArrangement, saveArrangement } from '../arrangement'
+import { fetchScene } from '../sceneApi'
+import { bez, bezT, cardRows, CHIP_H, layout, legendFor, relationStyle, shapeNote, VW, type Box } from '../flowLayout'
 import type { Scene } from '../types'
 import { mix, readPalette, rgba } from '../theme'
 import type { ViewerProps } from '../viewers'
@@ -26,21 +26,29 @@ const ZERO = { dx: 0, dy: 0 }
 
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
+// The key is a movable shape, so it needs an id in the same offset map the
+// cards use. Prefixed so it can never collide with a real card id.
+const LEGEND_ID = '\u0000legend'
 
-export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps) {
+export default function FlowViewer({ module, root, grain, onRoot, onModule }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
   const [err, setErr] = useState('')
   const wrap = useRef<HTMLDivElement | null>(null)
   const cv = useRef<HTMLCanvasElement | null>(null)
 
+  // A level with one card is a chooser wearing a diagram — the server says so
+  // and names where the content is, and the address moves there. Doing it here
+  // rather than in the fetch keeps the URL honest: the reader lands on, and can
+  // share, the store they are actually looking at.
+  useEffect(() => {
+    if (scene?.redirect) onModule(scene.redirect)
+  }, [scene, onModule])
+
   useEffect(() => {
     setScene(null)
     setErr('')
-    const q = new URLSearchParams({ module })
-    if (root) q.set('root', root)
-    if (grain) q.set('grain', grain)
-    api<Scene>(`/api/scene?${q}`)
-      .then((s) => setScene(sanitizeScene(s)))
+    fetchScene(module, root, grain)
+      .then((s) => setScene(s))
       .catch((e) => setErr(String(e.message || e)))
   }, [module, root, grain])
 
@@ -81,7 +89,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
     let SC = 1, W = 0, H = 0, vh = 1000
     // Which outer-world group is open. Collapsed, the band is a strip of chips
     // and the cards get the room back; expanded, one group shows its door names.
-    let openWorld = ''
+    let openWorld = loadArrangement(arrangementKey('flow', module, root, grain))?.openWorld || ''
     let lay = layout(scene, vh, openWorld)
     const relayout = () => { lay = layout(scene, vh, openWorld) }
     const resize = () => {
@@ -111,6 +119,8 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       kind: 'card' | 'crumb' | 'reset' | 'world'
       /** the grain this target opens at; '' means infer from root */
       grain?: string
+      /** a different STORE to open; set on the repo crumb above a module */
+      module?: string
     }
     let hits: Hit[] = []
     let hover = -1
@@ -120,8 +130,17 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
     // A dragged box carries an OFFSET from its derived position, never a
     // replacement for it: the layout stays the source of truth, and Reset puts
     // everything back exactly where the store put it.
-    const nudged = new Map<string, { dx: number; dy: number }>()
+    // The arrangement is the reader's, so it survives a reload. It is stored
+    // as OFFSETS from the derived layout, which is what makes it safe to keep:
+    // the picture underneath is still derived, and RESET VIEW is one click.
+    const akey = arrangementKey('flow', module, root, grain)
+    const saved = loadArrangement(akey)
+    const nudged = new Map<string, { dx: number; dy: number }>(
+      Object.entries(saved?.nudged || {}))
     const off = (id: string) => nudged.get(id) || ZERO
+    const remember = () => saveArrangement(akey, {
+      nudged: Object.fromEntries(nudged), openWorld,
+    })
     let dragging: { id: string; ox: number; oy: number } | null = null
     let moved = 0
 
@@ -129,7 +148,21 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       const r = canvas.getBoundingClientRect()
       return { x: (e.clientX - r.left) / SC, y: (e.clientY - r.top) / SC }
     }
+    // The legend is a shape the reader can move, so the drag code has to know
+    // it exists. It is not a Box in the layout — it is derived from the layout
+    // — so it gets an id of its own in the same `nudged` map, which means it is
+    // saved, restored and RESET exactly like a card.
+    const legendAt = (vx: number, vy: number) => {
+      const rows = legendFor(scene!)
+      if (rows.length === 0) return null
+      const { x, y, w, h } = legendBox(rows)
+      return vx >= x && vx <= x + w && vy >= y && vy <= y + h
+        ? ({ id: LEGEND_ID, kind: 'card', x, y, w, h, r: 0, n: '' } as Box)
+        : null
+    }
     const boxAt = (vx: number, vy: number) => {
+      const lg = legendAt(vx, vy)
+      if (lg) return lg
       for (let i = lay.boxes.length - 1; i >= 0; i--) {
         const b = lay.boxes[i]
         const o = off(b.id)
@@ -168,21 +201,31 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       dragging = null
       try { canvas.releasePointerCapture(e.pointerId) } catch { /* already gone */ }
       canvas.style.cursor = 'default'
-      if (wasDragging) return
+      if (wasDragging) {
+        remember()
+        return
+      }
       const v = toVirtual(e)
       const i = hitAt(v.x, v.y)
       if (i < 0) return
       if (hits[i].kind === 'reset') {
         nudged.clear()
         openWorld = ''
+        clearArrangement(akey)
         relayout()
         return
       }
       if (hits[i].kind === 'world') {
         openWorld = openWorld === hits[i].root ? '' : hits[i].root
+        remember()
         relayout()
         return
       }
+      // Leaving the store is not a directory move. The repo crumb above a
+      // module says so explicitly rather than being inferred from the label.
+      if (hits[i].module) { onModule(hits[i].module!); return }
+      // At module grain a card names a STORE, not a directory of this one.
+      if (scene.level === 'module') { onModule(hits[i].root, hits[i].grain || ''); return }
       onRoot(hits[i].root, hits[i].grain || '')
     }
     const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
@@ -240,20 +283,30 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         const p1 = shift(c.p1, mid), p2 = shift(c.p2, mid)
         const A = T(p0.x, p0.y), B = T(p1.x, p1.y), C = T(p2.x, p2.y), D = T(p3.x, p3.y)
         const world = link.to.startsWith('world:')
-        const rs = relationStyle(link.relation)
+        const rs = relationStyle(link.relation, link.transport || '')
         const heft = 0.9 + 2.2 * Math.sqrt(link.weight / lay.maxWeight)
         ctx!.strokeStyle = rs.line
         ctx!.lineWidth = Math.max(1, S(heft))
-        ctx!.setLineDash(world ? [S(6), S(6)] : [])
+        // LINE STYLE carries the strength of the claim, colour carries the
+        // transport. Dashed = symmetric or leaving the system; solid = a
+        // directed statement about one module and another.
+        ctx!.setLineDash(world || rs.dashed ? [S(6), S(6)] : [])
         ctx!.beginPath(); ctx!.moveTo(A.x, A.y); ctx!.bezierCurveTo(B.x, B.y, C.x, C.y, D.x, D.y); ctx!.stroke()
         ctx!.setLineDash([])
 
-        const tg = bezT(p0, p1, p2, p3, 1)
-        const ang = Math.atan2(tg.y, tg.x)
-        ctx!.save(); ctx!.translate(D.x, D.y); ctx!.rotate(ang)
-        ctx!.strokeStyle = rs.flow; ctx!.lineWidth = Math.max(1, S(1.5))
-        ctx!.beginPath(); ctx!.moveTo(-S(10), -S(5.5)); ctx!.lineTo(0, 0); ctx!.lineTo(-S(10), S(5.5)); ctx!.stroke()
-        ctx!.restore()
+        // An arrowhead is a claim of DIRECTION. `shares` has none — it says two
+        // modules touch the same external service, and which of them is "from"
+        // is an artefact of sort order. Drawing a head there would turn a
+        // coincidence into a call, which is exactly what the world view was
+        // killed for.
+        if (link.relation !== 'shares') {
+          const tg = bezT(p0, p1, p2, p3, 1)
+          const ang = Math.atan2(tg.y, tg.x)
+          ctx!.save(); ctx!.translate(D.x, D.y); ctx!.rotate(ang)
+          ctx!.strokeStyle = rs.flow; ctx!.lineWidth = Math.max(1, S(1.5))
+          ctx!.beginPath(); ctx!.moveTo(-S(10), -S(5.5)); ctx!.lineTo(0, 0); ctx!.lineTo(-S(10), S(5.5)); ctx!.stroke()
+          ctx!.restore()
+        }
 
         // travelling dots: count scales with weight, motion honours the OS flag
         const dots = Math.min(4, 1 + Math.round((link.weight / lay.maxWeight) * 3))
@@ -322,9 +375,24 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         const q = T(lx - total / 2 - pad, ly - 11)
         ctx!.fillStyle = rgba(pal.ground, .92)
         rr(q.x, q.y, S(total + pad * 2), S(15), S(3)); ctx!.fill()
-        const rs = relationStyle(link.relation)
+        const rs = relationStyle(link.relation, link.transport || '')
         text(lbl, lx - total / 2, ly, { size: 9.5, weight: 700, color: rs.label, spacing: 1.15 })
         text(cnt, lx + total / 2, ly, { size: 9.5, weight: 700, color: ACC, font: MONO, align: 'right' })
+        // A count is not an explanation. "SHARES 12" between a ui and an api
+        // reads as "the ui calls the api" — it is twelve THIRD PARTIES both of
+        // them call, and only the names say so. The server sends them; this
+        // prints them under the label where the reader is already looking.
+        if (link.detail) {
+          const dw = measure(link.detail, 8.5, 500)
+          const dx = Math.min(VW - 70 - dw / 2, Math.max(70 + dw / 2, lx))
+          if (!hitsRect({ x: dx - dw / 2 - 3, y: ly + 3, w: dw + 6, h: 12 })) {
+            occupy(dx - dw / 2 - 3, ly + 3, dw + 6, 12)
+            const dq = T(dx - dw / 2 - 3, ly + 3)
+            ctx!.fillStyle = rgba(pal.ground, .92)
+            rr(dq.x, dq.y, S(dw + 6), S(12), S(3)); ctx!.fill()
+            text(link.detail, dx, ly + 12, { size: 8.5, color: MUTED, align: 'center' })
+          }
+        }
       }
     }
 
@@ -339,6 +407,14 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
     //
     // Only the TEXT is registered, not the card: the rest of the card body has
     // to stay free for dragging the shape.
+    // What a click on this card OPENS. At directory grain that is the card's
+    // directory; at module grain the card is a different STORE and its key is
+    // the id, not the path shown underneath. Sending `dir` there navigated to
+    // "apps/ui" — a store that does not exist — and the drill silently did
+    // nothing, which the browser suite caught and no unit test could.
+    const enterKey = (c: { id: string; dir: string }) =>
+      scene!.level === 'module' ? c.id : c.dir
+
     function titleLink(
       label: string, x: number, baseY: number, size: number, maxW: number,
       root: string, enterable: boolean, align: CanvasTextAlign = 'left', grain = '',
@@ -380,8 +456,13 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       // SEE. A header holding eleven declarations that never reference each
       // other is not a door — offering one promises a screen whose only
       // content is "nothing to draw".
-      if (!b.card || b.card.children <= 0 || b.card.inner <= 0) return false
-      hits.push({ x, y, w, h, root: b.card.dir, kind: 'card', grain: b.card.enter_grain })
+      // Children is the door. `inner > 0` used to gate it as well — "there is
+      // something to SEE in there" — but that was true only while a level with
+      // no edges drew nothing. It now draws its subsystems, so a directory
+      // holding two subdirectories that never reference each other is worth
+      // opening: the two of them are the answer.
+      if (!b.card || b.card.children <= 0) return false
+      hits.push({ x, y, w, h, root: enterKey(b.card), kind: 'card', grain: b.card.enter_grain })
       return hover === hits.length - 1
     }
 
@@ -432,11 +513,11 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       // A compressed card keeps the ordinal and the NAME and drops the rest:
       // the glyph tile, the path and the detail line all need room the card no
       // longer has, and a name half outside its own box is worse than no glyph.
-      const tight = b.h < 84
+      const tight = cardRows(b.h).tight
       text(b.n, b.x + 18, b.y + (tight ? b.h / 2 + 5 : 36),
         { size: tight ? 13 : 19, weight: 300, color: pal.dim, font: MONO })
       if (tight) {
-        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, c.dir, c.children > 0 && c.inner > 0, 'left', c.enter_grain)
+        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, enterKey(c), c.children > 0, 'left', c.enter_grain)
         if (c.children > 0) drawEnter(b.x + b.w - 10, b.y + 6, c.children, on || on2, 'right')
         return
       }
@@ -446,22 +527,22 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       rr(ip.x, ip.y, S(26), S(26), S(7)); ctx!.stroke()
       text(c.glyph, b.x + 31, b.y + 66, { size: 13, color: pal.muted, align: 'center', font: MONO })
 
-      const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, c.dir, c.children > 0 && c.inner > 0, 'left', c.enter_grain)
-      // A short card drops its lower lines rather than drawing them over each
-      // other: cardH shrinks to fit a full column, and the fixed offsets that
-      // were fine at 118 units are not at 74.
-      if (b.h >= 100) {
-        text(c.dir, b.x + 18, b.y + 91, { size: 10.5, color: pal.dim, font: MONO, max: b.w - 36 })
+      const rows = cardRows(b.h)
+      const titleOn = titleLink(c.label, b.x + 54, b.y + rows.titleBase, 16, b.w - 70, enterKey(c), c.children > 0, 'left', c.enter_grain)
+      // The lower lines stack UP from the bottom, so a short card drops one
+      // rather than printing it through the other.
+      if (rows.showDir) {
+        text(c.dir, b.x + 18, b.y + rows.dirY, { size: 10.5, color: pal.dim, font: MONO, max: b.w - 36 })
       }
       // The outside chip and the detail line share the bottom row, so the
       // detail yields exactly the width the chip takes. Drawn over the path
       // subtitle, the chip hid the one thing that says WHICH file a card is.
       const outW = outsideWidth(c)
-      if (b.h >= 86) {
-        text(c.detail || `${c.files} files`, b.x + 18, b.y + b.h - 15,
+      if (rows.showDetail) {
+        text(c.detail || `${c.files} files`, b.x + 18, b.y + rows.detailY,
           { size: 11.5, color: MUTED, max: b.w - 36 - (outW > 0 ? outW + 10 : 0) })
       }
-      drawOutside(c, b.x + b.w - 18 - outW, b.y + b.h - 26, outW)
+      drawOutside(c, b.x + b.w - 18 - outW, b.y + rows.detailY - 11, outW)
 
       // in/out counters, top-right — the numbers that decided the column
       text(`${c.out}↗`, b.x + b.w - 18, b.y + 26, { size: 10, color: pal.dim, font: MONO, align: 'right' })
@@ -471,7 +552,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       // killed for — but inside one file a function's 3 local callers can be a
       // hundred repo-wide, and that is the number that says whether it matters.
 
-      if (c.children > 0 && c.inner > 0) {
+      if (c.children > 0) {
         // Top strip, beside the ordinal — the only band on a card that carries
         // no text of its own. Drawn AFTER the title so it can share its hover.
         drawEnter(b.x + b.w - 14, b.y + 12, c.children, on || titleOn, 'right')
@@ -525,7 +606,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       text('MOST DEPENDED ON', b.x, b.y - (roomy ? 46 : 34),
         { size: 8.5, color: MUTED, align: 'center', spacing: 1.3, weight: 700 })
       const titleOn = titleLink(c.label, b.x, b.y - (roomy ? 20 : 12),
-        roomy ? 19 : 15, b.r * 1.7, c.dir, c.children > 0 && c.inner > 0, 'center', c.enter_grain)
+        roomy ? 19 : 15, b.r * 1.7, enterKey(c), c.children > 0, 'center', c.enter_grain)
       if (!tight) {
         text(c.dir, b.x, b.y + (roomy ? -2 : 4),
           { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.75 })
@@ -546,7 +627,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         text(`${c.files} files · ${c.decls} decls`, b.x, b.y + 60,
           { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.4 })
       }
-      if (c.children > 0 && c.inner > 0) drawEnter(b.x, b.y + b.r - (roomy ? 30 : 22), c.children, on || titleOn, 'center')
+      if (c.children > 0) drawEnter(b.x, b.y + b.r - (roomy ? 30 : 22), c.children, on || titleOn, 'center')
     }
 
     // The outer world: one dashed PLATE per transport, holding a bounded
@@ -578,6 +659,16 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         text(w.transport, b.x + 13, b.y + 22, { size: 11.5, weight: 700, font: MONO, max: b.w - 84 })
         text(`${w.total} ${on ? '▾' : '▸'}`, b.x + b.w - 13, b.y + 22,
           { size: 11, weight: 700, font: MONO, align: 'right', color: pal.amber })
+        // WHO opens it. On a big repo almost no plate has an arrow — linux's
+        // 25 config.env ports come from 9 directories, none of them among the
+        // seven drawn — so the plate floats and reads as a broken link. The
+        // names are the other end of an arrow that cannot be drawn.
+        if (w.openers && w.openers.length > 0) {
+          const more = (w.opener_total || 0) - w.openers.length
+          const line = w.openers.join(' · ') + (more > 0 ? ` +${more}` : '')
+          text(line, b.x + 13, b.y + CHIP_H + 12,
+            { size: 8.5, color: pal.dim, font: MONO, max: b.w + 40 })
+        }
         if (w.sensitive > 0) {
           const q = T(b.x + b.w - 46, b.y + 17)
           ctx!.fillStyle = ACC
@@ -596,7 +687,9 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
 
       const cols = 2
       const cw = (b.w - 28 - 8) / cols
-      const rowsFit = Math.max(0, Math.floor((b.h - 76) / 24))
+      // At least one row, always: the plate is only open because the reader
+      // asked for the names, and opening it to show none answers nothing.
+      const rowsFit = Math.max(1, Math.floor((b.h - 76) / 24))
       const shown = w.sample.slice(0, rowsFit * cols)
       shown.forEach((d, i) => {
         const cx2 = b.x + 14 + (i % cols) * (cw + 8)
@@ -634,7 +727,9 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
     // drill-down at all.
     function drawCrumbs() {
       const crumbs = scene!.crumbs
-      if (crumbs.length <= 1) return
+      // One crumb is the store's own name and leads nowhere — except when it
+      // names another store, which is the whole point of the repo crumb.
+      if (crumbs.length <= 1 && !crumbs.some((c) => c.module)) return
       let x = 62
       const y = hy(126)
       crumbs.forEach((c, i) => {
@@ -642,7 +737,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         const w = measure(c.label, 11.5, last ? 700 : 500) + 22
         if (!last) {
           const p = T(x, y)
-          hits.push({ x, y, w, h: 24, root: c.root, kind: 'crumb', grain: '' })
+          hits.push({ x, y, w, h: 24, root: c.root, kind: 'crumb', grain: '', module: c.module })
           const on = hover === hits.length - 1
           ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()
@@ -753,10 +848,91 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         VW - 62, hy(118), { size: hs(62), weight: 800, align: 'right', max: 700 })
       text('The architecture, derived from the store — not drawn by hand.', VW - 62, hy(152),
         { size: hs(15), color: pal.muted, align: 'right' })
-      text(`every card is a ${scene!.level} · every arrow is real ${''}imports/calls edges, summed`,
+      // What an arrow MEANS changes with the grain, and the strip has to say
+      // which: at module grain it is two manifests agreeing on a package name,
+      // not an import.
+      text(scene!.level === 'module'
+        ? 'every card is a module · every arrow is a package one declares and another publishes'
+        : `every card is a ${scene!.level} · every arrow is real imports/calls edges, summed`,
         VW - 62, hy(176), { size: hs(15), weight: 600, align: 'right' })
       text(`ctx-optimize · ${scene!.total_nodes.toLocaleString()} nodes · ${scene!.total_edges.toLocaleString()} edges`,
         VW - 62, hy(202), { size: hs(12), color: ACC, align: 'right', weight: 700, spacing: 0.6 })
+    }
+
+    // A colour code nobody is told is decoration. The legend is built from the
+    // marks ACTUALLY on this scene — never a fixed list — so it can neither
+    // teach a code the reader will not see nor omit one they can.
+    // legendBox is where the key sits, in virtual units. It is derived — the
+    // widest free corner of the card band — and then draggable like any other
+    // shape, because a fixed corner is exactly how it ended up on top of
+    // linux's `core` card. Its offset is remembered with the rest of the
+    // arrangement.
+    function legendBox(rows: ReturnType<typeof legendFor>) {
+      const rowH = 20
+      const w = 320
+      const note = shapeNote(scene!)
+      // The shape sentence wraps to the key's width rather than running off it.
+      const noteLines = note === '' ? [] : wrapText(note, w - 24, 8.5)
+      const h = 26 + rows.length * rowH + (noteLines.length > 0 ? 10 + noteLines.length * 12 : 0)
+      // Prefer the lower-left gutter; fall back to lower-right, then upper-left.
+      // Whichever candidate overlaps the fewest shapes wins, so the key lands
+      // where the picture is not.
+      const cands = [
+        { x: 62, y: lay.footerY - h - 12 },
+        { x: VW - w - 62, y: lay.footerY - h - 12 },
+        { x: 62, y: lay.headerH + 6 },
+        { x: VW - w - 62, y: lay.headerH + 6 },
+      ]
+      let best = cands[0], bestHit = Infinity
+      for (const c of cands) {
+        let hit = 0
+        for (const b of lay.boxes) {
+          const o = off(b.id)
+          const r = b.kind === 'hub'
+            ? { x: b.x + o.dx - b.r, y: b.y + o.dy - b.r, w: b.r * 2, h: b.r * 2 }
+            : { x: b.x + o.dx, y: b.y + o.dy, w: b.w, h: b.h }
+          const ox = Math.min(c.x + w, r.x + r.w) - Math.max(c.x, r.x)
+          const oy = Math.min(c.y + h, r.y + r.h) - Math.max(c.y, r.y)
+          if (ox > 0 && oy > 0) hit += ox * oy
+        }
+        if (hit < bestHit) { bestHit = hit; best = c }
+        if (hit === 0) break
+      }
+      const o = off(LEGEND_ID)
+      return { x: best.x + o.dx, y: best.y + o.dy, w, h, rowH, noteLines }
+    }
+
+    function drawLegend() {
+      const rows = legendFor(scene!)
+      if (rows.length === 0) return
+      const { x, y, w, h, rowH, noteLines } = legendBox(rows)
+      if (h > lay.footerY - lay.headerH) return // no room: the picture beats the key
+      const q = T(x, y)
+      ctx!.fillStyle = rgba(pal.ground, .92)
+      rr(q.x, q.y, S(w), S(h), S(8)); ctx!.fill()
+      ctx!.strokeStyle = pal.line2; ctx!.lineWidth = Math.max(1, S(1))
+      rr(q.x, q.y, S(w), S(h), S(8)); ctx!.stroke()
+      text('WHAT A LINE IS  ·  drag me', x + 12, y + 16,
+        { size: 7.5, color: pal.dim, spacing: 1.2, weight: 700 })
+      // One row per MODE. The colour is the whole code; the SHAPE is explained
+      // once underneath, because every mode is drawn in whichever shapes this
+      // scene needs and a row per combination said `network.http` three times.
+      rows.forEach((r, i) => {
+        const ry = y + 26 + i * rowH + 7
+        const a = T(x + 12, ry), b = T(x + 40, ry)
+        ctx!.save()
+        ctx!.strokeStyle = r.color
+        ctx!.lineWidth = Math.max(1, S(2.4))
+        ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b.x, b.y); ctx!.stroke()
+        ctx!.restore()
+        text(r.label, x + 46, ry + 3.5,
+          { size: 9.5, color: r.color, weight: 700, font: MONO, max: 96 })
+        text(r.meaning, x + 148, ry + 3.5, { size: 9, color: pal.muted, max: w - 158 })
+      })
+      noteLines.forEach((line, i) => {
+        text(line, x + 12, y + 26 + rows.length * rowH + 14 + i * 12,
+          { size: 8.5, color: pal.dim, max: w - 24 })
+      })
     }
 
     function drawFooter() {
@@ -775,8 +951,14 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         text(s, x + w / 2, y + 19, { size: 11.5, color: pal.muted, align: 'center' })
         x += w + 10
       }
-      // the honesty strip — what is sampled, what is excluded
-      scene!.notes.forEach((n, i) => {
+      // the honesty strip — what is sampled, what is excluded, and what the
+      // POSITIONS mean, which changes with the layout the scene earned
+      const notes = lay.clustered
+        ? ['nothing here depends on anything else here, so there is no left-to-right to read — '
+           + 'cards that touch each other are drawn together, and modules nothing connects to sit apart',
+           ...scene!.notes]
+        : scene!.notes
+      notes.forEach((n, i) => {
         text(n, VW - 62, lay.footerY + 24 + i * 14.5, { size: 9.8, color: i === 0 ? pal.amber : MUTED, align: 'right' })
       })
     }
@@ -849,6 +1031,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         if (b.kind === 'world') drawWorld(b, t)
       }
       drawHeader(t)
+      drawLegend()
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)

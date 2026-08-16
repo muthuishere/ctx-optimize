@@ -178,6 +178,9 @@ export interface SceneCard {
 export interface SceneCrumb {
   label: string
   root: string
+  /** a different STORE to open — the repo above a module. Leaving a module is
+      not a directory move, so it cannot travel as a `root`. */
+  module?: string
 }
 
 export interface SceneQuestion {
@@ -191,6 +194,10 @@ export interface SceneLink {
   relation: string
   label: string
   weight: number
+  /** names what the arrow stands for, where a count alone would mislead */
+  detail?: string
+  /** the KIND of boundary a port-derived link came through; colours the line */
+  transport?: string
 }
 
 export interface SceneDoor {
@@ -209,6 +216,10 @@ export interface SceneWorld {
   sensitive: number
   sample: SceneDoor[]
   truncated: boolean
+  /** the subsystems that open this group; the other end of an arrow that
+      cannot be drawn because its card is not among the ones on screen */
+  openers?: string[]
+  opener_total?: number
 }
 
 export interface SceneStat {
@@ -237,4 +248,6 @@ export interface Scene {
   questions: SceneQuestion[]
   notes: string[]
   empty?: string
+  /** the store to look at instead: a level with one card says nothing */
+  redirect?: string
 }

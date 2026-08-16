@@ -1,4 +1,4 @@
-== store 001 (56 nodes, 51 edges)
+== store 001 (58 nodes, 53 edges)
 E README.md -contains-> README.md::pydeps | EXTRACTED
 E pyproject.toml -contains-> pyproject.toml#async | EXTRACTED
 E pyproject.toml -contains-> pyproject.toml#build-backend | EXTRACTED
@@ -27,6 +27,7 @@ E pyproject.toml -declares-> dep:pypi/pytest | EXTRACTED
 E pyproject.toml -declares-> dep:pypi/ruff | EXTRACTED
 E pyproject.toml -declares-> dep:pypi/sphinx | EXTRACTED
 E pyproject.toml -declares-> dep:pypi/typing-extensions | EXTRACTED
+E pyproject.toml -publishes-> dep:pypi/pydeps | EXTRACTED
 E requirements.txt -declares-> dep:pypi/flask | EXTRACTED
 E requirements.txt -declares-> dep:pypi/flit-core | EXTRACTED
 E requirements.txt -declares-> dep:pypi/gunicorn | EXTRACTED
@@ -47,6 +48,7 @@ E rustcrate/Cargo.toml -declares-> dep:crates/criterion | EXTRACTED
 E rustcrate/Cargo.toml -declares-> dep:crates/serde | EXTRACTED
 E rustcrate/Cargo.toml -declares-> dep:crates/tokio | EXTRACTED
 E rustcrate/Cargo.toml -declares-> dep:crates/winapi | EXTRACTED
+E rustcrate/Cargo.toml -publishes-> dep:crates/rustcrate | EXTRACTED
 E svc/app.py -contains-> svc/app.py::configure | EXTRACTED
 E svc/app.py -contains-> svc/app.py::create_app | EXTRACTED
 E svc/app.py::create_app -calls-> svc/app.py::configure | INFERRED
@@ -56,6 +58,7 @@ N README.md | document | README.md | L1
 N README.md::pydeps | section | README.md | L1-L5
 N dep:crates/anyhow | dependency | dep://crates/anyhow | 
 N dep:crates/criterion | dependency | dep://crates/criterion | 
+N dep:crates/rustcrate | dependency | dep://crates/rustcrate | 
 N dep:crates/serde | dependency | dep://crates/serde | 
 N dep:crates/tokio | dependency | dep://crates/tokio | 
 N dep:crates/winapi | dependency | dep://crates/winapi | 
@@ -65,6 +68,7 @@ N dep:pypi/celery | dependency | dep://pypi/celery |
 N dep:pypi/flask | dependency | dep://pypi/flask | 
 N dep:pypi/flit-core | dependency | dep://pypi/flit-core | 
 N dep:pypi/gunicorn | dependency | dep://pypi/gunicorn | 
+N dep:pypi/pydeps | dependency | dep://pypi/pydeps | 
 N dep:pypi/pytest | dependency | dep://pypi/pytest | 
 N dep:pypi/ruff | dependency | dep://pypi/ruff | 
 N dep:pypi/sphinx | dependency | dep://pypi/sphinx | 

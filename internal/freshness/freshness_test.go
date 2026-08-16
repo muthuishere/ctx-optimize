@@ -101,3 +101,41 @@ func TestOverallAndExitCode(t *testing.T) {
 		})
 	}
 }
+
+// Dated is the third kind of out-of-date, and it has to be quiet unless it is
+// certain: an old store that predates the record, or a caller that cannot load
+// rules, must never be accused. A false DATED sends someone to rebuild a store
+// that was fine.
+func TestDatedIsConservativeOnBothSides(t *testing.T) {
+	for _, tc := range []struct {
+		name, stored, current string
+		want                  bool
+	}{
+		{"same vocabulary", "abc123", "abc123", false},
+		{"vocabulary moved", "abc123", "def456", true},
+		{"store predates the record", "", "def456", false},
+		{"rules could not be loaded", "abc123", "", false},
+		{"neither known", "", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := Source{Path: "/x", RulesSig: tc.stored}
+			if got := s.Dated(tc.current); got != tc.want {
+				t.Errorf("Dated(%q) with stored %q = %v, want %v", tc.current, tc.stored, got, tc.want)
+			}
+		})
+	}
+}
+
+// Dated is orthogonal to the git verdict: a store can sit exactly at HEAD and
+// still answer in a vocabulary the binary has stopped using. Folding it into
+// State would have made "fresh" mean two different things to a hook.
+func TestDatedIsNotAState(t *testing.T) {
+	src := Source{Path: "/x", Head: "abc", HeadUnix: 100, AddedUnix: 100, RulesSig: "old"}
+	r := Evaluate(src, "abc", 100, 200)
+	if r.State != Fresh {
+		t.Fatalf("state = %s, want fresh — the code did not move", r.State)
+	}
+	if !src.Dated("new") {
+		t.Fatal("a fresh store with a moved vocabulary is still dated")
+	}
+}

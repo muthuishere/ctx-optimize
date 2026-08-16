@@ -17,6 +17,7 @@ import (
 )
 
 type packageJSON struct {
+	Name             string            `json:"name"`
 	Dependencies     map[string]string `json:"dependencies"`
 	DevDependencies  map[string]string `json:"devDependencies"`
 	PeerDependencies map[string]string `json:"peerDependencies"`
@@ -29,6 +30,9 @@ func extractPackageJSON(c *collector, root, rel string, data []byte) {
 	if err := json.Unmarshal(data, &pkg); err != nil {
 		return // malformed user json: not our error to raise — skip silently
 	}
+	// what this module IS (ADR 22 D0) — the half every cross-module join needs
+	c.publishes("npm", pkg.Name, rel)
+
 	lines := strings.Split(string(data), "\n")
 	for _, scope := range []struct {
 		name string

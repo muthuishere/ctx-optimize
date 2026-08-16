@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layout, VH, VW } from './flowLayout'
+import { VH, VW, cardRows, layout } from './flowLayout'
 import type { Scene } from './types'
 
 // A scene shaped by hand: three layers, one hub, two transports. Every
@@ -116,8 +116,16 @@ describe('flowLayout', () => {
 // Four cards in one column silently overlapped: the band was divided by the
 // count, and (596-254)/3 is 114 against a card height of 118. Seen on
 // mm/kasan/common.c, where the declaration level puts four cards in a column.
-describe('flowLayout never overlaps cards in a column', () => {
-  it('keeps a gap between stacked cards however many there are', () => {
+//
+// This checks overlap in BOTH axes, not just the vertical gap in a column.
+// The original version sorted by y and compared consecutive cards, which only
+// holds while every card is in one column — and cards with no dependency
+// between them are no longer laid out that way (a repo of unrelated modules is
+// a set, not a flow). Two cards side by side read as a huge negative "gap" and
+// failed a layout that was correct, while a genuine horizontal overlap would
+// have passed. Rectangle intersection is what the rule always meant.
+describe('flowLayout never overlaps cards', () => {
+  it('leaves every pair of cards clear of each other, however many there are', () => {
     for (const n of [2, 3, 4, 6, 9]) {
       const s = scene()
       s.cards = Array.from({ length: n }, (_, i) => ({
@@ -126,12 +134,54 @@ describe('flowLayout never overlaps cards in a column', () => {
       }))
       s.links = []
       const boxes = layout(s).boxes.filter((b) => b.kind === 'card')
-        .sort((a, b) => a.y - b.y)
-      for (let i = 1; i < boxes.length; i++) {
-        const gap = boxes[i].y - (boxes[i - 1].y + boxes[i - 1].h)
-        expect(gap, `${n} cards: card ${i} overlaps the one above by ${-gap}`).toBeGreaterThanOrEqual(0)
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i], b = boxes[j]
+          const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+          const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+          expect(ox > 0 && oy > 0,
+            `${n} cards: ${a.id} and ${b.id} overlap by ${ox.toFixed(1)}x${oy.toFixed(1)}`).toBe(false)
+        }
       }
     }
+  })
+
+  it('keeps unconnected modules out of the cluster, and inside the frame', () => {
+    const s = scene()
+    s.cards = Array.from({ length: 6 }, (_, i) => ({
+      ...s.cards[0], id: 'c' + i, label: 'c' + i, dir: 'src/c' + i,
+      layer: 0, row: i, hub: false,
+    }))
+    // c0..c2 touch each other; c3..c5 touch nothing.
+    s.links = [
+      { from: 'c0', to: 'c1', relation: 'shares', label: 'BOTH CALL', weight: 2 },
+      { from: 'c1', to: 'c2', relation: 'shares', label: 'BOTH CALL', weight: 1 },
+    ]
+    const l = layout(s)
+    expect(l.clustered).toBe(true)
+    const at = (id: string) => l.byId.get(id)!
+    const linkedRight = Math.max(at('c0').x + at('c0').w, at('c1').x + at('c1').w, at('c2').x + at('c2').w)
+    for (const id of ['c3', 'c4', 'c5']) {
+      expect(at(id).x, `${id} should sit apart from the connected cluster`)
+        .toBeGreaterThanOrEqual(linkedRight - at(id).w)
+    }
+    for (const b of l.boxes.filter((x) => x.kind === 'card')) {
+      expect(b.x).toBeGreaterThanOrEqual(0)
+      expect(b.x + b.w).toBeLessThanOrEqual(VW)
+      expect(b.y + b.h).toBeLessThanOrEqual(l.footerY)
+    }
+  })
+
+  it('still lays out by dependency depth when there IS a direction to read', () => {
+    const s = scene()
+    s.cards = Array.from({ length: 6 }, (_, i) => ({
+      ...s.cards[0], id: 'c' + i, label: 'c' + i, dir: 'src/c' + i,
+      layer: i < 3 ? 0 : 1, row: i % 3, hub: false,
+    }))
+    s.links = [{ from: 'c0', to: 'c3', relation: 'depends', label: 'DEPENDS', weight: 1 }]
+    const l = layout(s)
+    expect(l.clustered).toBe(false)
+    expect(l.byId.get('c3')!.x).toBeGreaterThan(l.byId.get('c0')!.x)
   })
 })
 
@@ -194,4 +244,40 @@ describe('flowLayout keeps everything inside the frame', () => {
       }
     })
   }
+})
+
+// Every card in the volentis screenshot printed two lines of text on one line:
+// the module's path and its summary, straight through each other. The rows had
+// independent height guards — path at y+91 if h>=100, detail at y+h-15 if
+// h>=86 — and between 100 and 118 units those two positions ARE each other.
+// Clustered cards live in exactly that band, so it was every card on screen.
+describe('a card never prints two lines on one line', () => {
+  it('keeps the path and the detail apart at every height a card can be', () => {
+    for (let h = 56; h <= 140; h++) {
+      const r = cardRows(h)
+      if (r.showDir && r.showDetail) {
+        expect(r.detailY - r.dirY, `h=${h}: path and detail collide`).toBeGreaterThanOrEqual(12)
+      }
+      if (r.showDir) {
+        expect(r.dirY, `h=${h}: path printed through the name`).toBeGreaterThan(r.titleBase + 6)
+      }
+      if (r.showDetail) {
+        expect(r.detailY, `h=${h}: detail printed through the name`).toBeGreaterThan(r.titleBase + 6)
+        expect(r.detailY, `h=${h}: detail printed outside the card`).toBeLessThanOrEqual(h)
+      }
+    }
+  })
+
+  it('drops the path before the detail, because the detail says more', () => {
+    // at the height where only one line fits, it is the summary that survives
+    const only = Array.from({ length: 90 }, (_, i) => cardRows(i + 56))
+      .filter((r) => r.showDetail && !r.showDir)
+    expect(only.length).toBeGreaterThan(0)
+  })
+
+  it('drops both lines on a card too short for either', () => {
+    const r = cardRows(56)
+    expect(r.showDir).toBe(false)
+    expect(r.tight).toBe(true)
+  })
 })

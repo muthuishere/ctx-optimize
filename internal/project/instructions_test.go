@@ -132,3 +132,28 @@ func TestNewerVersion(t *testing.T) {
 		}
 	}
 }
+
+// The card is where a repo learns it can teach the binary a boundary the
+// shipped rules do not cover. That door is the whole answer to "the picture is
+// missing my queue / my cache / my SDK", and it was documented nowhere — the
+// card covered sources, remote, verify and tool choice and never mentioned it.
+func TestCardDocumentsBoundaryAuthoring(t *testing.T) {
+	repo := t.TempDir()
+	if _, err := EnsureInstructions(repo); err != nil {
+		t.Fatal(err)
+	}
+	card, err := os.ReadFile(filepath.Join(repo, ".ctxoptimize", "instructions.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		".ctxoptimize/boundaries.json", // where it goes
+		"BY ID",                        // how it merges, and how to override a shipped rule
+		"verify",                       // the gate that holds a rule to its own evidence
+		"never claims EXTRACTED",       // the tier rule that keeps an unmeasured rule honest
+	} {
+		if !strings.Contains(string(card), want) {
+			t.Errorf("the card never mentions %q — a reader cannot find the authoring door", want)
+		}
+	}
+}
