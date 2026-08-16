@@ -77,6 +77,12 @@ type Card struct {
 	// drill-down affordance: a card with 0 is a leaf and must not invite a click
 	// that would land on an empty scene.
 	Children int `json:"children"`
+	// Inner is how many edges would be DRAWN one level inside this card. It is
+	// the difference between "there are things in here" and "there is something
+	// to see in here": include/net/sctp/structs.h holds 11 declarations and not
+	// one edge between them, because it is a header — it offered a green link
+	// to a screen that could only say "nothing to draw".
+	Inner int `json:"inner"`
 	// Top is the single highest-degree declaration in this directory — a real
 	// symbol name, which is what a question or a `card` command needs to be
 	// worth pasting.
@@ -494,6 +500,22 @@ func topDecl(list []schema.Node) string {
 	return ""
 }
 
+// commonDir is the deepest directory that contains both paths.
+func commonDir(a, b string) string {
+	if a == b {
+		return a
+	}
+	as, bs := strings.Split(a, "/"), strings.Split(b, "/")
+	n := 0
+	for n < len(as) && n < len(bs) && as[n] == bs[n] {
+		n++
+	}
+	if n == 0 {
+		return ""
+	}
+	return strings.Join(as[:n], "/")
+}
+
 // crumbsFor builds the trail back out. The first crumb is always the whole
 // repo, so there is no level you can drill into and not be able to leave.
 func crumbsFor(title, root string) []Crumb {
@@ -597,6 +619,34 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 	for _, e := range edges {
 		deg[e.Source]++
 		deg[e.Target]++
+	}
+
+	// ---- 1b. How much there is to SEE one level down, per unit.
+	//
+	// An edge between two units is drawn at exactly ONE level: the lowest common
+	// ancestor of its endpoints. Above that they collapse into the same card and
+	// it is internal; below it, one endpoint is outside the scene. So a single
+	// pass keyed on the LCA gives every directory and every file its inner edge
+	// count, instead of deriving a child scene per card.
+	inner := map[string]int{}
+	for _, e := range edges {
+		if _, ok := liftedRelations[e.Relation]; !ok || e.Confidence == schema.Ambiguous {
+			continue
+		}
+		a, ok1 := byID[e.Source]
+		b, ok2 := byID[e.Target]
+		if !ok1 || !ok2 {
+			continue
+		}
+		fa, fb := srcPath(a.Source), srcPath(b.Source)
+		if fa == "" || fb == "" {
+			continue
+		}
+		if fa == fb {
+			inner[fa]++ // two declarations in one file: drawn at file level
+			continue
+		}
+		inner[commonDir(path.Dir(fa), path.Dir(fb))]++
 	}
 
 	// ---- 2. LIFT the code edges. AMBIGUOUS is dropped: the repo's standing
@@ -929,6 +979,7 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			Glyph:      glyphOf(touch[r.dir]),
 			Hub:        r.dir == hub,
 			Children:   kids[r.dir],
+			Inner:      inner[r.dir],
 			EnterGrain: selfGrain[r.dir],
 			Top:        topDecl(top[r.dir]),
 		})

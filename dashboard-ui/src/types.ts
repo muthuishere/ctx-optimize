@@ -172,6 +172,7 @@ export interface SceneCard {
   children: number
   top: string
   enter_grain: string
+  inner: number
 }
 
 export interface SceneCrumb {

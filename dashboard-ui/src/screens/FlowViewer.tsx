@@ -376,7 +376,11 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
     // region, the camera took it, and the entire frame panned instead of the
     // shape moving. Card body = move the shape; badge = go inside.
     function registerDoor(b: Box, x: number, y: number, w: number, h: number): boolean {
-      if (!b.card || b.card.children <= 0) return false
+      // Children says things exist inside; Inner says there is something to
+      // SEE. A header holding eleven declarations that never reference each
+      // other is not a door — offering one promises a screen whose only
+      // content is "nothing to draw".
+      if (!b.card || b.card.children <= 0 || b.card.inner <= 0) return false
       hits.push({ x, y, w, h, root: b.card.dir, kind: 'card', grain: b.card.enter_grain })
       return hover === hits.length - 1
     }
@@ -432,7 +436,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       text(b.n, b.x + 18, b.y + (tight ? b.h / 2 + 5 : 36),
         { size: tight ? 13 : 19, weight: 300, color: pal.dim, font: MONO })
       if (tight) {
-        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, c.dir, c.children > 0, 'left', c.enter_grain)
+        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, c.dir, c.children > 0 && c.inner > 0, 'left', c.enter_grain)
         if (c.children > 0) drawEnter(b.x + b.w - 10, b.y + 6, c.children, on || on2, 'right')
         return
       }
@@ -442,7 +446,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       rr(ip.x, ip.y, S(26), S(26), S(7)); ctx!.stroke()
       text(c.glyph, b.x + 31, b.y + 66, { size: 13, color: pal.muted, align: 'center', font: MONO })
 
-      const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, c.dir, c.children > 0, 'left', c.enter_grain)
+      const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, c.dir, c.children > 0 && c.inner > 0, 'left', c.enter_grain)
       // A short card drops its lower lines rather than drawing them over each
       // other: cardH shrinks to fit a full column, and the fixed offsets that
       // were fine at 118 units are not at 74.
@@ -467,10 +471,14 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       // killed for — but inside one file a function's 3 local callers can be a
       // hundred repo-wide, and that is the number that says whether it matters.
 
-      if (c.children > 0) {
+      if (c.children > 0 && c.inner > 0) {
         // Top strip, beside the ordinal — the only band on a card that carries
         // no text of its own. Drawn AFTER the title so it can share its hover.
         drawEnter(b.x + b.w - 14, b.y + 12, c.children, on || titleOn, 'right')
+      } else if (c.children > 0) {
+        // still a true fact, just not a door
+        text(`${c.children} inside · no links`, b.x + b.w - 14, b.y + 24,
+          { size: 9, color: pal.dim, font: MONO, align: 'right', max: b.w - 60 })
       }
     }
 
@@ -517,7 +525,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       text('MOST DEPENDED ON', b.x, b.y - (roomy ? 46 : 34),
         { size: 8.5, color: MUTED, align: 'center', spacing: 1.3, weight: 700 })
       const titleOn = titleLink(c.label, b.x, b.y - (roomy ? 20 : 12),
-        roomy ? 19 : 15, b.r * 1.7, c.dir, c.children > 0, 'center', c.enter_grain)
+        roomy ? 19 : 15, b.r * 1.7, c.dir, c.children > 0 && c.inner > 0, 'center', c.enter_grain)
       if (!tight) {
         text(c.dir, b.x, b.y + (roomy ? -2 : 4),
           { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.75 })
@@ -538,7 +546,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         text(`${c.files} files · ${c.decls} decls`, b.x, b.y + 60,
           { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.4 })
       }
-      if (c.children > 0) drawEnter(b.x, b.y + b.r - (roomy ? 30 : 22), c.children, on || titleOn, 'center')
+      if (c.children > 0 && c.inner > 0) drawEnter(b.x, b.y + b.r - (roomy ? 30 : 22), c.children, on || titleOn, 'center')
     }
 
     // The outer world: one dashed PLATE per transport, holding a bounded
@@ -672,6 +680,29 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       return out.slice(0, 5)
     }
 
+    // The way OUT, on the same surface as the message. The crumbs already lead
+    // back, but they sit at the top of the page while the dead end is in the
+    // middle of it — and a reader who has just been told there is nothing here
+    // should not have to go looking for the exit.
+    function drawGoUp(y: number) {
+      const crumbs = scene!.crumbs
+      if (crumbs.length < 2) return
+      const parent = crumbs[crumbs.length - 2]
+      const label = `↑  back to ${parent.label}`
+      const w = measure(label, 12, 600) + 30
+      const x = VW / 2 - w / 2
+      hits.push({ x, y, w, h: 30, root: parent.root, kind: 'crumb', grain: '' })
+      const on = hover === hits.length - 1
+      const p = T(x, y)
+      ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .06)
+      rr(p.x, p.y, S(w), S(30), S(15)); ctx!.fill()
+      ctx!.strokeStyle = on ? DOT : pal.line2; ctx!.lineWidth = Math.max(1, S(1))
+      rr(p.x, p.y, S(w), S(30), S(15)); ctx!.stroke()
+      text(label, x + w / 2, y + 20, {
+        size: 12, weight: 600, align: 'center', color: on ? DOT : pal.muted,
+      })
+    }
+
     function drawReset() {
       const label = 'RESET VIEW'
       const w = measure(label, 9, 700) + 22
@@ -800,6 +831,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
           text('go straight in', VW / 2, y + 48,
             { size: 10, color: pal.dim, align: 'center', spacing: 1 })
         }
+        drawGoUp(inside.length > 0 ? top + lines.length * 22 + 82 : top + lines.length * 22 + 26)
         raf = requestAnimationFrame(frame)
         return
       }

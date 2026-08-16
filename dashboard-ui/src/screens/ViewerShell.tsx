@@ -80,6 +80,36 @@ export default function ViewerShell({ initialModule: rawArg }: { initialModule: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Modules are grouped under their REPO. The flat list put an 18-module
+  // monorepo's parts among genuinely separate products — `reqsume`,
+  // `reqsume/apps/api`, `reqsume/apps/ui`, `spinx`, `stock-core/apps/cli` …  —
+  // as peers, which is the same failure ADR 2026-07-19 fixed on the overview
+  // and the viewer never picked up. The repo is the product; its modules are
+  // parts of it, and this is how you find the ui, the api and the worker.
+  const groups = useMemo(() => {
+    const by = new Map<string, Module[]>()
+    for (const m of mods) {
+      const root = m.root || m.key
+      const list = by.get(root) || []
+      list.push(m)
+      by.set(root, list)
+    }
+    return [...by.entries()]
+      .map(([root, list]) => ({
+        root,
+        list: list.slice().sort((a, b) => {
+          if (a.key === root) return -1 // the repo's own store first
+          if (b.key === root) return 1
+          return b.nodes - a.nodes
+        }),
+      }))
+      .sort((a, b) => a.root.localeCompare(b.root))
+  }, [mods])
+
+  // a module's short name inside its repo: `reqsume/apps/api` reads as `apps/api`
+  const shortName = (m: Module) =>
+    m.key === m.root || !m.root ? m.key : m.key.slice(m.root.length + 1)
+
   const def = viewerById(addr.view)
   const Body = def.Component
 
@@ -91,9 +121,19 @@ export default function ViewerShell({ initialModule: rawArg }: { initialModule: 
           {/* Changing the store clears the drill: a directory from one repo
               names nothing in another, and carrying it over lands you on an
               "no directory ..." dead end that looks like a bug. */}
-          <select value={addr.module} onChange={(e) => go({ module: e.target.value, root: '' })}>
-            {mods.map((m) => (
-              <option key={m.key} value={m.key}>{m.key} ({m.nodes})</option>
+          <select value={addr.module} onChange={(e) => go({ module: e.target.value, root: '', grain: '' })}>
+            {groups.map((g) => (
+              g.list.length === 1
+                ? <option key={g.root} value={g.list[0].key}>
+                    {g.root} ({g.list[0].nodes.toLocaleString()})
+                  </option>
+                : <optgroup key={g.root} label={g.root}>
+                    {g.list.map((m) => (
+                      <option key={m.key} value={m.key}>
+                        {m.key === g.root ? '(repo root)' : shortName(m)} ({m.nodes.toLocaleString()})
+                      </option>
+                    ))}
+                  </optgroup>
             ))}
           </select>
         </label>

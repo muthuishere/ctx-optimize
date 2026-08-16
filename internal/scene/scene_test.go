@@ -951,3 +951,71 @@ func TestCardsCountTrafficLeavingTheScene(t *testing.T) {
 		t.Errorf("handle.ExtIn = %d, want 0", handle.ExtIn)
 	}
 }
+
+// TestCardOnlyOffersALevelWorthOpening — include/net/sctp/structs.h holds 11
+// declarations and not one edge between them, because it is a header. It
+// advertised a green link to a screen whose only content was "nothing to draw".
+// "There are things in here" and "there is something to see in here" are
+// different facts, and only the second is a door.
+func TestCardOnlyOffersALevelWorthOpening(t *testing.T) {
+	// a.go's two functions call each other; b.go's two never do
+	const a, b = "src/pkg/a.go", "src/pkg/b.go"
+	nodes := []schema.Node{
+		{ID: a, Label: "a.go", Kind: "file", Source: a},
+		{ID: b, Label: "b.go", Kind: "file", Source: b},
+		{ID: a + "::A1", Label: "A1", Kind: "function", Source: a, Location: "L1-L2"},
+		{ID: a + "::A2", Label: "A2", Kind: "function", Source: a, Location: "L4-L5"},
+		{ID: b + "::B1", Label: "B1", Kind: "type", Source: b, Location: "L1-L2"},
+		{ID: b + "::B2", Label: "B2", Kind: "type", Source: b, Location: "L4-L5"},
+		{ID: "src/other/c.go", Label: "c.go", Kind: "file", Source: "src/other/c.go"},
+		{ID: "src/other/c.go::C", Label: "C", Kind: "function", Source: "src/other/c.go", Location: "L1-L2"},
+	}
+	var edges []schema.Edge
+	// inside a.go
+	for i := 0; i < 3; i++ {
+		edges = append(edges, schema.Edge{Source: a + "::A1", Target: a + "::A2",
+			Relation: "calls", Confidence: schema.Inferred})
+	}
+	// across the two files, so src/pkg itself has something to draw
+	for i := 0; i < 4; i++ {
+		edges = append(edges, schema.Edge{Source: a + "::A1", Target: b + "::B1",
+			Relation: "calls", Confidence: schema.Inferred})
+	}
+	// and something reaching src/pkg from outside, so it ranks at the top level
+	for i := 0; i < 5; i++ {
+		edges = append(edges, schema.Edge{Source: "src/other/c.go::C", Target: a + "::A1",
+			Relation: "calls", Confidence: schema.Inferred})
+	}
+
+	in := Derive("demo", nodes, edges, Options{Root: "src/pkg"})
+	if in.Level != "file" {
+		t.Fatalf("level = %q, want file", in.Level)
+	}
+	byLabel := map[string]*Card{}
+	for i := range in.Cards {
+		byLabel[in.Cards[i].Label] = &in.Cards[i]
+	}
+	ac, bc := byLabel["a.go"], byLabel["b.go"]
+	if ac == nil || bc == nil {
+		t.Fatalf("file cards missing; got %v", in.Cards)
+	}
+	// both HOLD two declarations
+	if ac.Children != 2 || bc.Children != 2 {
+		t.Errorf("children: a.go=%d b.go=%d, want 2 and 2", ac.Children, bc.Children)
+	}
+	// only a.go has anything to SEE inside
+	if ac.Inner != 3 {
+		t.Errorf("a.go.Inner = %d, want 3 (its two functions call each other 3 times)", ac.Inner)
+	}
+	if bc.Inner != 0 {
+		t.Errorf("b.go.Inner = %d, want 0 — a header's types do not call each other", bc.Inner)
+	}
+	// and the level b.go would open really is empty, which is what makes
+	// offering it a lie rather than a judgement call
+	if e := Derive("demo", nodes, edges, Options{Root: b}).Empty; e == "" {
+		t.Error("opening b.go drew something after all; the fixture does not prove the point")
+	}
+	if e := Derive("demo", nodes, edges, Options{Root: a}).Empty; e != "" {
+		t.Errorf("opening a.go should draw its call: %q", e)
+	}
+}
