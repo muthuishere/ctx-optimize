@@ -87,6 +87,7 @@ type server struct {
 	// but never outlives the process — a stale cache would be worse than a
 	// slow page.
 	details *detailCache
+	scenes  *sceneCache
 }
 
 // NewHandler serves the dashboard for every module under the store root.
@@ -97,6 +98,7 @@ func NewHandler(root string, ops *Ops) http.Handler {
 	s := &server{
 		root: root, ops: ops, token: hex.EncodeToString(buf),
 		details: &detailCache{m: map[string]producerCacheEntry{}, gitM: map[string]gitCacheEntry{}},
+		scenes:  newSceneCache(),
 	}
 	mux := http.NewServeMux()
 

@@ -68,6 +68,11 @@ tasks:
       - npm install
       - npm run dev
 
+  e2e:
+    desc: End-to-end check of `serve` in a real headless browser (needs a running dashboard + Chrome)
+    cmds:
+      - node scripts/e2e/dashboard.mjs {{.CLI_ARGS}}
+
   dashboard-build:
     desc: Build dashboard-ui and copy dist/ into internal/dashboard/ui (the go:embed dir — commit the result)
     dir: dashboard-ui
