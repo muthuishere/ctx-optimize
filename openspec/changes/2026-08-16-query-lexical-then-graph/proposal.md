@@ -188,6 +188,46 @@ Two more results from the same run:
   uint32; vocabulary 68,798; df median 7, p90 205, max 1,725,630) on top of an
   index directory that is already 631 MB. Worth stating before building it.
 
+### The complexity answer: not O(1), not O(N) — O(candidates)
+
+"Do we not have an index now, and does this become O(1)?" Measured, per phase,
+on the linux store:
+
+```
+phase                    today      indexed          mechanism
+1 read nodes             607ms      26.5ms  (23x)    NodeByID / ids.idx      EXISTS
+2 tokenize + DF          731ms      ~0               precomputed at gather   NEW (postings)
+3 read edges + adjacency 2,370ms    39.5ms  (56x)    EdgesFrom/EdgesTo       EXISTS
+4 score                  110ms      ∝ candidates     postings                NEW
+```
+
+**It cannot be O(1).** Ranking has to see every node that contains a query
+token; that set is data-dependent, so constant time is not on the table for
+any honest ranker.
+
+**It does not have to stay O(N).** With postings the shape becomes
+
+```
+O( Σ |postings(t)| for t in query  +  hits · log N )
+```
+
+and the candidate sets are small on real questions — measured 0.24% to 2.46%
+of the corpus. Sublinear in N, linear in what actually matched.
+
+**Worst case is still O(N)**, and that is not hypothetical: linux has a token
+with df 1,725,630 — 61% of every node. A query made only of such tokens
+selects most of the corpus however it is indexed. That is stress-spec I5, and
+the answer there is a stated cap, not a faster scan.
+
+**Two of the four phases need no new index at all.** `NodeByID`,
+`EdgesFrom` and `EdgesTo` are shipped, tested, and used by `card`; `query`
+simply never calls them. Phases 1 and 3 are 2.98s of the ~4.0s — **74% of the
+verb — and the fix is calling code that already exists.**
+
+Projected floor if all four land: roughly 100–300ms, from 4.0s. That is a
+PROJECTION from per-phase measurements, not a measured end-to-end number, and
+it must be re-measured after slice 0 before it is repeated anywhere.
+
 ### Slice 4 headroom — directional, NOT an accuracy number
 
 Same spike, `-run TestStructuralHeadroom`, 14 judged `query` questions from
