@@ -125,7 +125,62 @@ ADR is about and they are n=2. So the design must not be tuned to either:
 the rule ships as a DEFAULT and the criterion is measured per repo and printed,
 never baked in here.
 
+### THE SPIKE: HTTP IS NOT THE MECHANISM. THE PACKAGE DEPENDENCY IS.
+
+`scripts/spikes/monorepo-links.py`, run over every multi-module repo in the
+local store (30 repos), counting directed module→module links by mechanism:
+
+```
+TOTAL: dependency 2168 · shares 513 · http 0 · ws 0 · process 0
+
+deepseek-harness-master  233 mods   1912 dependency links
+the-factory              229 mods    217
+tabby-master              17 mods     29
+agent-proxy                9 mods      4
+agentic-nexus             14 mods      2
+```
+
+with examples that are exactly the edges a reader wants:
+
+```
+deepseek/apps/cli   -> packages/boot/app-boot   (@deepseek-ai/dsh-app-boot)
+tabby-master/app    -> tabby-core               (tabby-core)
+agentic-nexus/web   -> clients/typescript       (@agentic-nexus/client)
+crypto-desk/apps/cryptodesk -> libraries/brain  (github.com/muthuishere/brain)
+```
+
+This inverts the ADR. It began with HTTP because that is the case that was in
+front of us, and HTTP scores **zero observable links across thirty repos**
+while the package dependency scores **2,168**. Worse for the original framing:
+a dependency is a DECLARATION — the strongest evidence in the store, not a name
+match — so it is EXTRACTED, where the HTTP join would only ever be INFERRED.
+
+Three honest limits on that number:
+
+- **It is a floor.** mastra-main (242 modules) contributes 0 because every one
+  of its source paths is gone, so no module's identity could be read. Eight
+  repos are in that state and are counted as zero, never dropped.
+- **HTTP scoring 0 is not evidence HTTP is unused** — it is this ADR's own D1
+  gap measured from the other side: the consumer path is not recorded, so no
+  HTTP link is observable yet whether or not it exists.
+- **Vendored code inflates it.** agent-proxy's four links are all
+  `third_party/goproxywss` declaring `github.com/elazarl/goproxy`: a real
+  dependency on a vendored copy, but an upstream package rather than a sibling
+  product. A vendored/`third_party` path needs marking, or the count flatters
+  itself.
+
 ## Proposal
+
+**D0 — record what a module IS. This is now the first change, not the fourth.**
+The store records what a module CONSUMES and never what it is: a package.json
+is a `config` node with no `name`, a go.mod no `module` line. Every join in
+this ADR fails on that same missing half — the HTTP one, and the dependency one
+that turns out to be worth 2,168 links. Capturing module identity (npm `name`,
+go `module`, crate/dist name) makes `dep:npm/@mastra/core` in one module resolve
+to the sibling that publishes it, with no inference at all.
+
+D0 also has to mark vendored trees, or `third_party/` copies of upstream
+packages read as intra-product links.
 
 **D1 — `http-url-literal` keeps the path, the way `websocket-js` already does.**
 Same field names (`raw`, `resolved: dynamic`), same tier, same rule file. This
@@ -178,6 +233,7 @@ Only relations that can be defended get drawn, each labelled distinctly:
 
 | relation | evidence | available |
 |---|---|---|
+| `depends` | a module declares a sibling's package name — a DECLARATION, so EXTRACTED | **after D0**; 2,168 links across 30 repos |
 | `calls` / `imports` | a code edge crossing modules | never — ids are module-relative |
 | `provides`→`consumes` | one module's route literal matched by another's registration — INFERRED, never EXTRACTED | **after D1**; 111 pairs already visible on reqsume |
 | `shares` | both modules touch the same external port | today, 6 pairs on reqsume |
@@ -188,8 +244,11 @@ Only relations that can be defended get drawn, each labelled distinctly:
 
 If, after D1, a real monorepo yields no `provides`→`consumes` matches, then the
 module grain has only `shares` to draw and D4 is a chooser wearing a diagram —
-in which case it ships as a plain list and this ADR closes. The test is reqsume, and the floor is no longer "at least one": a grep of the
-sources already finds **111 of 149**, so D1 must recover a number of that order.
+in which case it ships as a plain list and this ADR closes. That criterion now applies to D1 alone, and D1 is no longer what the level
+stands or falls on: D0's 2,168 dependency links already clear it by two orders
+of magnitude on repos that have nothing to do with HTTP. The D1 test remains
+reqsume, where a grep of the sources finds **111 of 149**, so D1 must recover a
+number of that order.
 Recovering a handful would mean the extractor is finding the calls but not the
 route table, which is a different bug wearing this ADR's clothes. Whatever the
 number, it is printed on screen, not asserted here.
