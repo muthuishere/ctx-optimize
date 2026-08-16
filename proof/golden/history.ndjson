@@ -233,3 +233,7 @@
 {"ts":"2026-08-16T03:08:23Z","commit":"ba17b9a","kind":"corpus","corpus":"newtonsoft","nodes":10145,"edges":24184,"gather_ms":767}
 {"ts":"2026-08-16T03:08:29Z","commit":"ba17b9a","kind":"judge","corpus":"linux-block","score":16.5,"floor":16.5,"marks":{"L01":1,"L02":1,"L03":1,"L04":1,"L05":1,"L06":1,"L07":1,"L08":1,"L09":1,"L10":1,"L11":1,"L12":1,"L13":1,"L14":1,"L15":1,"L16":1,"L17":0.5,"L18":0,"L19":0,"L20":0}}
 {"ts":"2026-08-16T03:08:30Z","commit":"ba17b9a","kind":"judge","corpus":"newtonsoft","score":13,"floor":13,"marks":{"N01":0,"N02":1,"N03":1,"N04":1,"N05":1,"N06":1,"N07":1,"N08":1,"N09":0,"N10":1,"N11":1,"N12":1,"N13":0,"N14":0,"N15":1,"N16":1,"N17":0,"N18":1,"N19":0,"N20":0}}
+{"ts":"2026-08-16T16:38:54Z","commit":"cfcb090","kind":"corpus","corpus":"linux-block","nodes":8162,"edges":12258,"gather_ms":281}
+{"ts":"2026-08-16T16:38:55Z","commit":"cfcb090","kind":"corpus","corpus":"newtonsoft","nodes":10145,"edges":24184,"gather_ms":708}
+{"ts":"2026-08-16T16:39:00Z","commit":"cfcb090","kind":"judge","corpus":"linux-block","score":16.5,"floor":16.5,"marks":{"L01":1,"L02":1,"L03":1,"L04":1,"L05":1,"L06":1,"L07":1,"L08":1,"L09":1,"L10":1,"L11":1,"L12":1,"L13":1,"L14":1,"L15":1,"L16":1,"L17":0.5,"L18":0,"L19":0,"L20":0}}
+{"ts":"2026-08-16T16:39:01Z","commit":"cfcb090","kind":"judge","corpus":"newtonsoft","score":13,"floor":13,"marks":{"N01":0,"N02":1,"N03":1,"N04":1,"N05":1,"N06":1,"N07":1,"N08":1,"N09":0,"N10":1,"N11":1,"N12":1,"N13":0,"N14":0,"N15":1,"N16":1,"N17":0,"N18":1,"N19":0,"N20":0}}
