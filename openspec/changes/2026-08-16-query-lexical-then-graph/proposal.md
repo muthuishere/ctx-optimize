@@ -141,6 +141,77 @@ The next engine is this ADR, not a site promise.
 - Gather cost of building postings reported; atomic rename; git-diffable
   sorted output; no secrets in the index.
 
+## SPIKE 2026-08-16 — postings addresses 20% of the cost. The edges are 64%.
+
+`scripts/spikes/queryphases`, linux (2,848,839 nodes / 5,539,232 edges),
+phases mirrored from query.go so the boundaries are visible:
+
+```
+PHASE read nodes    0.589s   16%
+PHASE tokenize+df   0.731s   20%   <- what postings moves to gather
+PHASE read edges    1.073s   29%   <- postings does NOT touch this
+PHASE adjacency     1.293s   35%   <- nor this
+PHASE score        ~0.110s    3%
+SUBTOTAL            3.687s          (real verb: 3.93s, so ~94% accounted)
+```
+
+**`query` reads all 5.5M edges and builds a whole-graph adjacency map — 11M
+appends — on every call, to attach at most 12 neighbours to at most 20 hits.**
+That is 2.37s, 64% of the verb, and slice 1 as written does not touch it.
+
+The index that fixes it is already on disk. `graph/index/edges-by-source.idx`
+(98 MB) and `edges-by-target.idx` (231 MB) are built at gather and used by
+`card`; `query.go` never opens them. Measured on the same 20 nodes and the
+same 37 neighbours:
+
+```
+INDEXED  40 lookups via EdgesFrom/EdgesTo   39.5ms
+SCAN     full read + adjacency map           2.215s
+                                             56x, identical results
+```
+
+**So the slice order should change.** A neighbour-attachment slice is bigger,
+cheaper and lower-risk than postings: no new index, no new file format, no
+ranking change at all — the hits and their order are untouched, only how the
+neighbours are fetched. It should be slice 0.
+
+Two more results from the same run:
+
+- **Union, not intersection** — the open question below, answered. Candidate
+  sets for real agent questions: `split bio segments` 6,974 (0.24%),
+  `buffer allocation retry` 24,262 (0.85%), `elevator hash add request`
+  70,054 (2.46%). Selectivity is excellent, so postings will work. But the
+  INTERSECTION is **0** for every multi-word query tested — no single node
+  carries all of a 3-4 word question's tokens. An AND default would return
+  nothing.
+- **Postings would cost ~88.7 MB on linux** (23.2M (node,token) pairs as
+  uint32; vocabulary 68,798; df median 7, p90 205, max 1,725,630) on top of an
+  index directory that is already 631 MB. Worth stating before building it.
+
+### Slice 4 headroom — directional, NOT an accuracy number
+
+Same spike, `-run TestStructuralHeadroom`, 14 judged `query` questions from
+`linux-block.json` (the 6 card/path/affected questions are skipped — running
+`query` for those and scoring the miss measures the spike's mistake, which the
+first run did):
+
+```
+lexical top-k correct           3
+MISSED but within 1 hop         4     <- what expansion could reach
+missed, not within 1 hop        7
+```
+
+**This is not comparable to the judged scoreboard and must not be quoted as
+accuracy.** The floor is 16.5/20; this run scores far under it because the
+store is the WHOLE kernel, while the scoreboard's corpus tier gathers the
+pinned `block/` subsystem. Asking "elevator hash add request" across 2.85M
+nodes is a different question from asking it across `block/`.
+
+What it does say, with that caveat: **of the questions lexical missed, 4 of 11
+had the answer one hop away** — blk-throttle.c, sed-opal.c, blk-flush.c,
+ll_back_merge_fn. That is real headroom for slice 4 and it is not nothing. Re-
+run against the pinned corpus before any number goes in a commit message.
+
 ## An honesty constraint slice 4 needs, and does not yet state
 
 Slice 4 lets a node become a RESULT because the graph vouches for it, with
