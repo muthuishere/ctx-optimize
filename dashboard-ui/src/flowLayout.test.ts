@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layout, VH, VW } from './flowLayout'
+import { VH, VW, cardRows, layout } from './flowLayout'
 import type { Scene } from './types'
 
 // A scene shaped by hand: three layers, one hub, two transports. Every
@@ -244,4 +244,40 @@ describe('flowLayout keeps everything inside the frame', () => {
       }
     })
   }
+})
+
+// Every card in the volentis screenshot printed two lines of text on one line:
+// the module's path and its summary, straight through each other. The rows had
+// independent height guards — path at y+91 if h>=100, detail at y+h-15 if
+// h>=86 — and between 100 and 118 units those two positions ARE each other.
+// Clustered cards live in exactly that band, so it was every card on screen.
+describe('a card never prints two lines on one line', () => {
+  it('keeps the path and the detail apart at every height a card can be', () => {
+    for (let h = 56; h <= 140; h++) {
+      const r = cardRows(h)
+      if (r.showDir && r.showDetail) {
+        expect(r.detailY - r.dirY, `h=${h}: path and detail collide`).toBeGreaterThanOrEqual(12)
+      }
+      if (r.showDir) {
+        expect(r.dirY, `h=${h}: path printed through the name`).toBeGreaterThan(r.titleBase + 6)
+      }
+      if (r.showDetail) {
+        expect(r.detailY, `h=${h}: detail printed through the name`).toBeGreaterThan(r.titleBase + 6)
+        expect(r.detailY, `h=${h}: detail printed outside the card`).toBeLessThanOrEqual(h)
+      }
+    }
+  })
+
+  it('drops the path before the detail, because the detail says more', () => {
+    // at the height where only one line fits, it is the summary that survives
+    const only = Array.from({ length: 90 }, (_, i) => cardRows(i + 56))
+      .filter((r) => r.showDetail && !r.showDir)
+    expect(only.length).toBeGreaterThan(0)
+  })
+
+  it('drops both lines on a card too short for either', () => {
+    const r = cardRows(56)
+    expect(r.showDir).toBe(false)
+    expect(r.tight).toBe(true)
+  })
 })

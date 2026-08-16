@@ -233,6 +233,34 @@ export const CHIP_H = 34
 export const WORLD_W = 288
 export const WORLD_H = 142
 
+/**
+ * cardRows is where a card's lines of text go, for a card of this height.
+ *
+ * They used to be fixed offsets with independent height guards — the path at
+ * y+91 if h>=100, the detail at y+h-15 if h>=86 — and at any height between
+ * 100 and 118 those two ARE each other: at h=100 the path sits at 91 and the
+ * detail at 85, printed straight through it. Every card in a clustered scene
+ * is in that band, so every card on screen had two lines of text on one line.
+ *
+ * Stacking up from the bottom makes the collision impossible rather than
+ * guarded against, and returns what each row can afford so the caller drops a
+ * line instead of overprinting one.
+ */
+export function cardRows(h: number) {
+  const TITLE_BASE = 67   // the name's baseline, from the card's top
+  const CLEAR = 15        // the name's descender plus a hair
+  const detail = h - 15
+  const dir = detail - 16
+  return {
+    tight: h < 84,
+    titleBase: TITLE_BASE,
+    detailY: detail,
+    dirY: dir,
+    showDetail: detail >= TITLE_BASE + CLEAR,
+    showDir: dir >= TITLE_BASE + CLEAR,
+  }
+}
+
 /** rectOf is a box's bounding rectangle — the hub's circle included. */
 function rectOf(b: Box) {
   return b.kind === 'hub'

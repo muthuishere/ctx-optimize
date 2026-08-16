@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { arrangementKey, clearArrangement, loadArrangement, saveArrangement } from '../arrangement'
 import { fetchScene } from '../sceneApi'
-import { bez, bezT, CHIP_H, layout, legendFor, relationStyle, VW, type Box } from '../flowLayout'
+import { bez, bezT, cardRows, CHIP_H, layout, legendFor, relationStyle, VW, type Box } from '../flowLayout'
 import type { Scene } from '../types'
 import { mix, readPalette, rgba } from '../theme'
 import type { ViewerProps } from '../viewers'
@@ -508,7 +508,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       // A compressed card keeps the ordinal and the NAME and drops the rest:
       // the glyph tile, the path and the detail line all need room the card no
       // longer has, and a name half outside its own box is worse than no glyph.
-      const tight = b.h < 84
+      const tight = cardRows(b.h).tight
       text(b.n, b.x + 18, b.y + (tight ? b.h / 2 + 5 : 36),
         { size: tight ? 13 : 19, weight: 300, color: pal.dim, font: MONO })
       if (tight) {
@@ -522,22 +522,22 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       rr(ip.x, ip.y, S(26), S(26), S(7)); ctx!.stroke()
       text(c.glyph, b.x + 31, b.y + 66, { size: 13, color: pal.muted, align: 'center', font: MONO })
 
-      const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, enterKey(c), c.children > 0 && c.inner > 0, 'left', c.enter_grain)
-      // A short card drops its lower lines rather than drawing them over each
-      // other: cardH shrinks to fit a full column, and the fixed offsets that
-      // were fine at 118 units are not at 74.
-      if (b.h >= 100) {
-        text(c.dir, b.x + 18, b.y + 91, { size: 10.5, color: pal.dim, font: MONO, max: b.w - 36 })
+      const rows = cardRows(b.h)
+      const titleOn = titleLink(c.label, b.x + 54, b.y + rows.titleBase, 16, b.w - 70, enterKey(c), c.children > 0 && c.inner > 0, 'left', c.enter_grain)
+      // The lower lines stack UP from the bottom, so a short card drops one
+      // rather than printing it through the other.
+      if (rows.showDir) {
+        text(c.dir, b.x + 18, b.y + rows.dirY, { size: 10.5, color: pal.dim, font: MONO, max: b.w - 36 })
       }
       // The outside chip and the detail line share the bottom row, so the
       // detail yields exactly the width the chip takes. Drawn over the path
       // subtitle, the chip hid the one thing that says WHICH file a card is.
       const outW = outsideWidth(c)
-      if (b.h >= 86) {
-        text(c.detail || `${c.files} files`, b.x + 18, b.y + b.h - 15,
+      if (rows.showDetail) {
+        text(c.detail || `${c.files} files`, b.x + 18, b.y + rows.detailY,
           { size: 11.5, color: MUTED, max: b.w - 36 - (outW > 0 ? outW + 10 : 0) })
       }
-      drawOutside(c, b.x + b.w - 18 - outW, b.y + b.h - 26, outW)
+      drawOutside(c, b.x + b.w - 18 - outW, b.y + rows.detailY - 11, outW)
 
       // in/out counters, top-right — the numbers that decided the column
       text(`${c.out}↗`, b.x + b.w - 18, b.y + 26, { size: 10, color: pal.dim, font: MONO, align: 'right' })
