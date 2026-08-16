@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { sanitizeScene } from '../sanitize'
 import { bez, bezT, layout, VH, VW, type Box } from '../flowLayout'
 import type { Scene } from '../types'
 import type { ViewerProps } from '../viewers'
@@ -31,19 +32,42 @@ const GROUND = '#fbfaf8'
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
 
-export default function FlowViewer({ module }: ViewerProps) {
+export default function FlowViewer({ module, params }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
   const [err, setErr] = useState('')
+  // The drilled directory. It lives in state AND in the hash, so a level is a
+  // shareable URL and the browser Back button walks back out of the drill.
+  const [root, setRoot] = useState(params.get('root') || '')
   const wrap = useRef<HTMLDivElement | null>(null)
   const cv = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
     setScene(null)
     setErr('')
-    api<Scene>(`/api/scene?module=${encodeURIComponent(module)}`)
-      .then(setScene)
+    const q = new URLSearchParams({ module })
+    if (root) q.set('root', root)
+    api<Scene>(`/api/scene?${q}`)
+      .then((s) => setScene(sanitizeScene(s)))
       .catch((e) => setErr(String(e.message || e)))
-  }, [module])
+  }, [module, root])
+
+  // Keep the hash in step, and follow it when the user goes Back.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.hash.split('?')[1] || '')
+    if ((q.get('root') || '') === root) return
+    if (root) q.set('root', root)
+    else q.delete('root')
+    const base = window.location.hash.split('?')[0]
+    window.history.pushState(null, '', base + (q.toString() ? '?' + q : ''))
+  }, [root])
+  useEffect(() => {
+    const onPop = () => {
+      const q = new URLSearchParams(window.location.hash.split('?')[1] || '')
+      setRoot(q.get('root') || '')
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   useEffect(() => {
     if (!scene || !cv.current || !wrap.current) return
@@ -80,6 +104,33 @@ export default function FlowViewer({ module }: ViewerProps) {
 
     const T = (x: number, y: number) => ({ x: OX + x * SC, y: OY + y * SC })
     const S = (v: number) => v * SC
+
+    // ---- drill-down. Hit regions are rebuilt every frame in SCREEN space, so
+    // they follow the canvas through resize and letterboxing without a second
+    // source of truth for geometry. No DOM overlay: the stage is one canvas.
+    type Hit = { x: number; y: number; w: number; h: number; root: string; kind: 'card' | 'crumb' }
+    let hits: Hit[] = []
+    let hover = -1
+    const hitAt = (px: number, py: number) =>
+      hits.findIndex((h) => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h)
+    const local = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect()
+      return [e.clientX - r.left, e.clientY - r.top] as const
+    }
+    const onMove = (e: PointerEvent) => {
+      const [px, py] = local(e)
+      hover = hitAt(px, py)
+      canvas.style.cursor = hover >= 0 ? 'pointer' : 'default'
+    }
+    const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
+    const onDown = (e: PointerEvent) => {
+      const [px, py] = local(e)
+      const i = hitAt(px, py)
+      if (i >= 0) setRoot(hits[i].root)
+    }
+    canvas.addEventListener('pointermove', onMove)
+    canvas.addEventListener('pointerleave', onLeave)
+    canvas.addEventListener('pointerdown', onDown)
 
     function rr(x: number, y: number, w: number, h: number, r: number) {
       ctx!.beginPath()
@@ -175,15 +226,31 @@ export default function FlowViewer({ module }: ViewerProps) {
       }
     }
 
+    // A card with subdirectories is a door. registerDoor gives it its hit region
+    // and returns whether the pointer is currently on it, so the affordance and
+    // the click target can never disagree.
+    function registerDoor(b: Box, x: number, y: number, w: number, h: number): boolean {
+      if (!b.card || b.card.children <= 0) return false
+      const p = T(x, y)
+      hits.push({ x: p.x, y: p.y, w: S(w), h: S(h), root: b.card.dir, kind: 'card' })
+      return hover === hits.length - 1
+    }
+
     function drawCard(b: Box) {
       const c = b.card!
       const p = T(b.x, b.y)
+      const on = registerDoor(b, b.x, b.y, b.w, b.h)
       ctx!.save()
-      ctx!.shadowColor = 'rgba(30,28,24,.10)'; ctx!.shadowBlur = S(18); ctx!.shadowOffsetY = S(5)
+      ctx!.shadowColor = on ? 'rgba(74,92,208,.28)' : 'rgba(30,28,24,.10)'
+      ctx!.shadowBlur = S(on ? 26 : 18); ctx!.shadowOffsetY = S(5)
       ctx!.fillStyle = CARD; rr(p.x, p.y, S(b.w), S(b.h), S(12)); ctx!.fill()
       ctx!.restore()
-      ctx!.strokeStyle = HAIR; ctx!.lineWidth = Math.max(1, S(1))
+      ctx!.strokeStyle = on ? DOT : HAIR; ctx!.lineWidth = Math.max(1, S(on ? 1.8 : 1))
       rr(p.x, p.y, S(b.w), S(b.h), S(12)); ctx!.stroke()
+      if (c.children > 0) {
+        // the door badge: how many subdirectories are inside, and a chevron in
+        drawEnter(b.x + b.w - 18, b.y + b.h - 30, c.children, on, 'right')
+      }
 
       text(b.n, b.x + 18, b.y + 36, { size: 19, weight: 300, color: '#b8b3a8', font: MONO })
       const ip = T(b.x + 18, b.y + 48)
@@ -202,17 +269,37 @@ export default function FlowViewer({ module }: ViewerProps) {
       text(`↘${c.in}`, b.x + b.w - 18, b.y + 40, { size: 10, color: '#a8a29a', font: MONO, align: 'right' })
     }
 
+    // drawEnter is the one "you can go in here" mark, used by cards and the hub
+    // alike so the affordance reads the same wherever it appears.
+    function drawEnter(x: number, y: number, n: number, on: boolean, align: 'right' | 'center') {
+      const label = `${n} inside`
+      const w = measure(label, 9.5, 700, MONO) + 26
+      const bx = align === 'right' ? x - w : x - w / 2
+      const p = T(bx, y)
+      ctx!.fillStyle = on ? '#eef0fc' : '#f7f6f2'
+      rr(p.x, p.y, S(w), S(19), S(9.5)); ctx!.fill()
+      ctx!.strokeStyle = on ? DOT : '#e4dfd4'; ctx!.lineWidth = Math.max(1, S(1))
+      rr(p.x, p.y, S(w), S(19), S(9.5)); ctx!.stroke()
+      text(label, bx + 9, y + 13.5, { size: 9.5, weight: 700, font: MONO, color: on ? DOT : '#8a857c' })
+      const cx = bx + w - 11, cy = y + 9.5
+      const a = T(cx - 2.5, cy - 4), b2 = T(cx + 2, cy), c2 = T(cx - 2.5, cy + 4)
+      ctx!.strokeStyle = on ? DOT : '#a8a29a'; ctx!.lineWidth = Math.max(1, S(1.6))
+      ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b2.x, b2.y); ctx!.lineTo(c2.x, c2.y); ctx!.stroke()
+    }
+
     function drawHub(b: Box, t: number) {
       const c = b.card!
       const p = T(b.x, b.y)
       const R = S(b.r)
       const pulse = still ? 1 : 1 + Math.sin(t * 1.4) * 0.012
+      const on = registerDoor(b, b.x - b.r, b.y - b.r, b.r * 2, b.r * 2)
       ctx!.save()
-      ctx!.shadowColor = 'rgba(74,92,208,.20)'; ctx!.shadowBlur = S(34)
+      ctx!.shadowColor = 'rgba(74,92,208,.20)'; ctx!.shadowBlur = S(on ? 46 : 34)
       ctx!.fillStyle = CARD; ctx!.beginPath(); ctx!.arc(p.x, p.y, R * pulse, 0, 7); ctx!.fill()
       ctx!.restore()
-      ctx!.strokeStyle = '#c3c9ee'; ctx!.lineWidth = S(4)
+      ctx!.strokeStyle = on ? DOT : '#c3c9ee'; ctx!.lineWidth = S(4)
       ctx!.beginPath(); ctx!.arc(p.x, p.y, R * pulse, 0, 7); ctx!.stroke()
+      if (c.children > 0) drawEnter(b.x, b.y + b.r - 34, c.children, on, 'center')
 
       text('MOST DEPENDED ON', b.x, b.y - 46, { size: 8.5, color: MUTED, align: 'center', spacing: 1.3, weight: 700 })
       text(c.label, b.x, b.y - 20, { size: 19, weight: 700, align: 'center', max: b.r * 1.8 })
@@ -278,6 +365,40 @@ export default function FlowViewer({ module }: ViewerProps) {
       }
     }
 
+    // The trail out. Every crumb is clickable including the first, so there is
+    // no level you can enter and not leave — that is checked server-side too
+    // (TestDrillCrumbsAlwaysLeadOut), because a dead end is worse than no
+    // drill-down at all.
+    function drawCrumbs() {
+      const crumbs = scene!.crumbs
+      if (crumbs.length <= 1) return
+      let x = 62
+      const y = 126
+      crumbs.forEach((c, i) => {
+        const last = i === crumbs.length - 1
+        const w = measure(c.label, 11.5, last ? 700 : 500) + 22
+        if (!last) {
+          const p = T(x, y)
+          hits.push({ x: p.x, y: p.y, w: S(w), h: S(24), root: c.root, kind: 'crumb' })
+          const on = hover === hits.length - 1
+          ctx!.fillStyle = on ? '#eef0fc' : '#f4f2ed'
+          rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()
+          ctx!.strokeStyle = on ? DOT : '#e4dfd4'; ctx!.lineWidth = Math.max(1, S(1))
+          rr(p.x, p.y, S(w), S(24), S(12)); ctx!.stroke()
+          text(c.label, x + w / 2, y + 16, {
+            size: 11.5, align: 'center', color: on ? DOT : '#6f6a61', weight: 500,
+          })
+        } else {
+          text(c.label, x + w / 2, y + 16, { size: 11.5, align: 'center', weight: 700, color: INK })
+        }
+        x += w
+        if (!last) {
+          text('/', x + 5, y + 16, { size: 11.5, color: '#bdb8ad' })
+          x += 15
+        }
+      })
+    }
+
     function drawHeader(t: number) {
       // terminal strip, top-left
       const bw = 720, bh = 46, bx = 62, by = 62
@@ -298,7 +419,10 @@ export default function FlowViewer({ module }: ViewerProps) {
         ctx!.fillStyle = '#7fd6a0'; ctx!.fillRect(q.x, q.y, S(8), S(16))
       }
 
-      text(scene!.title, VW - 62, 118, { size: 62, weight: 800, align: 'right', max: 700 })
+      drawCrumbs()
+
+      text(scene!.root ? scene!.root.split('/').pop()! : scene!.title,
+        VW - 62, 118, { size: 62, weight: 800, align: 'right', max: 700 })
       text('The architecture, derived from the store — not drawn by hand.', VW - 62, 152,
         { size: 15, color: '#57534b', align: 'right' })
       text(`every card is a directory · every arrow is real ${''}imports/calls edges, summed`,
@@ -333,9 +457,19 @@ export default function FlowViewer({ module }: ViewerProps) {
     const t0 = performance.now()
     const frame = (now: number) => {
       const t = (now - t0) / 1000
+      // Hit regions are geometry, and geometry is rebuilt every frame.
+      hits = []
       ctx.fillStyle = '#f4f3ef'; ctx.fillRect(0, 0, W, H)
       const p = T(0, 0)
       ctx.fillStyle = GROUND; ctx.fillRect(p.x, p.y, S(VW), S(VH))
+      if (scene!.empty) {
+        // A dead end still gets its header and its trail: the way out has to be
+        // on the same surface as the message saying you have hit a wall.
+        drawHeader(t)
+        text(scene!.empty, VW / 2, VH / 2, { size: 16, color: '#57534b', align: 'center', max: 900 })
+        raf = requestAnimationFrame(frame)
+        return
+      }
       drawFooter()
       drawCurves(t)
       // Paint order is the legibility contract: curves, then the cards that
@@ -357,6 +491,9 @@ export default function FlowViewer({ module }: ViewerProps) {
       cancelAnimationFrame(raf)
       ro.disconnect()
       motion?.removeEventListener?.('change', onMotion)
+      canvas.removeEventListener('pointermove', onMove)
+      canvas.removeEventListener('pointerleave', onLeave)
+      canvas.removeEventListener('pointerdown', onDown)
     }
   }, [scene])
 

@@ -61,6 +61,18 @@ type Card struct {
 	Detail string `json:"detail"` // top declarations by degree, " · " joined
 	Glyph  string `json:"glyph"`  // derived from which transports it touches
 	Hub    bool   `json:"hub"`    // the most depended-upon subsystem
+	// Children is how many directories sit strictly under this card. It is the
+	// drill-down affordance: a card with 0 is a leaf and must not invite a click
+	// that would land on an empty scene.
+	Children int `json:"children"`
+}
+
+// Crumb is one step of the drill-down trail. Root is what to pass back as
+// Options.Root to return to that level, so the client never does path
+// arithmetic on its own.
+type Crumb struct {
+	Label string `json:"label"`
+	Root  string `json:"root"`
 }
 
 // Link is a lifted edge between two cards, or between a card and a transport
@@ -120,6 +132,8 @@ type Scene struct {
 	Stats           []Stat   `json:"stats"`
 	Chips           []string `json:"chips"`
 	Notes           []string `json:"notes"` // honesty lines, printed on screen
+	Root            string   `json:"root"`  // the directory this scene is scoped to ("" = whole repo)
+	Crumbs          []Crumb  `json:"crumbs"`
 	Empty           string   `json:"empty,omitempty"`
 }
 
@@ -133,6 +147,16 @@ type Options struct {
 	// test/data both land in the top ten). Whichever way this goes, the scene
 	// says so in Notes.
 	IncludeTests bool
+	// Root scopes the scene to one directory: only nodes at or under it are
+	// considered, and a card becomes a CHILD directory of Root rather than a
+	// full path. Empty means the whole repo.
+	//
+	// Drilling re-derives rather than filtering the parent scene, and that is the
+	// point: inside src/aiteam the layering, the hub and the ranking are all
+	// recomputed from the edges that exist THERE. A subsystem that looked like a
+	// leaf from the top can be the hub of its own level, and a filtered view
+	// could never show that.
+	Root string
 }
 
 // declKinds are the node kinds that count as "a declaration in a subsystem".
@@ -181,6 +205,51 @@ func subsystemOf(n schema.Node) string {
 	return d
 }
 
+// scopeTo collapses a node's full directory to the subsystem key for a scene
+// rooted at root. At the top level (root == "") the subsystem IS the full
+// directory, exactly as before. Inside a root it is the next path segment down,
+// so drilling into src/aiteam yields src/aiteam/api, src/aiteam/storage, … and
+// files sitting directly in src/aiteam collect under src/aiteam itself.
+// A directory outside root returns "" and takes no part in the scene.
+func scopeTo(root, dir string) string {
+	if root == "" {
+		return dir
+	}
+	if dir == root {
+		return root
+	}
+	if !strings.HasPrefix(dir, root+"/") {
+		return ""
+	}
+	rest := dir[len(root)+1:]
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		rest = rest[:i]
+	}
+	return root + "/" + rest
+}
+
+// crumbsFor builds the trail back out. The first crumb is always the whole
+// repo, so there is no level you can drill into and not be able to leave.
+func crumbsFor(title, root string) []Crumb {
+	out := []Crumb{{Label: title, Root: ""}}
+	if root == "" {
+		return out
+	}
+	acc := ""
+	for _, seg := range strings.Split(root, "/") {
+		if seg == "" {
+			continue
+		}
+		if acc == "" {
+			acc = seg
+		} else {
+			acc += "/" + seg
+		}
+		out = append(out, Crumb{Label: seg, Root: acc})
+	}
+	return out
+}
+
 type agg struct {
 	files, decls int
 	in, out      int
@@ -201,17 +270,21 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 	if opt.Doors <= 0 {
 		opt.Doors = DefaultDoors
 	}
+	opt.Root = strings.Trim(strings.ReplaceAll(opt.Root, "\\", "/"), "/")
 	sc := Scene{
 		Module:     module,
 		Title:      titleOf(module),
 		TotalNodes: len(nodes),
 		TotalEdges: len(edges),
+		Root:       opt.Root,
+		Crumbs:     crumbsFor(titleOf(module), opt.Root),
 	}
 
 	// ---- 1. every node to its subsystem, and node degree for detail lines.
 	owner := make(map[string]string, len(nodes))
 	byID := make(map[string]schema.Node, len(nodes))
 	subs := map[string]*agg{}
+	allDirs := map[string]bool{} // every real directory in scope, at full depth
 	ports := map[string]schema.Node{}
 	for _, n := range nodes {
 		byID[n.ID] = n
@@ -219,10 +292,15 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			ports[n.ID] = n
 			continue
 		}
-		d := subsystemOf(n)
-		if d == "" {
+		full := subsystemOf(n)
+		if full == "" {
 			continue
 		}
+		d := scopeTo(opt.Root, full)
+		if d == "" {
+			continue // outside the drilled root
+		}
+		allDirs[full] = true
 		owner[n.ID] = d
 		a := subs[d]
 		if a == nil {
@@ -292,9 +370,21 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		return pool[i].dir < pool[j].dir
 	})
 	if len(pool) == 0 {
-		sc.Empty = "no subsystem in this store has a cross-directory `imports` or `calls` edge — " +
-			"there is no flow to draw. Try the graph viewer."
-		return sc
+		if opt.Root != "" && len(owner) == 0 {
+			// The root matched nothing at all. Distinguishing this from "a real
+			// leaf" matters: one is a typo, the other is the truth about the code.
+			sc.Empty = "no directory `" + opt.Root + "` in this store."
+		} else if opt.Root != "" {
+			// Drilling found a real directory with nothing to draw INSIDE it. Say
+			// which, and leave the crumbs intact so the trail out still works —
+			// a dead end you cannot back out of is worse than no drill-down.
+			sc.Empty = "nothing under `" + opt.Root + "` calls or imports across its own subdirectories — " +
+				"this level is a leaf. Use the trail above to go back up."
+		} else {
+			sc.Empty = "no subsystem in this store has a cross-directory `imports` or `calls` edge — " +
+				"there is no flow to draw. Try the graph viewer."
+		}
+		return sc.finish()
 	}
 
 	// ---- 4. the HUB: the most depended-upon subsystem. Highest lifted
@@ -443,6 +533,28 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		touch[d][e.Relation+":"+p.Metadata["transport"]] = true
 	}
 
+	// Children counts a card's IMMEDIATE subdirectories, from the full-depth
+	// directory set rather than from the cards on screen: a card is enterable
+	// because the code has structure under it, not because that structure
+	// happened to rank high enough to be drawn beside it.
+	kids := map[string]map[string]bool{}
+	for _, r := range chosen {
+		if r.dir == opt.Root {
+			// The card standing for files directly inside the current root. It is
+			// a real subsystem and belongs on screen, but it is not a way IN —
+			// entering it would re-derive the scene you are already looking at.
+			continue
+		}
+		for d := range allDirs {
+			if child := scopeTo(r.dir, d); child != "" && child != r.dir {
+				if kids[r.dir] == nil {
+					kids[r.dir] = map[string]bool{}
+				}
+				kids[r.dir][child] = true
+			}
+		}
+	}
+
 	row := rowOrder(chosen, links, layer)
 	for _, r := range chosen {
 		sc.Cards = append(sc.Cards, Card{
@@ -450,9 +562,10 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			Files: r.a.files, Decls: r.a.decls,
 			In: r.a.in, Out: r.a.out,
 			Layer: layer[r.dir], Row: row[r.dir],
-			Detail: detailOf(top[r.dir]),
-			Glyph:  glyphOf(touch[r.dir]),
-			Hub:    r.dir == hub,
+			Detail:   detailOf(top[r.dir]),
+			Glyph:    glyphOf(touch[r.dir]),
+			Hub:      r.dir == hub,
+			Children: len(kids[r.dir]),
 		})
 	}
 	sort.Slice(sc.Cards, func(i, j int) bool {
@@ -532,9 +645,13 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		sc.Chips = append(sc.Chips, itoa(sens)+" marked sensitive (names only)")
 	}
 
+	scope := "directories"
+	if opt.Root != "" {
+		scope = "subdirectories of " + opt.Root
+	}
 	sc.Notes = append(sc.Notes,
 		"top "+itoa(sc.SubsystemsShown)+" of "+itoa(sc.SubsystemsTotal)+
-			" directories by cross-directory edge weight — this is a SAMPLE, not the whole graph")
+			" "+scope+" by cross-directory edge weight — this is a SAMPLE, not the whole graph")
 	sc.Notes = append(sc.Notes,
 		itoa(sc.LiftedShown)+" of "+itoa(sc.LiftedTotal)+" lifted relations drawn; every arrow is real store edges, summed")
 	if hub != "" {
@@ -545,7 +662,45 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 	if skippedTests > 0 {
 		sc.Notes = append(sc.Notes, itoa(skippedTests)+" test/fixture directories excluded from the ranking")
 	}
-	return sc
+	// A store with no `port` nodes draws no outer world. Say so, rather than
+	// leaving the bottom band silently blank — an absent band and an absent
+	// FEATURE look identical on screen, and only one of them is the user's
+	// business to fix.
+	if len(ports) == 0 {
+		sc.Notes = append(sc.Notes,
+			"no boundaries recorded for this store — run `ctx-optimize boundaries` to draw the outer world")
+	}
+	return sc.finish()
+}
+
+// finish normalises the wire shape. Every slice field on Scene is typed as an
+// ARRAY by the client; a nil slice marshals to `null`, and `for (… of null)`
+// throws and blanks the entire viewer. That is exactly what a store with no
+// ports did to Chips — one empty field took down a screen that had seven cards
+// and twenty-one links to draw. So `null` is not a value this contract has.
+func (s Scene) finish() Scene {
+	if s.Cards == nil {
+		s.Cards = []Card{}
+	}
+	if s.Links == nil {
+		s.Links = []Link{}
+	}
+	if s.World == nil {
+		s.World = []World{}
+	}
+	if s.Stats == nil {
+		s.Stats = []Stat{}
+	}
+	if s.Chips == nil {
+		s.Chips = []string{}
+	}
+	if s.Notes == nil {
+		s.Notes = []string{}
+	}
+	if s.Crumbs == nil {
+		s.Crumbs = []Crumb{}
+	}
+	return s
 }
 
 // layering assigns each card its longest-path depth. Edges are considered

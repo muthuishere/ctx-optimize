@@ -2,7 +2,17 @@
 // must survive a malformed store / buggy adapter: one bad node is cleaned or
 // dropped ALONE, never allowed to throw and blank the viewer. Kept dependency-
 // free and side-effect-free so it is trivially unit-testable.
-import type { Edge, Node } from './types'
+import type {
+  Edge,
+  Node,
+  Scene,
+  SceneCard,
+  SceneDoor,
+  SceneLink,
+  SceneStat,
+  SceneCrumb,
+  SceneWorld,
+} from './types'
 
 // safeDecode never throws: decodeURIComponent dies on a malformed %-escape (a
 // stray '%' in a route path or symbol id), and screens call it in render — an
@@ -41,4 +51,33 @@ export function sanitizeEdge(e: any): Edge | null {
     target: String(e.target),
     relation: typeof e.relation === 'string' ? e.relation : '',
   }
+}
+
+// sanitizeScene guarantees every array field on a Scene IS an array. The server
+// now normalises this too, but the dashboard is served by whatever binary is
+// running — a store gathered by an older `serve` returned `"chips": null`, and
+// `for (const s of scene.chips)` threw and blanked a view that had seven cards
+// ready to draw. One absent field must never cost the whole screen, so the
+// client refuses to trust the wire even when the wire is correct.
+export function sanitizeScene(s: any): Scene {
+  const arr = <T,>(v: any): T[] => (Array.isArray(v) ? v : [])
+  return {
+    ...(s || {}),
+    module: String(s?.module ?? ''),
+    title: String(s?.title ?? ''),
+    total_nodes: Number(s?.total_nodes ?? 0),
+    total_edges: Number(s?.total_edges ?? 0),
+    cards: arr<SceneCard>(s?.cards),
+    links: arr<SceneLink>(s?.links),
+    world: arr<SceneWorld>(s?.world).map((w: any) => ({ ...w, sample: arr<SceneDoor>(w?.sample) })),
+    stats: arr<SceneStat>(s?.stats),
+    chips: arr<string>(s?.chips),
+    notes: arr<string>(s?.notes),
+    root: String(s?.root ?? ''),
+    // A scene with no crumbs is a level you cannot leave, so the trail back to
+    // the whole repo is synthesised rather than trusted.
+    crumbs: arr<SceneCrumb>(s?.crumbs).length
+      ? arr<SceneCrumb>(s?.crumbs)
+      : [{ label: String(s?.title ?? 'repo'), root: '' }],
+  } as Scene
 }

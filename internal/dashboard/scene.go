@@ -40,5 +40,13 @@ func (s *server) handleScene(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("tests") == "1" {
 		opt.IncludeTests = true
 	}
+	// `root` scopes the scene to one directory for drill-down. It is matched as
+	// a string prefix against directories already in the store and never reaches
+	// the filesystem, so it cannot traverse — but it is user input, so it is
+	// bounded, and a root that matches nothing yields a scene that says so
+	// rather than one that silently looks like the top level.
+	if v := r.URL.Query().Get("root"); v != "" && len(v) <= 512 {
+		opt.Root = v
+	}
 	jsonOK(w, scene.Derive(r.URL.Query().Get("module"), nodes, edges, opt))
 }

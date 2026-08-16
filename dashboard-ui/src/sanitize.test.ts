@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { safeDecode, sanitizeEdge, sanitizeNode } from './sanitize'
+import { safeDecode, sanitizeEdge, sanitizeNode, sanitizeScene } from './sanitize'
 
 // These encode the exact shapes that used to white-screen the viewer: a node
 // with no id, non-string label/kind, a stray '%' in an id. Each must now
@@ -78,5 +78,38 @@ describe('safeDecode', () => {
     expect(() => safeDecode('100%')).not.toThrow()
     expect(safeDecode('100%')).toBe('100%')
     expect(safeDecode('GET /users/%')).toBe('GET /users/%')
+  })
+})
+
+// The live black screen: a store with no `port` nodes produced no chips, the
+// server marshalled the nil slice as `null`, and the footer's `for…of` threw —
+// one absent field cost a view that had seven cards and twenty-one links.
+describe('sanitizeScene', () => {
+  it('turns every null array into an empty one', () => {
+    const s = sanitizeScene({
+      module: 'demo', title: 'demo', total_nodes: 7663, total_edges: 14887,
+      cards: [{ id: 'a' }], links: null, world: null, stats: null, chips: null, notes: null,
+    })
+    expect(s.chips).toEqual([])
+    expect(s.world).toEqual([])
+    expect(s.notes).toEqual([])
+    expect(s.links).toEqual([])
+    expect(s.stats).toEqual([])
+    expect(s.cards).toHaveLength(1)
+    // and the fields the header prints must survive
+    expect(s.total_nodes).toBe(7663)
+  })
+
+  it('never throws on a scene that is missing entirely', () => {
+    for (const bad of [null, undefined, {}, { chips: 'not-an-array' }, { world: 7 }]) {
+      const s = sanitizeScene(bad)
+      expect(Array.isArray(s.chips)).toBe(true)
+      expect(Array.isArray(s.world)).toBe(true)
+    }
+  })
+
+  it('repairs a world group whose door sample is null', () => {
+    const s = sanitizeScene({ world: [{ transport: 'network.http', total: 3, sample: null }] })
+    expect(s.world[0].sample).toEqual([])
   })
 })

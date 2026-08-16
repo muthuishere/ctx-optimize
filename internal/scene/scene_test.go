@@ -375,3 +375,250 @@ func TestDeriveEmptyGraphRefusesToPretend(t *testing.T) {
 		t.Fatalf("drew %d cards / %d links from a graph with no flow", len(s.Cards), len(s.Links))
 	}
 }
+
+// noPorts is fixture() with every `port` node and every port edge removed —
+// i.e. a real repo whose boundaries have never been run. Nothing else changes,
+// so the cards and links below are identical to the main fixture's.
+func noPorts() ([]schema.Node, []schema.Edge) {
+	nodes, edges := fixture()
+	var n2 []schema.Node
+	for _, n := range nodes {
+		if n.Kind != "port" {
+			n2 = append(n2, n)
+		}
+	}
+	var e2 []schema.Edge
+	for _, e := range edges {
+		if !strings.HasPrefix(e.Target, "port:") {
+			e2 = append(e2, e)
+		}
+	}
+	return n2, e2
+}
+
+// TestSceneNeverMarshalsNullArrays is the gate for a live black screen: a store
+// with no ports produced no chips, Go marshalled the nil slice as `null`, and
+// the client's `for (const s of scene.chips)` threw — blanking a view that had
+// seven cards and twenty-one links ready to draw. The client types every one of
+// these fields as an array, so `null` is not a value this contract has.
+//
+// Written as a blanket rule over the marshalled JSON rather than field by
+// field: the next slice added to Scene is covered without anyone remembering.
+func TestSceneNeverMarshalsNullArrays(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		build func() ([]schema.Node, []schema.Edge)
+	}{
+		{"full", fixture},
+		{"no ports", noPorts},
+		{"no flow at all", func() ([]schema.Node, []schema.Edge) {
+			return []schema.Node{{ID: "a/f.go", Label: "f.go", Kind: "file", Source: "a/f.go"}}, nil
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			nodes, edges := tc.build()
+			b, err := json.Marshal(Derive("demo", nodes, edges, Options{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal(b, &raw); err != nil {
+				t.Fatal(err)
+			}
+			for k, v := range raw {
+				if string(v) == "null" {
+					t.Errorf("scene field %q marshalled as null — the client iterates it and will throw", k)
+				}
+			}
+		})
+	}
+}
+
+// TestDeriveSaysBoundariesAreMissing — an empty outer world and an outer world
+// that was never gathered look identical on screen, and only one of them is the
+// user's business to fix.
+func TestDeriveSaysBoundariesAreMissing(t *testing.T) {
+	nodes, edges := noPorts()
+	s := Derive("demo", nodes, edges, Options{})
+	if len(s.World) != 0 {
+		t.Fatalf("fixture still has %d world groups — the port strip did not work", len(s.World))
+	}
+	found := false
+	for _, n := range s.Notes {
+		if strings.Contains(n, "no boundaries recorded") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no note explains the missing outer world; notes = %q", s.Notes)
+	}
+	// and the full fixture must NOT carry that note
+	fn, fe := fixture()
+	for _, n := range Derive("demo", fn, fe, Options{}).Notes {
+		if strings.Contains(n, "no boundaries recorded") {
+			t.Errorf("a store WITH ports claims it has none: %q", n)
+		}
+	}
+}
+
+// nested is a hand-written two-level repo. Directories are ranked at whatever
+// depth they sit, so the TOP level shows a mix of levels — src/app (which holds
+// files of its own) alongside its own children. The shape:
+//
+//	src/app ──calls──▶ src/app/web ──calls──▶ src/app/core ──calls──▶ src/app/data
+//	                        └────────calls────────▶ src/lib/util   (20, the top hub)
+//
+// so src/lib/util is the most depended-upon thing in the REPO, while src/app/data
+// is the most depended-upon thing INSIDE src/app. One scene cannot show both,
+// and that is what drilling is for.
+func nested() ([]schema.Node, []schema.Edge) {
+	dirs := []string{"src/app", "src/app/web", "src/app/core", "src/app/data", "src/lib/util"}
+	var nodes []schema.Node
+	for _, d := range dirs {
+		nodes = append(nodes, schema.Node{ID: d + "/f.go", Label: "f.go", Kind: "file", Source: d + "/f.go"})
+		nodes = append(nodes, schema.Node{
+			ID: d + "/f.go::F", Label: "F", Kind: "function", Source: d + "/f.go", Location: "L1-L2",
+		})
+	}
+	call := func(from, to string, n int) []schema.Edge {
+		var out []schema.Edge
+		for i := 0; i < n; i++ {
+			out = append(out, schema.Edge{
+				Source: from + "/f.go", Target: to + "/f.go", Relation: "calls", Confidence: schema.Inferred,
+			})
+		}
+		return out
+	}
+	var edges []schema.Edge
+	edges = append(edges, call("src/app", "src/app/web", 6)...)
+	edges = append(edges, call("src/app/web", "src/app/core", 10)...)
+	edges = append(edges, call("src/app/core", "src/app/data", 12)...)
+	edges = append(edges, call("src/app/web", "src/lib/util", 20)...)
+	return nodes, edges
+}
+
+// TestDrillRederivesRatherThanFilters is the whole claim of drill-down: inside
+// src/app the ranking, the layering and the HUB are recomputed from the edges
+// that exist there. At the top level src/app is a source (out-edges only, so it
+// can never be the hub); one level down, src/app/data — invisible from the top —
+// is the most depended-upon thing on screen. A filtered parent scene could not
+// produce that.
+func TestDrillRederivesRatherThanFilters(t *testing.T) {
+	nodes, edges := nested()
+
+	top := Derive("demo", nodes, edges, Options{})
+	hubTop := ""
+	for _, c := range top.Cards {
+		if c.Hub {
+			hubTop = c.ID
+		}
+	}
+	if hubTop != "src/lib/util" {
+		t.Fatalf("top-level hub = %q, want src/lib/util (20 in) — the fixture is not the shape the test assumes", hubTop)
+	}
+	app := cardByID(top, "src/app")
+	if app == nil {
+		t.Fatal("src/app must be a card at the top level")
+	}
+	// The affordance: src/app has three subdirectories, so it is enterable.
+	if app.Children != 3 {
+		t.Errorf("src/app: Children = %d, want 3 (web, core, data)", app.Children)
+	}
+
+	in := Derive("demo", nodes, edges, Options{Root: "src/app"})
+	if in.Empty != "" {
+		t.Fatalf("drilling into src/app reported empty: %q", in.Empty)
+	}
+	got := map[string]bool{}
+	for _, c := range in.Cards {
+		got[c.ID] = true
+	}
+	for _, want := range []string{"src/app/web", "src/app/core", "src/app/data"} {
+		if !got[want] {
+			t.Errorf("drilled scene is missing %s; cards = %v", want, got)
+		}
+	}
+	if got["src/lib/util"] || got["src/lib"] {
+		t.Errorf("drilled scene drew a directory outside the root; cards = %v", got)
+	}
+	// the edge that leaves the root must not be drawn at this level
+	for _, l := range in.Links {
+		if strings.HasPrefix(l.To, "src/lib") || strings.HasPrefix(l.From, "src/lib") {
+			t.Errorf("drilled scene drew an edge leaving the root: %+v", l)
+		}
+	}
+	// the recomputed hub
+	hub := ""
+	for _, c := range in.Cards {
+		if c.Hub {
+			hub = c.ID
+		}
+	}
+	if hub != "src/app/data" {
+		t.Errorf("hub inside src/app = %q, want src/app/data (8 in, 0 out)", hub)
+	}
+	// a leaf must not invite a click
+	if d := cardByID(in, "src/app/data"); d == nil || d.Children != 0 {
+		t.Errorf("src/app/data should be a leaf (Children 0), got %+v", d)
+	}
+}
+
+// TestDrillCrumbsAlwaysLeadOut — a level you can enter and not leave is worse
+// than no drill-down at all, so the trail is checked including on the two dead
+// ends (a real leaf, and a root that does not exist).
+func TestDrillCrumbsAlwaysLeadOut(t *testing.T) {
+	nodes, edges := nested()
+	for _, root := range []string{"", "src/app", "src/app/data", "src/nope/deeper"} {
+		s := Derive("demo", nodes, edges, Options{Root: root})
+		if len(s.Crumbs) == 0 || s.Crumbs[0].Root != "" {
+			t.Fatalf("root=%q: crumbs must start at the whole repo, got %+v", root, s.Crumbs)
+		}
+		if s.Root != root {
+			t.Errorf("root=%q: scene reports Root=%q", root, s.Root)
+		}
+		want := 1
+		if root != "" {
+			want = 1 + len(strings.Split(root, "/"))
+		}
+		if len(s.Crumbs) != want {
+			t.Errorf("root=%q: %d crumbs, want %d (%+v)", root, len(s.Crumbs), want, s.Crumbs)
+		}
+		last := s.Crumbs[len(s.Crumbs)-1]
+		if last.Root != root {
+			t.Errorf("root=%q: last crumb points at %q", root, last.Root)
+		}
+	}
+	// the two dead ends must be DIFFERENT messages: one is a typo, the other is
+	// the truth about the code.
+	leaf := Derive("demo", nodes, edges, Options{Root: "src/app/data"}).Empty
+	ghost := Derive("demo", nodes, edges, Options{Root: "src/nope"}).Empty
+	if leaf == "" || ghost == "" {
+		t.Fatalf("a dead end must say why: leaf=%q ghost=%q", leaf, ghost)
+	}
+	if leaf == ghost {
+		t.Errorf("a missing directory and a real leaf give the same message: %q", leaf)
+	}
+	if !strings.Contains(ghost, "no directory") {
+		t.Errorf("a missing root should say so, got %q", ghost)
+	}
+}
+
+// TestDrillSelfCardIsNotADoor — inside src/app there is a card for the files
+// sitting directly in src/app. It is a real subsystem and belongs on screen, but
+// clicking it would re-derive the scene already on screen, so it must not
+// advertise itself as enterable.
+func TestDrillSelfCardIsNotADoor(t *testing.T) {
+	nodes, edges := nested()
+	in := Derive("demo", nodes, edges, Options{Root: "src/app"})
+	self := cardByID(in, "src/app")
+	if self == nil {
+		t.Fatal("the root's own files must still be drawn as a card")
+	}
+	if self.Children != 0 {
+		t.Errorf("the self card offers %d children — clicking it re-enters the same scene", self.Children)
+	}
+	// but from OUTSIDE, the same directory is very much a door
+	if top := cardByID(Derive("demo", nodes, edges, Options{}), "src/app"); top == nil || top.Children == 0 {
+		t.Errorf("src/app must be enterable from the top level, got %+v", top)
+	}
+}
