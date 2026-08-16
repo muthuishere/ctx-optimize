@@ -10,7 +10,9 @@
   "GATHER by 2.5x and LOSES QUERY to CodeGraph by 7.5x at this scale. The",
   "headline 'fastest code graph' is NOT supportable on the query axis.",
   "CodeGraph's 536ms was verified to return real resolved symbols with",
-  "file:line, not an error path (the trap graphify's 0.06s fell into)."
+  "file:line, not an error path (the trap graphify's 0.06s fell into).",
+  "",
+  "2026-08-16 CORRECTION: codegraph.query_ms=536 is the single-word number and is NOT comparable. Re-measured on the fair question it is ~975ms. query_ms_fair carries it; query_ms is left as recorded so the error stays visible. Both tools were re-run on the same machine minutes apart; the README claim '4.7x faster' and 'CodeGraph 0.79s' derive from the flattered number and need re-stating."
  ],
  "machine": "Apple M5 Pro, 18 cores, 48 GB",
  "runs": "cold gather best-of-1 (single run at this scale), query median-of-3",
@@ -35,7 +37,8 @@
    "nodes": 2849719,
    "store_bytes": 2000000000,
    "path_note": "add <path> (extraction + graph + prune; wiki off by default since v0.12; no LLM)",
-   "runtime_deps": "none"
+   "runtime_deps": "none",
+   "query_ms_2026_08_16": 4110
   },
   "graphify": {
    "cold_s": 527.718,
@@ -55,8 +58,10 @@
    "store_bytes": 4400000000,
    "store_note": "4.1GB node-sqlite DB (4196.57 MB reported by its own status), WAL journal",
    "path_note": "init <path> (local node-sqlite, no embeddings/LLM)",
-   "verified": "query output manually inspected — returns resolved structs/functions/enum members with file:line. Real answers, not an error path.",
-   "runtime_deps": "none"
+   "verified": "query output manually inspected \u2014 returns resolved structs/functions/enum members with file:line. Real answers, not an error path.",
+   "runtime_deps": "none",
+   "query_ms_note": "536 was measured with a SINGLE WORD ('block') while every other tool answered the full phrase 'block device queue' \u2014 the harness bug bench_multi.py documents at its codegraph spec. RE-MEASURED 2026-08-16 against the same pinned index (4.4GB, sha 572d22bf, versions.json pinned:true), same corpus, 3 runs each, load avg 4.1: single word 0.57/0.58/0.58s reproduces 536ms; FULL PHRASE 0.97/0.98s warm (5.12s cold). ctx-optimize on the same question at the same moment: 4.76/4.19/4.11s. So the honest gap is ~4.2x, NOT 7.5x.",
+   "query_ms_fair": 975
   },
   "gitnexus": {
    "cold_s": null,
@@ -69,7 +74,7 @@
   "ripgrep": {
    "query_ms": 3022,
    "term": "block",
-   "path_note": "literal scan, no index — returns matching LINES, not resolved symbols. Different question; latency floor only."
+   "path_note": "literal scan, no index \u2014 returns matching LINES, not resolved symbols. Different question; latency floor only."
   },
   "grep": {
    "query_ms": null,
