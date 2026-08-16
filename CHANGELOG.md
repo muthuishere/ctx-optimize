@@ -51,6 +51,33 @@ embeddings, no MCP, no network except your configured remote.**
   index as current / stale / absent, because a 270x fallback that says nothing
   is how this shipped (ADR 2026-08-15-index-dies-on-a-noop-gather).
 
+- **Fixed: a boundary rule's `metadata` could invert CONSUMES/PROVIDES.** A
+  rule's `metadata` (and `flag.set`) was applied to the emitted port node AFTER
+  the engine filled the reserved fields, so `"metadata": {"direction":
+  "provides"}` on a `"direction": "consumes"` rule loaded clean and shipped its
+  port under **PROVIDES** — the headline split of the `boundaries` verb, and the
+  scope join's input, reporting the opposite of the truth. Engine-owned port
+  keys (`direction`, `transport`, `identifier`, `scope`, `resolved`, `raw`,
+  `producer`) are now **rejected at rule load**, naming the key and the rule id,
+  beside the other malformed shapes the loader already refuses. The open
+  vocabulary is untouched: namespaced metadata (`otel.*`/`pack.*`/`org.*`) and
+  the author-owned `sensitive` — which the three shipped env rules set through
+  `flag.set` — still reach the node (ADR
+  2026-08-15-authoring-loop-unenforced, D1).
+
+- **Fixed: `--help` performed the verb.** `--help` is accepted by every verb
+  (it is in the common-flag allowlist) and was then ignored by every handler, so
+  `ctx-optimize install --help` **installed** — skills for four agents, hooks,
+  and the global rule written into the user's home — and `uninstall --help`
+  removed them again; `update`, `add`, `sync`, `up`, `init` and `wiki` all did
+  their work too. Same class as the unknown flag that was silently dropped: a
+  flag that reads as a QUESTION was answered with an ACTION, and `--help` is
+  precisely the flag someone types when they are not sure they want the effect.
+  `--help`/`--h`/`-h` are now handled centrally before dispatch, for every verb,
+  and print that verb's own block sliced out of the same `help` text (so the two
+  cannot drift) plus its accepted flags — writing nothing, anywhere (ADR
+  2026-08-15-skills-on-by-default, D2).
+
 ## [0.14.0] — 2026-08-15
 
 The release the boundary lane was for. A repo's **external surface** — what it
