@@ -359,6 +359,35 @@ so the card was clickable and navigated nowhere. Both viewers now resolve the
 target through one `enterKey`, and `task e2e` clicks a real card and asserts the
 address lands on a different store.
 
+## D5 — a line has to say WHAT it is, not just how many
+
+Owner, looking at the built module grain: *"calls or calling should have
+network.http or whatever the type — colour code it, put a legend on the side,
+and the outer-world connections should be there too, I could not see the
+differences in lines."*
+
+Three defects behind one observation:
+
+- **The transport is dropped.** A port join is derived from ports that each
+  carry a transport, and the link throws it away. "BOTH CALL 12" between a ui
+  and an api is really *http hosts*; between two workers it might be *env vars*
+  or *spawned binaries*, which are not the same claim at all. One link per
+  (pair, transport), and the verb follows the transport: HTTP is CALLED, an env
+  var is READ, a binary is RUN.
+- **Every line looks the same.** Relation and transport are both encoded in
+  one grey curve. Colour carries the TRANSPORT (the same colour the outer-world
+  plate uses, so the two halves of the picture agree), and the line STYLE
+  carries the confidence of the claim: solid + arrowhead = directed, dashed +
+  no head = symmetric.
+- **The module grain has no outer world.** `DeriveRepo` never built one, so
+  the level that is supposed to show what a repo touches showed only what its
+  modules have in common. Ports aggregate across modules into the same
+  transport groups the directory grain already draws, with a link from each
+  module to each transport it opens.
+
+And a legend, because a colour code nobody is told is just decoration —
+drawn from the relations and transports actually on screen, never a fixed list.
+
 ## Kill criterion
 
 If, after D1, a real monorepo yields no `provides`→`consumes` matches, then the

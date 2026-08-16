@@ -292,16 +292,18 @@ func scanPorts(path string, rm *scene.RepoModule) bool {
 		if json.Unmarshal(line, &n) != nil || n.Kind != "port" {
 			continue
 		}
-		// The direction is the whole difference between "A calls B" and "A and
-		// B call the same third party", so it is carried, never flattened.
-		switch n.Metadata["direction"] {
-		case "provides":
-			rm.Provides = append(rm.Provides, n.ID)
-		case "consumes":
-			rm.Consumes = append(rm.Consumes, n.ID)
-		}
+		// The whole port travels. Direction is the difference between "A calls
+		// B" and "A and B call the same third party"; transport is the
+		// difference between twelve shared HTTP hosts and twelve shared
+		// env-var names, which are not the same claim.
+		rm.Ports = append(rm.Ports, scene.RepoPort{
+			ID:         n.ID,
+			Transport:  n.Metadata["transport"],
+			Direction:  n.Metadata["direction"],
+			Identifier: n.Metadata["identifier"],
+			Sensitive:  n.Metadata["sensitive"] == "true",
+		})
 	}
-	sort.Strings(rm.Provides)
-	sort.Strings(rm.Consumes)
+	sort.Slice(rm.Ports, func(i, j int) bool { return rm.Ports[i].ID < rm.Ports[j].ID })
 	return sc.Err() == nil
 }

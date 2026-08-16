@@ -3,6 +3,8 @@ package scene
 import (
 	"sort"
 	"strings"
+
+	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
 // DefaultRepoCards is how many MODULES a repo scene draws. Higher than
@@ -28,21 +30,26 @@ type RepoModule struct {
 	Publishes []string
 	Declares  []string
 
-	// Provides and Consumes are this module's `port` node ids, split by
-	// DIRECTION. Port ids are global, which is what lets them join across
-	// separately-gathered module stores — and the direction is what decides
-	// which of two very different statements the join supports:
+	// Ports are this module's boundary, whole. Port ids are global, which is
+	// what lets them join across separately-gathered module stores; the other
+	// fields are what let the join SAY something.
+	//
+	// DIRECTION decides which of two very different statements a match
+	// supports:
 	//
 	//   A consumes what B PROVIDES → A calls B. Directed, an arrow.
 	//   both CONSUME the same port  → they call the same third party. Not a
 	//                                 call between them, and never drawn as one.
 	//
-	// Collapsing the two into one "shares" was the defect: reqsume's ui and api
-	// share twelve ports and every one is consumes/consumes — OpenAI, GitHub,
-	// LinkedIn, firebase — so the line a reader took for "ui calls api" was
-	// twelve third parties they have in common.
-	Provides []string
-	Consumes []string
+	// Collapsing those was the first defect: reqsume's ui and api share twelve
+	// ports and every one is consumes/consumes — OpenAI, GitHub, LinkedIn,
+	// firebase — so the line a reader took for "ui calls api" was twelve third
+	// parties they have in common.
+	//
+	// TRANSPORT decides what KIND of claim it is. Twelve shared HTTP hosts and
+	// twelve shared env-var names are not the same fact, and a link that drops
+	// the transport cannot tell them apart.
+	Ports []RepoPort
 
 	// Code is how many code edges (imports/calls) the module holds. It is the
 	// drill affordance — a module with none has no directory-grain picture
@@ -59,6 +66,38 @@ type RepoModule struct {
 	// and loses its arrows: a module silently dropped reads as "nothing depends
 	// on it", which is a different and much worse claim.
 	Unread bool
+}
+
+// RepoPort is one boundary of one module, as the caller read it.
+type RepoPort struct {
+	ID         string
+	Transport  string
+	Direction  string // provides | consumes
+	Identifier string
+	Sensitive  bool
+}
+
+// verbFor is what one module DOES to a port of this transport. "calls" is
+// right for a network host and wrong for an env var, and a picture that says
+// "BOTH CALL DATABASE_URL" is telling the reader something untrue about how
+// the two modules are connected.
+func verbFor(transport string, mutual bool) string {
+	one, many := "TOUCHES", "BOTH TOUCH"
+	switch {
+	case strings.HasPrefix(transport, "network."):
+		one, many = "CALLS", "BOTH CALL"
+	case strings.HasPrefix(transport, "config."):
+		one, many = "READS", "BOTH READ"
+	case strings.HasPrefix(transport, "process."):
+		one, many = "RUNS", "BOTH RUN"
+	case strings.HasPrefix(transport, "storage."), strings.HasPrefix(transport, "db."),
+		strings.HasPrefix(transport, "queue."):
+		one, many = "USES", "BOTH USE"
+	}
+	if mutual {
+		return many
+	}
+	return one
 }
 
 // DeriveRepo builds the scene one level ABOVE the directory grain: the cards
@@ -127,19 +166,30 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 	// no `depends` between the two — a real dependency is the stronger and more
 	// specific statement, and both lines between one pair is noise.
 	provOf, consOf := map[string]map[string]bool{}, map[string]map[string]bool{}
-	setOf := func(ids []string) map[string]bool {
-		out := make(map[string]bool, len(ids))
-		for _, p := range ids {
-			out[p] = true
-		}
-		return out
-	}
+	transportOf := map[string]string{}
+	allPorts := map[string]RepoPort{}
 	for _, m := range mods {
-		provOf[m.Key] = setOf(m.Provides)
-		consOf[m.Key] = setOf(m.Consumes)
+		prov, cons := map[string]bool{}, map[string]bool{}
+		for _, p := range m.Ports {
+			transportOf[p.ID] = p.Transport
+			allPorts[p.ID] = p
+			switch p.Direction {
+			case "provides":
+				prov[p.ID] = true
+			case "consumes":
+				cons[p.ID] = true
+			}
+		}
+		provOf[m.Key], consOf[m.Key] = prov, cons
 	}
-	calls := map[pair][]string{}  // A consumes a port B provides
-	shares := map[pair][]string{} // both consume the same port
+	// Keyed by transport as well as by pair: twelve shared HTTP hosts and two
+	// shared env-var names between the same two modules are two different
+	// facts, and one line summing them to fourteen states neither.
+	type tpair struct {
+		from, to, transport string
+	}
+	calls := map[tpair][]string{}  // A consumes a port B provides
+	shares := map[tpair][]string{} // both consume the same port
 	keys := make([]string, 0, len(mods))
 	for _, m := range mods {
 		keys = append(keys, m.Key)
@@ -148,38 +198,38 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 	related := func(a, b string) bool {
 		return depends[pair{a, b}] > 0 || depends[pair{b, a}] > 0
 	}
+	add := func(m map[tpair][]string, from, to, id string) {
+		k := tpair{from, to, transportOf[id]}
+		m[k] = append(m[k], id)
+	}
 	for i, a := range keys {
 		for _, b := range keys[i+1:] {
 			if related(a, b) {
 				continue
 			}
-			var ab, ba, both []string
+			directed := map[string]bool{} // transports where a real call exists
 			for p := range consOf[a] {
 				if provOf[b][p] {
-					ab = append(ab, p)
-				} else if consOf[b][p] {
-					both = append(both, p)
+					add(calls, a, b, p)
+					directed[transportOf[p]] = true
 				}
 			}
 			for p := range consOf[b] {
 				if provOf[a][p] {
-					ba = append(ba, p)
+					add(calls, b, a, p)
+					directed[transportOf[p]] = true
 				}
 			}
-			sort.Strings(ab)
-			sort.Strings(ba)
-			sort.Strings(both)
-			if len(ab) > 0 {
-				calls[pair{a, b}] = ab
+			for p := range consOf[a] {
+				if consOf[b][p] && !directed[transportOf[p]] {
+					add(shares, a, b, p)
+				}
 			}
-			if len(ba) > 0 {
-				calls[pair{b, a}] = ba
-			}
-			// A directed call between the pair already says the specific thing;
-			// what they merely have in common is the weaker statement.
-			if len(both) > 0 && len(ab) == 0 && len(ba) == 0 {
-				shares[pair{a, b}] = both
-			}
+		}
+	}
+	for _, m := range []map[tpair][]string{calls, shares} {
+		for k := range m {
+			sort.Strings(m[k])
 		}
 	}
 
@@ -235,7 +285,8 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 		if !shown[p.from] || !shown[p.to] {
 			continue
 		}
-		links = append(links, Link{From: p.from, To: p.to, Relation: "calls", Label: "CALLS",
+		links = append(links, Link{From: p.from, To: p.to, Relation: "calls",
+			Label: verbFor(p.transport, false), Transport: p.transport,
 			Weight: len(ids), Detail: nameThem(ids)})
 		drawnCall++
 	}
@@ -246,7 +297,8 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 		// The label says what it IS, not a verb the reader has to guess at.
 		// "SHARES 12" between a ui and an api reads as "the ui calls the api";
 		// it is twelve third parties they both call, and the names prove it.
-		links = append(links, Link{From: p.from, To: p.to, Relation: "shares", Label: "BOTH CALL",
+		links = append(links, Link{From: p.from, To: p.to, Relation: "shares",
+			Label: verbFor(p.transport, true), Transport: p.transport,
 			Weight: len(ids), Detail: nameThem(ids)})
 		drawnShare++
 	}
@@ -259,9 +311,72 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 		}
 		return links[i].To < links[j].To
 	})
+	// ---- 5b. THE OUTER WORLD. The module grain is the level that is supposed
+	// to answer "what does this repo touch", and it was the one level with no
+	// outer world at all: it showed only what the modules had in COMMON, so a
+	// service every module calls and a service exactly one module calls were
+	// both invisible. Ports aggregate across modules into the same transport
+	// groups the directory grain draws, reusing worldGroups so the two levels
+	// cannot disagree about what a group is.
+	if len(allPorts) > 0 {
+		nodes := make(map[string]schema.Node, len(allPorts))
+		for id, p := range allPorts {
+			md := map[string]string{"transport": p.Transport, "direction": p.Direction}
+			if p.Identifier != "" {
+				md["identifier"] = p.Identifier
+			}
+			if p.Sensitive {
+				md["sensitive"] = "true"
+			}
+			nodes[id] = schema.Node{ID: id, Label: p.Identifier, Kind: "port", Metadata: md}
+		}
+		doors := opt.Doors
+		if doors <= 0 {
+			doors = DefaultDoors
+		}
+		sc.World = worldGroups(nodes, doors)
+		seen := map[string]bool{}
+		for _, w := range sc.World {
+			seen[w.Transport] = true
+		}
+		// One link per module per transport per direction — the same shape the
+		// directory grain uses, so a module that PROVIDES http and one that
+		// CONSUMES it do not collapse into one indistinguishable line.
+		type mw struct{ mod, transport, dir string }
+		wcount := map[mw]int{}
+		for _, m := range mods {
+			for _, p := range m.Ports {
+				if !seen[p.Transport] || !shown[m.Key] || p.Direction == "" {
+					continue
+				}
+				wcount[mw{m.Key, p.Transport, p.Direction}]++
+			}
+		}
+		var wl []Link
+		for k, n := range wcount {
+			wl = append(wl, Link{
+				From: k.mod, To: "world:" + k.transport, Relation: k.dir,
+				Label: strings.ToUpper(k.dir), Transport: k.transport, Weight: n,
+			})
+		}
+		sort.Slice(wl, func(i, j int) bool {
+			if wl[i].Weight != wl[j].Weight {
+				return wl[i].Weight > wl[j].Weight
+			}
+			if wl[i].From != wl[j].From {
+				return wl[i].From < wl[j].From
+			}
+			return wl[i].To < wl[j].To
+		})
+		links = append(links, wl...)
+		for _, w := range sc.World {
+			sc.Chips = append(sc.Chips, itoa(w.Total)+" "+w.Transport)
+		}
+	}
+
 	sc.Links = links
 	sc.LiftedShown = len(links)
-	sc.LiftedTotal = len(depends) + len(shares) + len(calls)
+	sc.LiftedTotal = len(depends) + len(shares) + len(calls) + len(links)
 
 	// ---- 6. layering. Only `depends` is a direction; `shares` is symmetric and
 	// laying out by it would invent a hierarchy that the evidence does not have.

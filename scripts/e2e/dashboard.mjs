@@ -379,17 +379,26 @@ async function run(page) {
       repoScene.sc.cards.every((c) => modules.some((m) => m.key === c.id)),
       repoScene.sc.cards.map((c) => c.id).slice(0, 3).join(', '))
     // `shares` is symmetric — it must never be reported as a directed call.
-    const bad = (repoScene.sc.links || []).filter(
-      (l) => !['depends', 'calls', 'shares'].includes(l.relation))
+    const between = (repoScene.sc.links || []).filter((l) => !l.to.startsWith('world:'))
+    const bad = between.filter((l) => !['depends', 'calls', 'shares'].includes(l.relation))
     check('module grain draws only relations it can defend', bad.length === 0,
       bad.map((l) => l.relation).join(',') || 'depends/calls/shares only')
     // A count is not an explanation: a line between a ui and an api that says
     // only "12" reads as "the ui calls the api" when it is twelve third
     // parties they both call. Every port-derived link has to name them.
-    const unnamed = (repoScene.sc.links || []).filter(
+    const unnamed = between.filter(
       (l) => (l.relation === 'shares' || l.relation === 'calls') && !l.detail)
     check('port-derived links name what they stand for', unnamed.length === 0,
       unnamed.length ? `${unnamed.length} unnamed` : 'all named')
+    // The module grain is the level that answers "what does this repo touch".
+    // It drew no outer world at all, so a service every module calls and one
+    // that exactly one module calls were equally invisible.
+    const worldLinks = (repoScene.sc.links || []).filter((l) => l.to.startsWith('world:'))
+    check('module grain shows the outer world', (repoScene.sc.world || []).length > 0,
+      (repoScene.sc.world || []).map((w) => `${w.total} ${w.transport}`).join(', ') || 'none')
+    check('every line carries the transport that colours it',
+      [...between, ...worldLinks].every((l) => l.relation === 'depends' || l.transport),
+      `${worldLinks.length} world links, ${between.length} between modules`)
 
     await page.blank()
     await page.goto(`#/viewer/${encodeURIComponent(repoScene.repo)}?view=flow`)

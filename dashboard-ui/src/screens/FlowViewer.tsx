@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { arrangementKey, clearArrangement, loadArrangement, saveArrangement } from '../arrangement'
 import { fetchScene } from '../sceneApi'
-import { bez, bezT, CHIP_H, layout, relationStyle, VW, type Box } from '../flowLayout'
+import { bez, bezT, CHIP_H, layout, legendFor, relationStyle, VW, type Box } from '../flowLayout'
 import type { Scene } from '../types'
 import { mix, readPalette, rgba } from '../theme'
 import type { ViewerProps } from '../viewers'
@@ -266,10 +266,13 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         const p1 = shift(c.p1, mid), p2 = shift(c.p2, mid)
         const A = T(p0.x, p0.y), B = T(p1.x, p1.y), C = T(p2.x, p2.y), D = T(p3.x, p3.y)
         const world = link.to.startsWith('world:')
-        const rs = relationStyle(link.relation)
+        const rs = relationStyle(link.relation, link.transport || '')
         const heft = 0.9 + 2.2 * Math.sqrt(link.weight / lay.maxWeight)
         ctx!.strokeStyle = rs.line
         ctx!.lineWidth = Math.max(1, S(heft))
+        // LINE STYLE carries the strength of the claim, colour carries the
+        // transport. Dashed = symmetric or leaving the system; solid = a
+        // directed statement about one module and another.
         ctx!.setLineDash(world || rs.dashed ? [S(6), S(6)] : [])
         ctx!.beginPath(); ctx!.moveTo(A.x, A.y); ctx!.bezierCurveTo(B.x, B.y, C.x, C.y, D.x, D.y); ctx!.stroke()
         ctx!.setLineDash([])
@@ -355,7 +358,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         const q = T(lx - total / 2 - pad, ly - 11)
         ctx!.fillStyle = rgba(pal.ground, .92)
         rr(q.x, q.y, S(total + pad * 2), S(15), S(3)); ctx!.fill()
-        const rs = relationStyle(link.relation)
+        const rs = relationStyle(link.relation, link.transport || '')
         text(lbl, lx - total / 2, ly, { size: 9.5, weight: 700, color: rs.label, spacing: 1.15 })
         text(cnt, lx + total / 2, ly, { size: 9.5, weight: 700, color: ACC, font: MONO, align: 'right' })
         // A count is not an explanation. "SHARES 12" between a ui and an api
@@ -824,6 +827,48 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         VW - 62, hy(202), { size: hs(12), color: ACC, align: 'right', weight: 700, spacing: 0.6 })
     }
 
+    // A colour code nobody is told is decoration. The legend is built from the
+    // marks ACTUALLY on this scene — never a fixed list — so it can neither
+    // teach a code the reader will not see nor omit one they can.
+    function drawLegend() {
+      const rows = legendFor(scene!)
+      if (rows.length === 0) return
+      const rowH = 15
+      const w = 196
+      const h = 22 + rows.length * rowH
+      const x = 62
+      // Under the header, above the cards' band. It sits in the gutter the
+      // crumbs already own, so it never lands on a card.
+      const y = Math.max(lay.headerH + 6, lay.headerH + 6)
+      if (y + h > lay.footerY) return // no room: the picture beats the key
+      const q = T(x, y)
+      ctx!.fillStyle = rgba(pal.ground, .82)
+      rr(q.x, q.y, S(w), S(h), S(8)); ctx!.fill()
+      ctx!.strokeStyle = pal.line2; ctx!.lineWidth = Math.max(1, S(1))
+      rr(q.x, q.y, S(w), S(h), S(8)); ctx!.stroke()
+      text('WHAT THE LINES MEAN', x + 10, y + 14,
+        { size: 7.5, color: pal.dim, spacing: 1.2, weight: 700 })
+      rows.forEach((r, i) => {
+        const ry = y + 22 + i * rowH + 6
+        const a = T(x + 10, ry), b = T(x + 40, ry)
+        ctx!.save()
+        ctx!.strokeStyle = r.color
+        ctx!.lineWidth = Math.max(1, S(1.6))
+        ctx!.setLineDash(r.dashed ? [S(4), S(4)] : [])
+        ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b.x, b.y); ctx!.stroke()
+        ctx!.setLineDash([])
+        if (r.arrow) {
+          ctx!.beginPath()
+          ctx!.moveTo(b.x - S(5), b.y - S(3))
+          ctx!.lineTo(b.x, b.y)
+          ctx!.lineTo(b.x - S(5), b.y + S(3))
+          ctx!.stroke()
+        }
+        ctx!.restore()
+        text(r.label, x + 46, ry + 3.5, { size: 9, color: pal.muted, max: w - 56 })
+      })
+    }
+
     function drawFooter() {
       const a = T(0, lay.footerY), b2 = T(VW, lay.footerY)
       ctx!.strokeStyle = pal.line2; ctx!.lineWidth = Math.max(1, S(1))
@@ -920,6 +965,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         if (b.kind === 'world') drawWorld(b, t)
       }
       drawHeader(t)
+      drawLegend()
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)

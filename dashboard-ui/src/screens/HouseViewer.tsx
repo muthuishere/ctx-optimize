@@ -238,7 +238,7 @@ export default function HouseViewer({ module, root, grain, onRoot, onModule }: V
         const A = T(a.x, a.y), B = T(b.x, b.y)
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
         const M = T(mid.x, mid.y)
-        const rs = relationStyle(s.link.relation)
+        const rs = relationStyle(s.link.relation, s.link.transport || '')
         ctx!.strokeStyle = rs.line
         ctx!.lineWidth = Math.max(1, S(heft))
         ctx!.beginPath()

@@ -112,7 +112,76 @@ export const RELATION_STYLE: Record<string, { line: string; flow: string; label:
   // it reads like `calls` does everywhere else rather than inventing a colour
 }
 export const RELATION_FALLBACK = { line: '#cfcabf', flow: '#4a5cd0', label: '#8a857c', dashed: false }
-export const relationStyle = (rel: string) => RELATION_STYLE[rel] || RELATION_FALLBACK
+
+// TRANSPORT PALETTE. A port-derived line and the outer-world plate it belongs
+// to are the same fact seen twice, so they are the same colour — the picture
+// used one amber for every plate and one grey for every line, which threw away
+// the one thing the store knows about a boundary that its position does not.
+//
+// Keyed by PREFIX, so a transport this build has never seen (`queue.kafka`,
+// `db.postgres`) still lands in the right family instead of falling back to
+// grey. An unknown family is grey and is meant to be: inventing a colour for
+// something we cannot name is how a legend starts lying.
+export const TRANSPORT_STYLE: Record<string, { line: string; flow: string; label: string }> = {
+  'network.': { line: '#8fb8d8', flow: '#2f6ea8', label: '#2f6ea8' },
+  'config.':  { line: '#e3c48f', flow: '#b9761a', label: '#b9761a' },
+  'process.': { line: '#c9a8d8', flow: '#7a44a8', label: '#7a44a8' },
+  'storage.': { line: '#a8cbb4', flow: '#1f8a55', label: '#1f8a55' },
+  'db.':      { line: '#a8cbb4', flow: '#1f8a55', label: '#1f8a55' },
+  'queue.':   { line: '#d8a8a8', flow: '#a83f3f', label: '#a83f3f' },
+}
+
+export function transportStyle(transport: string) {
+  for (const [prefix, st] of Object.entries(TRANSPORT_STYLE)) {
+    if (transport.startsWith(prefix)) return st
+  }
+  return RELATION_FALLBACK
+}
+
+/**
+ * The ink for one link. Transport wins when there is one, because that is the
+ * more specific fact: `calls` over HTTP and `calls` over a spawned process are
+ * both calls and are not the same thing to anyone reading the picture.
+ */
+export const relationStyle = (rel: string, transport = '') => {
+  const base = RELATION_STYLE[rel] || RELATION_FALLBACK
+  if (!transport) return base
+  const t = transportStyle(transport)
+  return { ...base, line: t.line, flow: t.flow, label: t.label }
+}
+
+/** One row of the legend: what a mark on the canvas means. */
+export interface LegendRow {
+  label: string
+  color: string
+  dashed: boolean
+  /** false for a symmetric link, which has no arrowhead to explain */
+  arrow: boolean
+}
+
+/**
+ * legendFor is built from what is ACTUALLY on screen, never a fixed list. A
+ * legend naming a relation this scene does not contain teaches the reader a
+ * code they will not see, and one that omits a mark they can see is worse.
+ */
+export function legendFor(scene: Scene): LegendRow[] {
+  const rows = new Map<string, LegendRow>()
+  for (const l of scene.links || []) {
+    const st = relationStyle(l.relation, l.transport || '')
+    const symmetric = l.relation === 'shares'
+    const world = l.to.startsWith('world:')
+    const label = l.transport
+      ? `${l.label.toLowerCase()} · ${l.transport}`
+      : l.label.toLowerCase()
+    rows.set(label, {
+      label,
+      color: st.label,
+      dashed: world || !!st.dashed || symmetric,
+      arrow: !symmetric,
+    })
+  }
+  return [...rows.values()].sort((a, b) => a.label.localeCompare(b.label))
+}
 
 // A world group is a CHIP until you ask for it. Expanded plates were taking a
 // third of the canvas to show six sampled port names — detail — while the

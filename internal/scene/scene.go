@@ -121,6 +121,12 @@ type Link struct {
 	Relation string `json:"relation"`
 	Label    string `json:"label"`
 	Weight   int    `json:"weight"`
+	// Transport is the KIND of boundary a port-derived link came through
+	// (network.http, config.env, process.exec …). It is what lets the picture
+	// colour a line by what it actually is, and it is the same value the outer
+	// world groups carry, so the two halves of the scene agree. Empty on links
+	// derived from code or manifests, which have no transport.
+	Transport string `json:"transport,omitempty"`
 	// Detail NAMES what the arrow stands for, when a count alone would leave
 	// the reader guessing. "SHARES 12" between a UI and an API reads as "the UI
 	// calls the API"; it is in fact twelve THIRD PARTIES both of them call, and

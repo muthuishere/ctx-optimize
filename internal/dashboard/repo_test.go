@@ -91,10 +91,33 @@ type repoScene struct {
 		Hub                    bool
 	} `json:"cards"`
 	Links []struct {
-		From, To, Relation string
-		Weight             int
+		From, To, Relation, Transport, Detail string
+		Weight                                int
 	} `json:"links"`
+	World []struct {
+		ID, Transport string
+		Total         int
+		Sample        []struct{ Label string }
+	} `json:"world"`
 	Notes []string `json:"notes"`
+}
+
+// between is the module-to-module half of the scene. The outer-world links
+// share the same list and are not what these checks are about.
+func (sc repoScene) between() []struct {
+	From, To, Relation, Transport, Detail string
+	Weight                                int
+} {
+	var out []struct {
+		From, To, Relation, Transport, Detail string
+		Weight                                int
+	}
+	for _, l := range sc.Links {
+		if !strings.HasPrefix(l.To, "world:") {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 func getRepoScene(t *testing.T, srv *httptest.Server, repo string) repoScene {
@@ -125,10 +148,10 @@ func TestRepoSceneDrawsTheCrossModuleDependency(t *testing.T) {
 	if len(sc.Cards) != 2 {
 		t.Fatalf("cards = %d, want 2", len(sc.Cards))
 	}
-	if len(sc.Links) != 1 {
-		t.Fatalf("links = %+v, want exactly ui -> api", sc.Links)
+	if len(sc.between()) != 1 {
+		t.Fatalf("module-to-module links = %+v, want exactly ui -> api", sc.between())
 	}
-	l := sc.Links[0]
+	l := sc.between()[0]
 	if l.From != "acme/apps/ui" || l.To != "acme/apps/api" || l.Relation != "depends" || l.Weight != 1 {
 		t.Fatalf("link = %+v, want ui -> api depends 1", l)
 	}
@@ -138,6 +161,27 @@ func TestRepoSceneDrawsTheCrossModuleDependency(t *testing.T) {
 		if l.Relation == "shares" {
 			t.Fatalf("shares drawn over a depends: %+v", l)
 		}
+	}
+	// The module grain is the level that answers "what does this repo touch",
+	// and it drew no outer world at all: a service every module calls and a
+	// service exactly one module calls were equally invisible.
+	if len(sc.World) == 0 {
+		t.Fatalf("module grain has no outer world; both modules consume api.openai.com")
+	}
+	if sc.World[0].Transport != "network.http" || sc.World[0].Total != 1 {
+		t.Fatalf("world group = %+v, want the one http port", sc.World[0])
+	}
+	reach := 0
+	for _, l := range sc.Links {
+		if strings.HasPrefix(l.To, "world:") {
+			reach++
+			if l.Transport != "network.http" {
+				t.Fatalf("world link carries no transport to colour it by: %+v", l)
+			}
+		}
+	}
+	if reach != 2 {
+		t.Fatalf("world links = %d, want one from each module that opens it", reach)
 	}
 	// react is declared by ui and published by nobody: it is an external
 	// package and must never become a module.
@@ -196,8 +240,8 @@ func TestRepoSceneIsReadOnlyAndTraversalSafe(t *testing.T) {
 // cache on the repo root alone would serve yesterday's arrows.
 func TestRepoSceneCacheNoticesOneModuleChanging(t *testing.T) {
 	srv, root := repoServer(t)
-	if n := len(getRepoScene(t, srv, "acme").Links); n != 1 {
-		t.Fatalf("links = %d, want 1", n)
+	if n := len(getRepoScene(t, srv, "acme").between()); n != 1 {
+		t.Fatalf("module-to-module links = %d, want 1", n)
 	}
 	// ui stops declaring the api package: the arrow must disappear.
 	p := filepath.Join(root, "acme", "apps", "ui", "graph", "edges.ndjson")
@@ -218,13 +262,18 @@ func TestRepoSceneCacheNoticesOneModuleChanging(t *testing.T) {
 	// modules are left sharing api.openai.com, so a `shares` link takes the
 	// vacated slot and the total stays 1. The claim is about the DEPENDS arrow.
 	after := getRepoScene(t, srv, "acme")
-	for _, l := range after.Links {
+	for _, l := range after.between() {
 		if l.Relation == "depends" {
 			t.Fatalf("depends arrow survived the declaration being removed (%+v); the cache is keyed on the wrong thing", l)
 		}
 	}
-	if len(after.Links) != 1 || after.Links[0].Relation != "shares" {
-		t.Fatalf("links = %+v, want the pair to fall back to the shares link", after.Links)
+	if len(after.between()) != 1 || after.between()[0].Relation != "shares" {
+		t.Fatalf("links = %+v, want the pair to fall back to the shares link", after.between())
+	}
+	// And the dashed link has to NAME the third party, or "1" is all the
+	// reader gets and it reads as "ui calls api".
+	if !strings.Contains(after.between()[0].Detail, "api.openai.com") {
+		t.Fatalf("shares link does not name what is shared: %+v", after.between()[0])
 	}
 }
 
@@ -276,7 +325,7 @@ func TestRepoSceneVendoredModuleNeverOwnsAPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 	sc := getRepoScene(t, srv, "acme")
-	for _, l := range sc.Links {
+	for _, l := range sc.between() {
 		if strings.Contains(l.To, "third_party") {
 			t.Fatalf("a vendored upstream copy was drawn as a module this repo depends on: %+v", l)
 		}
@@ -460,7 +509,12 @@ func TestRepoSceneScanSurvivesKeyReordering(t *testing.T) {
 	if !scanPorts(p, &rm) {
 		t.Fatal("scanPorts reported failure on a readable file")
 	}
-	if len(rm.Consumes) != 1 || rm.Consumes[0] != "port:network.http:>example.com" {
-		t.Fatalf("consumed ports = %v, want exactly the one real port", rm.Consumes)
+	if len(rm.Ports) != 1 || rm.Ports[0].ID != "port:network.http:>example.com" {
+		t.Fatalf("ports = %v, want exactly the one real port", rm.Ports)
+	}
+	// The transport and direction are what the picture draws with; a port read
+	// without them is a port that cannot say what it is.
+	if rm.Ports[0].Transport != "network.http" || rm.Ports[0].Direction != "consumes" {
+		t.Fatalf("port read without its transport/direction: %+v", rm.Ports[0])
 	}
 }

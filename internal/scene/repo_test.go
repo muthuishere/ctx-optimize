@@ -99,9 +99,11 @@ func TestDeriveRepoHubIsMostDependedUpon(t *testing.T) {
 // where a real dependency already says something stronger and more specific.
 func TestDeriveRepoSharesIsSeparateFromDepends(t *testing.T) {
 	m := mods()
-	m[0].Consumes = []string{"port:network.http:>api.openai.com"}
-	m[1].Consumes = []string{"port:network.http:>api.openai.com"}
-	m[2].Consumes = []string{"port:network.http:>api.openai.com"}
+	openai := RepoPort{ID: "port:network.http:>api.openai.com", Transport: "network.http",
+		Direction: "consumes", Identifier: "api.openai.com"}
+	m[0].Ports = []RepoPort{openai}
+	m[1].Ports = []RepoPort{openai}
+	m[2].Ports = []RepoPort{openai}
 	sc := DeriveRepo("acme", m, Options{})
 	for _, l := range sc.Links {
 		if l.Relation != "shares" {
@@ -144,10 +146,16 @@ func TestDeriveRepoSharesIsSeparateFromDepends(t *testing.T) {
 // "they both call the same third party".
 func TestDeriveRepoDirectedCallBeatsSharedThirdParty(t *testing.T) {
 	m := mods()
-	m[1].Provides = []string{"port:network.http:>/v1/resume"}                  // api provides
-	m[2].Consumes = []string{"port:network.http:>/v1/resume"}                  // worker calls it
-	m[0].Consumes = []string{"port:network.http:>api.openai.com"}              // ui and
-	m[2].Consumes = append(m[2].Consumes, "port:network.http:>api.openai.com") // worker share a third party
+	route := "port:network.http:>/v1/resume"
+	openai := "port:network.http:>api.openai.com"
+	// api PROVIDES the route; worker CONSUMES it — that is a call between them.
+	m[1].Ports = []RepoPort{{ID: route, Transport: "network.http", Direction: "provides", Identifier: "/v1/resume"}}
+	m[2].Ports = []RepoPort{
+		{ID: route, Transport: "network.http", Direction: "consumes", Identifier: "/v1/resume"},
+		{ID: openai, Transport: "network.http", Direction: "consumes", Identifier: "api.openai.com"},
+	}
+	// ui and worker merely CONSUME the same third party.
+	m[0].Ports = []RepoPort{{ID: openai, Transport: "network.http", Direction: "consumes", Identifier: "api.openai.com"}}
 	sc := DeriveRepo("acme", m, Options{})
 
 	l, ok := repoLink(sc, "acme/apps/worker", "acme/apps/api")

@@ -196,6 +196,8 @@ export interface SceneLink {
   weight: number
   /** names what the arrow stands for, where a count alone would mislead */
   detail?: string
+  /** the KIND of boundary a port-derived link came through; colours the line */
+  transport?: string
 }
 
 export interface SceneDoor {
