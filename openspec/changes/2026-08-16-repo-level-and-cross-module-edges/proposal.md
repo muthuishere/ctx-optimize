@@ -91,9 +91,49 @@ unique name: **INFERRED**, never EXTRACTED. Two modules that both mention
 `/health` are the AMBIGUOUS case the existing rules already know how to handle —
 capped, excluded from traversals by default, surfaced on demand.
 
+### It is a per-transport RULE GAP, not a missing capability
+
+`websocket-js` (network.ws consumes) already records the whole path template:
+
+```
+identifier  /api/recon/${projectid}/partial/${runid}/logs
+raw         /api/recon/${projectId}/partial/${runId}/logs
+resolved    dynamic
+```
+
+`http-url-literal` (network.http consumes) records only `otel.server.address`.
+Both are shipped rules, both INFERRED, both matching the same file extensions.
+So the machinery to keep a path template, mark it dynamic and preserve the raw
+form EXISTS and is proven in the field — it is simply not applied to HTTP.
+
+### The corpus cannot prove generality, and says so
+
+Across all 875 stores, only THREE repos are multi-module AND have a module that
+provides HTTP routes:
+
+```
+repo             mods  provider-mods  routes  consumer-mods  consumed  path-valued
+reqsume             7              1     176              5        65            0
+redamon-master      5              3     154              4       477            7
+toolnexus          13              1       1             11        46            0
+```
+
+That is not evidence of a rare pattern — it is evidence of a skewed corpus.
+These stores are mostly open-source clones (linux, cpython, tabby), which are
+single products, not API+UI monorepos. reqsume and redamon are the shape this
+ADR is about and they are n=2. So the design must not be tuned to either:
+the rule ships as a DEFAULT and the criterion is measured per repo and printed,
+never baked in here.
+
 ## Proposal
 
-**D1 — the consumer side keeps the path.** OTel already names both halves:
+**D1 — `http-url-literal` keeps the path, the way `websocket-js` already does.**
+Same field names (`raw`, `resolved: dynamic`), same tier, same rule file. This
+is the default and it ships for every repo without configuration, because the
+pattern it captures — a base URL composed with a literal path — is what a
+monorepo client looks like everywhere, not just here.
+
+OTel already names both halves:
 `server.address` AND `url.path` / `url.template`. Recording the path turns
 `ui consumes api.reqsume.com/admin/ai-models` and
 `api provides /admin/ai-models` into a match, with a weight (how many of the
@@ -104,6 +144,19 @@ The literal must be captured where it is WRITTEN, not only where it is
 requested: 111 of these live in a route table, one hop from the call. That is
 the same shape the boundary rules already handle for env-var names, so it is an
 extension of an existing mechanism rather than a new one.
+
+**D1b — matching normalises the template on BOTH sides.** A consumer writes
+`/api/recon/${projectId}/logs`; a provider registers `/api/recon/:projectId/logs`
+or `/api/recon/*`. Every interpolated or named segment collapses to one wildcard
+before comparison, on both sides, or the two halves never meet even once the
+path is recorded.
+
+**D1c — per-repo rules are the configuration surface, and already exist.**
+A repo whose client is a custom wrapper (`api.get('/x')` on a generated SDK)
+adds a rule to `.ctxoptimize/` — the same door adapters and boundary rules
+already use. Nothing new to design: the default covers the common shape, the
+rule file covers the rest, and `boundaries verify` holds any added rule to its
+own recorded ground truth exactly as it holds the shipped ones.
 
 **D2 — the provider side keeps its host when the code states one.** A route
 registered under a declared base URL should carry it. Where the code does not
