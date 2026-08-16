@@ -128,6 +128,7 @@ func NewHandler(root string, ops *Ops) http.Handler {
 	})
 	mux.HandleFunc("/api/graph", s.handleGraph)
 	mux.HandleFunc("/api/scene", s.handleScene)
+	mux.HandleFunc("/api/repo/scene", s.handleRepoScene)
 	mux.HandleFunc("/api/query", s.handleQuery)
 	mux.HandleFunc("/api/usage", s.handleUsage)
 	mux.HandleFunc("/api/stores", s.handleStores)

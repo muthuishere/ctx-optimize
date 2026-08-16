@@ -107,8 +107,24 @@ export default function ViewerShell({ initialModule: rawArg }: { initialModule: 
   }, [mods])
 
   // a module's short name inside its repo: `reqsume/apps/api` reads as `apps/api`
-  const shortName = (m: Module) =>
-    m.key === m.root || !m.root ? m.key : m.key.slice(m.root.length + 1)
+  const shortName = (key: string, root: string) =>
+    key === root || !root ? key : key.slice(root.length + 1)
+
+  // Which repo the current address belongs to. The select's value has to be a
+  // REPO even when the address names one of its modules, or picking a store
+  // after drilling into a module shows an empty select.
+  const repoOf = (key: string) => {
+    const hit = mods.find((m) => m.key === key)
+    if (hit) return hit.root || hit.key
+    const i = key.indexOf('/')
+    return i > 0 ? key.slice(0, i) : key
+  }
+  const currentRepo = addr.module ? repoOf(addr.module) : ''
+  const inModule = !!addr.module && addr.module !== currentRepo
+  const repoModules = useMemo(
+    () => (groups.find((g) => g.root === currentRepo)?.list || []).filter((m) => m.key !== currentRepo),
+    [groups, currentRepo],
+  )
 
   const def = viewerById(addr.view)
   const Body = def.Component
@@ -117,26 +133,42 @@ export default function ViewerShell({ initialModule: rawArg }: { initialModule: 
     <div className="viewer-shell">
       <div className="vs-bar">
         <label className="vs-field">
-          <span className="vs-lab">store</span>
-          {/* Changing the store clears the drill: a directory from one repo
-              names nothing in another, and carrying it over lands you on an
-              "no directory ..." dead end that looks like a bug. */}
-          <select value={addr.module} onChange={(e) => go({ module: e.target.value, root: '', grain: '' })}>
+          <span className="vs-lab">repo</span>
+          {/* The list is REPOS, not modules (ADR 22 D3). A monorepo's forty
+              packages listed beside genuinely separate products made the
+              chooser the place you got lost; the repo is the product, and its
+              modules are cards on the scene you land on. Changing it clears the
+              drill: a directory from one repo names nothing in another. */}
+          <select value={currentRepo} onChange={(e) => go({ module: e.target.value, root: '', grain: '' })}>
             {groups.map((g) => (
-              g.list.length === 1
-                ? <option key={g.root} value={g.list[0].key}>
-                    {g.root} ({g.list[0].nodes.toLocaleString()})
-                  </option>
-                : <optgroup key={g.root} label={g.root}>
-                    {g.list.map((m) => (
-                      <option key={m.key} value={m.key}>
-                        {m.key === g.root ? '(repo root)' : shortName(m)} ({m.nodes.toLocaleString()})
-                      </option>
-                    ))}
-                  </optgroup>
+              <option key={g.root} value={g.root}>
+                {g.root}
+                {g.list.length > 1 ? ` · ${g.list.length} modules` : ''}
+                {' '}({g.list.reduce((n, m) => n + m.nodes, 0).toLocaleString()})
+              </option>
             ))}
           </select>
         </label>
+        {/* The repo scene draws its top modules and says so, which leaves the
+            rest with no way in once the store list stopped naming them. This is
+            that way in: every module of the current repo, always. Reachability
+            is not something a ranked sample gets to decide. */}
+        {repoModules.length > 1 && (
+          <label className="vs-field">
+            <span className="vs-lab">module</span>
+            <select
+              value={inModule ? addr.module : currentRepo}
+              onChange={(e) => go({ module: e.target.value, root: '', grain: '' })}
+            >
+              <option value={currentRepo}>← all {repoModules.length} modules</option>
+              {repoModules.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {shortName(m.key, currentRepo)} ({m.nodes.toLocaleString()})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="vs-field">
           <span className="vs-lab">view</span>
           {/* The drill SURVIVES a view switch: the level is a fact about the
@@ -160,6 +192,7 @@ export default function ViewerShell({ initialModule: rawArg }: { initialModule: 
           root={addr.root}
           grain={addr.grain}
           onRoot={(r: string, grain = '') => go({ root: r, grain })}
+          onModule={(key: string) => go({ module: key, root: '', grain: '' })}
           params={addr.params}
         />
       )}

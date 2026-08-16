@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
 import { relationStyle } from '../flowLayout'
 import { houseLayout, HVH, HVW, type House, type Room } from '../houseLayout'
-import { sanitizeScene } from '../sanitize'
+import { fetchScene } from '../sceneApi'
 import type { Scene } from '../types'
 import { mix, readPalette, rgba } from '../theme'
 import type { ViewerProps } from '../viewers'
@@ -24,7 +23,7 @@ import type { ViewerProps } from '../viewers'
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
 
-export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps) {
+export default function HouseViewer({ module, root, grain, onRoot, onModule }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
   const [err, setErr] = useState('')
   const wrap = useRef<HTMLDivElement | null>(null)
@@ -33,11 +32,8 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
   useEffect(() => {
     setScene(null)
     setErr('')
-    const q = new URLSearchParams({ module })
-    if (root) q.set('root', root)
-    if (grain) q.set('grain', grain)
-    api<Scene>(`/api/scene?${q}`)
-      .then((s) => setScene(sanitizeScene(s)))
+    fetchScene(module, root, grain)
+      .then((s) => setScene(s))
       .catch((e) => setErr(String(e.message || e)))
   }, [module, root, grain])
 
@@ -108,7 +104,10 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
     const onUp = (e: PointerEvent) => {
       const v = toVirtual(e)
       const i = hitAt(v.x, v.y)
-      if (i >= 0 && hits[i].kind !== 'reset') onRoot(hits[i].root, hits[i].grain || '')
+      if (i < 0 || hits[i].kind === 'reset') return
+      // At module grain a card names a STORE, not a directory of this one.
+      if (scene.level === 'module') { onModule(hits[i].root); return }
+      onRoot(hits[i].root, hits[i].grain || '')
     }
     const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
     canvas.addEventListener('pointermove', onMove)
@@ -278,7 +277,7 @@ export default function HouseViewer({ module, root, grain, onRoot }: ViewerProps
       if (pillar) {
         text('LOAD-BEARING', r.x + pad + 26, r.y + 22, { size: 8, color: ACC, spacing: 1.2, weight: 700 })
       }
-      const titleOn = titleLink(c.label, r.x + pad, r.y + 44, 15, r.w - pad * 2, c.dir, c.children > 0 && c.inner > 0, c.enter_grain)
+      const titleOn = titleLink(c.label, r.x + pad, r.y + 44, 15, r.w - pad * 2, (scene!.level === 'module' ? c.id : c.dir), c.children > 0 && c.inner > 0, c.enter_grain)
       if (r.h > 74) {
         text(`${c.files} files · ${c.decls} decls`, r.x + pad, r.y + 64,
           { size: 10, color: MUTED, font: MONO, max: r.w - pad * 2 })

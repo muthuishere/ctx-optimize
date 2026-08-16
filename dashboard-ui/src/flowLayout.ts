@@ -78,13 +78,19 @@ const HUB_R = 100
 // structure, `provides`/`consumes` leave the system entirely. They were all the
 // same grey with the same blue dots, which threw away the one thing the store
 // knows about an edge that its thickness does not say.
-export const RELATION_STYLE: Record<string, { line: string; flow: string; label: string }> = {
+export const RELATION_STYLE: Record<string, { line: string; flow: string; label: string; dashed?: boolean }> = {
   calls:    { line: '#b9a9d8', flow: '#6d4ec4', label: '#6d4ec4' },
   imports:  { line: '#c9cec2', flow: '#7f8c74', label: '#7f8c74' },
   provides: { line: '#a8cbb4', flow: '#1f8a55', label: '#1f8a55' },
   consumes: { line: '#e3c48f', flow: '#b9761a', label: '#b9761a' },
+  // Module grain (ADR 22). `depends` is the strongest edge in the store — two
+  // manifests, both EXTRACTED — so it gets the strongest ink. `shares` means
+  // "both call the same external service" and is NOT a call between them; it
+  // is drawn dashed and pale so it can never be misread as one.
+  depends:  { line: '#9db4d8', flow: '#2f5fa8', label: '#2f5fa8' },
+  shares:   { line: '#d8cfc2', flow: '#9a8f7e', label: '#9a8f7e', dashed: true },
 }
-export const RELATION_FALLBACK = { line: '#cfcabf', flow: '#4a5cd0', label: '#8a857c' }
+export const RELATION_FALLBACK = { line: '#cfcabf', flow: '#4a5cd0', label: '#8a857c', dashed: false }
 export const relationStyle = (rel: string) => RELATION_STYLE[rel] || RELATION_FALLBACK
 
 // A world group is a CHIP until you ask for it. Expanded plates were taking a

@@ -1,6 +1,6 @@
 # ADR 22 — The repo is the unit: a module-grain level, and the edge that joins modules
 
-Status: DRAFT — owner sign-off required before any code
+Status: ACCEPTED — D0, D3 and D4 shipped. D1/D1b/D1c and D2 still open.
 Date: 2026-08-16
 
 ## The ask
@@ -182,6 +182,22 @@ to the sibling that publishes it, with no inference at all.
 D0 also has to mark vendored trees, or `third_party/` copies of upstream
 packages read as intra-product links.
 
+> **D0 SHIPPED** (81d5e36). npm `name`, go.mod `module`, Cargo `[package] name`
+> and pyproject/poetry `name` now emit a `publishes` edge to the SAME global
+> `dep:<ns>/<name>` node a consumer's `declares` edge already targets, at
+> EXTRACTED confidence, with `vendored: true` where the manifest sits under a
+> vendored path. Verified end-to-end on a real gather: `ui declares
+> dep:npm/@acme/api` meets `api publishes dep:npm/@acme/api`. Re-running the
+> spike against the shipped edges reproduces the same 2,168 / 513 / 0 / 0 / 0,
+> which is the point — D0 moved the evidence from "read the manifest off disk"
+> into the store without moving the number.
+>
+> Two follow-ons D0 forced, both proven necessary by a test written red first:
+> a module importing its OWN package must not resolve to a dependency node
+> (deplink now excludes what a module publishes); and `vendor/`+`node_modules/`
+> are PRUNED by the walker while `third_party/`+`external/` are walked, so the
+> flag matters only for the latter — both behaviours are now pinned.
+
 **D1 — `http-url-literal` keeps the path, the way `websocket-js` already does.**
 Same field names (`raw`, `resolved: dynamic`), same tier, same rule file. This
 is the default and it ships for every repo without configuration, because the
@@ -227,6 +243,37 @@ scene. It is the same drill as ADR 21 with one more level on top, and it is the
 level the reader actually starts from. No "(repo root)" entry: the residual
 store becomes a card like any other.
 
+### How D4 is built — the design D0 made cheap
+
+A fourth `Level`, above `LevelDir`: `LevelModule`. Everything downstream of
+`owner` is unchanged, exactly as ADR 21's file and decl grains were — only the
+grain of the unit moves, from a directory to a module store.
+
+- **The cards** come from `modules.json`, which every multi-module repo already
+  has: name, path, store key, node and edge counts. No graph read for the
+  card itself.
+- **The arrows** need one pass over each module's `edges.ndjson` to collect the
+  `dep:` ids it declares and publishes, and over `nodes.ndjson` for its `port`
+  ids. A module A → B arrow exists when A declares an id B publishes. That is a
+  join on two DECLARATIONS: EXTRACTED on both ends, no inference, no heuristic.
+- **`shares` stays dashed and separately named** — it is "both call the same
+  external service", never a call.
+- **Clicking a card enters that module's own store**, which is the existing
+  directory-grain scene under a different `module=` key. The drill is one more
+  level on top rather than a second mechanism.
+
+**Cost, measured, on the worst case in the corpus.** the-factory is 228 modules
+and 321 MB of graph. The estimate here was 1.8s, from a single-threaded `grep`;
+the built version reads it in **0.147s** cold and 4.8ms warm, because the reject
+filter never parses the ~95% of lines that are neither a manifest declaration
+nor a port. mastra-main (241 modules) is 43ms. The cache key is every module
+store's size+mtime, not the root's, and a test removes one declaration from one
+module and requires the arrow to disappear.
+
+A module store whose graph cannot be read contributes a card with no arrows and
+says so in Notes. It is never dropped, because a silently missing module reads
+as "nothing depends on it".
+
 ## What each edge at module grain would MEAN
 
 Only relations that can be defended get drawn, each labelled distinctly:
@@ -239,6 +286,53 @@ Only relations that can be defended get drawn, each labelled distinctly:
 | `shares` | both modules touch the same external port | today, 6 pairs on reqsume |
 
 `shares` is drawn dashed and named, never as an arrow of causation.
+
+### D3/D4 SHIPPED — what the built level actually draws
+
+Measured against the local store, on repos re-gathered so their `publishes`
+edges exist:
+
+```
+repo             modules  depends  shares   cold     warm
+agentic-nexus         13        1       0    2.0ms   0.6ms
+crypto-desk           11        1      11    3.1ms
+tabby-master          16       29       3    2.8ms
+reqsume                6        0       6   10.8ms   0.5ms
+the-factory          228        0       0  147.0ms   4.8ms
+```
+
+The numbers reproduce the spike exactly where the spike had a number: tabby's
+29 links and crypto-desk's 1 are the same 29 and 1 `monorepo-links.py` counted
+from the manifests on disk. reqsume draws the 6 `shares` pairs this ADR
+measured by hand (12/4/3/2/2/1) and no `depends`, which is the honest answer —
+its modules are joined by HTTP, and that is D1's job, not D4's.
+
+the-factory and mastra draw nothing yet and say why on screen: their stores
+predate D0, so no module publishes a name and nothing can point at one.
+
+Three decisions the implementation forced, none of them in the draft above:
+
+- **A package published by two modules is dropped, not guessed.** It means a
+  broken manifest or two copies of one package; picking an owner would draw a
+  confident arrow from no evidence. Counted and printed.
+- **A vendored manifest never becomes the repo-wide owner of its package.**
+  Otherwise every real consumer of `github.com/elazarl/goproxy` draws an arrow
+  into `third_party/goproxywss` — the exact four links this ADR discounted in
+  agent-proxy.
+- **`shares` gets no arrowhead.** It is symmetric; which end is "from" is an
+  artefact of sort order, and a head would turn a coincidence into a call.
+
+**D3 came with a reachability bug of its own making.** Listing repos instead of
+modules stranded every module outside the drawn top-12 — the scene samples, and
+the chooser had been the way to the rest. The shell now carries a second select
+listing every module of the current repo. A ranked sample does not get to decide
+what is reachable.
+
+**The browser suite caught what no unit test could.** A module card sent its
+`dir` (`apps/ui`) where the click needed its store key (`agentic-nexus/web`),
+so the card was clickable and navigated nowhere. Both viewers now resolve the
+target through one `enterKey`, and `task e2e` clicks a real card and asserts the
+address lands on a different store.
 
 ## Kill criterion
 

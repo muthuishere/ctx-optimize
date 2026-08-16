@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
-import { sanitizeScene } from '../sanitize'
+import { fetchScene } from '../sceneApi'
 import { bez, bezT, CHIP_H, layout, relationStyle, VW, type Box } from '../flowLayout'
 import type { Scene } from '../types'
 import { mix, readPalette, rgba } from '../theme'
@@ -27,7 +26,7 @@ const ZERO = { dx: 0, dy: 0 }
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
 
-export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps) {
+export default function FlowViewer({ module, root, grain, onRoot, onModule }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
   const [err, setErr] = useState('')
   const wrap = useRef<HTMLDivElement | null>(null)
@@ -36,11 +35,8 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
   useEffect(() => {
     setScene(null)
     setErr('')
-    const q = new URLSearchParams({ module })
-    if (root) q.set('root', root)
-    if (grain) q.set('grain', grain)
-    api<Scene>(`/api/scene?${q}`)
-      .then((s) => setScene(sanitizeScene(s)))
+    fetchScene(module, root, grain)
+      .then((s) => setScene(s))
       .catch((e) => setErr(String(e.message || e)))
   }, [module, root, grain])
 
@@ -183,6 +179,8 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         relayout()
         return
       }
+      // At module grain a card names a STORE, not a directory of this one.
+      if (scene.level === 'module') { onModule(hits[i].root); return }
       onRoot(hits[i].root, hits[i].grain || '')
     }
     const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
@@ -244,16 +242,23 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
         const heft = 0.9 + 2.2 * Math.sqrt(link.weight / lay.maxWeight)
         ctx!.strokeStyle = rs.line
         ctx!.lineWidth = Math.max(1, S(heft))
-        ctx!.setLineDash(world ? [S(6), S(6)] : [])
+        ctx!.setLineDash(world || rs.dashed ? [S(6), S(6)] : [])
         ctx!.beginPath(); ctx!.moveTo(A.x, A.y); ctx!.bezierCurveTo(B.x, B.y, C.x, C.y, D.x, D.y); ctx!.stroke()
         ctx!.setLineDash([])
 
-        const tg = bezT(p0, p1, p2, p3, 1)
-        const ang = Math.atan2(tg.y, tg.x)
-        ctx!.save(); ctx!.translate(D.x, D.y); ctx!.rotate(ang)
-        ctx!.strokeStyle = rs.flow; ctx!.lineWidth = Math.max(1, S(1.5))
-        ctx!.beginPath(); ctx!.moveTo(-S(10), -S(5.5)); ctx!.lineTo(0, 0); ctx!.lineTo(-S(10), S(5.5)); ctx!.stroke()
-        ctx!.restore()
+        // An arrowhead is a claim of DIRECTION. `shares` has none — it says two
+        // modules touch the same external service, and which of them is "from"
+        // is an artefact of sort order. Drawing a head there would turn a
+        // coincidence into a call, which is exactly what the world view was
+        // killed for.
+        if (link.relation !== 'shares') {
+          const tg = bezT(p0, p1, p2, p3, 1)
+          const ang = Math.atan2(tg.y, tg.x)
+          ctx!.save(); ctx!.translate(D.x, D.y); ctx!.rotate(ang)
+          ctx!.strokeStyle = rs.flow; ctx!.lineWidth = Math.max(1, S(1.5))
+          ctx!.beginPath(); ctx!.moveTo(-S(10), -S(5.5)); ctx!.lineTo(0, 0); ctx!.lineTo(-S(10), S(5.5)); ctx!.stroke()
+          ctx!.restore()
+        }
 
         // travelling dots: count scales with weight, motion honours the OS flag
         const dots = Math.min(4, 1 + Math.round((link.weight / lay.maxWeight) * 3))
@@ -339,6 +344,14 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
     //
     // Only the TEXT is registered, not the card: the rest of the card body has
     // to stay free for dragging the shape.
+    // What a click on this card OPENS. At directory grain that is the card's
+    // directory; at module grain the card is a different STORE and its key is
+    // the id, not the path shown underneath. Sending `dir` there navigated to
+    // "apps/ui" — a store that does not exist — and the drill silently did
+    // nothing, which the browser suite caught and no unit test could.
+    const enterKey = (c: { id: string; dir: string }) =>
+      scene!.level === 'module' ? c.id : c.dir
+
     function titleLink(
       label: string, x: number, baseY: number, size: number, maxW: number,
       root: string, enterable: boolean, align: CanvasTextAlign = 'left', grain = '',
@@ -381,7 +394,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       // other is not a door — offering one promises a screen whose only
       // content is "nothing to draw".
       if (!b.card || b.card.children <= 0 || b.card.inner <= 0) return false
-      hits.push({ x, y, w, h, root: b.card.dir, kind: 'card', grain: b.card.enter_grain })
+      hits.push({ x, y, w, h, root: enterKey(b.card), kind: 'card', grain: b.card.enter_grain })
       return hover === hits.length - 1
     }
 
@@ -436,7 +449,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       text(b.n, b.x + 18, b.y + (tight ? b.h / 2 + 5 : 36),
         { size: tight ? 13 : 19, weight: 300, color: pal.dim, font: MONO })
       if (tight) {
-        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, c.dir, c.children > 0 && c.inner > 0, 'left', c.enter_grain)
+        const on2 = titleLink(c.label, b.x + 46, b.y + b.h / 2 + 5, 14, b.w - 62, enterKey(c), c.children > 0 && c.inner > 0, 'left', c.enter_grain)
         if (c.children > 0) drawEnter(b.x + b.w - 10, b.y + 6, c.children, on || on2, 'right')
         return
       }
@@ -446,7 +459,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       rr(ip.x, ip.y, S(26), S(26), S(7)); ctx!.stroke()
       text(c.glyph, b.x + 31, b.y + 66, { size: 13, color: pal.muted, align: 'center', font: MONO })
 
-      const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, c.dir, c.children > 0 && c.inner > 0, 'left', c.enter_grain)
+      const titleOn = titleLink(c.label, b.x + 54, b.y + 67, 16, b.w - 70, enterKey(c), c.children > 0 && c.inner > 0, 'left', c.enter_grain)
       // A short card drops its lower lines rather than drawing them over each
       // other: cardH shrinks to fit a full column, and the fixed offsets that
       // were fine at 118 units are not at 74.
@@ -525,7 +538,7 @@ export default function FlowViewer({ module, root, grain, onRoot }: ViewerProps)
       text('MOST DEPENDED ON', b.x, b.y - (roomy ? 46 : 34),
         { size: 8.5, color: MUTED, align: 'center', spacing: 1.3, weight: 700 })
       const titleOn = titleLink(c.label, b.x, b.y - (roomy ? 20 : 12),
-        roomy ? 19 : 15, b.r * 1.7, c.dir, c.children > 0 && c.inner > 0, 'center', c.enter_grain)
+        roomy ? 19 : 15, b.r * 1.7, enterKey(c), c.children > 0 && c.inner > 0, 'center', c.enter_grain)
       if (!tight) {
         text(c.dir, b.x, b.y + (roomy ? -2 : 4),
           { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.75 })
