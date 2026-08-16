@@ -45,7 +45,7 @@
         "confirmed": 10,
         "precision": 1.0,
         "known_misses": [
-          "os.Getenv(varName) \u2014 name is a variable (k8s: 31 sites)",
+          "os.Getenv(varName) — name is a variable (k8s: 31 sites)",
           "lowercase or 1-char names excluded by the [A-Z][A-Z0-9_]+ shape"
         ]
       },
@@ -115,7 +115,7 @@
         "confirmed": 8,
         "precision": 1.0,
         "known_misses": [
-          "process.env[varName] \u2014 key is a variable",
+          "process.env[varName] — key is a variable",
           "lowercase names (npm_config_*)"
         ]
       },
@@ -195,7 +195,7 @@
         "confirmed": 10,
         "precision": 1.0,
         "known_misses": [
-          "os.environ[key] \u2014 key is a variable",
+          "os.environ[key] — key is a variable",
           "bare os.environ passed or copied whole (no key at the site)"
         ]
       },
@@ -288,7 +288,7 @@
         "confirmed": 10,
         "precision": 1.0,
         "known_misses": [
-          "template hosts \u2014 f\"https://{host}\", %s, ${} (the AMBIGUOUS lane needs the literal to match first)",
+          "template hosts — f\"https://{host}\", %s, ${} (the AMBIGUOUS lane needs the literal to match first)",
           "URLs assembled by concatenation",
           "bare scheme strings (\"https://\")"
         ]
@@ -355,9 +355,9 @@
         "confirmed": 0,
         "precision": null,
         "known_misses": [
-          "URLs inside a LARGER literal (HTML/template fixtures) \u2014 the pattern scans raw bytes so it finds them; the AST lane deliberately does not",
-          "template hosts, concatenation \u2014 same as http-url-literal",
-          "precision NOT independently sampled here \u2014 pattern is http-url-literal's verbatim (sampled 10/10 there)"
+          "URLs inside a LARGER literal (HTML/template fixtures) — the pattern scans raw bytes so it finds them; the AST lane deliberately does not",
+          "template hosts, concatenation — same as http-url-literal",
+          "precision NOT independently sampled here — pattern is http-url-literal's verbatim (sampled 10/10 there)"
         ]
       }
     },
@@ -398,7 +398,7 @@
         "confirmed": 10,
         "precision": 1.0,
         "known_misses": [
-          "exec.Command(binVar, args...) \u2014 binary is a variable (k8s: 73, self: 15); statically unknowable, no widening recovers it without misfiring on argument literals"
+          "exec.Command(binVar, args...) — binary is a variable (k8s: 73, self: 15); statically unknowable, no widening recovers it without misfiring on argument literals"
         ]
       },
       "ast": [
@@ -439,7 +439,7 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search 'child_process\\.(spawn|exec|execFile|execSync)\\(' --ext .ts,.js,.mjs,.cjs --count  # corpora: ts-typescript, ts-hono \u2014 ZERO sites",
+          "cmd": "search 'child_process\\.(spawn|exec|execFile|execSync)\\(' --ext .ts,.js,.mjs,.cjs --count  # corpora: ts-typescript, ts-hono — ZERO sites",
           "re": "child_process\\.(spawn|exec|execFile|execSync)\\(",
           "ext": [
             ".ts",
@@ -457,8 +457,8 @@
         "sampled": 0,
         "confirmed": 0,
         "known_misses": [
-          "no corpus sites available \u2014 tier set by family evidence (process-go 0.65, process-py 0.00), not measurement",
-          "destructured `spawn(` via import {spawn} \u2014 receiver-less form unmatched"
+          "no corpus sites available — tier set by family evidence (process-go 0.65, process-py 0.00), not measurement",
+          "destructured `spawn(` via import {spawn} — receiver-less form unmatched"
         ]
       },
       "ast": [
@@ -530,7 +530,7 @@
         "sampled": 0,
         "confirmed": 0,
         "known_misses": [
-          "subprocess.run(argsVar) \u2014 argv is a variable at every django site; the literal-list form this rule reads did not occur once"
+          "subprocess.run(argsVar) — argv is a variable at every django site; the literal-list form this rule reads did not occur once"
         ]
       },
       "ast": [
@@ -594,7 +594,7 @@
         "at": "2026-08-14",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(' --ext .cs --count  # corpora: csharp-efcore, csharp-newtonsoft \u2014 ZERO sites",
+          "cmd": "search '\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(' --ext .cs --count  # corpora: csharp-efcore, csharp-newtonsoft — ZERO sites",
           "re": "\\[Http(Get|Post|Put|Delete|Patch)\\(|\\.Map(Get|Post|Put|Delete|Patch)\\(",
           "ext": [
             ".cs"
@@ -609,7 +609,7 @@
         "sampled": 0,
         "confirmed": 0,
         "known_misses": [
-          "no corpus sites available \u2014 fixture-verified only; needs an aspnet corpus"
+          "no corpus sites available — fixture-verified only; needs an aspnet corpus"
         ]
       },
       "ast": [
@@ -821,7 +821,7 @@
         "confirmed": 3,
         "precision": 1.0,
         "known_misses": [
-          "measured 1.00/1.00 but tier CAPPED at INFERRED per D3: regex without AST never claims EXTRACTED \u2014 the AST recognizers own route truth"
+          "measured 1.00/1.00 but tier CAPPED at INFERRED per D3: regex without AST never claims EXTRACTED — the AST recognizers own route truth"
         ]
       },
       "ast": [
@@ -938,9 +938,9 @@
         "confirmed": 9,
         "precision": 0.9,
         "known_misses": [
-          "@RequestMapping(path=\u2026/name=\u2026) attribute forms",
+          "@RequestMapping(path=…/name=…) attribute forms",
           "literals not starting with /",
-          "javadoc {@code @PostMapping(\"/home\")} matches \u2014 the one sampled false positive"
+          "javadoc {@code @PostMapping(\"/home\")} matches — the one sampled false positive"
         ]
       },
       "ast": [
@@ -1045,7 +1045,7 @@
             "java-spring"
           ]
         },
-        "_note": "DECLARED raw-byte escape hatch (ADR 2026-08-14 D3). Kotlin ships as a grammar PACK, not an embedded grammar, so a machine without that pack cannot parse .kt at all and the AST lane would report an empty controller \u2014 which reads as 'no routes here'. Regex keeps the coverage and says so.",
+        "_note": "DECLARED raw-byte escape hatch (ADR 2026-08-14 D3). Kotlin ships as a grammar PACK, not an embedded grammar, so a machine without that pack cannot parse .kt at all and the AST lane would report an empty controller — which reads as 'no routes here'. Regex keeps the coverage and says so.",
         "expected": 24,
         "matched": 24,
         "recall": 1.0,
@@ -1053,9 +1053,9 @@
         "confirmed": 0,
         "precision": null,
         "known_misses": [
-          "@RequestMapping(path=\u2026/name=\u2026) attribute forms \u2014 same shape gap as routes-java",
+          "@RequestMapping(path=…/name=…) attribute forms — same shape gap as routes-java",
           "measured 1.00/24 sites on java-spring, but tier stays INFERRED per ADR 1 D3: regex never claims EXTRACTED",
-          "precision NOT independently sampled here \u2014 the pattern is routes-java's verbatim, whose sampling measured 0.90 (one javadoc false positive)"
+          "precision NOT independently sampled here — the pattern is routes-java's verbatim, whose sampling measured 0.90 (one javadoc false positive)"
         ]
       }
     },
@@ -1189,7 +1189,7 @@
         "confirmed": 1,
         "precision": 1.0,
         "known_misses": [
-          "new WebSocket(urlVar) \u2014 url is a variable",
+          "new WebSocket(urlVar) — url is a variable",
           "n=2 is too small to derive a tier mechanically; capped at INFERRED pending a ws-heavy corpus"
         ]
       },
@@ -1207,8 +1207,6 @@
       ]
     },
     {
-      "id": "webstorage",
-      "transport": "storage.browser",
       "direction": "consumes",
       "when": {
         "ext": [
@@ -1225,12 +1223,14 @@
         ]
       },
       "tier": "INFERRED",
+      "id": "webstorage-local",
+      "transport": "storage.browser.local",
       "verified": {
-        "at": "2026-08-14",
+        "at": "2026-08-16",
         "ground_truth": {
           "tool": "ctx-optimize search",
-          "cmd": "search '(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono \u2014 ZERO sites",
-          "re": "(localStorage|sessionStorage)\\.(getItem|setItem|removeItem)\\(",
+          "cmd": "search 'localStorage\\.(getItem|setItem|removeItem)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono — ZERO sites",
+          "re": "localStorage\\.(getItem|setItem|removeItem)\\(",
           "ext": [
             ".ts",
             ".tsx",
@@ -1246,7 +1246,7 @@
         "sampled": 0,
         "confirmed": 0,
         "known_misses": [
-          "no corpus sites available \u2014 fixture-verified only; unmeasured never claims EXTRACTED, tier capped at INFERRED"
+          "no corpus sites available — fixture-verified only; unmeasured never claims EXTRACTED, tier capped at INFERRED"
         ]
       },
       "ast": [
@@ -1267,7 +1267,53 @@
           "name": "removeItem",
           "receiver": "localStorage",
           "arg": 0
+        }
+      ]
+    },
+    {
+      "direction": "consumes",
+      "when": {
+        "ext": [
+          ".ts",
+          ".tsx",
+          ".js",
+          ".jsx"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "tier": "INFERRED",
+      "id": "webstorage-session",
+      "transport": "storage.browser.session",
+      "verified": {
+        "at": "2026-08-16",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search 'sessionStorage\\.(getItem|setItem|removeItem)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono — ZERO sites",
+          "re": "sessionStorage\\.(getItem|setItem|removeItem)\\(",
+          "ext": [
+            ".ts",
+            ".tsx",
+            ".js"
+          ],
+          "corpora": [
+            "ts-typescript",
+            "ts-hono"
+          ]
         },
+        "expected": 0,
+        "matched": 0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "no corpus sites available — fixture-verified only; unmeasured never claims EXTRACTED, tier capped at INFERRED"
+        ]
+      },
+      "ast": [
         {
           "shape": "call",
           "name": "getItem",
@@ -1284,6 +1330,100 @@
           "shape": "call",
           "name": "removeItem",
           "receiver": "sessionStorage",
+          "arg": 0
+        }
+      ]
+    },
+    {
+      "direction": "consumes",
+      "when": {
+        "ext": [
+          ".ts",
+          ".tsx",
+          ".js",
+          ".jsx"
+        ]
+      },
+      "exclude": {
+        "path": [
+          "testdata/",
+          "benchmarks/"
+        ]
+      },
+      "tier": "INFERRED",
+      "id": "webstorage-cookie",
+      "transport": "storage.browser.cookie",
+      "verified": {
+        "at": "2026-08-16",
+        "ground_truth": {
+          "tool": "ctx-optimize search",
+          "cmd": "search '(Cookies|cookieStore)\\.(get|set|remove|delete)\\(' --ext .ts,.tsx,.js --count  # corpora: ts-typescript, ts-hono — ZERO sites",
+          "re": "(Cookies|cookieStore)\\.(get|set|remove|delete)\\(",
+          "ext": [
+            ".ts",
+            ".tsx",
+            ".js"
+          ],
+          "corpora": [
+            "ts-typescript",
+            "ts-hono"
+          ]
+        },
+        "expected": 0,
+        "matched": 0,
+        "sampled": 0,
+        "confirmed": 0,
+        "known_misses": [
+          "no corpus sites available — fixture-verified only; unmeasured never claims EXTRACTED, tier capped at INFERRED"
+        ]
+      },
+      "ast": [
+        {
+          "shape": "call",
+          "name": "get",
+          "receiver": "Cookies",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "set",
+          "receiver": "Cookies",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "remove",
+          "receiver": "Cookies",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "delete",
+          "receiver": "Cookies",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "get",
+          "receiver": "cookieStore",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "set",
+          "receiver": "cookieStore",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "remove",
+          "receiver": "cookieStore",
+          "arg": 0
+        },
+        {
+          "shape": "call",
+          "name": "delete",
+          "receiver": "cookieStore",
           "arg": 0
         }
       ]

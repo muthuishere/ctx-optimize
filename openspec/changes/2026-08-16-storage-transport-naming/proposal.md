@@ -56,6 +56,59 @@ deliberately vague, rather than borrowing a sibling's description.
 `storage.bucket` is the one worth writing next: the sources lane already dials
 S3 with stdlib SigV4, so the vocabulary and the connector would agree.
 
+## Amendment, same day — one browser storage is three
+
+> "so storage.browser.local and storage.browser.session … storage.browser.cookie"
+
+Right, and for a reason the flat name hid: the three differ in **lifetime** and
+in **who else can see them**, which is the part a reader actually needs.
+
+| transport | lifetime | who else sees it |
+|---|---|---|
+| `storage.browser.local` | outlives the tab | the page's own origin |
+| `storage.browser.session` | dies with the tab | the page's own origin |
+| `storage.browser.cookie` | until it expires | **the server, on every request** |
+
+A token in a cookie and a token in sessionStorage are not the same fact about a
+system, and `storage.browser` said they were.
+
+`webstorage` splits into `webstorage-local`, `webstorage-session` and
+`webstorage-cookie`. The cookie rule matches CALL forms only — `Cookies.*`
+(js-cookie) and `cookieStore.*` (the Cookie Store API). A bare `document.cookie`
+is a two-element member chain with no trailing property to name, and the
+`member` shape takes the property AFTER its path (`process.env.X` names X), so
+it is **deliberately not claimed** rather than shipped as a rule that matches
+nothing — the same discipline that rejected `storage.file` above.
+
+### The before/after diff the tier gate demanded
+
+Adding rules trips `TestShippedRulesDeclareTierAndEvidence` ("shipped rule
+count moved: 18 (was 16) — re-run the before/after port diff"). Run with
+`--force` on two real repos:
+
+```
+agentic-nexus    69 → 69 ports     1 storage.browser → 1 …browser.session
+volentis       1066 → 1067 ports  47 storage.browser → 40 local + 7 session + 1 cookie
+```
+
+Every existing port was RECLASSIFIED; none was lost. The single new one is a
+real site the old rule could not see:
+
+```
+Cookies.set('lang', userLang, { expires: 365 });
+  apps/librechat/client/src/components/Nav/SettingsTabs/General/General.tsx:148
+```
+
+No localStorage/sessionStorage shape matches that line, so a cookie this app
+sets on every visitor was outside the boundary picture entirely.
+
+### Curve labels
+
+`shortTransport` now takes the LAST segment, not everything after the first
+dot: `storage.browser.local` reads `LOCAL`, not `BROWSER.LOCAL`. The full name
+is in the key — one row per mode — so the label on a curve only has to be
+recognisable.
+
 ## Migration
 
 Port ids carry the transport (`port:storage.browser:>session_token`), so a

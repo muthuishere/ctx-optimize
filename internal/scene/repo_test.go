@@ -420,3 +420,24 @@ func TestDeriveNamesWhoOpensAnUnconnectedPlate(t *testing.T) {
 		}
 	}
 }
+
+// A curve is labelled with the LAST segment of its transport. Everything after
+// the first dot would put "BROWSER.LOCAL" on a line narrow enough that the
+// label is the picture; the full name is in the key, one row per mode, so the
+// short form only has to be recognisable.
+func TestShortTransportNamesTheLastSegment(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"network.http", "HTTP"},
+		{"config.env", "ENV"},
+		{"process.exec", "EXEC"},
+		{"storage.browser.local", "LOCAL"},
+		{"storage.browser.session", "SESSION"},
+		{"storage.browser.cookie", "COOKIE"},
+		{"", "PORT"},
+		{"weird", "WEIRD"},
+	} {
+		if got := shortTransport(tc.in); got != tc.want {
+			t.Errorf("shortTransport(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

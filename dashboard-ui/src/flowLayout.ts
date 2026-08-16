@@ -177,7 +177,10 @@ function meaningOf(transport: string, relation: string): string {
   // line would say something untrue about most of them. `storage.browser` is
   // the only one shipped today; the others are named here so a rule that adds
   // one lands on a sentence instead of the fallback.
-  if (transport === 'storage.browser') return 'the browser’s own storage'
+  if (transport === 'storage.browser.local') return 'browser storage that outlives the tab'
+  if (transport === 'storage.browser.session') return 'browser storage that dies with the tab'
+  if (transport === 'storage.browser.cookie') return 'cookies — sent to the server on every request'
+  if (transport.startsWith('storage.browser')) return 'the browser’s own storage'
   if (transport === 'storage.file') return 'files on disk'
   if (transport === 'storage.bucket') return 'object storage'
   if (transport.startsWith('storage.')) return 'stored data'

@@ -88,7 +88,11 @@ type RepoPort struct {
 // the direction is in the arrowhead, and what the relation means belongs in
 // the key — where there is room to say it in full.
 func shortTransport(transport string) string {
-	if i := strings.IndexByte(transport, '.'); i >= 0 {
+	// The LAST segment, not everything after the first dot: network.http is
+	// HTTP and storage.browser.local is LOCAL, where "BROWSER.LOCAL" would be
+	// a label longer than the curve it sits on. The full name is in the key,
+	// one row per mode, so the short form only has to be recognisable.
+	if i := strings.LastIndexByte(transport, '.'); i >= 0 {
 		rest := transport[i+1:]
 		if rest != "" {
 			return strings.ToUpper(rest)

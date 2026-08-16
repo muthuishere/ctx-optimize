@@ -70,6 +70,12 @@ describe('the legend is one row per MODE', () => {
     const row = (t: string) => legendFor(sceneWith([
       { from: 'a', to: 'b', relation: 'shares', label: 'X', weight: 1, transport: t },
     ]))[0].meaning
+    // The three browser families differ in LIFETIME and in who else can see
+    // them, which is the part a reader needs: sessionStorage dies with the tab,
+    // and a cookie is sent to the server on every request.
+    expect(row('storage.browser.local')).toContain('outlives the tab')
+    expect(row('storage.browser.session')).toContain('dies with the tab')
+    expect(row('storage.browser.cookie')).toContain('sent to the server')
     expect(row('storage.browser')).toContain('browser')
     expect(row('storage.file')).toContain('disk')
     expect(row('storage.bucket')).toContain('object storage')

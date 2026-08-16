@@ -69,8 +69,19 @@ func TestShippedRulesDeclareTierAndEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rules) != 16 {
-		t.Fatalf("shipped rule count moved: %d (was 16) — re-run the before/after port diff", len(rules))
+	// 16 → 18 on 2026-08-16: `webstorage` split into webstorage-local,
+	// webstorage-session and webstorage-cookie (ADR 24). The before/after port
+	// diff this gate demands, run on two real repos with --force:
+	//
+	//   agentic-nexus  69 → 69 ports   1 storage.browser → 1 …browser.session
+	//   volentis     1066 → 1067       47 storage.browser → 40 local + 7 session
+	//                                  + 1 cookie
+	//
+	// Every existing port was RECLASSIFIED, none lost. The single new one is a
+	// real site the old rule could not see: Cookies.set('lang', …) at
+	// General.tsx:148, which no localStorage/sessionStorage shape matches.
+	if len(rules) != 18 {
+		t.Fatalf("shipped rule count moved: %d (was 18) — re-run the before/after port diff", len(rules))
 	}
 	for i := range rules {
 		r := &rules[i]
