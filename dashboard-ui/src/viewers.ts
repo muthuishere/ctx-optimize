@@ -29,7 +29,7 @@ export interface ViewerProps {
    * are on — it is a different store, and entering it changes the address's
    * module rather than its root (ADR 22 D4).
    */
-  onModule: (key: string) => void
+  onModule: (key: string, grain?: string) => void
   /** the rest of the query, read-only — e.g. the graph viewer's ?center=. */
   params: URLSearchParams
 }

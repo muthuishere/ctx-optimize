@@ -225,7 +225,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       // module says so explicitly rather than being inferred from the label.
       if (hits[i].module) { onModule(hits[i].module!); return }
       // At module grain a card names a STORE, not a directory of this one.
-      if (scene.level === 'module') { onModule(hits[i].root); return }
+      if (scene.level === 'module') { onModule(hits[i].root, hits[i].grain || ''); return }
       onRoot(hits[i].root, hits[i].grain || '')
     }
     const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }

@@ -455,16 +455,29 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 		if !m.Unread && m.Code > 0 {
 			children, inner = 1, m.Code
 		}
+		// The residual root store's key IS the repo name, so entering it lands
+		// on the address the reader is already at: the client asks the repo
+		// endpoint for a bare name and gets this same module scene back. The
+		// card looked clickable and did nothing.
+		//
+		// Naming the grain breaks the tie — an explicit grain means "this is a
+		// store, open it as directories", which is also what makes the URL
+		// shareable rather than bouncing on reload.
+		enter := ""
+		if c.dir == repo {
+			enter = "dir"
+		}
 		sc.Cards = append(sc.Cards, Card{
 			ID: c.dir, Label: label, Dir: dir,
 			Files: m.Nodes, Decls: m.Edges,
 			In: c.a.in, Out: c.a.out,
 			Layer: layer[c.dir], Row: row[c.dir],
-			Detail:   detail,
-			Hub:      c.dir == hub && bestIn > 0,
-			Children: children,
-			Inner:    inner,
-			Top:      "",
+			Detail:     detail,
+			Hub:        c.dir == hub && bestIn > 0,
+			Children:   children,
+			Inner:      inner,
+			EnterGrain: enter,
+			Top:        "",
 		})
 	}
 	sort.Slice(sc.Cards, func(i, j int) bool {

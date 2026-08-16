@@ -192,7 +192,7 @@ export default function ViewerShell({ initialModule: rawArg }: { initialModule: 
           root={addr.root}
           grain={addr.grain}
           onRoot={(r: string, grain = '') => go({ root: r, grain })}
-          onModule={(key: string) => go({ module: key, root: '', grain: '' })}
+          onModule={(key: string, grain = '') => go({ module: key, root: '', grain })}
           params={addr.params}
         />
       )}

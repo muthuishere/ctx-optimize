@@ -82,15 +82,22 @@ func repoServer(t *testing.T) (*httptest.Server, string) {
 	return srv, root
 }
 
+// repoCard is one card of a repo scene, as the wire sends it.
+type repoCard struct {
+	ID, Label, Dir, Detail string
+	// tagged: Go matches JSON names case-insensitively but does NOT ignore
+	// underscores, so `enter_grain` never lands in `EnterGrain` untagged —
+	// which made this test fail against code that was already correct.
+	EnterGrain        string `json:"enter_grain"`
+	In, Out, Children int
+	Hub               bool
+}
+
 type repoScene struct {
-	Level  string `json:"level"`
-	Module string `json:"module"`
-	Cards  []struct {
-		ID, Label, Dir, Detail string
-		In, Out, Children      int
-		Hub                    bool
-	} `json:"cards"`
-	Links []struct {
+	Level  string     `json:"level"`
+	Module string     `json:"module"`
+	Cards  []repoCard `json:"cards"`
+	Links  []struct {
 		From, To, Relation, Transport, Detail string
 		Weight                                int
 	} `json:"links"`
@@ -197,6 +204,51 @@ func TestRepoSceneDrawsTheCrossModuleDependency(t *testing.T) {
 		if strings.Contains(c.ID, "react") {
 			t.Fatalf("external package became a card: %+v", c)
 		}
+	}
+}
+
+// The residual root store's key IS the repo name, so a click on its card asked
+// for the address the reader was already at — the client asks the repo endpoint
+// for a bare name and gets this same module scene back. It looked clickable and
+// did nothing, which is how the owner found it: "its not going in".
+func TestResidualRootCardNamesItsGrain(t *testing.T) {
+	srv, root := repoServer(t)
+	s, err := store.Open(root, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Merge(&schema.Batch{
+		Producer: "test",
+		Nodes: []schema.Node{
+			{ID: "tools/x.go", Label: "x.go", Kind: "file", FileType: "code", Source: "tools/x.go"},
+			{ID: "tools/y.go", Label: "y.go", Kind: "file", FileType: "code", Source: "tools/y.go"},
+		},
+		Edges: []schema.Edge{
+			{Source: "tools/x.go", Target: "tools/y.go", Relation: "imports", Confidence: schema.Extracted},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sc := getRepoScene(t, srv, "acme")
+	var residual, module *repoCard
+	for i := range sc.Cards {
+		if sc.Cards[i].ID == "acme" {
+			residual = &sc.Cards[i]
+		} else if sc.Cards[i].ID == "acme/apps/api" {
+			module = &sc.Cards[i]
+		}
+	}
+	if residual == nil {
+		t.Fatalf("no residual root card; cards = %+v", sc.Cards)
+	}
+	if residual.EnterGrain != "dir" {
+		t.Fatalf("the residual card does not name its grain (%q), so entering it lands back on this same scene",
+			residual.EnterGrain)
+	}
+	// A real module needs NO grain: its key differs from the repo, so the
+	// address changes on its own and inference does the right thing.
+	if module != nil && module.EnterGrain != "" {
+		t.Fatalf("a module card pins a grain it does not need: %q", module.EnterGrain)
 	}
 }
 
