@@ -50,7 +50,7 @@ func TestRedactLeavesNonSecretsAlone(t *testing.T) {
 		"server:\n  port: 8080",
 		"image: postgres:16",
 		"func Charge(id int) error {",
-		"passwordless: true",  // "password" not on a word boundary
+		"passwordless: true",   // "password" not on a word boundary
 		"# see the token docs", // a comment, not an assignment
 		"http://example.com/a:b",
 	} {

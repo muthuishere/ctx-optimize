@@ -146,7 +146,9 @@ func TestCommunitiesIgnoreAmbiguous(t *testing.T) {
 	// Two genuine clusters, plus an AMBIGUOUS edge that would bridge them.
 	var nodes []schema.Node
 	var edges []schema.Edge
-	mk := func(id string) { nodes = append(nodes, schema.Node{ID: id, Kind: "function", Label: id, Source: id + ".go", Location: "L1-L2"}) }
+	mk := func(id string) {
+		nodes = append(nodes, schema.Node{ID: id, Kind: "function", Label: id, Source: id + ".go", Location: "L1-L2"})
+	}
 	link := func(a, b, conf string) {
 		edges = append(edges, schema.Edge{Source: a, Target: b, Relation: "calls", Confidence: conf, Weight: 1})
 	}

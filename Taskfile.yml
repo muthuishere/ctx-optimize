@@ -29,9 +29,21 @@ tasks:
       - go test ./...
 
   lint:
-    desc: go vet the module
+    desc: go vet + gofmt the module
     cmds:
       - go vet ./...
+      # gofmt is a GATE, not a suggestion. `go vet` does not check formatting,
+      # so four files had drifted unformatted and been committed that way before
+      # anyone noticed. Prints the offenders and fails, rather than reformatting
+      # under you — a lint step that edits the tree makes a dirty checkout look
+      # like your change.
+      - |
+        unformatted=$(gofmt -l ./cmd ./internal)
+        if [ -n "$unformatted" ]; then
+          echo "gofmt: these files are not formatted — run 'gofmt -w' on them:" >&2
+          echo "$unformatted" >&2
+          exit 1
+        fi
 
   ci:
     desc: The gate — same as CI runs

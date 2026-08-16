@@ -152,10 +152,10 @@ func ExtractExcluding(root string, exclude []string) (*schema.Batch, error) {
 // section slug index (for cross-file `#anchor` targets, D3) and the link edges
 // deferred until that index is complete.
 type docExtractor struct {
-	root    string
-	b       *schema.Batch
-	md      goldmark.Markdown
-	slugs   map[string]map[string]bool // rel -> set of emitted section slugs
+	root  string
+	b     *schema.Batch
+	md    goldmark.Markdown
+	slugs map[string]map[string]bool // rel -> set of emitted section slugs
 	// walkable reports whether a link target lies inside the tree any producer
 	// walks. Disk existence is not enough — see D1 and the walkable closure.
 	walkable func(rel string) bool

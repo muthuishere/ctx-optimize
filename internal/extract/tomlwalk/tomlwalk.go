@@ -13,7 +13,7 @@
 // knowing the table makes it invisible.
 //
 // Anything it cannot confidently represent is DROPPED, never guessed:
-// multi-line basic/literal strings (`"""` / `'''`) are skipped whole — a
+// multi-line basic/literal strings (`"""` / `”'`) are skipped whole — a
 // `description = """…dependencies = ["x"]…"""` must not yield a dependency —
 // and a value line with no `=` outside quotes is ignored. Multi-line inline
 // tables are illegal TOML 1.0 and are not chased.
