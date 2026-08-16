@@ -48,9 +48,23 @@ func Link(codeB, manifestB *schema.Batch, goSelf []string) *schema.Batch {
 	goIDs := map[string]string{} // module path -> dep node id
 	var mavenGroups []mavenDep   // groupId prefixes
 	var nugetIDs []nugetDep      // package ids
+
+	// What this module PUBLISHES is never one of its own dependencies. ADR 22
+	// D0 records identity as a dep node — the same global id a consumer
+	// declares, which is the whole point — so without this an import of the
+	// module's own package resolves to "a dependency on itself". goSelf did
+	// this for Go from a caller-supplied list; the store now knows it for every
+	// ecosystem, from the manifest that said so.
+	self := map[string]bool{}
+	for _, e := range manifestB.Edges {
+		if e.Relation == "publishes" {
+			self[e.Target] = true
+		}
+	}
+
 	for _, n := range manifestB.Nodes {
 		rest, ok := strings.CutPrefix(n.ID, "dep:")
-		if !ok {
+		if !ok || self[n.ID] {
 			continue
 		}
 		switch {

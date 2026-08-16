@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,9 +92,25 @@ func TestDeplinkEndToEnd(t *testing.T) {
 	}
 
 	// The repo's OWN module must never become a dependency link (spike 1).
-	if strings.Contains(edges, "module://github.com/acme/svc/internal/store") &&
-		strings.Contains(edges, `"target":"dep:`+`go/github.com/acme/svc`) {
-		t.Error("self-module import must not resolve_to a dep node")
+	//
+	// Checked on the EDGE, not by scanning the whole file for two substrings
+	// that may sit on different lines. ADR 22 D0 emits
+	// `go.mod -publishes-> dep:go/github.com/acme/svc` — the module's identity,
+	// which is the point — and the old scan read that as a violation. Matching
+	// source AND target on one edge is strictly stronger than the scan it
+	// replaces: it would also catch a self-link the scan could miss.
+	for _, line := range strings.Split(edges, "\n") {
+		if !strings.Contains(line, `"relation":"resolves_to"`) {
+			continue
+		}
+		var e struct{ Source, Target string }
+		if json.Unmarshal([]byte(line), &e) != nil {
+			continue
+		}
+		if strings.HasPrefix(e.Source, "module://github.com/acme/svc") &&
+			strings.HasPrefix(e.Target, "dep:go/github.com/acme/svc") {
+			t.Errorf("self-module import resolves_to a dep node: %s", line)
+		}
 	}
 	// stdlib and relative specifiers never link.
 	for _, spec := range []string{`"source":"module://fmt","relation":"resolves_to"`} {

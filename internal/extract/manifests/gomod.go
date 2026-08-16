@@ -10,6 +10,12 @@ func extractGoMod(c *collector, rel, content string) {
 	inRequire := false
 	for _, raw := range strings.Split(content, "\n") {
 		line := strings.TrimSpace(raw)
+		// what this module IS (ADR 22 D0). Only outside a require block: a
+		// `module` line inside one would be a dependency's own path.
+		if !inRequire && strings.HasPrefix(line, "module ") {
+			c.publishes("go", strings.TrimSpace(strings.TrimPrefix(line, "module")), rel)
+			continue
+		}
 		switch {
 		case inRequire && line == ")":
 			inRequire = false

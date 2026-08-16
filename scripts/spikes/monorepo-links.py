@@ -98,6 +98,27 @@ def norm_route(p):
     return p.lower()
 
 
+def store_identity(store):
+    """What the STORE says this module is — ADR 22 D0's `publishes` edges.
+
+    Preferred over reading the manifest on disk: it is the thing being built,
+    and a repo whose sources are gone can still be measured once its store
+    carries identity. Falls back to the source only when the store has none,
+    which is how a store gathered before D0 is still counted.
+    """
+    out = set()
+    for e in load_ndjson(os.path.join(store, "graph", "edges.ndjson")):
+        if e.get("relation") != "publishes":
+            continue
+        md = e.get("metadata") or {}
+        if md.get("vendored") == "true":
+            continue  # a vendored upstream is not a sibling product
+        t = e.get("target") or ""
+        if t.startswith("dep:"):
+            out.add(t.split("/", 1)[1] if "/" in t else t)
+    return out
+
+
 def scan_module(nodes_path):
     d = {"deps": set(), "provides": collections.defaultdict(set),
          "consumes": collections.defaultdict(set), "ports": set()}
@@ -147,7 +168,7 @@ def main():
                 src = s[0].get("path") if s else None
             except Exception:
                 pass
-            ident[mod] = module_identity(src)
+            ident[mod] = store_identity(store) or module_identity(src)
             if not ident[mod]:
                 missing_src += 1
 
@@ -206,7 +227,7 @@ def main():
     print("TOTAL directed module->module links, by mechanism:", dict(tot))
     print(f"multi-module repos scanned: {len(report)}")
     nosrc = sum(1 for r in report if r["modules_without_source"] == r["modules"])
-    print(f"repos whose sources are all gone (identity unknowable, counted as 0): {nosrc}")
+    print(f"repos with no identity at all (store lacks `publishes` AND sources gone; counted as 0): {nosrc}")
     print()
     for r in report:
         if not r["examples"]:

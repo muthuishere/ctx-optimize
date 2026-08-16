@@ -30,6 +30,12 @@ var cargoSections = map[string]bool{
 func extractCargo(c *collector, rel, content string) {
 	entries := tomlwalk.Parse(content)
 	for _, e := range entries {
+		// what this crate IS (ADR 22 D0): [package] name = "x". Anchored on
+		// the table, so a `name` under [dependencies.foo] cannot be mistaken
+		// for the crate's own.
+		if e.Key == "name" && len(e.Table) == 1 && e.Table[0] == "package" {
+			c.publishes(cratesNS, tomlwalk.Unquote(e.Val), rel)
+		}
 		if e.Key == "" {
 			continue
 		}

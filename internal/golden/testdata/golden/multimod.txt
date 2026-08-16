@@ -24,7 +24,7 @@ N tests/Billing.Tests/Billing.Tests.csproj | config | tests/Billing.Tests/Billin
 N tests/Billing.Tests/BillingEngineTests.cs | file | tests/Billing.Tests/BillingEngineTests.cs | 
 N tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests | class | tests/Billing.Tests/BillingEngineTests.cs | L3-L10
 N tests/Billing.Tests/BillingEngineTests.cs::BillingEngineTests.ChargeCardWorks | method | tests/Billing.Tests/BillingEngineTests.cs | L5-L9
-== store goldenmm/services/api (33 nodes, 30 edges)
+== store goldenmm/services/api (34 nodes, 31 edges)
 E Makefile -contains-> Makefile#lint | EXTRACTED
 E Makefile -contains-> Makefile#run | EXTRACTED
 E Makefile -contains-> Makefile::task:lint | EXTRACTED
@@ -49,6 +49,7 @@ E deploy/app.yaml -contains-> deploy/app.yaml#spec-2 | EXTRACTED
 E deploy/app.yaml -contains-> deploy/app.yaml#template | EXTRACTED
 E deploy/app.yaml -contains-> k8s://default/deployment/goldenmm-api | EXTRACTED
 E go.mod -declares-> dep:go/github.com/pkg/errors | EXTRACTED
+E go.mod -publishes-> dep:go/goldenmm/api | EXTRACTED
 E k8s://default/deployment/goldenmm-api -uses_image-> image:ghcr.io/golden/api:1.0.0 | EXTRACTED
 E main.go -contains-> main.go::ProcessOrder | EXTRACTED
 E main.go -contains-> main.go::main | EXTRACTED
@@ -71,6 +72,7 @@ N Taskfile.yml#version | config_key | Taskfile.yml | L1
 N Taskfile.yml::task:build | task | Taskfile.yml | L4
 N Taskfile.yml::task:test | task | Taskfile.yml | L9
 N dep:go/github.com/pkg/errors | dependency | dep://go/github.com/pkg/errors | 
+N dep:go/goldenmm/api | dependency | dep://go/goldenmm/api | 
 N deploy/app.yaml | config | deploy/app.yaml | L1
 N deploy/app.yaml#apiversion | config_key | deploy/app.yaml | L1
 N deploy/app.yaml#containers | config_key | deploy/app.yaml | L8
@@ -88,16 +90,18 @@ N main.go | file | main.go |
 N main.go::ProcessOrder | function | main.go | L4-L4
 N main.go::main | function | main.go | L8-L8
 N main.go::validateOrder | function | main.go | L6-L6
-== store goldenmm/web/ui (7 nodes, 6 edges)
+== store goldenmm/web/ui (8 nodes, 7 edges)
 E app.js -contains-> app.js::mountWidgets | EXTRACTED
 E app.js -contains-> app.js::renderDashboard | EXTRACTED
 E app.js::renderDashboard -calls-> app.js::mountWidgets | INFERRED
 E package.json -contains-> package.json::task:build | EXTRACTED
 E package.json -contains-> package.json::task:test | EXTRACTED
 E package.json -declares-> dep:npm/react | EXTRACTED
+E package.json -publishes-> dep:npm/goldenmm-ui | EXTRACTED
 N app.js | file | app.js | 
 N app.js::mountWidgets | function | app.js | L3-L3
 N app.js::renderDashboard | function | app.js | L1-L1
+N dep:npm/goldenmm-ui | dependency | dep://npm/goldenmm-ui | 
 N dep:npm/react | dependency | dep://npm/react | 
 N package.json | config | package.json | L1
 N package.json::task:build | task | package.json | L5
