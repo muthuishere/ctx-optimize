@@ -98,6 +98,8 @@ type repoScene struct {
 		ID, Transport string
 		Total         int
 		Sample        []struct{ Label string }
+		Openers       []string `json:"openers"`
+		OpenerTotal   int      `json:"opener_total"`
 	} `json:"world"`
 	Notes []string `json:"notes"`
 }
@@ -170,6 +172,12 @@ func TestRepoSceneDrawsTheCrossModuleDependency(t *testing.T) {
 	}
 	if sc.World[0].Transport != "network.http" || sc.World[0].Total != 1 {
 		t.Fatalf("world group = %+v, want the one http port", sc.World[0])
+	}
+	// A plate must name WHO opens it. On a big repo almost none has an arrow —
+	// linux's 25 config.env ports come from 9 directories, none among the seven
+	// drawn — so an unnamed plate floats and reads as a broken link.
+	if len(sc.World[0].Openers) != 2 || sc.World[0].OpenerTotal != 2 {
+		t.Fatalf("world group does not name its openers: %+v", sc.World[0])
 	}
 	reach := 0
 	for _, l := range sc.Links {

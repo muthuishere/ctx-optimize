@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/muthuishere/ctx-optimize/internal/schema"
 )
 
 // mods builds the shape the spike found everywhere: a client module that
@@ -374,6 +376,44 @@ func TestDeriveRepoFlagsVendoredModules(t *testing.T) {
 	for _, c := range sc.Cards {
 		if c.ID == "acme/apps/worker" && !strings.Contains(c.Detail, "vendored") {
 			t.Fatalf("vendored module not marked: %+v", c)
+		}
+	}
+}
+
+// The linux case, at directory grain: a transport plate whose ports are opened
+// by directories that did not make the card cut. Without the names the plate
+// floats with no arrow and reads as a broken link — on linux, all three of them
+// do, because the seven drawn directories open none of the 68 ports.
+func TestDeriveNamesWhoOpensAnUnconnectedPlate(t *testing.T) {
+	var nodes []schema.Node
+	var edges []schema.Edge
+	// two directories with real code, which will be the drawn cards
+	for _, d := range []string{"core", "util"} {
+		nodes = append(nodes,
+			schema.Node{ID: d + "/a.go", Label: "a.go", Kind: "file", FileType: "code", Source: d + "/a.go"},
+			schema.Node{ID: d + "/a.go::F", Label: "F" + d, Kind: "function", FileType: "code", Source: d + "/a.go", Location: "L1-L9"})
+	}
+	edges = append(edges, schema.Edge{Source: "core/a.go", Target: "util/a.go", Relation: "imports", Confidence: schema.Extracted})
+	// a port opened from a THIRD directory that has nothing else in it
+	nodes = append(nodes,
+		schema.Node{ID: "scripts/build.sh", Label: "build.sh", Kind: "file", FileType: "code", Source: "scripts/build.sh"},
+		schema.Node{ID: "port:config.env:>CI_TOKEN", Label: "CI_TOKEN", Kind: "port", FileType: "boundary",
+			Source:   "port://config.env/CI_TOKEN",
+			Metadata: map[string]string{"transport": "config.env", "direction": "consumes", "identifier": "CI_TOKEN"}})
+	edges = append(edges, schema.Edge{Source: "scripts/build.sh", Target: "port:config.env:>CI_TOKEN",
+		Relation: "consumes", Confidence: schema.Inferred})
+
+	sc := Derive("m", nodes, edges, Options{Cards: 2})
+	if len(sc.World) != 1 {
+		t.Fatalf("world = %+v, want the one config.env group", sc.World)
+	}
+	w := sc.World[0]
+	if w.OpenerTotal != 1 || len(w.Openers) != 1 || w.Openers[0] != "scripts" {
+		t.Fatalf("plate does not name who opens it: %+v", w)
+	}
+	for _, l := range sc.Links {
+		if strings.HasPrefix(l.To, "world:") {
+			t.Fatalf("an arrow was drawn to a plate no drawn card opens: %+v", l)
 		}
 	}
 }

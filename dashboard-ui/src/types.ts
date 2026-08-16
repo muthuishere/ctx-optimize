@@ -216,6 +216,10 @@ export interface SceneWorld {
   sensitive: number
   sample: SceneDoor[]
   truncated: boolean
+  /** the subsystems that open this group; the other end of an arrow that
+      cannot be drawn because its card is not among the ones on screen */
+  openers?: string[]
+  opener_total?: number
 }
 
 export interface SceneStat {

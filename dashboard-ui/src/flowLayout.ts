@@ -152,11 +152,48 @@ export const relationStyle = (rel: string, transport = '') => {
 
 /** One row of the legend: what a mark on the canvas means. */
 export interface LegendRow {
+  /** the transport, exactly as the curve is labelled */
   label: string
+  /** what that mark means, in a sentence */
+  meaning: string
   color: string
   dashed: boolean
   /** false for a symmetric link, which has no arrowhead to explain */
   arrow: boolean
+}
+
+/**
+ * What a line MEANS, in words. The label on the curve is the transport and
+ * nothing else — a name the reader already knows — and the sentence that makes
+ * sense of it lives here, where there is room to write one.
+ *
+ * "BOTH CALL 12" tried to be that sentence in two words and failed: it reads
+ * like the ui calls the api, when it is twelve third parties the two of them
+ * both call. So the key says exactly that, once, instead of the curve saying
+ * something almost-right twelve times.
+ */
+function meaningOf(relation: string, transport: string, world: boolean): string {
+  const thing =
+    transport.startsWith('network.') ? 'service' :
+    transport.startsWith('config.') ? 'setting' :
+    transport.startsWith('process.') ? 'binary' :
+    transport.startsWith('storage.') || transport.startsWith('db.') ? 'store' :
+    transport.startsWith('queue.') ? 'queue' : 'boundary'
+  if (world) {
+    return relation === 'provides'
+      ? `opens this ${thing} to the outside`
+      : `reaches out to a ${thing}`
+  }
+  switch (relation) {
+    case 'shares':
+      return `both reach the same ${thing} — NOT a call between them`
+    case 'calls':
+      return `one opens the ${thing}, the other reaches it`
+    case 'depends':
+      return 'declares a package the other publishes'
+    default:
+      return relation
+  }
 }
 
 /**
@@ -167,20 +204,22 @@ export interface LegendRow {
 export function legendFor(scene: Scene): LegendRow[] {
   const rows = new Map<string, LegendRow>()
   for (const l of scene.links || []) {
-    const st = relationStyle(l.relation, l.transport || '')
+    const transport = l.transport || ''
+    const st = relationStyle(l.relation, transport)
     const symmetric = l.relation === 'shares'
     const world = l.to.startsWith('world:')
-    const label = l.transport
-      ? `${l.label.toLowerCase()} · ${l.transport}`
-      : l.label.toLowerCase()
-    rows.set(label, {
-      label,
+    const name = transport || l.relation
+    const key = `${name} ${l.relation} ${world}`
+    rows.set(key, {
+      label: name,
+      meaning: meaningOf(l.relation, transport, world),
       color: st.label,
       dashed: world || !!st.dashed || symmetric,
       arrow: !symmetric,
     })
   }
-  return [...rows.values()].sort((a, b) => a.label.localeCompare(b.label))
+  return [...rows.values()].sort((a, b) =>
+    a.label.localeCompare(b.label) || a.meaning.localeCompare(b.meaning))
 }
 
 // A world group is a CHIP until you ask for it. Expanded plates were taking a

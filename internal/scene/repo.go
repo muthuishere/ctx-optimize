@@ -77,27 +77,27 @@ type RepoPort struct {
 	Sensitive  bool
 }
 
-// verbFor is what one module DOES to a port of this transport. "calls" is
-// right for a network host and wrong for an env var, and a picture that says
-// "BOTH CALL DATABASE_URL" is telling the reader something untrue about how
-// the two modules are connected.
-func verbFor(transport string, mutual bool) string {
-	one, many := "TOUCHES", "BOTH TOUCH"
-	switch {
-	case strings.HasPrefix(transport, "network."):
-		one, many = "CALLS", "BOTH CALL"
-	case strings.HasPrefix(transport, "config."):
-		one, many = "READS", "BOTH READ"
-	case strings.HasPrefix(transport, "process."):
-		one, many = "RUNS", "BOTH RUN"
-	case strings.HasPrefix(transport, "storage."), strings.HasPrefix(transport, "db."),
-		strings.HasPrefix(transport, "queue."):
-		one, many = "USES", "BOTH USE"
+// shortTransport is what a line is LABELLED with: the kind of boundary, and
+// nothing else.
+//
+// It used to be a verb — "BOTH CALL 12" — and the owner's reaction was the
+// verdict: "what does both call mean, I don't understand; just an http or ws
+// would make sense." A verb tries to compress the relation, the direction and
+// the transport into two words and lands on something that reads like a
+// sentence but is not one. The transport is a NAME the reader already knows,
+// the direction is in the arrowhead, and what the relation means belongs in
+// the key — where there is room to say it in full.
+func shortTransport(transport string) string {
+	if i := strings.IndexByte(transport, '.'); i >= 0 {
+		rest := transport[i+1:]
+		if rest != "" {
+			return strings.ToUpper(rest)
+		}
 	}
-	if mutual {
-		return many
+	if transport == "" {
+		return "PORT"
 	}
-	return one
+	return strings.ToUpper(transport)
 }
 
 // DeriveRepo builds the scene one level ABOVE the directory grain: the cards
@@ -286,7 +286,7 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 			continue
 		}
 		links = append(links, Link{From: p.from, To: p.to, Relation: "calls",
-			Label: verbFor(p.transport, false), Transport: p.transport,
+			Label: shortTransport(p.transport), Transport: p.transport,
 			Weight: len(ids), Detail: nameThem(ids)})
 		drawnCall++
 	}
@@ -294,11 +294,10 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 		if !shown[p.from] || !shown[p.to] {
 			continue
 		}
-		// The label says what it IS, not a verb the reader has to guess at.
-		// "SHARES 12" between a ui and an api reads as "the ui calls the api";
-		// it is twelve third parties they both call, and the names prove it.
+		// The label is the KIND of boundary; the names underneath say which
+		// ones, and the key says what a dashed line without a head means.
 		links = append(links, Link{From: p.from, To: p.to, Relation: "shares",
-			Label: verbFor(p.transport, true), Transport: p.transport,
+			Label: shortTransport(p.transport), Transport: p.transport,
 			Weight: len(ids), Detail: nameThem(ids)})
 		drawnShare++
 	}
@@ -352,11 +351,44 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 				wcount[mw{m.Key, p.Transport, p.Direction}]++
 			}
 		}
+		// Who opens each group, named. At this grain the openers are modules,
+		// and a module that did not make the card cut has no arrow to draw —
+		// so without this a transport opened only by the modules off screen
+		// floats exactly as it does at directory grain.
+		opened := map[string]map[string]bool{}
+		for _, m := range mods {
+			label := m.Name
+			if label == "" {
+				label = lastSeg(m.Path)
+			}
+			for _, p := range m.Ports {
+				if !seen[p.Transport] {
+					continue
+				}
+				if opened[p.Transport] == nil {
+					opened[p.Transport] = map[string]bool{}
+				}
+				opened[p.Transport][label] = true
+			}
+		}
+		for i, w := range sc.World {
+			names := make([]string, 0, len(opened[w.Transport]))
+			for n := range opened[w.Transport] {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			sc.World[i].OpenerTotal = len(names)
+			if len(names) > 3 {
+				names = names[:3]
+			}
+			sc.World[i].Openers = names
+		}
+
 		var wl []Link
 		for k, n := range wcount {
 			wl = append(wl, Link{
 				From: k.mod, To: "world:" + k.transport, Relation: k.dir,
-				Label: strings.ToUpper(k.dir), Transport: k.transport, Weight: n,
+				Label: shortTransport(k.transport), Transport: k.transport, Weight: n,
 			})
 		}
 		sort.Slice(wl, func(i, j int) bool {

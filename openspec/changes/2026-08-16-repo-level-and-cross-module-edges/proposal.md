@@ -388,6 +388,28 @@ Three defects behind one observation:
 And a legend, because a colour code nobody is told is just decoration —
 drawn from the relations and transports actually on screen, never a fixed list.
 
+### D5 revised, by looking at the built thing
+
+Three corrections, all from the owner reading the screen:
+
+- **The verb was the problem, not the wording.** The first cut labelled a line
+  BOTH CALL / BOTH READ / BOTH RUN. *"What does both call mean, I don't
+  understand — just an http or ws would make sense."* Right: a verb tries to
+  compress the relation, the direction and the transport into two words and
+  lands on something that reads like a sentence but is not one. The curve is
+  now labelled with the TRANSPORT alone — a name the reader already knows —
+  the direction is in the arrowhead, and what the mark means is a full sentence
+  in the key, said once, instead of two almost-right words repeated on twelve
+  curves.
+- **A plate with no arrow now names who opens it.** On linux the seven drawn
+  directories open NONE of the 68 ports, so all three plates float. The note
+  explaining that is true and still not enough: the plate now prints the
+  directories themselves (`Documentation/sphinx · drivers/gpu/drm/ci ·
+  scripts +14`). It is the other end of an arrow that cannot be drawn.
+- **The key was a fixed corner, and landed on a card.** It is now placed in
+  whichever corner overlaps the least, and is DRAGGABLE like any other shape —
+  same offset map, so it is saved, restored and reset with everything else.
+
 ## Kill criterion
 
 If, after D1, a real monorepo yields no `provides`→`consumes` matches, then the

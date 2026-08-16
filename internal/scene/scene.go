@@ -153,6 +153,14 @@ type World struct {
 	Sensitive int    `json:"sensitive"`
 	Sample    []Door `json:"sample"`
 	Truncated bool   `json:"truncated"`
+	// Openers names the subsystems that actually open this group, and
+	// OpenerTotal how many there are. On a big repo almost no plate has an
+	// arrow: linux's 25 config.env ports are opened from 9 directories and not
+	// one of them is among the seven drawn, so the plate floats and reads as a
+	// broken link. Naming them puts the other end of the arrow on screen even
+	// when the card cannot be.
+	Openers     []string `json:"openers,omitempty"`
+	OpenerTotal int      `json:"opener_total,omitempty"`
 }
 
 // Stat is one segment of the terminal-style header strip. The field is `text`,
@@ -1078,11 +1086,27 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 		openers[k.to][k.from] = true
 	}
 	var orphan []string
-	for _, w := range sc.World {
+	for i, w := range sc.World {
+		owners := openers["world:"+w.Transport]
+		if len(owners) > 0 {
+			names := make([]string, 0, len(owners))
+			for d := range owners {
+				names = append(names, d)
+			}
+			// By weight would be better, but the count per directory is not
+			// kept; alphabetical is at least STABLE, which a picture that is
+			// meant to be diffable needs more than it needs a ranking.
+			sort.Strings(names)
+			sc.World[i].OpenerTotal = len(names)
+			if len(names) > 3 {
+				names = names[:3]
+			}
+			sc.World[i].Openers = names
+		}
 		if drawnTo["world:"+w.Transport] {
 			continue
 		}
-		orphan = append(orphan, w.Transport+" ("+itoa(len(openers["world:"+w.Transport]))+" directories)")
+		orphan = append(orphan, w.Transport+" ("+itoa(len(owners))+" directories)")
 	}
 	if len(orphan) > 0 {
 		sort.Strings(orphan)

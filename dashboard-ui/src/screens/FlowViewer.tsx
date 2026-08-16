@@ -26,6 +26,9 @@ const ZERO = { dx: 0, dy: 0 }
 
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
+// The key is a movable shape, so it needs an id in the same offset map the
+// cards use. Prefixed so it can never collide with a real card id.
+const LEGEND_ID = '\u0000legend'
 
 export default function FlowViewer({ module, root, grain, onRoot, onModule }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
@@ -145,7 +148,21 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       const r = canvas.getBoundingClientRect()
       return { x: (e.clientX - r.left) / SC, y: (e.clientY - r.top) / SC }
     }
+    // The legend is a shape the reader can move, so the drag code has to know
+    // it exists. It is not a Box in the layout — it is derived from the layout
+    // — so it gets an id of its own in the same `nudged` map, which means it is
+    // saved, restored and RESET exactly like a card.
+    const legendAt = (vx: number, vy: number) => {
+      const rows = legendFor(scene!)
+      if (rows.length === 0) return null
+      const { x, y, w, h } = legendBox(rows)
+      return vx >= x && vx <= x + w && vy >= y && vy <= y + h
+        ? ({ id: LEGEND_ID, kind: 'card', x, y, w, h, r: 0, n: '' } as Box)
+        : null
+    }
     const boxAt = (vx: number, vy: number) => {
+      const lg = legendAt(vx, vy)
+      if (lg) return lg
       for (let i = lay.boxes.length - 1; i >= 0; i--) {
         const b = lay.boxes[i]
         const o = off(b.id)
@@ -637,6 +654,16 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         text(w.transport, b.x + 13, b.y + 22, { size: 11.5, weight: 700, font: MONO, max: b.w - 84 })
         text(`${w.total} ${on ? '▾' : '▸'}`, b.x + b.w - 13, b.y + 22,
           { size: 11, weight: 700, font: MONO, align: 'right', color: pal.amber })
+        // WHO opens it. On a big repo almost no plate has an arrow — linux's
+        // 25 config.env ports come from 9 directories, none of them among the
+        // seven drawn — so the plate floats and reads as a broken link. The
+        // names are the other end of an arrow that cannot be drawn.
+        if (w.openers && w.openers.length > 0) {
+          const more = (w.opener_total || 0) - w.openers.length
+          const line = w.openers.join(' · ') + (more > 0 ? ` +${more}` : '')
+          text(line, b.x + 13, b.y + CHIP_H + 12,
+            { size: 8.5, color: pal.dim, font: MONO, max: b.w + 40 })
+        }
         if (w.sensitive > 0) {
           const q = T(b.x + b.w - 46, b.y + 17)
           ctx!.fillStyle = ACC
@@ -830,42 +857,75 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
     // A colour code nobody is told is decoration. The legend is built from the
     // marks ACTUALLY on this scene — never a fixed list — so it can neither
     // teach a code the reader will not see nor omit one they can.
+    // legendBox is where the key sits, in virtual units. It is derived — the
+    // widest free corner of the card band — and then draggable like any other
+    // shape, because a fixed corner is exactly how it ended up on top of
+    // linux's `core` card. Its offset is remembered with the rest of the
+    // arrangement.
+    function legendBox(rows: ReturnType<typeof legendFor>) {
+      const rowH = 22
+      const w = 330
+      const h = 26 + rows.length * rowH
+      // Prefer the lower-left gutter; fall back to lower-right, then upper-left.
+      // Whichever candidate overlaps the fewest shapes wins, so the key lands
+      // where the picture is not.
+      const cands = [
+        { x: 62, y: lay.footerY - h - 12 },
+        { x: VW - w - 62, y: lay.footerY - h - 12 },
+        { x: 62, y: lay.headerH + 6 },
+        { x: VW - w - 62, y: lay.headerH + 6 },
+      ]
+      let best = cands[0], bestHit = Infinity
+      for (const c of cands) {
+        let hit = 0
+        for (const b of lay.boxes) {
+          const o = off(b.id)
+          const r = b.kind === 'hub'
+            ? { x: b.x + o.dx - b.r, y: b.y + o.dy - b.r, w: b.r * 2, h: b.r * 2 }
+            : { x: b.x + o.dx, y: b.y + o.dy, w: b.w, h: b.h }
+          const ox = Math.min(c.x + w, r.x + r.w) - Math.max(c.x, r.x)
+          const oy = Math.min(c.y + h, r.y + r.h) - Math.max(c.y, r.y)
+          if (ox > 0 && oy > 0) hit += ox * oy
+        }
+        if (hit < bestHit) { bestHit = hit; best = c }
+        if (hit === 0) break
+      }
+      const o = off(LEGEND_ID)
+      return { x: best.x + o.dx, y: best.y + o.dy, w, h, rowH }
+    }
+
     function drawLegend() {
       const rows = legendFor(scene!)
       if (rows.length === 0) return
-      const rowH = 15
-      const w = 196
-      const h = 22 + rows.length * rowH
-      const x = 62
-      // Under the header, above the cards' band. It sits in the gutter the
-      // crumbs already own, so it never lands on a card.
-      const y = Math.max(lay.headerH + 6, lay.headerH + 6)
-      if (y + h > lay.footerY) return // no room: the picture beats the key
+      const { x, y, w, h, rowH } = legendBox(rows)
+      if (h > lay.footerY - lay.headerH) return // no room: the picture beats the key
       const q = T(x, y)
-      ctx!.fillStyle = rgba(pal.ground, .82)
+      ctx!.fillStyle = rgba(pal.ground, .92)
       rr(q.x, q.y, S(w), S(h), S(8)); ctx!.fill()
       ctx!.strokeStyle = pal.line2; ctx!.lineWidth = Math.max(1, S(1))
       rr(q.x, q.y, S(w), S(h), S(8)); ctx!.stroke()
-      text('WHAT THE LINES MEAN', x + 10, y + 14,
+      text('WHAT THE LINES MEAN  ·  drag me', x + 12, y + 16,
         { size: 7.5, color: pal.dim, spacing: 1.2, weight: 700 })
       rows.forEach((r, i) => {
-        const ry = y + 22 + i * rowH + 6
-        const a = T(x + 10, ry), b = T(x + 40, ry)
+        const ry = y + 26 + i * rowH + 8
+        const a = T(x + 12, ry), b = T(x + 44, ry)
         ctx!.save()
         ctx!.strokeStyle = r.color
-        ctx!.lineWidth = Math.max(1, S(1.6))
+        ctx!.lineWidth = Math.max(1, S(1.8))
         ctx!.setLineDash(r.dashed ? [S(4), S(4)] : [])
         ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b.x, b.y); ctx!.stroke()
         ctx!.setLineDash([])
         if (r.arrow) {
           ctx!.beginPath()
-          ctx!.moveTo(b.x - S(5), b.y - S(3))
+          ctx!.moveTo(b.x - S(5), b.y - S(3.5))
           ctx!.lineTo(b.x, b.y)
-          ctx!.lineTo(b.x - S(5), b.y + S(3))
+          ctx!.lineTo(b.x - S(5), b.y + S(3.5))
           ctx!.stroke()
         }
         ctx!.restore()
-        text(r.label, x + 46, ry + 3.5, { size: 9, color: pal.muted, max: w - 56 })
+        text(r.label, x + 50, ry + 3.5,
+          { size: 9.5, color: r.color, weight: 700, font: MONO, max: 92 })
+        text(r.meaning, x + 148, ry + 3.5, { size: 9, color: pal.muted, max: w - 158 })
       })
     }
 
