@@ -328,6 +328,31 @@ the chooser had been the way to the rest. The shell now carries a second select
 listing every module of the current repo. A ranked sample does not get to decide
 what is reachable.
 
+**Three defects the first cut shipped, found by looking at it:**
+
+- **The residual root store was not a card.** A multi-module gather leaves
+  everything outside a declared module in the repo's own store, and deriving
+  the level from `modules.json` alone dropped it. On AI-company-master that is
+  7,663 of the repo's 8,524 nodes: the level drew ONE card and a header reading
+  "861 nodes". The draft ADR already said the residual "becomes a card like any
+  other" — the implementation had simply not done it. Now 2 cards, 8,524 nodes;
+  reqsume goes to 7 cards and 19,125, matching its chooser exactly.
+- **A one-card level is this ADR's own kill criterion.** It now sets
+  `Scene.Redirect` naming where the content is, and the viewer moves the
+  address there — so the reader lands on, and can share, the store they are
+  actually looking at.
+- **A module had no way back to its repo ON THE CANVAS.** The trail
+  `scene.Derive` builds starts at the module, because that is all one store
+  knows. The handler now prepends a repo crumb, carrying a `module` rather than
+  a `root`: leaving a store is not a directory move, and a root would be read
+  as a directory of the module and land on an empty scene. It is added only
+  where a module grain actually exists — a nested store whose parent never had
+  a multi-module gather gets no crumb to a level that would 404.
+
+Plus "1 modules" in the header strip, and a subtitle that claimed every arrow
+was an imports/calls edge at a grain where every arrow is two manifests
+agreeing on a package name.
+
 **The browser suite caught what no unit test could.** A module card sent its
 `dir` (`apps/ui`) where the click needed its store key (`agentic-nexus/web`),
 so the card was clickable and navigated nowhere. Both viewers now resolve the

@@ -290,9 +290,17 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 		sc.Inside = append(sc.Inside, Crumb{Label: label, Root: c.dir})
 	}
 
+	// A module grain with one card says nothing a reader could not see by
+	// opening that module — it is the "chooser wearing a diagram" this ADR set
+	// as its own kill criterion. Rather than draw it, hand back where the
+	// content actually is.
+	if len(sc.Cards) == 1 {
+		sc.Redirect = sc.Cards[0].ID
+	}
+
 	// ---- 8. stats and the honesty notes.
 	sc.Stats = []Stat{
-		{Label: "modules", Text: itoa(len(mods))},
+		{Label: plural("module", len(mods)), Text: itoa(len(mods))},
 		{Label: "nodes", Text: comma(sc.TotalNodes)},
 		{Label: "edges", Text: comma(sc.TotalEdges)},
 	}
@@ -302,9 +310,11 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 	}
 	sc.Notes = append(sc.Notes,
 		"a card here is a MODULE — clicking one opens that module's own store at directory grain")
-	sc.Notes = append(sc.Notes,
-		"top "+itoa(sc.SubsystemsShown)+" of "+itoa(sc.SubsystemsTotal)+
-			" modules by how much of the repo hangs off them — this is a SAMPLE, not the whole repo")
+	if sc.SubsystemsShown < sc.SubsystemsTotal {
+		sc.Notes = append(sc.Notes,
+			"top "+itoa(sc.SubsystemsShown)+" of "+itoa(sc.SubsystemsTotal)+
+				" modules by how much of the repo hangs off them — this is a SAMPLE, not the whole repo")
+	}
 	sc.Notes = append(sc.Notes,
 		itoa(drawnDep)+" of "+itoa(len(depends))+
 			" `depends` arrows drawn — a module declaring a package a sibling publishes, EXTRACTED from both manifests")
@@ -352,6 +362,15 @@ func DeriveRepo(repo string, mods []RepoModule, opt Options) Scene {
 	}
 	sc.Questions = repoQuestions(sc, byKey)
 	return sc.finish()
+}
+
+// plural keeps a count and its noun in agreement. "1 modules" in the header
+// strip is the kind of detail that makes a reader wonder what else is sloppy.
+func plural(word string, n int) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
 }
 
 // lastSeg is the display name for a path with no recorded module name.

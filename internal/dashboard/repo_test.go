@@ -292,6 +292,158 @@ func TestRepoSceneVendoredModuleNeverOwnsAPackage(t *testing.T) {
 	}
 }
 
+// The repo's OWN store is a card, not a chooser entry that gets skipped.
+//
+// AI-company-master is the case that proved it: modules.json lists one 861-node
+// `dashboard`, and the residual root store holds 7,663 of the repo's 8,524
+// nodes. Deriving from the index alone drew ONE card and a header reading
+// "861 nodes" — it hid 90% of the code and looked like an empty level.
+func TestRepoSceneIncludesTheResidualRootStore(t *testing.T) {
+	srv, root := repoServer(t)
+	s, err := store.Open(root, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Merge(&schema.Batch{
+		Producer: "test",
+		Nodes: []schema.Node{
+			{ID: "tools/x.go", Label: "x.go", Kind: "file", FileType: "code", Source: "tools/x.go"},
+			{ID: "tools/y.go", Label: "y.go", Kind: "file", FileType: "code", Source: "tools/y.go"},
+		},
+		Edges: []schema.Edge{
+			{Source: "tools/x.go", Target: "tools/y.go", Relation: "imports", Confidence: schema.Extracted},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sc := getRepoScene(t, srv, "acme")
+	seen := false
+	for _, c := range sc.Cards {
+		if c.ID == "acme" {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("the repo's own store is not a card; cards = %+v", sc.Cards)
+	}
+	if len(sc.Cards) != 3 {
+		t.Fatalf("cards = %d, want api + ui + the residual root", len(sc.Cards))
+	}
+}
+
+// A level with one card is a chooser wearing a diagram — this ADR's own kill
+// criterion. It must name where the content is instead of drawing itself.
+func TestRepoSceneWithOneModuleStepsAside(t *testing.T) {
+	root := t.TempDir()
+	s, err := store.Open(root, "solo/dashboard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Merge(&schema.Batch{
+		Producer: "test",
+		Nodes:    []schema.Node{{ID: "a.ts", Label: "a.ts", Kind: "file", FileType: "code", Source: "a.ts"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Open(root, "solo"); err != nil {
+		t.Fatal(err)
+	}
+	idx := &navigator.Index{Version: 1, Root: "solo", Modules: []navigator.ModuleEntry{
+		{Name: "dashboard", Path: "dashboard", Store: "solo/dashboard", Nodes: 1},
+	}}
+	if err := idx.Write(filepath.Join(root, "solo")); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(NewHandler(root, nil))
+	t.Cleanup(srv.Close)
+
+	var sc struct {
+		Redirect string                `json:"redirect"`
+		Cards    []struct{ ID string } `json:"cards"`
+	}
+	res, err := http.Get(srv.URL + "/api/repo/scene?repo=solo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if err := json.NewDecoder(res.Body).Decode(&sc); err != nil {
+		t.Fatal(err)
+	}
+	if sc.Redirect != "solo/dashboard" {
+		t.Fatalf("redirect = %q, want solo/dashboard (one card is not a level)", sc.Redirect)
+	}
+}
+
+// Inside a module there must be a mark ON THE CANVAS leading back to the repo.
+// The chooser above the picture is not where a reader who has drilled is
+// looking, and a level you can enter and not leave is the failure ADR 21 named.
+func TestModuleSceneCarriesTheRepoCrumb(t *testing.T) {
+	srv, _ := repoServer(t)
+	res, err := http.Get(srv.URL + "/api/scene?module=acme%2Fapps%2Fapi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var sc struct {
+		Crumbs []struct{ Label, Root, Module string } `json:"crumbs"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&sc); err != nil {
+		t.Fatal(err)
+	}
+	if len(sc.Crumbs) == 0 || sc.Crumbs[0].Module != "acme" {
+		t.Fatalf("no repo crumb at the head of the trail: %+v", sc.Crumbs)
+	}
+	// It leaves the STORE, so it cannot travel as a root — a root would be read
+	// as a directory of the module and land on an empty scene.
+	if sc.Crumbs[0].Root != "" {
+		t.Fatalf("repo crumb carries a root (%q); leaving a store is not a directory move", sc.Crumbs[0].Root)
+	}
+}
+
+// A store with no module grain above it must not be given a crumb to one.
+//
+// Both shapes are checked, because they are guarded by different things: a
+// top-level store has no parent at all, and a NESTED store whose parent never
+// had a multi-module gather has a parent path but no module index. The second
+// is the one that would send a reader to a 404.
+func TestStoreWithNoRepoLevelHasNoRepoCrumb(t *testing.T) {
+	root := t.TempDir()
+	for _, key := range []string{"plain", "orphan/nested"} {
+		s, err := store.Open(root, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.Merge(&schema.Batch{
+			Producer: "test",
+			Nodes:    []schema.Node{{ID: "a.go", Label: "a.go", Kind: "file", FileType: "code", Source: "a.go"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := httptest.NewServer(NewHandler(root, nil))
+	t.Cleanup(srv.Close)
+
+	for _, key := range []string{"plain", "orphan/nested"} {
+		res, err := http.Get(srv.URL + "/api/scene?module=" + strings.ReplaceAll(key, "/", "%2F"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sc struct {
+			Crumbs []struct{ Label, Module string } `json:"crumbs"`
+		}
+		err = json.NewDecoder(res.Body).Decode(&sc)
+		res.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sc.Crumbs {
+			if c.Module != "" {
+				t.Fatalf("%s was given a crumb to a repo level that does not exist: %+v", key, c)
+			}
+		}
+	}
+}
+
 // The port scan must find ports without depending on JSON key order.
 func TestRepoSceneScanSurvivesKeyReordering(t *testing.T) {
 	dir := t.TempDir()

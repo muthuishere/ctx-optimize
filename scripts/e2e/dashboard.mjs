@@ -363,6 +363,18 @@ async function run(page) {
     repoScene ? `${repoScene.repo}: ${repoScene.sc.cards.length} modules, ${repoScene.sc.links.length} links` : 'none')
 
   if (repoScene) {
+    // The way back UP, on the canvas. The chooser above the picture is not
+    // where a reader who has drilled three levels is looking, and a level you
+    // can enter and not leave is the failure ADR 21 named.
+    const inner = repoScene.sc.cards.find((c) => c.id !== repoScene.repo)
+    if (inner) {
+      const ms = await (await fetch(`${BASE}/api/scene?module=${encodeURIComponent(inner.id)}`)).json()
+      const up = (ms.crumbs || []).find((c) => c.module)
+      check('a module scene carries a crumb back to its repo',
+        !!up && up.module === repoScene.repo,
+        up ? `${up.label} -> ${up.module}` : `crumbs: ${JSON.stringify(ms.crumbs)}`)
+    }
+
     check('module-grain cards are store keys the viewer can open',
       repoScene.sc.cards.every((c) => modules.some((m) => m.key === c.id)),
       repoScene.sc.cards.map((c) => c.id).slice(0, 3).join(', '))

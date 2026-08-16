@@ -105,6 +105,11 @@ type Question struct {
 type Crumb struct {
 	Label string `json:"label"`
 	Root  string `json:"root"`
+	// Module, when set, means this crumb leaves the current store entirely —
+	// it is the REPO above a module, and clicking it changes which graph you
+	// are looking at rather than which directory of this one. Empty on every
+	// crumb that is a directory of the store already open.
+	Module string `json:"module,omitempty"`
 }
 
 // Link is a lifted edge between two cards, or between a card and a transport
@@ -174,6 +179,11 @@ type Scene struct {
 	Inside    []Crumb    `json:"inside"`
 	Questions []Question `json:"questions"`
 	Empty     string     `json:"empty,omitempty"`
+	// Redirect names the store the reader should be looking at instead. A level
+	// with exactly one card is a chooser wearing a diagram — this ADR's own kill
+	// criterion — so rather than draw it, the scene says where the content is
+	// and the viewer moves the address there. Empty in every other case.
+	Redirect string `json:"redirect,omitempty"`
 }
 
 // Options tunes the derivation. Zero values mean the defaults.

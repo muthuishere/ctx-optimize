@@ -58,10 +58,64 @@ func (s *server) handleRepoScene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mods := collectRepoModules(s.root, repo, idx)
+	mods := collectRepoModules(s.root, repo, withRootStore(s.root, repo, idx))
 	sc := scene.DeriveRepo(repo, mods, opt)
 	s.scenes.put(key, stamp, sc)
 	jsonOK(w, sc)
+}
+
+// withRepoCrumb puts the REPO at the head of a module's breadcrumb trail.
+//
+// scene.Derive only ever sees one store, so the trail it builds starts at the
+// module — and inside `reqsume/apps/api` there was no mark on the canvas
+// leading back up to `reqsume` at all. The way out existed only in the chrome
+// above the picture, which is not where a reader who has drilled three levels
+// is looking.
+//
+// The crumb carries a MODULE rather than a root, because leaving a module is
+// not a directory move: it opens a different graph.
+func withRepoCrumb(storeRoot, module string, sc scene.Scene) scene.Scene {
+	i := strings.IndexByte(module, '/')
+	if i <= 0 {
+		return sc // already a repo-level store; nothing sits above it
+	}
+	repo := module[:i]
+	idx, err := navigator.Load(filepath.Join(storeRoot, filepath.FromSlash(repo)))
+	if err != nil || idx == nil {
+		return sc // not a monorepo: the module grain does not exist to go back to
+	}
+	sc.Crumbs = append([]scene.Crumb{{Label: repo, Root: "", Module: repo}}, sc.Crumbs...)
+	return sc
+}
+
+// withRootStore adds the repo's OWN store as a module when it holds code the
+// index does not account for.
+//
+// A multi-module gather leaves a residual root store: everything in the repo
+// that is not inside a declared module. On AI-company-master that residual is
+// 7,663 of the repo's 8,524 nodes, and modules.json lists a single 861-node
+// `dashboard`. Deriving the level from the index alone therefore drew ONE card
+// and a header reading "861 nodes" for a repo with 8,524 — it hid 90% of the
+// code and looked like a level with nothing in it. The residual is not a
+// chooser entry to be skipped (ADR 22 D4); it is a card like any other.
+func withRootStore(storeRoot, repo string, idx *navigator.Index) *navigator.Index {
+	if _, err := os.Stat(filepath.Join(storeRoot, filepath.FromSlash(repo), "graph", "nodes.ndjson")); err != nil {
+		return idx
+	}
+	for _, m := range idx.Modules {
+		if m.Store == repo {
+			return idx
+		}
+	}
+	out := &navigator.Index{Version: idx.Version, Root: idx.Root}
+	out.Modules = append(out.Modules, navigator.ModuleEntry{
+		Name: repo, Path: "", Store: repo,
+		Nodes:   countLines(filepath.Join(storeRoot, filepath.FromSlash(repo), "graph", "nodes.ndjson")),
+		Edges:   countLines(filepath.Join(storeRoot, filepath.FromSlash(repo), "graph", "edges.ndjson")),
+		Summary: "everything not inside a declared module",
+	})
+	out.Modules = append(out.Modules, idx.Modules...)
+	return out
 }
 
 // repoStamp fingerprints every module graph in the repo. Sorted, so the same

@@ -178,6 +178,9 @@ export interface SceneCard {
 export interface SceneCrumb {
   label: string
   root: string
+  /** a different STORE to open — the repo above a module. Leaving a module is
+      not a directory move, so it cannot travel as a `root`. */
+  module?: string
 }
 
 export interface SceneQuestion {
@@ -237,4 +240,6 @@ export interface Scene {
   questions: SceneQuestion[]
   notes: string[]
   empty?: string
+  /** the store to look at instead: a level with one card says nothing */
+  redirect?: string
 }

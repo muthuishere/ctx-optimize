@@ -32,6 +32,14 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
   const wrap = useRef<HTMLDivElement | null>(null)
   const cv = useRef<HTMLCanvasElement | null>(null)
 
+  // A level with one card is a chooser wearing a diagram — the server says so
+  // and names where the content is, and the address moves there. Doing it here
+  // rather than in the fetch keeps the URL honest: the reader lands on, and can
+  // share, the store they are actually looking at.
+  useEffect(() => {
+    if (scene?.redirect) onModule(scene.redirect)
+  }, [scene, onModule])
+
   useEffect(() => {
     setScene(null)
     setErr('')
@@ -107,6 +115,8 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
       kind: 'card' | 'crumb' | 'reset' | 'world'
       /** the grain this target opens at; '' means infer from root */
       grain?: string
+      /** a different STORE to open; set on the repo crumb above a module */
+      module?: string
     }
     let hits: Hit[] = []
     let hover = -1
@@ -179,6 +189,9 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         relayout()
         return
       }
+      // Leaving the store is not a directory move. The repo crumb above a
+      // module says so explicitly rather than being inferred from the label.
+      if (hits[i].module) { onModule(hits[i].module!); return }
       // At module grain a card names a STORE, not a directory of this one.
       if (scene.level === 'module') { onModule(hits[i].root); return }
       onRoot(hits[i].root, hits[i].grain || '')
@@ -647,7 +660,9 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
     // drill-down at all.
     function drawCrumbs() {
       const crumbs = scene!.crumbs
-      if (crumbs.length <= 1) return
+      // One crumb is the store's own name and leads nowhere — except when it
+      // names another store, which is the whole point of the repo crumb.
+      if (crumbs.length <= 1 && !crumbs.some((c) => c.module)) return
       let x = 62
       const y = hy(126)
       crumbs.forEach((c, i) => {
@@ -655,7 +670,7 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         const w = measure(c.label, 11.5, last ? 700 : 500) + 22
         if (!last) {
           const p = T(x, y)
-          hits.push({ x, y, w, h: 24, root: c.root, kind: 'crumb', grain: '' })
+          hits.push({ x, y, w, h: 24, root: c.root, kind: 'crumb', grain: '', module: c.module })
           const on = hover === hits.length - 1
           ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()
@@ -766,7 +781,12 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         VW - 62, hy(118), { size: hs(62), weight: 800, align: 'right', max: 700 })
       text('The architecture, derived from the store — not drawn by hand.', VW - 62, hy(152),
         { size: hs(15), color: pal.muted, align: 'right' })
-      text(`every card is a ${scene!.level} · every arrow is real ${''}imports/calls edges, summed`,
+      // What an arrow MEANS changes with the grain, and the strip has to say
+      // which: at module grain it is two manifests agreeing on a package name,
+      // not an import.
+      text(scene!.level === 'module'
+        ? 'every card is a module · every arrow is a package one declares and another publishes'
+        : `every card is a ${scene!.level} · every arrow is real imports/calls edges, summed`,
         VW - 62, hy(176), { size: hs(15), weight: 600, align: 'right' })
       text(`ctx-optimize · ${scene!.total_nodes.toLocaleString()} nodes · ${scene!.total_edges.toLocaleString()} edges`,
         VW - 62, hy(202), { size: hs(12), color: ACC, align: 'right', weight: 700, spacing: 0.6 })

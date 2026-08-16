@@ -29,6 +29,14 @@ export default function HouseViewer({ module, root, grain, onRoot, onModule }: V
   const wrap = useRef<HTMLDivElement | null>(null)
   const cv = useRef<HTMLCanvasElement | null>(null)
 
+  // A level with one card is a chooser wearing a diagram — the server says so
+  // and names where the content is, and the address moves there. Doing it here
+  // rather than in the fetch keeps the URL honest: the reader lands on, and can
+  // share, the store they are actually looking at.
+  useEffect(() => {
+    if (scene?.redirect) onModule(scene.redirect)
+  }, [scene, onModule])
+
   useEffect(() => {
     setScene(null)
     setErr('')
@@ -87,7 +95,7 @@ export default function HouseViewer({ module, root, grain, onRoot, onModule }: V
 
     // Hit regions live in VIRTUAL space: the camera pans and zooms between
     // frames, so a region measured in pixels would drift the moment it did.
-    type Hit = { x: number; y: number; w: number; h: number; root: string; kind?: 'reset'; grain?: string }
+    type Hit = { x: number; y: number; w: number; h: number; root: string; kind?: 'reset'; grain?: string; module?: string }
     let hits: Hit[] = []
     let hover = -1
     const hitAt = (vx: number, vy: number) =>
@@ -105,6 +113,8 @@ export default function HouseViewer({ module, root, grain, onRoot, onModule }: V
       const v = toVirtual(e)
       const i = hitAt(v.x, v.y)
       if (i < 0 || hits[i].kind === 'reset') return
+      // Leaving the store is not a directory move — the repo crumb says so.
+      if (hits[i].module) { onModule(hits[i].module!); return }
       // At module grain a card names a STORE, not a directory of this one.
       if (scene.level === 'module') { onModule(hits[i].root); return }
       onRoot(hits[i].root, hits[i].grain || '')
@@ -346,7 +356,7 @@ export default function HouseViewer({ module, root, grain, onRoot, onModule }: V
 
     function drawCrumbs() {
       const crumbs = scene!.crumbs
-      if (crumbs.length <= 1) return
+      if (crumbs.length <= 1 && !crumbs.some((c) => c.module)) return
       let x = 62
       const y = 128
       crumbs.forEach((c, i) => {
@@ -354,7 +364,7 @@ export default function HouseViewer({ module, root, grain, onRoot, onModule }: V
         const w = measure(c.label, 11.5, last ? 700 : 500) + 22
         if (!last) {
           const p = T(x, y)
-          hits.push({ x, y, w, h: 24, root: c.root, grain: '' })
+          hits.push({ x, y, w, h: 24, root: c.root, grain: '', module: c.module })
           const on = hover === hits.length - 1
           ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()
