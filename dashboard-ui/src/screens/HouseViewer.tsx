@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { attach, fit, type Cam } from '../camera'
 import { relationStyle } from '../flowLayout'
 import { houseLayout, HVH, HVW, type House, type Room } from '../houseLayout'
 import { sanitizeScene } from '../sanitize'
@@ -48,7 +47,6 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
     const host = wrap.current
     const ctx = canvas.getContext('2d', { alpha: false })
     if (!ctx) return
-    const H: House = houseLayout(scene)
     const pal = readPalette(host)
     const INK = pal.text
     const MUTED = pal.muted
@@ -65,9 +63,11 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
     const onMotion = () => { still = !!motion?.matches }
     motion?.addEventListener?.('change', onMotion)
 
-    const CAM_OPTS = { vw: HVW, vh: HVH, pad: 24, minK: 0.12, maxK: 8 }
-    const cam: Cam = { k: 1, x: 0, y: 0 }
-    let W = 0, Hh = 0, fitted = false
+    // No camera: the frame is fixed, the chrome stays put, and the picture
+    // fills the stage by construction — the width is the unit and the virtual
+    // height follows the stage's aspect ratio.
+    let SC = 1, W = 0, Hh = 0, vh = HVH
+    let H: House = houseLayout(scene, vh)
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       W = host.clientWidth || 1
@@ -77,14 +77,16 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
       canvas.style.width = W + 'px'
       canvas.style.height = Hh + 'px'
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      if (!fitted) { fit(cam, CAM_OPTS, W, Hh); fitted = true }
+      SC = W / HVW
+      vh = Hh / SC
+      H = houseLayout(scene, vh)
     }
     const ro = new ResizeObserver(resize)
     ro.observe(host)
     resize()
 
-    const T = (x: number, y: number) => ({ x: cam.x + x * cam.k, y: cam.y + y * cam.k })
-    const S = (v: number) => v * cam.k
+    const T = (x: number, y: number) => ({ x: x * SC, y: y * SC })
+    const S = (v: number) => v * SC
 
     // Hit regions live in VIRTUAL space: the camera pans and zooms between
     // frames, so a region measured in pixels would drift the moment it did.
@@ -93,19 +95,24 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
     let hover = -1
     const hitAt = (vx: number, vy: number) =>
       hits.findIndex((h) => vx >= h.x && vx <= h.x + h.w && vy >= h.y && vy <= h.y + h.h)
-    const detach = attach(canvas, cam, CAM_OPTS, {
-      onPick: (vx, vy) => (hitAt(vx, vy) >= 0 ? 'click' : null),
-      onClick: (vx, vy) => {
-        const i = hitAt(vx, vy)
-        if (i < 0) return
-        if (hits[i].kind === 'reset') { fit(cam, CAM_OPTS, W, Hh); return }
-        onRoot(hits[i].root)
-      },
-      onHover: (vx, vy) => {
-        hover = hitAt(vx, vy)
-        canvas.style.cursor = hover >= 0 ? 'pointer' : 'default'
-      },
-    })
+    const toVirtual = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect()
+      return { x: (e.clientX - r.left) / SC, y: (e.clientY - r.top) / SC }
+    }
+    const onMove = (e: PointerEvent) => {
+      const v = toVirtual(e)
+      hover = hitAt(v.x, v.y)
+      canvas.style.cursor = hover >= 0 ? 'pointer' : 'default'
+    }
+    const onUp = (e: PointerEvent) => {
+      const v = toVirtual(e)
+      const i = hitAt(v.x, v.y)
+      if (i >= 0 && hits[i].kind !== 'reset') onRoot(hits[i].root)
+    }
+    const onLeave = () => { hover = -1; canvas.style.cursor = 'default' }
+    canvas.addEventListener('pointermove', onMove)
+    canvas.addEventListener('pointerup', onUp)
+    canvas.addEventListener('pointerleave', onLeave)
 
     // The room's NAME is the way in — see FlowViewer.titleLink. A corner badge
     // is discoverable only once you know to look; the name is the first thing
@@ -117,9 +124,9 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
     ): boolean {
       let shown = label
       ctx!.font = `700 ${S(size)}px ${SANS}`
-      while (shown.length > 1 && ctx!.measureText(shown).width / cam.k > maxW) shown = shown.slice(0, -1)
+      while (shown.length > 1 && ctx!.measureText(shown).width / SC > maxW) shown = shown.slice(0, -1)
       if (shown !== label) shown = shown.slice(0, -1) + '…'
-      const w = ctx!.measureText(shown).width / cam.k
+      const w = ctx!.measureText(shown).width / SC
       let on = false
       if (enterable) {
         hits.push({ x, y: baseY - size, w, h: size * 1.35, root })
@@ -157,7 +164,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
       ctx!.textBaseline = 'alphabetic'
       let s = str
       if (max > 0) {
-        while (s.length > 1 && ctx!.measureText(s).width / cam.k > max) s = s.slice(0, -1)
+        while (s.length > 1 && ctx!.measureText(s).width / SC > max) s = s.slice(0, -1)
         if (s !== str) s = s.slice(0, -1) + '…'
       }
       if (spacing) {
@@ -171,7 +178,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
     }
     const measure = (s: string, size: number, weight = 400, font = SANS) => {
       ctx!.font = `${weight} ${S(size)}px ${font}`
-      return ctx!.measureText(s).width / cam.k
+      return ctx!.measureText(s).width / SC
     }
 
     // ---- the shell: roof, walls, ground line
@@ -394,7 +401,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
 
     function drawNotes() {
       scene!.notes.forEach((n, i) => {
-        text(n, HVW - 62, HVH - 76 + i * 14, { size: 9.6, color: i === 0 ? pal.amber : MUTED, align: 'right' })
+        text(n, HVW - 62, H.vh - 76 + i * 14, { size: 9.6, color: i === 0 ? pal.amber : MUTED, align: 'right' })
       })
     }
 
@@ -408,7 +415,7 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
       ctx.fillStyle = GROUND; ctx.fillRect(0, 0, W, Hh)
       if (scene!.empty) {
         drawHeader()
-        text(scene!.empty, HVW / 2, HVH / 2, { size: 16, color: pal.muted, align: 'center', max: 900 })
+        text(scene!.empty, HVW / 2, H.vh / 2, { size: 16, color: pal.muted, align: 'center', max: 900 })
         raf = requestAnimationFrame(frame)
         return
       }
@@ -426,7 +433,9 @@ export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
       cancelAnimationFrame(raf)
       ro.disconnect()
       motion?.removeEventListener?.('change', onMotion)
-      detach()
+      canvas.removeEventListener('pointermove', onMove)
+      canvas.removeEventListener('pointerup', onUp)
+      canvas.removeEventListener('pointerleave', onLeave)
     }
   }, [scene])
 

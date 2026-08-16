@@ -134,23 +134,63 @@ describe('flowLayout never overlaps cards in a column', () => {
   })
 })
 
-// Fixing the card overlap created a second one: a taller column ran straight
-// into the outer-world plates, which sat at a fixed Y. Seen on
-// mm/kasan/common.c the moment the column grew to hold four cards.
-describe('flowLayout keeps the outer world clear of the cards', () => {
-  it('drops the world band below the lowest card', () => {
-    const s = scene()
-    s.cards = Array.from({ length: 5 }, (_, i) => ({
-      ...s.cards[0], id: 'c' + i, label: 'c' + i, dir: 'src/c' + i,
-      layer: 0, row: i, hub: false,
-    }))
-    const lay = layout(s)
-    const cards = lay.boxes.filter((b) => b.kind === 'card' || b.kind === 'hub')
-    const worlds = lay.boxes.filter((b) => b.kind === 'world')
-    expect(worlds.length).toBeGreaterThan(0)
-    const lowestCard = Math.max(...cards.map((b) => (b.kind === 'hub' ? b.y + b.r : b.y + b.h)))
-    for (const w of worlds) {
-      expect(w.y, 'a world plate sits on top of a card').toBeGreaterThan(lowestCard)
+// SHAPES MAY NOT OVERLAP. Lines may — an arrow crossing an arrow is readable,
+// and forbidding it would mean moving cards off the columns that carry their
+// meaning. A card under the hub, or a world plate on a card, is lost
+// information. This replaces a narrower rule ("the world band sits below the
+// lowest card") which the separation pass supersedes: the requirement was never
+// the ordering, it was that nothing sits on anything.
+describe('flowLayout never lets two shapes overlap', () => {
+  const rect = (b: { kind: string; x: number; y: number; w: number; h: number; r: number }) =>
+    b.kind === 'hub'
+      ? { x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 }
+      : { x: b.x, y: b.y, w: b.w, h: b.h }
+
+  for (const vh of [500, 605, 700, 1000, 1400]) {
+    for (const n of [1, 2, 3, 5, 7]) {
+      it(`${n} cards at vh=${vh}`, () => {
+        const s = scene()
+        s.cards = Array.from({ length: n }, (_, i) => ({
+          ...s.cards[0], id: 'c' + i, label: 'c' + i, dir: 'src/c' + i,
+          layer: i % 3, row: Math.floor(i / 3), hub: i === n - 1,
+        }))
+        const lay = layout(s, vh)
+        for (let i = 0; i < lay.boxes.length; i++) {
+          for (let j = i + 1; j < lay.boxes.length; j++) {
+            const a = rect(lay.boxes[i]), b = rect(lay.boxes[j])
+            const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+            const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+            expect(ox > 1 && oy > 1,
+              `${lay.boxes[i].id} and ${lay.boxes[j].id} overlap by ${Math.round(ox)}x${Math.round(oy)}`)
+              .toBe(false)
+          }
+        }
+      })
     }
-  })
+  }
+})
+
+// With a fixed frame there is no camera to pan to something that ran out of the
+// bottom — it is simply gone. The band bounds card CENTRES, and using it as if
+// it bounded their edges put the last card's lower half through the footer.
+describe('flowLayout keeps everything inside the frame', () => {
+  for (const vh of [700, 870, 1000, 1400]) {
+    it(`no card crosses the footer at vh=${vh}`, () => {
+      for (const n of [1, 2, 3, 4, 5]) {
+        const s = scene()
+        s.cards = Array.from({ length: n }, (_, i) => ({
+          ...s.cards[0], id: 'c' + i, label: 'c' + i, dir: 'src/c' + i,
+          layer: 0, row: i, hub: false,
+        }))
+        const lay = layout(s, vh)
+        for (const b of lay.boxes) {
+          const bottom = b.kind === 'hub' ? b.y + b.r : b.y + b.h
+          expect(bottom, `${n} cards at vh=${vh}: ${b.id} runs past the footer`)
+            .toBeLessThanOrEqual(lay.footerY)
+          expect(b.y, `${n} cards at vh=${vh}: ${b.id} starts above the header`)
+            .toBeGreaterThan(100)
+        }
+      }
+    })
+  }
 })

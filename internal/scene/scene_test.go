@@ -607,23 +607,38 @@ func TestDrillCrumbsAlwaysLeadOut(t *testing.T) {
 	}
 }
 
-// TestDrillSelfCardIsNotADoor — inside src/app there is a card for the files
-// sitting directly in src/app. It is a real subsystem and belongs on screen, but
-// clicking it would re-derive the scene already on screen, so it must not
-// advertise itself as enterable.
-func TestDrillSelfCardIsNotADoor(t *testing.T) {
+// TestSelfCardOpensAtFileGrain — inside src/app there is a card for the files
+// sitting directly in src/app. It used to advertise nothing, because entering
+// it at directory grain re-derives the scene already on screen. But those files
+// are a real level (ADR 21), and on drivers/base/firmware_loader the hub card
+// stood for ten of them with no way to open any. It is a door now; it just
+// opens at FILE grain, which inference cannot reach because the same root also
+// has subdirectories.
+func TestSelfCardOpensAtFileGrain(t *testing.T) {
 	nodes, edges := nested()
 	in := Derive("demo", nodes, edges, Options{Root: "src/app"})
 	self := cardByID(in, "src/app")
 	if self == nil {
 		t.Fatal("the root's own files must still be drawn as a card")
 	}
-	if self.Children != 0 {
-		t.Errorf("the self card offers %d children — clicking it re-enters the same scene", self.Children)
+	if self.Children == 0 {
+		t.Error("the self card holds files and must offer them")
 	}
-	// but from OUTSIDE, the same directory is very much a door
-	if top := cardByID(Derive("demo", nodes, edges, Options{}), "src/app"); top == nil || top.Children == 0 {
-		t.Errorf("src/app must be enterable from the top level, got %+v", top)
+	if self.EnterGrain != "file" {
+		t.Errorf("the self card opens at %q; directory grain would re-derive this scene", self.EnterGrain)
+	}
+	files := Derive("demo", nodes, edges, Options{Root: "src/app", Grain: "file"})
+	if files.Level != "file" {
+		t.Fatalf("forcing file grain gave level %q", files.Level)
+	}
+	for _, c := range files.Cards {
+		if c.ID == "src/app/web" || c.ID == "src/app/core" {
+			t.Errorf("file grain drew a subdirectory: %+v", c)
+		}
+	}
+	// a card reached by inference alone carries no forced grain
+	if top := cardByID(Derive("demo", nodes, edges, Options{}), "src/app"); top == nil || top.EnterGrain != "" {
+		t.Errorf("src/app from the top level should infer its grain, got %+v", top)
 	}
 }
 

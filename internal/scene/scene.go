@@ -68,6 +68,11 @@ type Card struct {
 	Detail string `json:"detail"` // top declarations by degree, " · " joined
 	Glyph  string `json:"glyph"`  // derived from which transports it touches
 	Hub    bool   `json:"hub"`    // the most depended-upon subsystem
+	// EnterGrain is the grain a card opens AT. Almost always "" (infer from the
+	// directory), but the card standing for a root's OWN files has to say
+	// "file" — inference would look at the same root, see subdirectories, and
+	// hand back the scene you are already on.
+	EnterGrain string `json:"enter_grain"`
 	// Children is how many directories sit strictly under this card. It is the
 	// drill-down affordance: a card with 0 is a leaf and must not invite a click
 	// that would land on an empty scene.
@@ -180,6 +185,13 @@ type Options struct {
 	// leaf from the top can be the hub of its own level, and a filtered view
 	// could never show that.
 	Root string
+	// Grain forces the level instead of inferring it from Root. It exists for
+	// one case that inference cannot express: a directory that has BOTH
+	// subdirectories and files of its own. Scoped to it you get its
+	// subdirectories, and its own files — often the bulk of the code, and on
+	// drivers/base/firmware_loader the ten files the hub card stands for — had
+	// no way to be opened at all. "" means infer.
+	Grain string
 }
 
 // declKinds are the node kinds that count as "a declaration in a subsystem".
@@ -255,7 +267,13 @@ func (l Level) String() string {
 // levelFor decides the grain from what `root` NAMES: nothing or a directory
 // with subdirectories keeps directory grain; a directory with none descends to
 // its files; a file descends to its declarations.
-func levelFor(root string, dirs, files map[string]bool) Level {
+func levelFor(root, grain string, dirs, files map[string]bool) Level {
+	switch grain {
+	case "file":
+		return LevelFile
+	case "decl":
+		return LevelDecl
+	}
 	if root == "" {
 		return LevelDir
 	}
@@ -537,7 +555,7 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			allFiles[srcPath(n.Source)] = true
 		}
 	}
-	level := levelFor(opt.Root, allDirs, allFiles)
+	level := levelFor(opt.Root, opt.Grain, allDirs, allFiles)
 	sc.Level = level.String()
 
 	// ---- 1. every node to its unit, and node degree for detail lines.
@@ -653,8 +671,26 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			// Drilling found a real directory with nothing to draw INSIDE it. Say
 			// which, and leave the crumbs intact so the trail out still works —
 			// a dead end you cannot back out of is worse than no drill-down.
-			sc.Empty = "nothing under `" + opt.Root + "` calls or imports across its own subdirectories — " +
-				"this level is a leaf. Use the trail above to go back up."
+			// The wording follows the GRAIN. At file grain it said "across its
+			// own subdirectories" while the header said every card is a file,
+			// which describes a level the reader is not on.
+			// Say what IS here, not only what is missing. A bare "nothing to
+			// draw" leaves the reader unable to tell a real leaf from a broken
+			// view; the count does that in one line.
+			what := "subdirectories"
+			switch level {
+			case LevelFile:
+				what = "files"
+			case LevelDecl:
+				what = "declarations"
+			}
+			held := len(subs)
+			sc.Empty = "`" + opt.Root + "` holds " + itoa(held) + " " + what +
+				", and none of them call or import each other — so there is no flow to draw at this level. " +
+				"Nothing is missing; use the trail above to go back up."
+			if held == 0 {
+				sc.Empty = "`" + opt.Root + "` has no " + what + " in the store."
+			}
 		} else {
 			sc.Empty = "no subsystem in this store has a cross-directory `imports` or `calls` edge — " +
 				"there is no flow to draw. Try the graph viewer."
@@ -817,12 +853,20 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 	// none is NOT a leaf — it opens onto its files (ADR 21). At file grain it is
 	// the declarations in the file. A declaration is the floor.
 	kids := map[string]int{}
+	selfGrain := map[string]string{}
 	switch level {
 	case LevelDir:
 		for _, r := range chosen {
 			if r.dir == opt.Root {
-				// the card for files directly inside the current root: a real
-				// subsystem, but not a way IN — entering re-derives this scene
+				// The card for files directly inside the current root. Entering
+				// it at directory grain would re-derive this very scene, so it
+				// opens at FILE grain instead — which is what it stands for.
+				for f := range allFiles {
+					if path.Dir(f) == r.dir {
+						kids[r.dir]++
+					}
+				}
+				selfGrain[r.dir] = "file"
 				continue
 			}
 			seen := map[string]bool{}
@@ -858,11 +902,12 @@ func Derive(module string, nodes []schema.Node, edges []schema.Edge, opt Options
 			In: r.a.in, Out: r.a.out,
 			ExtIn: extIn[r.dir], ExtOut: extOut[r.dir],
 			Layer: layer[r.dir], Row: row[r.dir],
-			Detail:   detailOf(top[r.dir]),
-			Glyph:    glyphOf(touch[r.dir]),
-			Hub:      r.dir == hub,
-			Children: kids[r.dir],
-			Top:      topDecl(top[r.dir]),
+			Detail:     detailOf(top[r.dir]),
+			Glyph:      glyphOf(touch[r.dir]),
+			Hub:        r.dir == hub,
+			Children:   kids[r.dir],
+			EnterGrain: selfGrain[r.dir],
+			Top:        topDecl(top[r.dir]),
 		})
 	}
 	sort.Slice(sc.Cards, func(i, j int) bool {

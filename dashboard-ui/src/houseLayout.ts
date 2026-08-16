@@ -49,6 +49,8 @@ export interface Door {
 }
 
 export interface House {
+  /** the virtual height this layout was composed for */
+  vh: number
   rooms: Room[]
   byId: Map<string, Room>
   stairs: Stair[]
@@ -61,13 +63,16 @@ export interface House {
 
 const MARGIN_X = 210 // the strip outside the walls, where the doors hang
 const TOP = 236
-const BOTTOM = 812
+const BOTTOM_GAP = 188 // ground line + the notes strip below the building
 const ROOM_GAP = 14
 const FLOOR_GAP = 26 // room for the storey label to sit clear of the rooms
 
-export function houseLayout(scene: Scene): House {
+export function houseLayout(scene: Scene, vh: number = HVH): House {
   const cards = scene.cards || []
   const links = scene.links || []
+  // The building fills the STAGE. A fixed 1000-unit height letterboxed into a
+  // wide window left the house small in the middle of a lot of nothing.
+  const BOTTOM = Math.max(TOP + 180, vh - BOTTOM_GAP)
 
   // Floors, deepest layer at the BOTTOM. layer 0 is the most dependent code
   // (it calls everything and nothing calls it) so it belongs at the top: a
@@ -167,7 +172,7 @@ export function houseLayout(scene: Scene): House {
   })
 
   return {
-    rooms, byId, stairs, doors, floors,
+    vh, rooms, byId, stairs, doors, floors,
     ground: floors.length ? floors[floors.length - 1].y + floors[floors.length - 1].h : BOTTOM,
     roof: TOP,
     maxWeight,
