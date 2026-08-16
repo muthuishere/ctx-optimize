@@ -252,6 +252,42 @@ had the answer one hop away** — blk-throttle.c, sed-opal.c, blk-flush.c,
 ll_back_merge_fn. That is real headroom for slice 4 and it is not nothing. Re-
 run against the pinned corpus before any number goes in a commit message.
 
+## SLICE 0 SHIPPED 2026-08-16 — and where the rest of the second is
+
+`query` no longer builds a whole-graph adjacency map. Measured on linux, same
+question, same machine: **4.11s → 2.73s**, same top hit, judged floors
+unmoved (linux-block 16.5/20, newtonsoft 13.0/20 — both exactly at floor,
+which is what an access path must do).
+
+Short of the 2.37s the phase profile predicted, and the reason is worth
+recording rather than rounding away: **only the adjacency BUILD is gone. The
+caller still reads all 5.5M edges (1.07s).** It reads them because
+`narrowQuery` builds a discloser from the PRE-narrow streams — that is
+deliberate, it is the only thing that can say what the store holds when a
+filtered query comes back empty.
+
+So the remaining 1.07s is not a mechanical edit. It needs the discloser to
+answer lazily (what does it actually need, and can it read that on demand?),
+and that is its own slice with its own decision. **Do not "optimise" it by
+dropping the discloser** — an empty filtered result that cannot explain itself
+is a worse product than a slower one.
+
+Two correctness constraints that landed with the slice and must not be
+loosened:
+
+- **The indexed lane is used ONLY when nothing narrowed the graph.** A
+  `--where`/`--kind` query must see neighbours from the NARROWED graph; the
+  index knows only the whole one. Serving it after a filter attaches edges the
+  caller explicitly excluded — a wrong answer, not a slow one.
+- **The index is probed once, up front.** A per-hit decision can answer half
+  from each lane.
+
+And one honest gap: the file-order sort in `EdgesTouchingOrdered` is **not
+red-proven**. A mutation removing it survives both the store fixture and the
+real-store equivalence test. It is cheap and obviously correct; it is not
+demonstrated necessary, and a future reader should know that before trusting
+the comment above it.
+
 ## An honesty constraint slice 4 needs, and does not yet state
 
 Slice 4 lets a node become a RESULT because the graph vouches for it, with
