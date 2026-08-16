@@ -124,10 +124,40 @@ The next engine is this ADR, not a site promise.
 - Slice 1 latency: report before/after on linux and kubernetes, quiet
   machine, best-of-3, `CTX_OPTIMIZE_STORE` temp. No "fastest" until
   `versions.json` exists (arena is still unpinned — Agents.md).
+
+  **BEFORE, measured 2026-08-16** so slice 1 has something to beat:
+
+  ```
+  linux    2,848,839 nodes   3.93s best of 5   (4.04 4.00 3.99 3.93 4.19)
+  reqsume     19,808 nodes   0.04s
+  ```
+
+  Same binary, same question ("buffer allocation retry"). 144x the nodes,
+  ~100x the time — the O(N) claim is not theoretical. NOT pin-verified:
+  load average was 5.65 on a 3-day-up laptop, so treat it as the shape of
+  the curve, not a headline. Re-take on a quiet box before publishing.
 - Slices 3–4: scoreboard and the mux 67%/15-call run may only move UP.
   A faster query that ranks worse is a loss.
 - Gather cost of building postings reported; atomic rename; git-diffable
   sorted output; no secrets in the index.
+
+## An honesty constraint slice 4 needs, and does not yet state
+
+Slice 4 lets a node become a RESULT because the graph vouches for it, with
+no lexical overlap at all. That is the point — and it is also the first
+time `query` would return something it INFERRED rather than something it
+matched.
+
+Everything else this store emits carries its evidence class: edges are
+EXTRACTED / INFERRED / AMBIGUOUS, ports name their rule, `card` cites
+file:line. A structurally-promoted hit must say so in the output — anchor
+vs expansion, and which relation vouched for it — or `query` starts
+asserting relevance in the same voice it uses for parsed fact. The
+confidence weights in slice 4 decide what surfaces; they do not tell the
+reader that anything was inferred.
+
+Cheap to hold: one field on `Hit`, printed in both text and `--json`.
+Expensive to retrofit once agents have learned to trust the output shape.
 
 ## Open
 
