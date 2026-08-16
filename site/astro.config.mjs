@@ -27,7 +27,7 @@ export default defineConfig({
 			title: 'ctx-optimize',
 			tableOfContents: false,
 			description:
-				'A deterministic code knowledge graph for coding agents. Ask who calls this, what breaks if I change it, and what this system talks to — every answer a resolved symbol with its real file:line. One binary, no LLM, no database, no MCP.',
+				'Fast answers on a cheaper model. A bigger model with less context for the whole job — not one grep. One local Go binary gathers nodes, edges, and boundaries — no model, no MCP. Same store for the architect.',
 			plugins: [
 				starlightLlmsTxt({
 					projectName: 'ctx-optimize',
@@ -43,6 +43,7 @@ export default defineConfig({
 				// homepage has no sidebar, so without these the docs are
 				// reachable only from the hero button.
 				Header: './src/components/Header.astro',
+				SiteTitle: './src/components/SiteTitle.astro',
 			},
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/muthuishere/ctx-optimize' },
@@ -52,6 +53,7 @@ export default defineConfig({
 					label: 'Start here',
 					items: [
 						{ label: 'Quick start', slug: 'quickstart' },
+						{ label: 'How to use it', slug: 'guide' },
 						{ label: 'What it is', slug: 'concepts' },
 					],
 				},
@@ -61,6 +63,7 @@ export default defineConfig({
 						{ label: 'CLI reference', slug: 'cli' },
 						{ label: 'Cookbook', slug: 'cookbook' },
 						{ label: 'Use cases', slug: 'use-cases' },
+						{ label: 'See the architecture', slug: 'see' },
 						{ label: 'Boundaries — the external surface', slug: 'boundaries' },
 						{ label: 'The dashboard — serve', slug: 'dashboard' },
 					],

@@ -1,0 +1,49 @@
+---
+// Dashboard wordmark: ctx-<em>optimize</em> + "gather once · answer from the store"
+const href = import.meta.env.BASE_URL;
+---
+
+<a href={href} class="ctx-logo">
+	<span class="mark">ctx-<em>optimize</em></span>
+	<span class="tag">gather once · answer from the store</span>
+</a>
+
+<style>
+	.ctx-logo {
+		display: inline-flex;
+		align-items: center;
+		gap: 12px;
+		min-width: 0;
+		text-decoration: none;
+		color: inherit;
+	}
+	.ctx-logo:hover .mark {
+		opacity: 0.82;
+	}
+	.mark {
+		font-weight: 700;
+		font-size: 1.15rem;
+		letter-spacing: -0.01em;
+		color: var(--sl-color-white);
+		white-space: nowrap;
+		line-height: 1;
+	}
+	.mark em {
+		color: var(--sl-color-accent);
+		font-style: normal;
+	}
+	.tag {
+		color: var(--sl-color-gray-4);
+		font-size: 0.78rem;
+		font-family: var(--sl-font-mono);
+		letter-spacing: 0.04em;
+		white-space: nowrap;
+		line-height: 1.2;
+		padding-top: 0.12em;
+	}
+	@media (max-width: 48rem) {
+		.tag {
+			display: none;
+		}
+	}
+</style>

@@ -1,97 +1,51 @@
 ---
 title: Quick start
-description: "Install the binary, gather a repo, and ask the first question — three commands, no service to run."
+description: Three commands. No service, no API key, no MCP. Then the agent asks the graph instead of rediscovering the repo.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-## The fastest way: paste this into your agent
-
-You are probably reading this with an agent already open. Pick yours, paste the
-block, and it does the setup — installs the CLI, builds the graph, and wires
-itself up so it reaches for the store instead of grep.
+Three commands gather the repo into a local graph — nodes, edges, boundaries. After
+that a cheaper model can answer, and a bigger model spends the window coding instead
+of rediscovering who talks to what.
 
 <Tabs>
 <TabItem label="Claude Code">
 ```text
-Install ctx-optimize for this repo and set yourself up to use it:
-1. npm install -g @muthuishere/ctx-optimize
-2. cd into the repo root and run: ctx-optimize up
-3. run: ctx-optimize install --claude
-   (installs the skill + the session hook, and adds the always-on
-    "knowledge graph before grep" rule to my global ~/.claude/CLAUDE.md)
-4. run: ctx-optimize init   — writes the committed pointer block so my
-   teammates' agents inherit it too
-
-From now on answer my code questions with its verbs — query, card,
-change-plan, affected, boundaries — instead of grep-and-read, and cite the
-file:line it returns.
+npm install -g @muthuishere/ctx-optimize
+cd your-repo && ctx-optimize up
+ctx-optimize install --claude
 ```
 </TabItem>
 <TabItem label="Codex">
 ```text
-Install ctx-optimize for this repo and set yourself up to use it:
-1. npm install -g @muthuishere/ctx-optimize
-2. cd into the repo root and run: ctx-optimize up
-3. run: ctx-optimize install --codex
-   (installs the skill + hook and adds the always-on rule to my global
-    ~/.codex/AGENTS.md — then trust it once with /hooks inside codex)
-4. run: ctx-optimize init   — writes the committed pointer block for the team
-
-From now on answer my code questions with its verbs — query, card,
-change-plan, affected, boundaries — instead of grep-and-read, and cite the
-file:line it returns.
+npm install -g @muthuishere/ctx-optimize
+cd your-repo && ctx-optimize up
+ctx-optimize install --codex
 ```
+Then trust the hook once with `/hooks` inside Codex.
 </TabItem>
 <TabItem label="Copilot">
 ```text
-Install ctx-optimize for this repo and set yourself up to use it:
-1. npm install -g @muthuishere/ctx-optimize
-2. cd into the repo root and run: ctx-optimize up
-3. run: ctx-optimize install --copilot
-4. run: ctx-optimize init   — writes the committed pointer block for the team
-
-From now on answer my code questions with its verbs — query, card,
-change-plan, affected, boundaries — instead of grep-and-read, and cite the
-file:line it returns.
+npm install -g @muthuishere/ctx-optimize
+cd your-repo && ctx-optimize up
+ctx-optimize install --copilot
 ```
 </TabItem>
-<TabItem label="Any agent">
+<TabItem label="Any / Grok / Devin">
 ```text
-Install ctx-optimize for this repo and set yourself up to use it:
-1. npm install -g @muthuishere/ctx-optimize
-2. cd into the repo root and run: ctx-optimize up
-3. run: ctx-optimize install    — every agent CLI it detects
-4. run: ctx-optimize init       — the committed pointer block for the team
-
-From now on answer my code questions with its verbs — query, card,
-change-plan, affected, boundaries — instead of grep-and-read, and cite the
-file:line it returns.
+npm install -g @muthuishere/ctx-optimize
+cd your-repo && ctx-optimize up
+ctx-optimize install
 ```
+Grok already reads the Claude skill. Devin already reads `~/.agents/skills`.
 </TabItem>
 </Tabs>
 
-Every line is a command you could have typed yourself. There is no `curl | sh`
-and nothing behind a shortener, deliberately: you should be able to read what
-will run before an agent runs it.
+If the agent still only searches files, say: *Use ctx-optimize for searching and all
+structural work.* [The full playbook →](/ctx-optimize/guide/)
 
-**Where things land, so nothing is a surprise.** The skill is **always
-installed globally** — `~/.claude/skills/ctx-optimize` for Claude Code,
-`~/.agents/skills/ctx-optimize` for the others — along with a session hook for
-that agent. The agent flag (`--claude`, `--codex`, `--copilot`) only chooses
-*which* agent gets wired up, not where the skill goes. Plain `install` does
-every agent CLI it detects.
-
-The one **optional** part is the always-on rule in your **global** instructions
-file, `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`. That is the line that makes
-an agent reach for the store without being asked. Everything above is undone by
-`ctx-optimize uninstall`, which strips the skill, the hook and the
-marker-fenced rule and leaves the rest of the file alone.
-
-`ctx-optimize init` is the only step that touches the repo, and it writes files
-you are meant to commit — the whole team's agents inherit them.
-
-The steps are explained one by one below if you would rather do them by hand.
+What those commands did, if you want to type them yourself:
 
 ## Install
 
@@ -121,11 +75,17 @@ optional adapters), which is meant to be committed.
 ## Teach your agent
 
 ```bash
-ctx-optimize install --skills     # Claude Code + Codex
+ctx-optimize install --skills     # Claude Code + Codex — only if you want the always-on rule
 ```
 
-This installs the agent skill and writes a pointer block into `AGENTS.md` / `CLAUDE.md`, so
-an agent reaches for the store without being told. The full usage card is committed at
+The first time any verb runs in a terminal (and no skill is present), the binary already
+installs the skill and the session hook, prints every path it wrote, and stays silent after
+that. It does **not** write the always-on rule into `~/.claude/CLAUDE.md` /
+`~/.codex/AGENTS.md` — that larger claim on the machine stays with the explicit `install`
+verb. It never runs in CI, and it never runs when stdout is not a terminal.
+
+`install --skills` is the step that also writes the pointer block into this repo's
+`AGENTS.md` / `CLAUDE.md`. The full usage card is committed at
 `.ctxoptimize/instructions.md` — teammates inherit it with zero installation.
 
 ## Ask
@@ -142,11 +102,31 @@ Every answer carries an exact `file:line`. Pick the verb by intent rather than r
 `query` every time — the [cookbook](/ctx-optimize/cookbook/) maps the question you would ask
 a teammate to the one command that answers it.
 
+## See it
+
+The same store, as a picture a human can read.
+
+```bash
+ctx-optimize serve
+# dashboard: http://127.0.0.1:4747/  — Viewer → "Flow — derived architecture"
+```
+
+A card is a directory. An arrow is N real edges, summed. The hub is whatever everything
+depends on. The dashed plates underneath are the [external surface](/ctx-optimize/boundaries/)
+— hosts, env names, spawned binaries — never a secret value. Click a card to drill into
+its files, then its declarations.
+
+![Flow viewer — derived architecture of a real service, with travelling dots along the calls](/ctx-optimize/media/flow-reqsume-api.gif)
+
+[How to read the picture →](/ctx-optimize/see/) · [How `serve` is locked down →](/ctx-optimize/dashboard/)
+
 ## Keep it current
 
 ```bash
 ctx-optimize sync      # incremental resync; a no-change run is milliseconds
 ```
 
-Or set `"autosync": "lazy"` in `.ctxoptimize/config.json` and a stale read resyncs itself in
-the background.
+Default is **off** — a stale store stays stale until you sync. `"autosync": "lazy"` in
+`.ctxoptimize/config.json` is opt-in (first stale read answers now, a child refreshes for
+the next). There is no MCP server and no watcher. The agent may still grep; we do not
+block it. If it ignores the store, [say this](/ctx-optimize/guide/#if-claude-does-not-use-it).

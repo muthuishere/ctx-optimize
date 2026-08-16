@@ -15,7 +15,7 @@ import ThemeSelect from 'virtual:starlight/components/ThemeSelect';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const links = [
-	{ label: 'Docs', href: `${base}/quickstart/` },
+	{ label: 'Docs', href: `${base}/guide/` },
 	{ label: 'Boundaries', href: `${base}/boundaries/` },
 	{ label: 'Benchmarks', href: `${base}/benchmarks/` },
 ];
@@ -26,10 +26,10 @@ const shouldRenderSearch =
 ---
 
 <div class="header sl-flex">
-	<div class="title-wrapper sl-flex">
+	<div class="title-wrapper">
 		<SiteTitle {...Astro.props} />
 	</div>
-	<div class="sl-flex print:hidden">
+	<div class="search-slot sl-flex print:hidden">
 		{shouldRenderSearch && <Search {...Astro.props} />}
 	</div>
 	<div class="sl-hidden md:sl-flex right-group">
@@ -51,25 +51,50 @@ const shouldRenderSearch =
 
 <style>
 	.header {
-		gap: var(--sl-nav-gap);
+		gap: 1rem 1.25rem;
 		justify-content: space-between;
 		align-items: center;
 		height: 100%;
 	}
 	.title-wrapper {
-		overflow: clip;
-		padding: 0.25rem;
-		margin: -0.25rem;
+		display: flex;
+		align-items: center;
 		min-width: 0;
+		flex: 0 1 auto;
+	}
+	.search-slot {
+		flex: 1 1 12rem;
+		min-width: 0;
+		justify-content: flex-end;
+		align-items: center;
 	}
 	.right-group {
 		gap: 1rem;
 		align-items: center;
+		flex-shrink: 0;
+	}
+	.social-icons {
+		align-items: center;
+		gap: 0.65rem;
+	}
+	.social-icons :global(a) {
+		color: var(--sl-color-gray-2);
+		display: inline-flex;
+		align-items: center;
+		line-height: 0;
+	}
+	.social-icons :global(a:hover) {
+		color: var(--sl-color-white);
+	}
+	.social-icons :global(svg) {
+		width: 1.05rem;
+		height: 1.05rem;
 	}
 	.social-icons::after {
 		content: '';
-		height: 2rem;
+		height: 1.15rem;
 		border-inline-end: 1px solid var(--sl-color-gray-5);
+		align-self: center;
 	}
 	.ctx-nav {
 		display: none;
@@ -97,27 +122,9 @@ const shouldRenderSearch =
 		color: var(--sl-color-text-accent);
 	}
 	@media (min-width: 50rem) {
-		:global(:root[data-has-sidebar]) {
-			--__sidebar-pad: calc(2 * var(--sl-nav-pad-x));
-		}
-		:global(:root:not([data-has-toc])) {
-			--__toc-width: 0rem;
-		}
 		.header {
-			--__sidebar-width: max(0rem, var(--sl-content-inline-start, 0rem) - var(--sl-nav-pad-x));
-			--__main-column-fr: calc(
-				(
-						100% + var(--__sidebar-pad, 0rem) - var(--__toc-width, var(--sl-sidebar-width)) -
-							(2 * var(--__toc-width, var(--sl-nav-pad-x))) - var(--sl-content-inline-start, 0rem) -
-							var(--sl-content-width)
-					) / 2
-			);
-			display: grid;
-			grid-template-columns:
-				minmax(calc(var(--__sidebar-width) + max(0rem, var(--__main-column-fr) - var(--sl-nav-gap))), auto)
-				1fr
-				auto;
-			align-content: center;
+			display: flex;
+			align-items: center;
 		}
 	}
 </style>

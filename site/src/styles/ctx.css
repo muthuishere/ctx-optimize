@@ -65,10 +65,35 @@
 	--sl-color-text-accent: #047857;
 }
 
-/* The site logo is a wordmark, not an image. */
-.site-title {
+/* Dashboard wordmark: ctx-optimize with the second half in accent. */
+.site-title,
+.hero h1 {
 	font-weight: 700;
 	letter-spacing: -0.01em;
+}
+.hero h1 em {
+	color: var(--sl-color-accent);
+	font-style: normal;
+}
+
+/* Splash with no hero image: Starlight still opens a 7fr/4fr grid and
+   leaves an empty column, which shoves the copy off-centre. One column. */
+.hero {
+	grid-template-columns: minmax(0, 1fr) !important;
+	justify-items: start;
+}
+.hero .stack,
+.hero .copy {
+	align-items: flex-start;
+	text-align: start;
+	width: 100%;
+}
+.hero .copy > * {
+	max-width: 46rem;
+}
+.hero .actions {
+	justify-content: flex-start;
+	align-items: center;
 }
 
 /* Tables: this project publishes a lot of them, and a benchmark table that

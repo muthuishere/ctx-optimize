@@ -3,11 +3,11 @@ title: Use cases
 description: "What you actually get: onboarding, safe refactoring, impact analysis, monorepos, sources and team sharing."
 ---
 
-Five situations where a knowledge graph changes what an engineer or an agent can do — framed by the outcome, not the mechanism. Each one is honest about where it stops helping.
+Six situations where a knowledge graph changes what an engineer or an agent can do — framed by the outcome, not the mechanism. Each one is honest about where it stops helping.
 
 ## Onboarding a new repo — yours, or a teammate's.
 
-The first hour in an unfamiliar codebase is the most expensive hour an agent (or a new hire) spends — grep the obvious names, open the wrong file, guess at the architecture from folder names. The outcome you want isn't "a graph exists" — it's **being able to ask a real question and get a cited answer in the first minute**.
+The first hour in an unfamiliar codebase is the most expensive hour an agent (or a new hire) spends — rebuilding who talks to what from greps and folder names. The store already has that graph. The outcome you want isn't "a graph exists" — it's **a cited answer in the first minute, without filling the window rediscovering the repo**.
 
 ### What you do
 
@@ -88,13 +88,46 @@ One store per declared module, plus a root **navigator** — not a merged mega-g
 **Where it stops helping.** Cross-module answers go through the navigator's ranking, which is a step slower and coarser than a single-module query — for a genuinely cross-cutting question, `merge api worker --into everything` gives you one combined (but now-stale-the-moment-either-side-changes) view. Source/test splits across separate directories need an explicit multi-path module declaration or calls between them won't resolve.
 :::
 
+## Reading a module as an architect — before the review, not during the argument.
+
+Folder names are not an architecture. A force-directed graph of every symbol is not one
+either. The outcome you want is to **see the layering, the hub, and the outer world of one
+module in a single frame**, with every mark a fact you can argue from.
+
+### What you do
+
+```text
+ctx-optimize serve
+# Viewer → "Flow — derived architecture" → pick the module
+# click the hub to see the files everything depends on
+```
+
+### What you get
+
+A derived scene, not a drawing. A card is a directory. An arrow is N real `imports`/`calls`
+edges, summed. Left-to-right is dependency depth. The circled hub is the most depended-upon
+directory. The dashed plates underneath are the [ports](/ctx-optimize/boundaries/) — hosts,
+env names, spawned binaries — never a value. Click through directory → files → declarations
+when the work is inside one card.
+
+On a real service this is how you notice a 241-in hub, a 205-host outer world, or a
+handlers card that only ever points out, without anyone writing a caption that says
+"smell." [How to read the picture →](/ctx-optimize/see/)
+
+:::note
+**Where it stops helping.** The picture is a sample — top N of M directories, declared in
+the footer — and it does not grade the module. A fat hub is a number, not a verdict.
+AMBIGUOUS edges are withheld, so a missing arrow is not proof of isolation. For blast
+radius, go back to `affected` / `change-plan`; those read the whole graph.
+:::
+
 ## Indexing docs and a live database schema — via sources.
 
 A lot of "what does this system do" questions have their real answer outside the repo: a table your code reads but never declares in an ORM model, a Kafka topic, an OpenAPI contract another team owns. The outcome is asking a code question and a schema question in the same breath, with one citation format for both.
 
 ### Docs — built in, no setup
 
-Markdown in the repo is gathered natively on every `add`/`sync` — headings become sections, nested by level, indexed the same way as code. No adapter, no flag.
+Markdown in the repo is gathered natively on every `add`/`sync` — headings become sections, nested by level, indexed the same way as code. No adapter, no flag. The producer walks a real CommonMark AST, so a heading inside a fenced example is not a section (618 of those used to be). A link becomes an edge only if its target exists in the walk. [The measurement →](/ctx-optimize/how-it-works/#markdown-is-parsed-not-grepped)
 
 ### Database, bucket, queue, or API — one env var
 

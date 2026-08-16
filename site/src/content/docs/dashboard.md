@@ -37,11 +37,12 @@ and you confirm the module list before the gather runs. It is the same path as
 **Query** — the same query engine the agent calls, with a module picker and a text box.
 Ranked, cited hits with signatures and neighbors.
 
-**Viewer** — a force-directed graph of one module, with a filter panel down the right side
-listing every node kind (`route`, `config`, `class`, `document`, `file`, `function`,
-`module`, `section`) and every producer, each with a count, so you can switch families on and
-off. Drag pans, the wheel zooms, and clicking a node loads its 1-hop neighborhood and merges
-it into the view.
+**Viewer** — three projections of the same store, picked from a switcher. **Flow** draws the
+[derived architecture](/ctx-optimize/see/) (a card is a directory, an arrow is N real edges,
+the hub is the most depended-upon directory, the outer world is the boundary ports).
+**House** is the same scene as a cutaway building. **Graph** is the original force-directed
+view, still budgeted, with a filter panel of every node kind and producer. Click a Flow or
+House card to drill — directory → files → declarations. Drag pans, the wheel zooms.
 
 **Settings** — the config keys in effect (`instructions`, `skills`, `hooks`) with what set
 each one, the grammar / route / manifest packs discovered on this machine and in the repo,
@@ -88,19 +89,43 @@ binary with `go:embed` — the page loads one local JS file, one local CSS file,
 works with the machine offline, and the only network traffic it can generate is a remote
 push/pull you explicitly trigger, running the command your own config declares.
 
+## The viewers, and why there are three
+
+The force-directed **Graph** is a hairball on any real store. That is not a rendering
+problem — a 9,854-node module cannot be a picture of every symbol. So `serve` derives a
+second picture from the same store and lets you switch.
+
+**Flow** is that picture. A card is a directory the author chose. An arrow is N real
+`imports`/`calls` edges, lifted and summed — `AMBIGUOUS` excluded, so the arrow is a fact.
+A card's column is its longest-path depth in the lifted DAG, so position means the
+direction dependencies point. The hub is the most depended-upon directory. The outer
+world is the [boundary](/ctx-optimize/boundaries/) ports, grouped by transport, names
+only. The footer says what it is hiding: top N of M directories, this is a sample.
+
+**House** is the same derivation projected as a cutaway building. Same cards, same
+arrows, same hub. A third viewer is one entry in a registry; the shell never names one.
+
+**Drill.** A leaf directory is not a leaf. Opening a card changes the unit — child
+directories, then files, then declarations — so the `includes` and `calls` *inside* a
+directory become visible. The cap stays 6 + hub. [The full reading →](/ctx-optimize/see/)
+
+The scene is computed in Go (`GET /api/scene`) and is small on purpose: 7,663 nodes and
+14,887 edges become a 4.4 KB payload. Read-only, no token, no audit, and it never
+creates a store directory.
+
 ## The limit worth knowing
 
-**The graph endpoint is budgeted, so large graphs arrive truncated.** The viewer does not
-stream a whole module; the server sends a bounded slice and says so. Asked for this repo's own
-module, `/api/graph` returned 708 of 4,834 nodes and 2,804 of 10,438 edges with
-`"truncated": true`, and the viewer prints the same thing above the canvas —
-`nodes 633 / 7663 · server-budgeted`.
+**The graph endpoint is budgeted, so large graphs arrive truncated.** The force-directed
+viewer does not stream a whole module; the server sends a bounded slice and says so.
+Asked for this repo's own module, `/api/graph` returned 708 of 4,834 nodes and 2,804 of
+10,438 edges with `"truncated": true`, and the viewer prints the same thing above the
+canvas — `nodes 633 / 7663 · server-budgeted`.
 
-That is deliberate: a browser cannot lay out a million-node graph, and the Linux kernel store
-on this machine is 2.8M nodes. But it means **the picture is a sample, not the graph**. Click a
-node to expand its real neighborhood, and use `affected`, `path` and `change-plan` on the CLI
-when you need the complete answer — those read the whole graph and are the ones to trust for
-blast radius.
+That is deliberate: a browser cannot lay out a million-node graph, and the Linux kernel
+store on this machine is 2.8M nodes. Flow and House dodge the problem by *not sending
+the graph* — they send the derived scene. For blast radius, still use `affected`,
+`path` and `change-plan` on the CLI. Those read the whole graph and are the ones to
+trust.
 
 ## Endpoints
 
@@ -111,6 +136,7 @@ Read (plain GET, loopback):
 | `/api/stores` | every store: key, root, node/edge counts, freshness, producers, usage |
 | `/api/modules` | the module list, with counts and a one-line summary |
 | `/api/graph?module=<key>` | a budgeted node/edge slice; `?center=` expands one node |
+| `/api/scene?module=<key>` | the derived architecture (cards, arrows, hub, outer world); optional `?root=` to drill |
 | `/api/query?module=<key>&q=<terms>` | ranked hits with location, signature and neighbors |
 | `/api/usage?module=<key>` | the usage counter for that store |
 | `/api/setup` | grammar / route / manifest packs and effective config |

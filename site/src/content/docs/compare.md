@@ -34,7 +34,7 @@ A year ago "give your agent codebase context" meant embeddings and a vector DB. 
 | Team clone → prebuilt graph in one step | one verb: `up` | rebuild | rebuild | rebuild | re-index | re-warm |
 | License | MIT | MIT | noncommercial | open | open-core | MIT |
 
-green = a genuine strength, amber = partial / caveated, red = a real weakness. Notice ours has red in it. The most important red is **MCP** — see "our bet."
+green = a genuine strength, amber = partial / caveated, red = a real weakness. Missing MCP is **not** a red cell — see [why we do not run a server](#no-mcp).
 
 ## Two kinds of numbers: what we measured, and what's structurally true of everyone.
 
@@ -239,7 +239,7 @@ Serena has no persistent graph and no cross-language/route/dep view, and needs a
 language. Their precision is the thing we most want to close — exact call edges are on our
 roadmap.
 
-## A single deterministic binary you extend, not a service you run.
+## A single deterministic binary you extend, not a service you run. {#no-mcp}
 
 Strip away the scoreboard and the difference is philosophical. Everyone else is a **store format + a server** (SQLite, LadybugDB, Neo4j) or a **live service** (LSP). We're a **single static Go binary** — no database process, no embeddings, no model, no network except what you invoke yourself (a self-update, a one-time toolchain fetch, your own remote scripts) — whose artifacts are plain, sorted, git-diffable files. What that buys:
 
@@ -251,12 +251,12 @@ Strip away the scoreboard and the difference is philosophical. Everyone else is 
 
 - +**More than code.** Routes→handlers, dependencies that federate across build tools, k8s topology, git co-change, community subsystems — in one graph, one query.
 
-- ±**Agent skill over MCP — a deliberate bet.** The leaders distribute over MCP; we bet on the **agent-skill + hook + committed pointer** path instead. A skill is richer than a fixed MCP tool list — it teaches the agent *when* and *how* to use the store, carries the query-craft rules, and drives onboarding and customization end-to-end. The tradeoff, stated plainly: on MCP-only hosts (Cursor, Kiro, Gemini CLI) you'd wire the CLI in yourself — there's no MCP server, by choice, and there won't be one. On Claude Code, Codex, Copilot and Devin the skill lands the moment you run `install --skills`.
+- +**No MCP — local is the freshness path.** The graph is a folder and a CLI. `card` is milliseconds; a no-change `sync` is ~0.25s. There is no daemon and no tool-schema for the harness to forget to load. Claude Code often never calls MCP tools at all (independent 2026-08 session bench: Graphify 3/15, code-review-graph 0/15, same servers Codex used every time). On MCP-only hosts you wire the binary yourself. There will not be an MCP server. After an edit, run `sync` — lazy autosync is opt-in, not the default.
 
 - −**Call edges are conservative, not LSP-exact.** We parse with tree-sitter (real ASTs, same engine class as CodeGraph/GitNexus/graphify) and resolve a call to its declaration by unique name — **dropping ambiguous matches rather than guessing**, so there are no false edges. That's the same precision tier as the other graph tools; only Serena's language server is genuinely type-exact (it knows the exact overload). Closing that last gap (go/x/tools first) is on the roadmap.
 
 :::note
-**The honest summary:** if you want the most-adopted, MCP-everywhere tool today, that's CodeGraph or GitNexus. If you want a company-safe license, avoid GitNexus. If you want symbol-exact refactors, add Serena. If you want **one zero-dependency binary that indexes code + routes + dependencies + infra deterministically and lets your team extend it without a fork**, delivered to your agent as a skill rather than an MCP server, on Claude Code / Codex / Copilot / Devin — that's us. We'd rather earn the comparison than hide from it.
+**The honest summary:** if you want MCP-everywhere today, that's CodeGraph or GitNexus. If you want a company-safe license, avoid GitNexus. If you want symbol-exact refactors, add Serena. If you want **one binary, no server, no model in the gather**, complete `file:line` answers, and an outer surface (`boundaries`) the others do not model — that's us. The agent may still grep. We do not block it.
 :::
 
 Sources for the star counts and feature lists: [rywalker's code-intelligence survey](https://rywalker.com/research/code-intelligence-tools) and [knolli's graphify alternatives](https://www.knolli.ai/post/graphify-alternatives). Our own numbers are in [benchmarks](/ctx-optimize/benchmarks/); the CLI surface is in the [reference](/ctx-optimize/cli/).

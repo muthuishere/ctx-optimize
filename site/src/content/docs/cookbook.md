@@ -42,6 +42,16 @@ ctx-optimize hubs --top 10
 open ~/ctxoptimize/<repo>/wiki/
 ```
 
+### See the architecture of a module
+
+```text
+ctx-optimize serve
+# Viewer → "Flow — derived architecture"
+```
+
+A card is a directory, an arrow is N real edges, the hub is whatever everything depends on,
+the plates underneath are the ports. Click a card to drill. [How to read it →](/ctx-optimize/see/)
+
 ### Connect two symbols you know are related, but not how
 
 ```text

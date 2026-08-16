@@ -47,6 +47,31 @@ Memory is capped by `GOMAXPROCS`, which is container-aware, so a pod with a 2-CP
 — on the full Linux kernel it makes almost no difference, because at 2.85M nodes the resident
 cost *is* the graph. See [what we do not claim](/ctx-optimize/limits/).
 
+## Markdown is parsed, not grepped
+
+Docs are the same graph, not a side index. Until 0.14.0 the markdown producer was three
+regexes per line. It had no fenced-code-block tracking, so a `# comment` inside a ` ```bash `
+example became a citable `section` node with a real `file:line` that landed the reader
+inside the sample. Measured: **618 phantom sections** across two real repos — 9.4% of one
+repo's entire doc graph.
+
+The producer now walks a [goldmark](https://github.com/yuin/goldmark) CommonMark AST. Headings
+come from `ast.Heading`, links from `ast.Link` already resolved, and fences / indented
+blocks are out of the walk by construction. Cost on this repo's 3.5 MB of markdown: 10 ms →
+24 ms. The 14 ms bought the correctness class; a hand-rolled scanner would have fixed the
+fence we had just found and missed setext headings, reference links and indented code.
+
+A link becomes an edge only if its target **resolves in the walk** — not merely on disk. A
+widened regex that trusted the filesystem would have minted 84 dangling edges from this
+repo into another machine's `/private/tmp/…` scratchpad. Unresolvable targets are dropped.
+External URLs get no edge and no node: across both measured repos they were bibliography
+(developer.chrome.com, github.com, badges), not service endpoints, and feeding them into
+the boundary lane would have poisoned `drift`.
+
+This is retrieval quality without a model. The store stopped citing fiction. Wiring a
+backticked path like `` `internal/store/store.go` `` to the file node — so a section is
+no longer an island — is the next increment, and is not on this page until it ships.
+
 ## The store: plain sorted ndjson, atomically swapped
 
 The graph is two newline-delimited JSON files plus a manifest.
@@ -116,11 +141,8 @@ machine-local (byte offsets into this machine's graph), excluded from the manife
 transported.
 
 Scope is deliberately narrow. It is wired into `card` only, and only for exact-id and
-exact-label resolution. Fuzzy and ambiguous names still pay a full scan **on purpose** — they
-rank against every node, and refusing to guess is the point. A differential test resolves the
-same symbols down both paths and compares whole result sets: 2002/2002 identical on the kernel
-store. It caught four real defects while being built, including JSON escapes in index keys
-(11,798 kernel labels, 0.414%) and a partial index reporting itself current.
+exact-label resolution. Fuzzy and free-text `query` still walk the node list — how that
+ranking works is on [What it is](/ctx-optimize/concepts/#why-query-is-not-grep--and-not-a-vector-store).
 
 ## Confidence tiers, and what AMBIGUOUS costs you
 
@@ -185,6 +207,23 @@ than silently producing nothing.
 
 Producer identity stays `boundaries` even though evaluation rides the code walk, so provenance,
 `Replace` scoping and the audit trail all still key on it.
+
+## The architecture picture is derived in Go, not laid out in the browser
+
+The force-directed viewer has to budget: `/api/graph` will not ship 2.85M nodes to a
+tab. The Flow and House viewers dodge that by asking a different question. `GET /api/scene`
+runs `internal/scene` over the store and returns the architecture — cards, lifted
+arrows, a hub, the outer-world plates. 7,663 nodes and 14,887 edges become a **4.4 KB**
+payload; the browser draws about thirty shapes.
+
+Every mark is a fact already in the graph. A card is a directory. An arrow is N real
+`imports`/`calls` edges, summed; `AMBIGUOUS` is excluded. A card's column is its
+longest-path depth in the lifted DAG, so position means direction — the explicit answer
+to a "world view" we built, looked at, and killed, because position carried no
+information. The hub is the most depended-upon directory. The plates are the boundary
+ports, names only.
+
+[How to read the picture, and how drill changes the unit →](/ctx-optimize/see/)
 
 ## What none of this does
 

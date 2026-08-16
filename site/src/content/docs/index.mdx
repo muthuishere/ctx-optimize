@@ -1,203 +1,88 @@
 ---
 title: ctx-optimize
-description: One static binary that gathers a repo into a deterministic graph and answers structural questions with an exact file:line. No database, no server, no model, no MCP. Every edge states its confidence.
+description: "Fast answers on a cheaper model. A bigger model with less context for the whole job — not one grep. The graph is already there: nodes, edges, boundaries."
 template: splash
 hero:
-  tagline: One static binary. No database, no server, no model, no MCP. Same input, same graph, byte for byte — and every answer carries an exact file:line.
+  title: ctx-<em>optimize</em>
+  tagline: "Fast answers on a cheaper model. A bigger model with less context for the whole job — not one grep. The graph is already there: nodes, edges, boundaries."
   actions:
-    - text: Quick start
-      link: /ctx-optimize/quickstart/
+    - text: Install
+      link: '#install'
       icon: right-arrow
-    - text: How it works
-      link: /ctx-optimize/how-it-works/
-      icon: document
-      variant: minimal
-    - text: GitHub
-      link: https://github.com/muthuishere/ctx-optimize
-      icon: external
+    - text: How to use it
+      link: /ctx-optimize/guide/
       variant: minimal
 ---
 
-import { Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-You are probably reading this with an agent already open. Pick yours and paste the block — it
-installs the CLI, builds the graph, and wires itself up so it reaches for the store instead of
-grep.
+The agent does not have to understand the repo from scratch every session. The store
+already has the **nodes** (files, symbols), the **edges** (contains, imports, calls),
+and the **boundaries** (hosts, env names, spawned binaries). It asks the CLI —
+`query`, `card`, `change-plan`, `affected`, `boundaries` — and cites a `file:line`.
+A small model gets smart because the graph is already there. A big model keeps the
+window for the edit, not for rediscovering who talks to what.
+
+On a graded run (gorilla/mux, same model, no LLM judge): **67% correct in 15 tool
+calls** against a grep-armed agent's **35% in 43**. That is the overall-session
+number — fewer round trips, more of the window left. We do not claim 79× token
+savings. We measured that and dropped it.
+
+No database. No server. No model in the gather. **No MCP** — the graph is a folder
+and a CLI, so a no-change `sync` is ~0.25s and `card` is milliseconds. A daemon is
+the slow path.
+
+## Install
+
+Pick your agent and paste. Three commands.
 
 <Tabs>
 <TabItem label="Claude Code">
 ```text
-Install ctx-optimize for this repo and set yourself up to use it:
-1. npm install -g @muthuishere/ctx-optimize
-2. cd into the repo root and run: ctx-optimize up
-3. run: ctx-optimize install --claude
-   (installs the skill + the session hook, and adds the always-on
-    "knowledge graph before grep" rule to my global ~/.claude/CLAUDE.md)
-4. run: ctx-optimize init   — writes the committed pointer block so my
-   teammates' agents inherit it too
-
-From now on answer my code questions with its verbs — query, card,
-change-plan, affected, boundaries — instead of grep-and-read, and cite the
-file:line it returns.
+npm install -g @muthuishere/ctx-optimize
+cd your-repo && ctx-optimize up
+ctx-optimize install --claude
 ```
+Then: answer code questions with `query`, `card`, `change-plan`, `affected`, `boundaries`.
+Cite the `file:line`. Grep stays for exact strings.
 </TabItem>
 <TabItem label="Codex">
 ```text
-Install ctx-optimize for this repo and set yourself up to use it:
-1. npm install -g @muthuishere/ctx-optimize
-2. cd into the repo root and run: ctx-optimize up
-3. run: ctx-optimize install --codex
-   (installs the skill + hook and adds the always-on rule to my global
-    ~/.codex/AGENTS.md — then trust it once with /hooks inside codex)
-4. run: ctx-optimize init   — writes the committed pointer block for the team
-
-From now on answer my code questions with its verbs — query, card,
-change-plan, affected, boundaries — instead of grep-and-read, and cite the
-file:line it returns.
+npm install -g @muthuishere/ctx-optimize
+cd your-repo && ctx-optimize up
+ctx-optimize install --codex
 ```
+Trust the hook once with `/hooks`. Same verbs. Cite the `file:line`.
 </TabItem>
 <TabItem label="Copilot">
 ```text
-Install ctx-optimize for this repo and set yourself up to use it:
-1. npm install -g @muthuishere/ctx-optimize
-2. cd into the repo root and run: ctx-optimize up
-3. run: ctx-optimize install --copilot
-4. run: ctx-optimize init   — writes the committed pointer block for the team
-
-From now on answer my code questions with its verbs — query, card,
-change-plan, affected, boundaries — instead of grep-and-read, and cite the
-file:line it returns.
+npm install -g @muthuishere/ctx-optimize
+cd your-repo && ctx-optimize up
+ctx-optimize install --copilot
 ```
+Same verbs. Cite the `file:line`.
 </TabItem>
-<TabItem label="Any agent">
+<TabItem label="Any / Grok / Devin">
 ```text
-Install ctx-optimize for this repo and set yourself up to use it:
-1. npm install -g @muthuishere/ctx-optimize
-2. cd into the repo root and run: ctx-optimize up
-3. run: ctx-optimize install    — every agent CLI it detects
-4. run: ctx-optimize init       — the committed pointer block for the team
-
-From now on answer my code questions with its verbs — query, card,
-change-plan, affected, boundaries — instead of grep-and-read, and cite the
-file:line it returns.
+npm install -g @muthuishere/ctx-optimize
+cd your-repo && ctx-optimize up
+ctx-optimize install
 ```
+Grok already reads the Claude skill dir. Devin reads `~/.agents/skills`. `init` is only
+if you want the committed pointer in the repo.
 </TabItem>
 </Tabs>
 
-The skill and hook install globally; the agent flag only picks which agent gets wired up. The
-optional part is the marker-fenced rule in your global instructions file — that is what makes
-an agent reach for the store unprompted, and `uninstall` removes it cleanly. `init` is the only
-step that touches the repo, and what it writes is meant to be committed.
-[The full walkthrough →](/ctx-optimize/quickstart/)
+The agent **may still grep**. We do not block it. After you edit, `ctx-optimize sync`.
+Lazy autosync is opt-in (`"autosync": "lazy"`), not on. [Walkthrough →](/ctx-optimize/quickstart/)
 
-## What is different
+## Same store, two doors
 
-<CardGrid>
-	<Card title="Nothing to run">
-		One static binary. No database, no daemon, no language server, no model, no MCP.
-		The store is sorted newline-delimited JSON you can read with your eyes and diff in
-		git.
-	</Card>
-	<Card title="Deterministic">
-		Same input, same graph, byte for byte. The binary makes no LLM call, computes no
-		embedding, and holds no credentials at rest. Your agent supplies the intelligence.
-	</Card>
-	<Card title="Every answer is citable">
-		A hit is a resolved symbol with its real `file:line` range, signature and doc — not a
-		matching line you still have to chase.
-	</Card>
-	<Card title="Every edge states its confidence">
-		EXTRACTED is parsed fact. INFERRED is name-matched. AMBIGUOUS is surfaced as a
-		shortlist rather than guessed into the graph, and filtered out of traversals unless
-		you ask for it.
-	</Card>
-</CardGrid>
+`change-plan Store.Merge` is the agent door. `ctx-optimize serve` is yours — Flow draws
+directories, real call counts, the hub, and the outer world (hosts and env **names**,
+never a value).
 
-And one answer no other tool in our comparison table has: `boundaries` — the repo's external
-surface, with direction, transport, and credentials flagged **by name**.
+![Flow — travelling dots on real call curves. Hub is the most depended-on directory. Plates are ports.](/ctx-optimize/media/flow-reqsume-api.gif)
 
-## The evidence, in two rows
-
-One agent, three arms, twelve hand-verified questions on **gorilla/mux**. 3 runs, n = 36
-answers per arm, model `gpt-4o-mini`, graded deterministically — no LLM judge, same rule for
-every arm, and the grader never saw which tool produced the answer.
-
-| | shell (ripgrep) | ctx-optimize | graphify |
-|---|---|---|---|
-| Overall correctness | 35% | **67%** | 40% |
-| Tool calls per run | 42.7 | **15.0** | 26.0 |
-
-[The full scoreboard, question by question →](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run) ·
-[gather, query and store size against other tools →](/ctx-optimize/compare/)
-
-## What a citation is worth
-
-A recorded transcript, both arms asked *which functions call `requestWithVars`*. It is here
-because it shows the mechanism the two rows above are made of: grep returns lines, so the
-agent has to name callers it never saw.
-
-<Tabs>
-<TabItem label="shell + ripgrep — 0/2">
-```text
-$ grep -r 'requestWithVars' .        → 189 bytes of matching LINES
-
-The functions that call `requestWithVars` are:
- 1. In `mux.go` at line 4: `req = requestWithVars(req, match.Vars)`
- 2. In `test_helpers.go` at line 3: `return requestWithVars(r, val)`
-
-✗ no caller named · line numbers are grep's own output positions
-```
-</TabItem>
-<TabItem label="ctx-optimize — 2/2">
-```text
-$ ctx-optimize affected requestWithVars
-
-The following functions call `requestWithVars`:
- 1. Router.ServeHTTP    — mux.go, lines 188-229
- 2. SetURLVars          — test_helpers.go, lines 17-19
- 3. ExampleSetURLVars   — mux_test.go, lines 2549-2556
-
-✓ one call · resolved symbols · real ranges
-```
-</TabItem>
-</Tabs>
-
-The real call sites are `mux.go:209` and `test_helpers.go:18`.
-[Both transcripts in full →](/ctx-optimize/benchmarks/#1-answer-quality--the-graded-agent-run)
-
-## The external surface
-
-`boundaries` answers what direction a call goes, over what transport, and whether a name is a
-credential. On this repo, with rows elided to fit:
-
-```text
-$ ctx-optimize boundaries
-boundaries: 73 ports
-
-CONSUMES (what this system calls out to)
-  config.env     28 · 28 external · 1 SENSITIVE · 3 dynamic
-      OPENROUTER_API_KEY                 INFERRED   SECRET  proof/agent/agent.mjs:L28 (+1 sites)
-      … 27 more not shown — --all for the full list
-  network.http   16 · 16 external
-      api.github.com                     INFERRED    internal/app/app.go:L3149
-
-UNRESOLVED  3 ports carry a dynamic identifier — the SITE is certain,
-            the value is not
-```
-
-Credentials are flagged by name; a value never enters the graph, is never printed and is
-never stored. [How it works, and its two limits →](/ctx-optimize/boundaries/)
-
-## Where we lose
-
-ripgrep is faster per call than we are, CodeGraph is faster still on kernel queries, and grep
-beats us outright on "where is X" — 47% to our 42%.
-[Everything we do not claim →](/ctx-optimize/limits/)
-
-## Next
-
-[How it works](/ctx-optimize/how-it-works/) — tree-sitter in wasm, the ndjson store, the
-lookup index that fails safe. ·
-[The dashboard](/ctx-optimize/dashboard/) — `serve`, one local page over every store. ·
-[Cookbook](/ctx-optimize/cookbook/) — pick the verb by intent. ·
-[CLI reference](/ctx-optimize/cli/)
+[How to use it](/ctx-optimize/guide/) · [Read the picture](/ctx-optimize/see/) ·
+[`boundaries`](/ctx-optimize/boundaries/) · [What we do not claim](/ctx-optimize/limits/)
