@@ -4,6 +4,7 @@ import { sanitizeScene } from '../sanitize'
 import { bez, bezT, layout, relationStyle, VH, VW, type Box } from '../flowLayout'
 import { attach, fit, type Cam } from '../camera'
 import type { Scene } from '../types'
+import { mix, readPalette, rgba } from '../theme'
 import type { ViewerProps } from '../viewers'
 
 // FlowViewer — the derived architecture scene, drawn on a Canvas 2D in a
@@ -22,24 +23,14 @@ import type { ViewerProps } from '../viewers'
 // Zero external requests: Canvas 2D, system fonts, no image, no CDN.
 // prefers-reduced-motion stops every travelling dot and pulse.
 
-const INK = '#1c1b19'
-const MUTED = '#8a857c'
-const HAIR = '#d6d2c8'
-const CARD = '#ffffff'
-const ACC = '#e08a1e'
-const DOT = '#4a5cd0'
-const GROUND = '#fbfaf8'
 const ZERO = { dx: 0, dy: 0 }
 
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
 
-export default function FlowViewer({ module, params }: ViewerProps) {
+export default function FlowViewer({ module, root, onRoot }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
   const [err, setErr] = useState('')
-  // The drilled directory. It lives in state AND in the hash, so a level is a
-  // shareable URL and the browser Back button walks back out of the drill.
-  const [root, setRoot] = useState(params.get('root') || '')
   const wrap = useRef<HTMLDivElement | null>(null)
   const cv = useRef<HTMLCanvasElement | null>(null)
 
@@ -53,23 +44,6 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       .catch((e) => setErr(String(e.message || e)))
   }, [module, root])
 
-  // Keep the hash in step, and follow it when the user goes Back.
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.hash.split('?')[1] || '')
-    if ((q.get('root') || '') === root) return
-    if (root) q.set('root', root)
-    else q.delete('root')
-    const base = window.location.hash.split('?')[0]
-    window.history.pushState(null, '', base + (q.toString() ? '?' + q : ''))
-  }, [root])
-  useEffect(() => {
-    const onPop = () => {
-      const q = new URLSearchParams(window.location.hash.split('?')[1] || '')
-      setRoot(q.get('root') || '')
-    }
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
-  }, [])
 
   useEffect(() => {
     if (!scene || !cv.current || !wrap.current) return
@@ -78,6 +52,16 @@ export default function FlowViewer({ module, params }: ViewerProps) {
     const ctx = canvas.getContext('2d', { alpha: false })
     if (!ctx) return
     const lay = layout(scene)
+    // The palette comes from the app's CSS variables, so the canvas can never
+    // drift out of step with the dashboard around it.
+    const pal = readPalette(host)
+    const INK = pal.text
+    const MUTED = pal.muted
+    const HAIR = pal.line
+    const CARD = pal.panel
+    const ACC = pal.amber
+    const DOT = pal.focus
+    const GROUND = pal.ground
 
     const motion = window.matchMedia
       ? window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -164,7 +148,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
           fit(cam, CAM_OPTS, W, H)
           return
         }
-        setRoot(hits[i].root)
+        onRoot(hits[i].root)
       },
       onHover: (vx, vy) => {
         hover = hitAt(vx, vy)
@@ -300,7 +284,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
         if (!placed) continue
         occupy(lx - total / 2 - pad, ly - 11, total + pad * 2, 15)
         const q = T(lx - total / 2 - pad, ly - 11)
-        ctx!.fillStyle = 'rgba(251,250,248,.94)'
+        ctx!.fillStyle = rgba(pal.ground, .92)
         rr(q.x, q.y, S(total + pad * 2), S(15), S(3)); ctx!.fill()
         const rs = relationStyle(link.relation)
         text(lbl, lx - total / 2, ly, { size: 9.5, weight: 700, color: rs.label, spacing: 1.15 })
@@ -311,6 +295,10 @@ export default function FlowViewer({ module, params }: ViewerProps) {
     // A card with subdirectories is a door. registerDoor gives it its hit region
     // and returns whether the pointer is currently on it, so the affordance and
     // the click target can never disagree.
+    // The click target is the BADGE, never the whole card. Registering the
+    // card made every card with children un-draggable: the gesture hit a click
+    // region, the camera took it, and the entire frame panned instead of the
+    // shape moving. Card body = move the shape; badge = go inside.
     function registerDoor(b: Box, x: number, y: number, w: number, h: number): boolean {
       if (!b.card || b.card.children <= 0) return false
       hits.push({ x, y, w, h, root: b.card.dir, kind: 'card' })
@@ -322,9 +310,10 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       const b = o === ZERO ? b0 : { ...b0, x: b0.x + o.dx, y: b0.y + o.dy }
       const c = b.card!
       const p = T(b.x, b.y)
-      const on = registerDoor(b, b.x, b.y, b.w, b.h)
+      const badgeW = c.children > 0 ? measure(`${c.children} inside`, 9.5, 700, MONO) + 26 : 0
+      const on = registerDoor(b, b.x + b.w - 14 - badgeW, b.y + 12, badgeW, 19)
       ctx!.save()
-      ctx!.shadowColor = on ? 'rgba(74,92,208,.28)' : 'rgba(30,28,24,.10)'
+      ctx!.shadowColor = on ? rgba(pal.focus, .5) : 'rgba(0,0,0,.45)'
       ctx!.shadowBlur = S(on ? 26 : 18); ctx!.shadowOffsetY = S(5)
       ctx!.fillStyle = CARD; rr(p.x, p.y, S(b.w), S(b.h), S(12)); ctx!.fill()
       ctx!.restore()
@@ -338,21 +327,21 @@ export default function FlowViewer({ module, params }: ViewerProps) {
         drawEnter(b.x + b.w - 14, b.y + 12, c.children, on, 'right')
       }
 
-      text(b.n, b.x + 18, b.y + 36, { size: 19, weight: 300, color: '#b8b3a8', font: MONO })
+      text(b.n, b.x + 18, b.y + 36, { size: 19, weight: 300, color: pal.dim, font: MONO })
       const ip = T(b.x + 18, b.y + 48)
-      ctx!.fillStyle = '#f3f1ec'; rr(ip.x, ip.y, S(26), S(26), S(7)); ctx!.fill()
-      ctx!.strokeStyle = '#e6e2d9'; ctx!.lineWidth = Math.max(1, S(1))
+      ctx!.fillStyle = mix(pal.panel, pal.text, .06); rr(ip.x, ip.y, S(26), S(26), S(7)); ctx!.fill()
+      ctx!.strokeStyle = pal.line2; ctx!.lineWidth = Math.max(1, S(1))
       rr(ip.x, ip.y, S(26), S(26), S(7)); ctx!.stroke()
-      text(c.glyph, b.x + 31, b.y + 66, { size: 13, color: '#6f6a61', align: 'center', font: MONO })
+      text(c.glyph, b.x + 31, b.y + 66, { size: 13, color: pal.muted, align: 'center', font: MONO })
 
       text(c.label, b.x + 54, b.y + 67, { size: 16, weight: 700, max: b.w - 70 })
-      text(c.dir, b.x + 18, b.y + 91, { size: 10.5, color: '#a09a90', font: MONO, max: b.w - 36 })
+      text(c.dir, b.x + 18, b.y + 91, { size: 10.5, color: pal.dim, font: MONO, max: b.w - 36 })
       text(c.detail || `${c.files} files`, b.x + 18, b.y + b.h - 15,
         { size: 11.5, color: MUTED, max: b.w - 36 })
 
       // in/out counters, top-right — the numbers that decided the column
-      text(`${c.out}↗`, b.x + b.w - 18, b.y + 26, { size: 10, color: '#a8a29a', font: MONO, align: 'right' })
-      text(`↘${c.in}`, b.x + b.w - 18, b.y + 40, { size: 10, color: '#a8a29a', font: MONO, align: 'right' })
+      text(`${c.out}↗`, b.x + b.w - 18, b.y + 26, { size: 10, color: pal.dim, font: MONO, align: 'right' })
+      text(`↘${c.in}`, b.x + b.w - 18, b.y + 40, { size: 10, color: pal.dim, font: MONO, align: 'right' })
     }
 
     // drawEnter is the one "you can go in here" mark, used by cards and the hub
@@ -362,14 +351,14 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       const w = measure(label, 9.5, 700, MONO) + 26
       const bx = align === 'right' ? x - w : x - w / 2
       const p = T(bx, y)
-      ctx!.fillStyle = on ? '#eef0fc' : '#f7f6f2'
+      ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
       rr(p.x, p.y, S(w), S(19), S(9.5)); ctx!.fill()
-      ctx!.strokeStyle = on ? DOT : '#e4dfd4'; ctx!.lineWidth = Math.max(1, S(1))
+      ctx!.strokeStyle = on ? DOT : pal.line2; ctx!.lineWidth = Math.max(1, S(1))
       rr(p.x, p.y, S(w), S(19), S(9.5)); ctx!.stroke()
-      text(label, bx + 9, y + 13.5, { size: 9.5, weight: 700, font: MONO, color: on ? DOT : '#8a857c' })
+      text(label, bx + 9, y + 13.5, { size: 9.5, weight: 700, font: MONO, color: on ? DOT : pal.muted })
       const cx = bx + w - 11, cy = y + 9.5
       const a = T(cx - 2.5, cy - 4), b2 = T(cx + 2, cy), c2 = T(cx - 2.5, cy + 4)
-      ctx!.strokeStyle = on ? DOT : '#a8a29a'; ctx!.lineWidth = Math.max(1, S(1.6))
+      ctx!.strokeStyle = on ? DOT : pal.dim; ctx!.lineWidth = Math.max(1, S(1.6))
       ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b2.x, b2.y); ctx!.lineTo(c2.x, c2.y); ctx!.stroke()
     }
 
@@ -380,22 +369,23 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       const p = T(b.x, b.y)
       const R = S(b.r)
       const pulse = still ? 1 : 1 + Math.sin(t * 1.4) * 0.012
-      const on = registerDoor(b, b.x - b.r, b.y - b.r, b.r * 2, b.r * 2)
+      const badgeW = c.children > 0 ? measure(`${c.children} inside`, 9.5, 700, MONO) + 26 : 0
+      const on = registerDoor(b, b.x - badgeW / 2, b.y + b.r - 34, badgeW, 19)
       ctx!.save()
-      ctx!.shadowColor = 'rgba(74,92,208,.20)'; ctx!.shadowBlur = S(on ? 46 : 34)
+      ctx!.shadowColor = rgba(pal.focus, .35); ctx!.shadowBlur = S(on ? 46 : 34)
       ctx!.fillStyle = CARD; ctx!.beginPath(); ctx!.arc(p.x, p.y, R * pulse, 0, 7); ctx!.fill()
       ctx!.restore()
-      ctx!.strokeStyle = on ? DOT : '#c3c9ee'; ctx!.lineWidth = S(4)
+      ctx!.strokeStyle = on ? DOT : rgba(pal.focus, .65); ctx!.lineWidth = S(4)
       ctx!.beginPath(); ctx!.arc(p.x, p.y, R * pulse, 0, 7); ctx!.stroke()
       occupy(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2)
       if (c.children > 0) drawEnter(b.x, b.y + b.r - 34, c.children, on, 'center')
 
       text('MOST DEPENDED ON', b.x, b.y - 46, { size: 8.5, color: MUTED, align: 'center', spacing: 1.3, weight: 700 })
       text(c.label, b.x, b.y - 20, { size: 19, weight: 700, align: 'center', max: b.r * 1.8 })
-      text(c.dir, b.x, b.y - 2, { size: 9.5, color: '#a09a90', font: MONO, align: 'center', max: b.r * 1.85 })
+      text(c.dir, b.x, b.y - 2, { size: 9.5, color: pal.dim, font: MONO, align: 'center', max: b.r * 1.85 })
       text(c.detail, b.x, b.y + 20, { size: 11, color: MUTED, align: 'center', max: b.r * 1.8 })
       text(`${c.in} in · ${c.out} out`, b.x, b.y + 44, { size: 11, color: DOT, font: MONO, align: 'center', weight: 700 })
-      text(`${c.files} files · ${c.decls} decls`, b.x, b.y + 62, { size: 10, color: '#a8a29a', font: MONO, align: 'center' })
+      text(`${c.files} files · ${c.decls} decls`, b.x, b.y + 62, { size: 10, color: pal.dim, font: MONO, align: 'center' })
     }
 
     // The outer world: one dashed PLATE per transport, holding a bounded
@@ -408,19 +398,19 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       const w = b.world!
       const p = T(b.x, b.y)
       ctx!.save()
-      ctx!.fillStyle = '#fbf4e8'
+      ctx!.fillStyle = mix(pal.panel, pal.amber, .10)
       rr(p.x, p.y, S(b.w), S(b.h), S(14)); ctx!.fill()
       ctx!.setLineDash([S(5), S(7)])
       if (!still) ctx!.lineDashOffset = -t * S(26)
-      ctx!.strokeStyle = '#e3b877'; ctx!.lineWidth = S(1.6)
+      ctx!.strokeStyle = rgba(pal.amber, .7); ctx!.lineWidth = S(1.6)
       rr(p.x, p.y, S(b.w), S(b.h), S(14)); ctx!.stroke()
       ctx!.restore()
 
-      text('OUTER WORLD', b.x + 14, b.y + 20, { size: 8, color: '#bfa06a', spacing: 1.3, weight: 700 })
+      text('OUTER WORLD', b.x + 14, b.y + 20, { size: 8, color: rgba(pal.amber, .8), spacing: 1.3, weight: 700 })
       text(w.transport, b.x + 14, b.y + 40, { size: 14, weight: 700, font: MONO, max: b.w - 110 })
       const dir = [w.provides ? `${w.provides} provided` : '', w.consumes ? `${w.consumes} consumed` : '']
         .filter(Boolean).join(' · ')
-      text(`${w.total} ports`, b.x + b.w - 14, b.y + 22, { size: 11, color: '#a07a3a', align: 'right', font: MONO, weight: 700 })
+      text(`${w.total} ports`, b.x + b.w - 14, b.y + 22, { size: 11, color: pal.amber, align: 'right', font: MONO, weight: 700 })
       text(dir, b.x + b.w - 14, b.y + 38, { size: 9.5, color: MUTED, align: 'right', font: MONO })
 
       // door NAMES, two per row. Never a value: a port node has none.
@@ -430,9 +420,9 @@ export default function FlowViewer({ module, params }: ViewerProps) {
         const cx2 = b.x + 14 + (i % cols) * (cw + 8)
         const cy = b.y + 54 + Math.floor(i / cols) * 24
         const q = T(cx2, cy)
-        ctx!.fillStyle = d.sensitive ? '#fdf3e3' : '#fff'
+        ctx!.fillStyle = d.sensitive ? mix(pal.panel, pal.amber, .16) : '#fff'
         rr(q.x, q.y, S(cw), S(20), S(10)); ctx!.fill()
-        ctx!.strokeStyle = d.sensitive ? ACC : '#e8e1d3'
+        ctx!.strokeStyle = d.sensitive ? ACC : pal.line2
         ctx!.lineWidth = Math.max(1, S(d.sensitive ? 1.4 : 1))
         rr(q.x, q.y, S(cw), S(20), S(10)); ctx!.stroke()
         if (d.sensitive) {
@@ -442,7 +432,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
         }
         text(d.label, cx2 + (d.sensitive ? 18 : 9), cy + 14, {
           size: 9.5, weight: 600, font: MONO,
-          color: d.dynamic ? '#b0a99e' : '#5e594f',
+          color: d.dynamic ? pal.dim : pal.muted,
           max: cw - (d.sensitive ? 26 : 18),
         })
       })
@@ -472,19 +462,19 @@ export default function FlowViewer({ module, params }: ViewerProps) {
           const p = T(x, y)
           hits.push({ x, y, w, h: 24, root: c.root, kind: 'crumb' })
           const on = hover === hits.length - 1
-          ctx!.fillStyle = on ? '#eef0fc' : '#f4f2ed'
+          ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()
-          ctx!.strokeStyle = on ? DOT : '#e4dfd4'; ctx!.lineWidth = Math.max(1, S(1))
+          ctx!.strokeStyle = on ? DOT : pal.line2; ctx!.lineWidth = Math.max(1, S(1))
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.stroke()
           text(c.label, x + w / 2, y + 16, {
-            size: 11.5, align: 'center', color: on ? DOT : '#6f6a61', weight: 500,
+            size: 11.5, align: 'center', color: on ? DOT : pal.muted, weight: 500,
           })
         } else {
           text(c.label, x + w / 2, y + 16, { size: 11.5, align: 'center', weight: 700, color: INK })
         }
         x += w
         if (!last) {
-          text('/', x + 5, y + 16, { size: 11.5, color: '#bdb8ad' })
+          text('/', x + 5, y + 16, { size: 11.5, color: pal.dim })
           x += 15
         }
       })
@@ -500,12 +490,12 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       hits.push({ x, y, w, h: 22, root: '', kind: 'reset' })
       const on = hover === hits.length - 1
       const p = T(x, y)
-      ctx!.fillStyle = on ? '#eef0fc' : '#f4f2ed'
+      ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
       rr(p.x, p.y, S(w), S(22), S(11)); ctx!.fill()
-      ctx!.strokeStyle = on ? DOT : '#e4dfd4'; ctx!.lineWidth = Math.max(1, S(1))
+      ctx!.strokeStyle = on ? DOT : pal.line2; ctx!.lineWidth = Math.max(1, S(1))
       rr(p.x, p.y, S(w), S(22), S(11)); ctx!.stroke()
       text(label, x + w / 2, y + 15, {
-        size: 9, weight: 700, align: 'center', spacing: 1.1, color: on ? DOT : '#8a857c',
+        size: 9, weight: 700, align: 'center', spacing: 1.1, color: on ? DOT : pal.muted,
       })
     }
 
@@ -515,18 +505,18 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       const p = T(bx, by)
       ctx!.save()
       ctx!.shadowColor = 'rgba(0,0,0,.22)'; ctx!.shadowBlur = S(16); ctx!.shadowOffsetY = S(4)
-      ctx!.fillStyle = '#151412'; rr(p.x, p.y, S(bw), S(bh), S(10)); ctx!.fill()
+      ctx!.fillStyle = mix(pal.sky, pal.text, .04); rr(p.x, p.y, S(bw), S(bh), S(10)); ctx!.fill()
       ctx!.restore()
       let cx = bx + 20
-      const segs: [string, string][] = [[scene!.title, '#e6e2d9']]
-      for (const s of scene!.stats) segs.push(['|', '#5a564e'], [`${s.text} ${s.label}`, s.label === 'ports' ? '#e0a955' : '#7fd6a0'])
+      const segs: [string, string][] = [[scene!.title, pal.line2]]
+      for (const s of scene!.stats) segs.push(['|', pal.dim], [`${s.text} ${s.label}`, s.label === 'ports' ? '#e0a955' : pal.accent])
       for (const [s, col] of segs) {
         text(s, cx, by + 30, { size: 13.5, color: col, font: MONO, weight: 600 })
         cx += measure(s, 13.5, 600, MONO) + 9
       }
       if (!still && Math.floor(t * 1.8) % 2) {
         const q = T(cx + 2, by + 15)
-        ctx!.fillStyle = '#7fd6a0'; ctx!.fillRect(q.x, q.y, S(8), S(16))
+        ctx!.fillStyle = pal.accent; ctx!.fillRect(q.x, q.y, S(8), S(16))
       }
 
       drawCrumbs()
@@ -535,7 +525,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       text(scene!.root ? scene!.root.split('/').pop()! : scene!.title,
         VW - 62, 118, { size: 62, weight: 800, align: 'right', max: 700 })
       text('The architecture, derived from the store — not drawn by hand.', VW - 62, 152,
-        { size: 15, color: '#57534b', align: 'right' })
+        { size: 15, color: pal.muted, align: 'right' })
       text(`every card is a directory · every arrow is real ${''}imports/calls edges, summed`,
         VW - 62, 176, { size: 15, weight: 600, align: 'right' })
       text(`ctx-optimize · ${scene!.total_nodes.toLocaleString()} nodes · ${scene!.total_edges.toLocaleString()} edges`,
@@ -544,7 +534,7 @@ export default function FlowViewer({ module, params }: ViewerProps) {
 
     function drawFooter() {
       const a = T(0, VH - 112), b2 = T(VW, VH - 112)
-      ctx!.strokeStyle = '#e6e2d9'; ctx!.lineWidth = Math.max(1, S(1))
+      ctx!.strokeStyle = pal.line2; ctx!.lineWidth = Math.max(1, S(1))
       ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b2.x, b2.y); ctx!.stroke()
 
       let x = 62
@@ -552,15 +542,15 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       for (const s of scene!.chips) {
         const w = measure(s, 11.5, 500) + 26
         const p = T(x, y)
-        ctx!.fillStyle = '#fbfaf7'; rr(p.x, p.y, S(w), S(28), S(14)); ctx!.fill()
-        ctx!.strokeStyle = '#e2ddd2'; ctx!.lineWidth = Math.max(1, S(1))
+        ctx!.fillStyle = mix(pal.panel, pal.text, .04); rr(p.x, p.y, S(w), S(28), S(14)); ctx!.fill()
+        ctx!.strokeStyle = pal.line2; ctx!.lineWidth = Math.max(1, S(1))
         rr(p.x, p.y, S(w), S(28), S(14)); ctx!.stroke()
-        text(s, x + w / 2, y + 19, { size: 11.5, color: '#5e594f', align: 'center' })
+        text(s, x + w / 2, y + 19, { size: 11.5, color: pal.muted, align: 'center' })
         x += w + 10
       }
       // the honesty strip — what is sampled, what is excluded
       scene!.notes.forEach((n, i) => {
-        text(n, VW - 62, VH - 88 + i * 14.5, { size: 9.8, color: i === 0 ? '#8a5a12' : MUTED, align: 'right' })
+        text(n, VW - 62, VH - 88 + i * 14.5, { size: 9.8, color: i === 0 ? pal.amber : MUTED, align: 'right' })
       })
     }
 
@@ -571,14 +561,15 @@ export default function FlowViewer({ module, params }: ViewerProps) {
       // Hit regions are geometry, and geometry is rebuilt every frame.
       hits = []
       occupied = []
-      ctx.fillStyle = '#f4f3ef'; ctx.fillRect(0, 0, W, H)
-      const p = T(0, 0)
-      ctx.fillStyle = GROUND; ctx.fillRect(p.x, p.y, S(VW), S(VH))
+      // The ground fills the STAGE, not the virtual rect. Painting only the
+      // virtual rect left a border of a different colour around the scene the
+      // moment the camera stopped exactly fitting it.
+      ctx.fillStyle = GROUND; ctx.fillRect(0, 0, W, H)
       if (scene!.empty) {
         // A dead end still gets its header and its trail: the way out has to be
         // on the same surface as the message saying you have hit a wall.
         drawHeader(t)
-        text(scene!.empty, VW / 2, VH / 2, { size: 16, color: '#57534b', align: 'center', max: 900 })
+        text(scene!.empty, VW / 2, VH / 2, { size: 16, color: pal.muted, align: 'center', max: 900 })
         raf = requestAnimationFrame(frame)
         return
       }

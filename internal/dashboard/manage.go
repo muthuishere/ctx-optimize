@@ -16,7 +16,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/muthuishere/ctx-optimize/internal/audit"
@@ -123,51 +125,205 @@ func githubBase(origin, branch string) string {
 	return "https://github.com/" + path + "/blob/" + branch
 }
 
+// storeDetail is the EXPENSIVE half of a store row: producer counts (a full
+// scan of nodes.ndjson) and freshness (git subprocesses per source). Measured
+// on this machine at 875 stores: 1.1 GB of ndjson decoded and ~96 git
+// invocations, all serially — 27.5 SECONDS for one page load, against 0.43s for
+// the cheap half that comes straight out of the manifests.
+//
+// Two things fix it and both are needed. The scan is CACHED against the file's
+// own size+mtime, so a store whose graph has not changed is never read twice;
+// and the per-store work runs in PARALLEL, because it is entirely independent
+// per store and was queued behind itself for no reason.
+type storeDetail struct {
+	producers map[string]int
+	usage     *usage.Summary
+	fresh     string
+	reports   []freshness.Report
+	source    string
+	age       int64
+	links     *StoreLinks
+}
+
+type producerCacheEntry struct {
+	size, modUnix int64
+	counts        map[string]int
+}
+
+// gitCacheEntry is one working tree's git facts. Measured: 612 sources across
+// 875 stores — the stores nest, so a depth-1 count badly understates it — and
+// 20.4 SECONDS of `git rev-parse` / `git log -1` / `git remote` serially.
+//
+// It is a TTL cache rather than an mtime one on purpose. There is no single
+// file whose mtime reliably moves on every commit (`.git` directory mtime does
+// not change when a ref file is rewritten in place), and a cache that is
+// sometimes wrong about freshness is worse than one that is briefly stale.
+// Freshness answers "how old is this store against its repo", measured in hours
+// and days, so a minute of latency in that answer changes nothing — and the
+// overview's Refresh button bypasses it outright for when it does.
+type gitCacheEntry struct {
+	at        time.Time
+	head      string
+	headUnix  int64
+	origin    string
+	branch    string
+	hasRemote bool
+}
+
+const gitCacheTTL = 60 * time.Second
+
+type detailCache struct {
+	mu   sync.Mutex
+	m    map[string]producerCacheEntry
+	gitM map[string]gitCacheEntry
+}
+
+// git returns a working tree's HEAD and origin, spawning git only when the
+// cached answer has aged out (or `force` demands it).
+func (c *detailCache) git(path string, force bool) gitCacheEntry {
+	if !force {
+		c.mu.Lock()
+		e, ok := c.gitM[path]
+		c.mu.Unlock()
+		if ok && time.Since(e.at) < gitCacheTTL {
+			return e
+		}
+	}
+	var e gitCacheEntry
+	e.at = time.Now()
+	e.head, e.headUnix, _ = gitinfo.Head(path)
+	e.origin, e.branch, e.hasRemote = gitinfo.Remote(path)
+	c.mu.Lock()
+	c.gitM[path] = e
+	c.mu.Unlock()
+	return e
+}
+
+// producers returns the tally for a nodes file, reading it only when the file
+// is not the one already tallied. Keyed on size AND mtime: either changing
+// means a re-gather landed, and a store artifact is rewritten by atomic rename,
+// so both move together.
+func (c *detailCache) producers(path string) map[string]int {
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+	size, mod := st.Size(), st.ModTime().UnixNano()
+	c.mu.Lock()
+	if e, ok := c.m[path]; ok && e.size == size && e.modUnix == mod {
+		c.mu.Unlock()
+		return e.counts
+	}
+	c.mu.Unlock()
+
+	counts := producerCounts(path)
+	c.mu.Lock()
+	c.m[path] = producerCacheEntry{size: size, modUnix: mod, counts: counts}
+	c.mu.Unlock()
+	return counts
+}
+
 func (s *server) handleStores(w http.ResponseWriter, r *http.Request) {
 	mods, err := listModules(s.root)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := make([]StoreInfo, 0, len(mods))
-	now := time.Now().Unix()
-	for _, m := range mods {
-		dir := filepath.Join(s.root, filepath.FromSlash(m.Key))
-		info := StoreInfo{
+	out := make([]StoreInfo, len(mods))
+	for i, m := range mods {
+		out[i] = StoreInfo{
 			Key: m.Key, Root: m.Root, Nodes: m.Nodes, Edges: m.Edges,
 			Summary: m.Summary, Fresh: string(freshness.Unknown),
-			Producers: producerCounts(filepath.Join(dir, "graph", "nodes.ndjson")),
 		}
-		// Served-counter roll-up: same numbers `status` prints (answers
-		// served + tokens/$ saved). A store with no metrics file yields a
-		// zero summary, never an error — it just contributes 0.
-		if sum, err := usage.Summarize(dir); err == nil {
-			info.Usage = sum
-		}
-		// source.json read directly (never store.Open here: the read path
-		// must not create layout).
-		if srcs := readSources(filepath.Join(dir, "source.json")); len(srcs) > 0 {
-			reports := make([]freshness.Report, 0, len(srcs))
-			for _, src := range srcs {
-				head, headUnix, _ := gitinfo.Head(src.Path)
-				reports = append(reports, freshness.Evaluate(src, head, headUnix, now))
-			}
-			info.Fresh = string(freshness.Overall(reports))
-			info.Reports = reports
-			info.SourcePath = srcs[0].Path
-			info.AgeSeconds = reports[0].AgeSeconds
-			// Open-source link bases: repo dir is always usable; a GitHub blob
-			// base only when origin is a real GitHub remote. Best-effort — no
-			// git / no origin ⇒ no github link, never an error.
-			links := &StoreLinks{RepoAbs: srcs[0].Path}
-			if origin, branch, ok := gitinfo.Remote(srcs[0].Path); ok {
-				links.GithubBase = githubBase(origin, branch)
-			}
-			info.Links = links
-		}
-		out = append(out, info)
 	}
+	// `?cheap=1` answers from the manifests alone. It exists so the overview can
+	// PAINT before the expensive half is known — the page has the node and edge
+	// counts, the names and the summaries at that point, which is most of what a
+	// card shows.
+	if r.URL.Query().Get("cheap") == "1" {
+		jsonOK(w, out)
+		return
+	}
+
+	// `?refresh=1` bypasses every cache: the button that says "this is stale,
+	// go and look again" has to actually go and look.
+	force := r.URL.Query().Get("refresh") == "1"
+	if force {
+		s.details.mu.Lock()
+		s.details.m = map[string]producerCacheEntry{}
+		s.details.gitM = map[string]gitCacheEntry{}
+		s.details.mu.Unlock()
+	}
+	now := time.Now().Unix()
+	workers := runtime.NumCPU()
+	if workers > 8 {
+		workers = 8 // these are IO- and subprocess-bound; more just thrashes
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	sem := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+	for i := range mods {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			d := s.storeDetailFor(mods[i].Key, now, force)
+			out[i].Producers = d.producers
+			out[i].Usage = d.usage
+			out[i].Fresh = d.fresh
+			out[i].Reports = d.reports
+			out[i].SourcePath = d.source
+			out[i].AgeSeconds = d.age
+			out[i].Links = d.links
+		}(i)
+	}
+	wg.Wait()
 	jsonOK(w, out)
+}
+
+func (s *server) storeDetailFor(key string, now int64, force bool) storeDetail {
+	dir := filepath.Join(s.root, filepath.FromSlash(key))
+	d := storeDetail{
+		fresh:     string(freshness.Unknown),
+		producers: s.details.producers(filepath.Join(dir, "graph", "nodes.ndjson")),
+	}
+	// Served-counter roll-up: same numbers `status` prints (answers served +
+	// tokens/$ saved). A store with no metrics file yields a zero summary,
+	// never an error — it just contributes 0.
+	if sum, err := usage.Summarize(dir); err == nil {
+		d.usage = sum
+	}
+	// source.json read directly (never store.Open here: the read path must not
+	// create layout).
+	srcs := readSources(filepath.Join(dir, "source.json"))
+	if len(srcs) == 0 {
+		return d
+	}
+	reports := make([]freshness.Report, 0, len(srcs))
+	var first gitCacheEntry
+	for i, src := range srcs {
+		g := s.details.git(src.Path, force)
+		if i == 0 {
+			first = g
+		}
+		reports = append(reports, freshness.Evaluate(src, g.head, g.headUnix, now))
+	}
+	d.fresh = string(freshness.Overall(reports))
+	d.reports = reports
+	d.source = srcs[0].Path
+	d.age = reports[0].AgeSeconds
+	// Open-source link bases: repo dir is always usable; a GitHub blob base only
+	// when origin is a real GitHub remote. Best-effort — no git / no origin ⇒ no
+	// github link, never an error.
+	links := &StoreLinks{RepoAbs: srcs[0].Path}
+	if first.hasRemote {
+		links.GithubBase = githubBase(first.origin, first.branch)
+	}
+	d.links = links
+	return d
 }
 
 func readSources(path string) []freshness.Source {

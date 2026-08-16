@@ -7,13 +7,17 @@ import HouseViewer from './screens/HouseViewer'
 // third and fourth viewer is one entry each — ViewerShell renders the dropdown
 // from VIEWERS and never names a viewer itself.
 //
-// Contract for a viewer component: it is handed the selected store `module` and
-// the raw route remainder `arg` (already ?-split by the shell), and owns the
-// whole stage from there. The shell owns the header strip: module select + view
-// select.
+// Contract for a viewer component: it is handed the selected store `module`,
+// the drilled `root`, and `onRoot` to move between levels — and owns the whole
+// stage from there. The shell owns the header strip AND the address: a viewer
+// never touches history, so there is one implementation of "where am I".
 export interface ViewerProps {
   module: string
-  /** query string after the module key, e.g. "center=<node-id>" */
+  /** the drilled directory ("" = the whole repo). Comes from the URL. */
+  root: string
+  /** navigate to a level. Writes the URL; the shell owns the address. */
+  onRoot: (root: string) => void
+  /** the rest of the query, read-only — e.g. the graph viewer's ?center=. */
   params: URLSearchParams
 }
 

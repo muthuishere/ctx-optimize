@@ -82,6 +82,11 @@ type server struct {
 	root  string
 	ops   *Ops
 	token string
+	// details caches the expensive half of a store row against each nodes
+	// file's own size+mtime. Lives on the server, so it survives page loads
+	// but never outlives the process — a stale cache would be worse than a
+	// slow page.
+	details *detailCache
 }
 
 // NewHandler serves the dashboard for every module under the store root.
@@ -89,7 +94,10 @@ type server struct {
 func NewHandler(root string, ops *Ops) http.Handler {
 	buf := make([]byte, 24)
 	rand.Read(buf)
-	s := &server{root: root, ops: ops, token: hex.EncodeToString(buf)}
+	s := &server{
+		root: root, ops: ops, token: hex.EncodeToString(buf),
+		details: &detailCache{m: map[string]producerCacheEntry{}, gitM: map[string]gitCacheEntry{}},
+	}
 	mux := http.NewServeMux()
 
 	ui, err := fs.Sub(uiFS, "ui")

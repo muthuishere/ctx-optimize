@@ -5,6 +5,7 @@ import { relationStyle } from '../flowLayout'
 import { houseLayout, HVH, HVW, type House, type Room } from '../houseLayout'
 import { sanitizeScene } from '../sanitize'
 import type { Scene } from '../types'
+import { mix, readPalette, rgba } from '../theme'
 import type { ViewerProps } from '../viewers'
 
 // HouseViewer — the same derived scene as the flow view, projected as a CUTAWAY
@@ -20,22 +21,13 @@ import type { ViewerProps } from '../viewers'
 // One canvas, Canvas 2D, system fonts, zero external requests. Motion honours
 // prefers-reduced-motion.
 
-const INK = '#171614'
-const MUTED = '#8b8479'
-const WALL = '#e4ded1'
-const ROOM = '#ffffff'
-const ACC = '#d97a19'
-const DOT = '#3f52c8'
-const SKY = '#eceae4'
-const GROUND = '#faf8f4'
 
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif'
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
 
-export default function HouseViewer({ module, params }: ViewerProps) {
+export default function HouseViewer({ module, root, onRoot }: ViewerProps) {
   const [scene, setScene] = useState<Scene | null>(null)
   const [err, setErr] = useState('')
-  const [root, setRoot] = useState(params.get('root') || '')
   const wrap = useRef<HTMLDivElement | null>(null)
   const cv = useRef<HTMLCanvasElement | null>(null)
 
@@ -49,22 +41,6 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       .catch((e) => setErr(String(e.message || e)))
   }, [module, root])
 
-  useEffect(() => {
-    const onPop = () => {
-      const q = new URLSearchParams(window.location.hash.split('?')[1] || '')
-      setRoot(q.get('root') || '')
-    }
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
-  }, [])
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.hash.split('?')[1] || '')
-    if ((q.get('root') || '') === root) return
-    if (root) q.set('root', root)
-    else q.delete('root')
-    const base = window.location.hash.split('?')[0]
-    window.history.pushState(null, '', base + (q.toString() ? '?' + q : ''))
-  }, [root])
 
   useEffect(() => {
     if (!scene || !cv.current || !wrap.current) return
@@ -73,6 +49,14 @@ export default function HouseViewer({ module, params }: ViewerProps) {
     const ctx = canvas.getContext('2d', { alpha: false })
     if (!ctx) return
     const H: House = houseLayout(scene)
+    const pal = readPalette(host)
+    const INK = pal.text
+    const MUTED = pal.muted
+    const WALL = pal.line2
+    const ROOM = pal.panel
+    const ACC = pal.amber
+    const DOT = pal.focus
+    const GROUND = pal.ground
 
     const motion = window.matchMedia
       ? window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -115,7 +99,7 @@ export default function HouseViewer({ module, params }: ViewerProps) {
         const i = hitAt(vx, vy)
         if (i < 0) return
         if (hits[i].kind === 'reset') { fit(cam, CAM_OPTS, W, Hh); return }
-        setRoot(hits[i].root)
+        onRoot(hits[i].root)
       },
       onHover: (vx, vy) => {
         hover = hitAt(vx, vy)
@@ -162,10 +146,10 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       const wallL = 210, wallR = HVW - 210
       // ground
       const g = T(0, H.ground + 26)
-      ctx!.strokeStyle = '#cfc8b8'; ctx!.lineWidth = Math.max(1, S(2))
+      ctx!.strokeStyle = pal.line2; ctx!.lineWidth = Math.max(1, S(2))
       ctx!.beginPath(); ctx!.moveTo(T(60, 0).x, g.y); ctx!.lineTo(T(HVW - 60, 0).x, g.y); ctx!.stroke()
       // hatching under the ground: this is where the foundation sits
-      ctx!.strokeStyle = '#e0d9ca'; ctx!.lineWidth = Math.max(1, S(1))
+      ctx!.strokeStyle = pal.line; ctx!.lineWidth = Math.max(1, S(1))
       for (let x = 70; x < HVW - 60; x += 16) {
         const a = T(x, H.ground + 26), b = T(x - 12, H.ground + 40)
         ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b.x, b.y); ctx!.stroke()
@@ -173,7 +157,7 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       // roof
       const apex = T(HVW / 2, H.roof - 74)
       const l = T(wallL - 26, H.roof - 4), r = T(wallR + 26, H.roof - 4)
-      ctx!.fillStyle = '#f3efe6'
+      ctx!.fillStyle = mix(pal.panel, pal.text, .04)
       ctx!.beginPath(); ctx!.moveTo(l.x, l.y); ctx!.lineTo(apex.x, apex.y); ctx!.lineTo(r.x, r.y); ctx!.closePath()
       ctx!.fill()
       ctx!.strokeStyle = WALL; ctx!.lineWidth = Math.max(1, S(2)); ctx!.stroke()
@@ -189,9 +173,9 @@ export default function HouseViewer({ module, params }: ViewerProps) {
     function drawFloors() {
       for (const f of H.floors) {
         const p = T(150, f.y)
-        ctx!.strokeStyle = '#efeae0'; ctx!.lineWidth = Math.max(1, S(1))
+        ctx!.strokeStyle = pal.line; ctx!.lineWidth = Math.max(1, S(1))
         ctx!.beginPath(); ctx!.moveTo(T(198, 0).x, p.y + S(f.h)); ctx!.lineTo(T(HVW - 198, 0).x, p.y + S(f.h)); ctx!.stroke()
-        text(f.label, 198, f.y - 7, { size: 8.5, color: '#b3aca0', spacing: 1.35, weight: 700 })
+        text(f.label, 198, f.y - 7, { size: 8.5, color: pal.dim, spacing: 1.35, weight: 700 })
       }
     }
 
@@ -237,9 +221,9 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       // the hub is the load-bearing room: it gets the pillar treatment
       const pillar = c.hub
       ctx!.save()
-      ctx!.shadowColor = on ? 'rgba(63,82,200,.22)' : 'rgba(28,26,22,.07)'
+      ctx!.shadowColor = on ? rgba(pal.focus, .45) : 'rgba(0,0,0,.4)'
       ctx!.shadowBlur = S(on ? 22 : 12); ctx!.shadowOffsetY = S(3)
-      ctx!.fillStyle = pillar ? '#fbf6ec' : ROOM
+      ctx!.fillStyle = pillar ? mix(pal.panel, pal.amber, .12) : ROOM
       rr(p.x, p.y, S(r.w), S(r.h), S(6)); ctx!.fill()
       ctx!.restore()
       ctx!.strokeStyle = on ? DOT : pillar ? ACC : WALL
@@ -247,7 +231,7 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       rr(p.x, p.y, S(r.w), S(r.h), S(6)); ctx!.stroke()
 
       const pad = 12
-      text(r.n, r.x + pad, r.y + 22, { size: 12, weight: 400, color: '#c2bbae', font: MONO })
+      text(r.n, r.x + pad, r.y + 22, { size: 12, weight: 400, color: pal.dim, font: MONO })
       // The load-bearing mark rides on the TOP row beside the ordinal. It used
       // to sit at the foot of the room, where it landed on top of the files
       // line in exactly the room that earns it — the hub is often the smallest
@@ -261,26 +245,26 @@ export default function HouseViewer({ module, params }: ViewerProps) {
           { size: 10, color: MUTED, font: MONO, max: r.w - pad * 2 })
       }
       if (r.h > 104 && c.detail) {
-        text(c.detail, r.x + pad, r.y + 84, { size: 10.5, color: '#9c968b', max: r.w - pad * 2 })
+        text(c.detail, r.x + pad, r.y + 84, { size: 10.5, color: pal.dim, max: r.w - pad * 2 })
       }
       // in/out, bottom-right — the numbers that put this room on this floor
       if (r.w > 150) {
         text(`↘${c.in}  ${c.out}↗`, r.x + r.w - pad, r.y + r.h - 12,
-          { size: 9.5, color: '#aaa49a', font: MONO, align: 'right' })
+          { size: 9.5, color: pal.dim, font: MONO, align: 'right' })
       }
       if (c.children > 0) {
         const label = `${c.children} inside`
         const w = measure(label, 9, 700, MONO) + 24
         const bx = r.x + r.w - w - 8, by = r.y + 8
         const q = T(bx, by)
-        ctx!.fillStyle = on ? '#eaedfb' : '#f6f4ef'
+        ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
         rr(q.x, q.y, S(w), S(17), S(8.5)); ctx!.fill()
-        ctx!.strokeStyle = on ? DOT : '#e6e0d4'; ctx!.lineWidth = Math.max(1, S(1))
+        ctx!.strokeStyle = on ? DOT : pal.line2; ctx!.lineWidth = Math.max(1, S(1))
         rr(q.x, q.y, S(w), S(17), S(8.5)); ctx!.stroke()
-        text(label, bx + 8, by + 12, { size: 9, weight: 700, font: MONO, color: on ? DOT : '#8b8479' })
+        text(label, bx + 8, by + 12, { size: 9, weight: 700, font: MONO, color: on ? DOT : pal.muted })
         const cx = bx + w - 10, cy = by + 8.5
         const a1 = T(cx - 2.5, cy - 3.5), b1 = T(cx + 1.5, cy), c1 = T(cx - 2.5, cy + 3.5)
-        ctx!.strokeStyle = on ? DOT : '#a8a29a'; ctx!.lineWidth = Math.max(1, S(1.5))
+        ctx!.strokeStyle = on ? DOT : pal.dim; ctx!.lineWidth = Math.max(1, S(1.5))
         ctx!.beginPath(); ctx!.moveTo(a1.x, a1.y); ctx!.lineTo(b1.x, b1.y); ctx!.lineTo(c1.x, c1.y); ctx!.stroke()
       }
       void t
@@ -292,17 +276,17 @@ export default function HouseViewer({ module, params }: ViewerProps) {
         const w = d.world
         const p = T(d.x, d.y)
         ctx!.save()
-        ctx!.fillStyle = '#fdf6ea'
+        ctx!.fillStyle = mix(pal.panel, pal.amber, .10)
         rr(p.x, p.y, S(d.w), S(d.h), S(8)); ctx!.fill()
         ctx!.setLineDash([S(5), S(6)])
         if (!still) ctx!.lineDashOffset = -t * S(22)
-        ctx!.strokeStyle = '#e0b273'; ctx!.lineWidth = S(1.5)
+        ctx!.strokeStyle = rgba(pal.amber, .7); ctx!.lineWidth = S(1.5)
         rr(p.x, p.y, S(d.w), S(d.h), S(8)); ctx!.stroke()
         ctx!.restore()
 
-        text('DOOR', d.x + 11, d.y + 17, { size: 7.5, color: '#c0a06c', spacing: 1.2, weight: 700 })
+        text('DOOR', d.x + 11, d.y + 17, { size: 7.5, color: rgba(pal.amber, .8), spacing: 1.2, weight: 700 })
         text(w.transport, d.x + 11, d.y + 36, { size: 12, weight: 700, font: MONO, max: d.w - 22 })
-        text(`${w.total} ports`, d.x + 11, d.y + 54, { size: 10, color: '#a07a3a', font: MONO, weight: 700 })
+        text(`${w.total} ports`, d.x + 11, d.y + 54, { size: 10, color: pal.amber, font: MONO, weight: 700 })
         const dir = [w.provides ? `${w.provides} out` : '', w.consumes ? `${w.consumes} in` : '']
           .filter(Boolean).join(' · ')
         text(dir, d.x + 11, d.y + 70, { size: 9, color: MUTED, font: MONO, max: d.w - 22 })
@@ -315,7 +299,7 @@ export default function HouseViewer({ module, params }: ViewerProps) {
         const wallX = d.side === 'left' ? 198 : HVW - 198
         const a = T(d.side === 'left' ? d.x + d.w : d.x, d.y + d.h / 2)
         const b = T(wallX, d.y + d.h / 2)
-        ctx!.strokeStyle = '#e3d6bd'; ctx!.lineWidth = Math.max(1, S(1.4))
+        ctx!.strokeStyle = rgba(pal.amber, .45); ctx!.lineWidth = Math.max(1, S(1.4))
         ctx!.setLineDash([S(4), S(5)])
         ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b.x, b.y); ctx!.stroke()
         ctx!.setLineDash([])
@@ -334,23 +318,23 @@ export default function HouseViewer({ module, params }: ViewerProps) {
           const p = T(x, y)
           hits.push({ x, y, w, h: 24, root: c.root })
           const on = hover === hits.length - 1
-          ctx!.fillStyle = on ? '#eaedfb' : '#f2efe8'
+          ctx!.fillStyle = on ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.fill()
-          ctx!.strokeStyle = on ? DOT : '#e6e0d4'; ctx!.lineWidth = Math.max(1, S(1))
+          ctx!.strokeStyle = on ? DOT : pal.line2; ctx!.lineWidth = Math.max(1, S(1))
           rr(p.x, p.y, S(w), S(24), S(12)); ctx!.stroke()
           text(c.label, x + w / 2, y + 16, { size: 11.5, align: 'center', color: on ? DOT : '#6f6a61' })
         } else {
           text(c.label, x + w / 2, y + 16, { size: 11.5, align: 'center', weight: 700, color: INK })
         }
         x += w
-        if (!last) { text('/', x + 5, y + 16, { size: 11.5, color: '#bdb8ad' }); x += 15 }
+        if (!last) { text('/', x + 5, y + 16, { size: 11.5, color: pal.dim }); x += 15 }
       })
     }
 
     function drawHeader() {
       text(scene!.root ? scene!.root.split('/').pop()! : scene!.title,
         62, 84, { size: 46, weight: 800, max: 620 })
-      text('the same derived scene, read as a building', 62, 108, { size: 13, color: '#6d675e' })
+      text('the same derived scene, read as a building', 62, 108, { size: 13, color: pal.muted })
       drawCrumbs()
       const label = 'RESET VIEW'
       const rw = measure(label, 9, 700) + 22
@@ -358,12 +342,12 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       hits.push({ x: rx, y: ry, w: rw, h: 22, root: '', kind: 'reset' })
       const ron = hover === hits.length - 1
       const rp = T(rx, ry)
-      ctx!.fillStyle = ron ? '#eaedfb' : '#f2efe8'
+      ctx!.fillStyle = ron ? mix(pal.panel, pal.focus, .22) : mix(pal.panel, pal.text, .05)
       rr(rp.x, rp.y, S(rw), S(22), S(11)); ctx!.fill()
-      ctx!.strokeStyle = ron ? DOT : '#e6e0d4'; ctx!.lineWidth = Math.max(1, S(1))
+      ctx!.strokeStyle = ron ? DOT : pal.line2; ctx!.lineWidth = Math.max(1, S(1))
       rr(rp.x, rp.y, S(rw), S(22), S(11)); ctx!.stroke()
       text(label, rx + rw / 2, ry + 15, {
-        size: 9, weight: 700, align: 'center', spacing: 1.1, color: ron ? DOT : '#8b8479',
+        size: 9, weight: 700, align: 'center', spacing: 1.1, color: ron ? DOT : pal.muted,
       })
 
       const bits = [
@@ -372,14 +356,14 @@ export default function HouseViewer({ module, params }: ViewerProps) {
       ]
       text(bits.join('  ·  '), HVW - 62, 84, { size: 11.5, color: MUTED, align: 'right', font: MONO })
       text('floor = dependency depth · room width = files · stair = edges, summed · door = a transport',
-        HVW - 62, 106, { size: 11.5, color: '#57534b', align: 'right' })
+        HVW - 62, 106, { size: 11.5, color: pal.muted, align: 'right' })
       text(`ctx-optimize · ${scene!.total_nodes.toLocaleString()} nodes · ${scene!.total_edges.toLocaleString()} edges`,
         HVW - 62, 128, { size: 11, color: ACC, align: 'right', weight: 700 })
     }
 
     function drawNotes() {
       scene!.notes.forEach((n, i) => {
-        text(n, HVW - 62, HVH - 76 + i * 14, { size: 9.6, color: i === 0 ? '#8a5a12' : MUTED, align: 'right' })
+        text(n, HVW - 62, HVH - 76 + i * 14, { size: 9.6, color: i === 0 ? pal.amber : MUTED, align: 'right' })
       })
     }
 
@@ -388,12 +372,12 @@ export default function HouseViewer({ module, params }: ViewerProps) {
     const frame = (now: number) => {
       const t = (now - t0) / 1000
       hits = []
-      ctx.fillStyle = SKY; ctx.fillRect(0, 0, W, Hh)
-      const p = T(0, 0)
-      ctx.fillStyle = GROUND; ctx.fillRect(p.x, p.y, S(HVW), S(HVH))
+      // The ground fills the STAGE: painting only the virtual rect left a
+      // border of another colour the moment the camera stopped exactly fitting.
+      ctx.fillStyle = GROUND; ctx.fillRect(0, 0, W, Hh)
       if (scene!.empty) {
         drawHeader()
-        text(scene!.empty, HVW / 2, HVH / 2, { size: 16, color: '#57534b', align: 'center', max: 900 })
+        text(scene!.empty, HVW / 2, HVH / 2, { size: 16, color: pal.muted, align: 'center', max: 900 })
         raf = requestAnimationFrame(frame)
         return
       }
