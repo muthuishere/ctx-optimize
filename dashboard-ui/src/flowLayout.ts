@@ -163,63 +163,72 @@ export interface LegendRow {
 }
 
 /**
- * What a line MEANS, in words. The label on the curve is the transport and
- * nothing else — a name the reader already knows — and the sentence that makes
- * sense of it lives here, where there is room to write one.
- *
- * "BOTH CALL 12" tried to be that sentence in two words and failed: it reads
- * like the ui calls the api, when it is twelve third parties the two of them
- * both call. So the key says exactly that, once, instead of the curve saying
- * something almost-right twelve times.
+ * What a MODE is, in the reader's words. `network.http` already says it; this
+ * is for the reader who has not met the vocabulary.
  */
-function meaningOf(relation: string, transport: string, world: boolean): string {
-  const thing =
-    transport.startsWith('network.') ? 'service' :
-    transport.startsWith('config.') ? 'setting' :
-    transport.startsWith('process.') ? 'binary' :
-    transport.startsWith('storage.') || transport.startsWith('db.') ? 'store' :
-    transport.startsWith('queue.') ? 'queue' : 'boundary'
-  if (world) {
-    return relation === 'provides'
-      ? `opens this ${thing} to the outside`
-      : `reaches out to a ${thing}`
+function meaningOf(transport: string, relation: string): string {
+  if (!transport) {
+    return relation === 'depends' ? 'a package one declares and another publishes' : relation
   }
-  switch (relation) {
-    case 'shares':
-      return `both reach the same ${thing} — NOT a call between them`
-    case 'calls':
-      return `one opens the ${thing}, the other reaches it`
-    case 'depends':
-      return 'declares a package the other publishes'
-    default:
-      return relation
-  }
+  if (transport.startsWith('network.')) return 'calls over the network'
+  if (transport.startsWith('config.')) return 'settings read from the environment'
+  if (transport.startsWith('process.')) return 'binaries run as processes'
+  if (transport.startsWith('storage.')) return 'files and buckets'
+  if (transport.startsWith('db.')) return 'databases'
+  if (transport.startsWith('queue.')) return 'queues and topics'
+  return 'a boundary of the system'
 }
 
 /**
- * legendFor is built from what is ACTUALLY on screen, never a fixed list. A
- * legend naming a relation this scene does not contain teaches the reader a
- * code they will not see, and one that omits a mark they can see is worse.
+ * legendFor is one row per MODE — the thing a line's colour stands for — and
+ * nothing else.
+ *
+ * It used to be a row per (mode × claim), which put `network.http` on screen
+ * three times: once for "both reach the same service", once for "opens it to
+ * the outside", once for "reaches out to a service". Ten rows to explain four
+ * colours. The colour only ever encoded the mode; the claim is in the line's
+ * SHAPE, which is one sentence for the whole key rather than a row apiece.
+ *
+ * Built from what is ACTUALLY on screen, never a fixed list: a legend naming a
+ * mode this scene does not contain teaches a code the reader will not see, and
+ * one that omits a mode they can see is worse.
  */
 export function legendFor(scene: Scene): LegendRow[] {
   const rows = new Map<string, LegendRow>()
   for (const l of scene.links || []) {
     const transport = l.transport || ''
-    const st = relationStyle(l.relation, transport)
-    const symmetric = l.relation === 'shares'
-    const world = l.to.startsWith('world:')
     const name = transport || l.relation
-    const key = `${name} ${l.relation} ${world}`
-    rows.set(key, {
+    if (rows.has(name)) continue
+    rows.set(name, {
       label: name,
-      meaning: meaningOf(l.relation, transport, world),
-      color: st.label,
-      dashed: world || !!st.dashed || symmetric,
-      arrow: !symmetric,
+      meaning: meaningOf(transport, l.relation),
+      color: relationStyle(l.relation, transport).label,
+      // The swatch shows the mode's ink. Shape is explained once, underneath,
+      // because one mode is drawn in every shape the scene needs.
+      dashed: false,
+      arrow: false,
     })
   }
-  return [...rows.values()].sort((a, b) =>
-    a.label.localeCompare(b.label) || a.meaning.localeCompare(b.meaning))
+  return [...rows.values()].sort((a, b) => a.label.localeCompare(b.label))
+}
+
+/**
+ * The one sentence that explains SHAPE, for a scene that draws more than one.
+ * Empty when every line on screen has the same shape — a key to a distinction
+ * the reader cannot see is worse than none.
+ */
+export function shapeNote(scene: Scene): string {
+  let directed = false, symmetric = false, world = false
+  for (const l of scene.links || []) {
+    if (l.to.startsWith('world:')) world = true
+    else if (l.relation === 'shares') symmetric = true
+    else directed = true
+  }
+  const bits: string[] = []
+  if (directed) bits.push('solid, with a head — one end acts on the other')
+  if (world) bits.push('dashed, with a head — leaves the repo')
+  if (symmetric) bits.push('dashed, no head — both ends reach the same thing, NOT each other')
+  return bits.length > 1 ? bits.join('   ·   ') : ''
 }
 
 // A world group is a CHIP until you ask for it. Expanded plates were taking a

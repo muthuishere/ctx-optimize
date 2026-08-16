@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { arrangementKey, clearArrangement, loadArrangement, saveArrangement } from '../arrangement'
 import { fetchScene } from '../sceneApi'
-import { bez, bezT, cardRows, CHIP_H, layout, legendFor, relationStyle, VW, type Box } from '../flowLayout'
+import { bez, bezT, cardRows, CHIP_H, layout, legendFor, relationStyle, shapeNote, VW, type Box } from '../flowLayout'
 import type { Scene } from '../types'
 import { mix, readPalette, rgba } from '../theme'
 import type { ViewerProps } from '../viewers'
@@ -868,9 +868,12 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
     // linux's `core` card. Its offset is remembered with the rest of the
     // arrangement.
     function legendBox(rows: ReturnType<typeof legendFor>) {
-      const rowH = 22
-      const w = 330
-      const h = 26 + rows.length * rowH
+      const rowH = 20
+      const w = 320
+      const note = shapeNote(scene!)
+      // The shape sentence wraps to the key's width rather than running off it.
+      const noteLines = note === '' ? [] : wrapText(note, w - 24, 8.5)
+      const h = 26 + rows.length * rowH + (noteLines.length > 0 ? 10 + noteLines.length * 12 : 0)
       // Prefer the lower-left gutter; fall back to lower-right, then upper-left.
       // Whichever candidate overlaps the fewest shapes wins, so the key lands
       // where the picture is not.
@@ -896,41 +899,39 @@ export default function FlowViewer({ module, root, grain, onRoot, onModule }: Vi
         if (hit === 0) break
       }
       const o = off(LEGEND_ID)
-      return { x: best.x + o.dx, y: best.y + o.dy, w, h, rowH }
+      return { x: best.x + o.dx, y: best.y + o.dy, w, h, rowH, noteLines }
     }
 
     function drawLegend() {
       const rows = legendFor(scene!)
       if (rows.length === 0) return
-      const { x, y, w, h, rowH } = legendBox(rows)
+      const { x, y, w, h, rowH, noteLines } = legendBox(rows)
       if (h > lay.footerY - lay.headerH) return // no room: the picture beats the key
       const q = T(x, y)
       ctx!.fillStyle = rgba(pal.ground, .92)
       rr(q.x, q.y, S(w), S(h), S(8)); ctx!.fill()
       ctx!.strokeStyle = pal.line2; ctx!.lineWidth = Math.max(1, S(1))
       rr(q.x, q.y, S(w), S(h), S(8)); ctx!.stroke()
-      text('WHAT THE LINES MEAN  ·  drag me', x + 12, y + 16,
+      text('WHAT A LINE IS  ·  drag me', x + 12, y + 16,
         { size: 7.5, color: pal.dim, spacing: 1.2, weight: 700 })
+      // One row per MODE. The colour is the whole code; the SHAPE is explained
+      // once underneath, because every mode is drawn in whichever shapes this
+      // scene needs and a row per combination said `network.http` three times.
       rows.forEach((r, i) => {
-        const ry = y + 26 + i * rowH + 8
-        const a = T(x + 12, ry), b = T(x + 44, ry)
+        const ry = y + 26 + i * rowH + 7
+        const a = T(x + 12, ry), b = T(x + 40, ry)
         ctx!.save()
         ctx!.strokeStyle = r.color
-        ctx!.lineWidth = Math.max(1, S(1.8))
-        ctx!.setLineDash(r.dashed ? [S(4), S(4)] : [])
+        ctx!.lineWidth = Math.max(1, S(2.4))
         ctx!.beginPath(); ctx!.moveTo(a.x, a.y); ctx!.lineTo(b.x, b.y); ctx!.stroke()
-        ctx!.setLineDash([])
-        if (r.arrow) {
-          ctx!.beginPath()
-          ctx!.moveTo(b.x - S(5), b.y - S(3.5))
-          ctx!.lineTo(b.x, b.y)
-          ctx!.lineTo(b.x - S(5), b.y + S(3.5))
-          ctx!.stroke()
-        }
         ctx!.restore()
-        text(r.label, x + 50, ry + 3.5,
-          { size: 9.5, color: r.color, weight: 700, font: MONO, max: 92 })
+        text(r.label, x + 46, ry + 3.5,
+          { size: 9.5, color: r.color, weight: 700, font: MONO, max: 96 })
         text(r.meaning, x + 148, ry + 3.5, { size: 9, color: pal.muted, max: w - 158 })
+      })
+      noteLines.forEach((line, i) => {
+        text(line, x + 12, y + 26 + rows.length * rowH + 14 + i * 12,
+          { size: 8.5, color: pal.dim, max: w - 24 })
       })
     }
 

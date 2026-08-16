@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { legendFor, relationStyle, transportStyle } from './flowLayout'
+import { legendFor, relationStyle, shapeNote, transportStyle } from './flowLayout'
 import type { Scene, SceneLink } from './types'
 
 function sceneWith(links: SceneLink[]): Scene {
@@ -36,70 +36,71 @@ describe('a line says what KIND of thing it is', () => {
   })
 })
 
-describe('the legend is built from what is on screen', () => {
-  it('names every mark the scene actually draws, once each', () => {
+describe('the legend is one row per MODE', () => {
+  it('names each mode once, however many ways it is drawn', () => {
+    // The same transport appearing as a shared third party, as a directed
+    // call, and as a reach out of the repo is ONE colour and ONE row. The
+    // previous key was a row per (mode × claim) and put `network.http` on
+    // screen three times — ten rows to explain four colours.
     const rows = legendFor(sceneWith([
-      { from: 'a', to: 'b', relation: 'shares', label: 'BOTH CALL', weight: 3, transport: 'network.http' },
-      { from: 'c', to: 'd', relation: 'shares', label: 'BOTH CALL', weight: 1, transport: 'network.http' },
-      { from: 'a', to: 'b', relation: 'shares', label: 'BOTH READ', weight: 2, transport: 'config.env' },
+      { from: 'a', to: 'b', relation: 'shares', label: 'HTTP', weight: 3, transport: 'network.http' },
+      { from: 'c', to: 'd', relation: 'calls', label: 'HTTP', weight: 1, transport: 'network.http' },
+      { from: 'a', to: 'world:network.http', relation: 'consumes', label: 'HTTP', weight: 9, transport: 'network.http' },
+      { from: 'a', to: 'world:network.http', relation: 'provides', label: 'HTTP', weight: 4, transport: 'network.http' },
+      { from: 'a', to: 'b', relation: 'shares', label: 'ENV', weight: 2, transport: 'config.env' },
       { from: 'e', to: 'f', relation: 'depends', label: 'DEPENDS', weight: 1 },
     ]))
-    expect(rows.map((r) => r.label)).toEqual([
-      'config.env', 'depends', 'network.http',
-    ])
-    // The curve is labelled with the transport; the SENTENCE that makes sense
-    // of it lives here, because "BOTH CALL 12" tried to be that sentence in
-    // two words and read as "the ui calls the api".
-    const http = rows.find((r) => r.label === 'network.http')!
-    expect(http.meaning).toContain('NOT a call between them')
+    expect(rows.map((r) => r.label)).toEqual(['config.env', 'depends', 'network.http'])
   })
 
-  it('says nothing about marks the scene does not contain', () => {
+  it('says what a mode IS, for a reader who has not met the vocabulary', () => {
+    const rows = legendFor(sceneWith([
+      { from: 'a', to: 'b', relation: 'shares', label: 'HTTP', weight: 3, transport: 'network.http' },
+      { from: 'a', to: 'b', relation: 'shares', label: 'ENV', weight: 3, transport: 'config.env' },
+    ]))
+    expect(rows.find((r) => r.label === 'network.http')!.meaning).toBe('calls over the network')
+    expect(rows.find((r) => r.label === 'config.env')!.meaning).toBe('settings read from the environment')
+  })
+
+  it('says nothing about modes the scene does not contain', () => {
     const rows = legendFor(sceneWith([
       { from: 'e', to: 'f', relation: 'depends', label: 'DEPENDS', weight: 1 },
     ]))
     expect(rows).toHaveLength(1)
     expect(rows[0].label).toBe('depends')
-    expect(rows[0].meaning).toBe('declares a package the other publishes')
-    expect(rows[0].arrow).toBe(true)
-    expect(rows[0].dashed).toBe(false)
   })
 
   it('is empty when nothing is drawn, rather than a key to an empty picture', () => {
     expect(legendFor(sceneWith([]))).toEqual([])
   })
 
-  it('shows a symmetric link without an arrowhead, matching the canvas', () => {
-    const rows = legendFor(sceneWith([
-      { from: 'a', to: 'b', relation: 'shares', label: 'BOTH CALL', weight: 3, transport: 'network.http' },
-    ]))
-    expect(rows[0].arrow).toBe(false)
-    expect(rows[0].dashed).toBe(true)
-  })
-
-  it('draws an outer-world link dashed, because it leaves the system', () => {
-    const rows = legendFor(sceneWith([
-      { from: 'a', to: 'world:network.http', relation: 'consumes', label: 'HTTP', weight: 9, transport: 'network.http' },
-    ]))
-    expect(rows[0].dashed).toBe(true)
-    expect(rows[0].meaning).toContain('reaches out to a service')
-  })
-
-  it('separates a link to the outer world from one to another module', () => {
-    // Same transport, same colour, two different claims — one row each, or the
-    // key says the two marks mean the same thing when they do not.
-    const rows = legendFor(sceneWith([
-      { from: 'a', to: 'b', relation: 'shares', label: 'HTTP', weight: 3, transport: 'network.http' },
-      { from: 'a', to: 'world:network.http', relation: 'consumes', label: 'HTTP', weight: 9, transport: 'network.http' },
-    ]))
-    expect(rows).toHaveLength(2)
-    expect(new Set(rows.map((r) => r.meaning)).size).toBe(2)
-  })
-
-  it('names the transport, never a verb the reader has to decode', () => {
+  it('names the mode, never a verb the reader has to decode', () => {
     const rows = legendFor(sceneWith([
       { from: 'a', to: 'b', relation: 'shares', label: 'HTTP', weight: 3, transport: 'network.http' },
     ]))
     expect(rows[0].label).toBe('network.http')
+  })
+})
+
+// The claim a line makes is in its SHAPE, and that is now explained once for
+// the whole key instead of once per mode.
+describe('the shape note explains direction, once', () => {
+  it('distinguishes the three shapes a scene can draw', () => {
+    const note = shapeNote(sceneWith([
+      { from: 'a', to: 'b', relation: 'depends', label: 'DEPENDS', weight: 1 },
+      { from: 'a', to: 'b', relation: 'shares', label: 'HTTP', weight: 3, transport: 'network.http' },
+      { from: 'a', to: 'world:network.http', relation: 'consumes', label: 'HTTP', weight: 9, transport: 'network.http' },
+    ]))
+    expect(note).toContain('solid')
+    expect(note).toContain('leaves the repo')
+    expect(note).toContain('NOT each other')
+  })
+
+  it('says nothing when every line on screen has the same shape', () => {
+    // A key to a distinction the reader cannot see is worse than no key.
+    expect(shapeNote(sceneWith([
+      { from: 'a', to: 'b', relation: 'depends', label: 'DEPENDS', weight: 1 },
+    ]))).toBe('')
+    expect(shapeNote(sceneWith([]))).toBe('')
   })
 })
