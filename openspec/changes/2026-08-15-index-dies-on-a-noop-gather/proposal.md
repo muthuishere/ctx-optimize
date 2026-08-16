@@ -113,3 +113,48 @@ ADR 12 D3 proposed a query index because CodeGraph answers kernel queries in
 an agent calls repeatedly in a session, and with the index alive it answers in
 **6 ms** — two orders of magnitude under their query. Fixing what we already
 built comes before building more.
+
+## Implemented 2026-08-15 — D1 + D3 (owner-authorised)
+
+D1 as written, plus the one thing the draft did not settle: WHERE the content
+hash is verified from. Rehashing a 2.1GB graph per lookup would cost more than
+the full scan it saves, so the hash is computed by the WRITER — streamed off the
+same bytes on their way to the temp file, no extra read — and recorded with the
+size+mtime of the inode it describes.
+
+That record is **`graph/index/<name>.ndjson.stamp`**, inside the index
+directory, not beside the graph. The first attempt put it beside the graph and
+the `--jobs 1` vs `--jobs 8` determinism gate caught it within the hour: a file
+carrying an mtime cannot live in the store's transported artifact set. Under
+`graph/index/` it inherits the exclusions that already exist for the index —
+machine-local, out of the manifest, out of remote transport, out of the
+byte-identity gate — so the store's committed artifact set is unchanged.
+
+Read path: stat the graph, prove the stamp still describes it, compare its hash
+with the index header. Never hashes. A stamp that is missing, stale, truncated
+or unparseable reads as "not current" and the caller falls back — the fail-safe
+property is exactly what it was.
+
+Also landed, and it is really D2's useful half without D2's cost: the rebuild
+guard gained `|| !IndexCurrent()`, so an ordinary `add` repairs a missing or
+old-format index instead of leaving it dead until `add --force`. It costs four
+stats when the index is already fine.
+
+Measured after (best-of-3, load average recorded, same machine as the table
+above):
+
+| | |
+|---|---|
+| `card bio_split`, index alive | **6.0 ms** |
+| same store, binary that cannot read the new header | 1,816 ms |
+| `card bio_split` after a real incremental gather (0 nodes added) | **6.1 ms** |
+| linux incremental gather, before / after the change | 56.6 s / 54.4 s (load 8–14; the hash is under the noise floor) |
+
+Gates: the new regression test (`internal/app/indexlifecycle_test.go`) was proven
+red against HEAD before the fix. `task ci` and both golden tiers green.
+
+One thing found on the way: the big-store differential (`TestEquivalenceBigStore`)
+was ALREADY failing at HEAD — 40/2001 "wrong node" — because its independently
+written ground truth still used the three-tier label rank and the implementation
+has had four tiers since the Flask fix. The auditor was stale, not the index; it
+now mirrors the four tiers and the kernel run is 2001/2001 identical.
