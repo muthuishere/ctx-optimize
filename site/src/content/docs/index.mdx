@@ -16,21 +16,13 @@ hero:
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-The agent does not have to understand the repo from scratch every session. The store
-already has the **nodes** (files, symbols), the **edges** (contains, imports, calls),
-and the **boundaries** (hosts, env names, spawned binaries). It asks the CLI —
-`query`, `card`, `change-plan`, `affected`, `boundaries` — and cites a `file:line`.
-A small model gets smart because the graph is already there. A big model keeps the
-window for the edit, not for rediscovering who talks to what.
+The store already has the nodes, edges, and boundaries. The agent asks the CLI and
+cites a `file:line`. A small model can answer. A big model keeps the window for the
+edit.
 
-On a graded run (gorilla/mux, same model, no LLM judge): **67% correct in 15 tool
-calls** against a grep-armed agent's **35% in 43**. That is the overall-session
-number — fewer round trips, more of the window left. We do not claim 79× token
-savings. We measured that and dropped it.
-
-No database. No server. No model in the gather. **No MCP** — the graph is a folder
-and a CLI, so a no-change `sync` is ~0.25s and `card` is milliseconds. A daemon is
-the slow path.
+Graded (mux, same model): **67% in 15 calls** vs grep **35% in 43**. Not 79× tokens —
+we measured that and dropped it. No DB, no server, no model in the gather, **no MCP**.
+`card` is milliseconds. After you edit, `sync`.
 
 ## Install
 

@@ -109,70 +109,295 @@ Bare **method** names whose receivers are never types you own. Listing the name 
 
 ## The whole verb set.
 
-Global flags on every command: `--path DIR` (which module/repo, default cwd) and `--store DIR` (store root, default `$CTX_OPTIMIZE_STORE` or `~/ctxoptimize`). Most read verbs take `--json`.
+Every verb below: **when** to run it, **what to type**, **what happens**. Global flags: `--path DIR` (default cwd), `--store DIR` (default `$CTX_OPTIMIZE_STORE` or `~/ctxoptimize`). Most read verbs take `--json`.
 
-### Build & refresh
+### up
 
-| command | what it does |
-|---|---|
-| init | The author-control door: scaffold `.ctxoptimize/` (config, adapter template, transport samples `push.js.sample`/`pull.js.sample`, `remote.example.md`), prepare the store, write the agent pointer block into the repo's instruction files (see [global config](#global-config)). Re-running never clobbers your config or duplicates the block; on a pull-declaring clone it redirects to `up`. Don't need control? `up` bootstraps for you. |
-| init --scan [--yes] [--depth N] [--modules "globs"] | Multi-module generator: scan, confirm, write the full found list into `modules[]`. Generated once — the list is yours to edit after. |
-| scan [--depth N] [--json] | Read-only module discovery. Prints every project found and the exact config `init --scan` would write. Changes nothing. |
-| up | **The front door.** Makes the store exist and be current, whatever the state needs: no config → bootstraps it (monorepos via scan; curate after) and gathers; empty store + declared `remote.pull` → pull (a failed pull gathers locally and says so); no remote → gather; stale vs git HEAD → fast re-gather (adapters skipped); fresh → no-op. Idempotent. |
-| add [<path>] [--force] [--jobs N] [--no-adapters] | Gather code + markdown + property/manifest files + every adapter (`--no-adapters` skips the scripts). Incremental: re-add prunes stale nodes; a >50% shrink is refused unless `--force` (a gutted gather is more likely a broken run than a huge refactor). At a multi-module root it fans out one worker per module and refreshes the navigator. Honors `.gitignore` via git itself. |
-| add --json -\|FILE | The universal door: upsert a validated batch of nodes+edges from any adapter/tool. Fail-closed — an invalid batch is rejected whole. |
-| sync | The fast lane: re-gather the repo you're in (code, docs, manifests, git; prunes deleted, refreshes wiki + navigator) but **skip adapter scripts**. Safe — replacement is producer-scoped, adapter nodes stay put; the report says how many were skipped. |
-| adapters list \| run [name] | The slow lane, on demand: list the dropped adapter scripts, or re-run all (or one by name) when the external system changed — schema migrated, topics moved. Running one adapter never disturbs the code graph. |
-| add --rebuild | The guaranteed resync: drop the store(s) first, gather into an empty one. Needed because replacement is producer-**scoped**, so a *retired* producer (a deleted adapter, a removed grammar pack) is never replaced and its nodes survive every incremental gather. A normal `add` now reports those; `--rebuild` is the certain path. Nested module stores are kept — each module is rebuilt by its own task. Audited. |
-| add <ENV_NAME> | Native source: the env var's **value** is a URL whose scheme picks the connector. Resolves env → repo-root `.env` → `~/.config/ctx-optimize/.env`, dials, captures the logical shape, merges, and records the **name** in config. Names only on argv — never a raw URL. See [native sources](#sources). |
-| capture <ENV_NAME> | One connector → Batch JSON on stdout, **no store write**. The debug/composition primitive — sanity-check a source before it is part of the graph. Adapter scripts call it back with their own env. |
-| wiki | Regenerate the markdown wiki in the store's `wiki/` (deterministic, from nodes+edges only). Every `add` already does this unless the repo sets `"wiki": false`; this verb always builds a **complete** one, so "off" never means "unavailable". |
+**When.** First time in a repo, or you don't want to think. Fresh clone, CI, monorepo, already gathered — one verb.
 
-### Ask
+**Do.** `ctx-optimize up`
 
-| command | what it does |
-|---|---|
-| query\|ask "terms" [--budget N] [--modules all\|a,b] [--root] | Ranked, cited hits (id, kind, file:line, signature, neighbors). Scope follows cwd: in a module dir it answers from that module and escalates repo-wide on zero hits; at the root it federates across all modules. `--budget` caps output tokens (default 2000). |
-| card "X" | Symbol card: signature, doc, location, callers, callees — cite without opening the file. Accepts id, exact label, or fuzzy name; strips invented qualifiers (`ns::Class::Method` → `Method`); a total miss suggests the nearest labels. |
-| change-plan "X" [--json] | The composed "I'm about to change X" answer, one bounded call: signature + callers + blast radius + **which tests to run** + co-change history, with a confidence footer. One call in place of the query+card+affected chain. Alias: `plan`. |
-| explain "X" | Plain-language node + neighborhood. |
-| affected "X" [--depth N] [--relation R] | Reverse impact: what breaks if X changes. |
-| path "A" "B" | Shortest path between two nodes. |
-| hubs [--top N] | Most-connected nodes ("god nodes") — where to start reading. |
-| report [--json] | ONE artifact for "explain this repo": subsystems, hubs, the **seams between** subsystems, and — uniquely — what the graph could **not** resolve, with the grep that settles each one. Facts only: structure never counts an `AMBIGUOUS` edge. |
-| verify "<claim>" … | Citation check before a human acts on one: node exists (exact id or label, **never fuzzy**), file exists, line range in bounds, drift vs gather-time git HEAD. Claims are `node-id`, an exact label, or `file:L10-L20`. **Exit 0 only when every claim holds.** |
-| status [--json] | Store facts + freshness vs git HEAD + a local tally of answers served. |
-| fresh [--json] | One-line verdict and a scriptable exit code — the agent/hook gate before trusting an answer. **0** fresh · **1** stale (re-gather) · **2** unknown (no git provenance — nothing is wrong, freshness just can't be determined) · **3** **partial** (the last gather had producer lanes fail, so the store is incomplete). `partial` is its own code, not a reuse of stale, because the responses differ: stale means "old but complete", partial means "a producer is missing". `status` and `fresh --json` name the failed lanes; `up` retries a partial store in full, adapters included. |
-| serve\|dashboard [--port 4747] [--host H] | Local dashboard on 127.0.0.1 — repos, onboarding, graph viewer, query, settings, change log. Zero external requests; mutations stay loopback-only even with `--host` widened, and every one is audited. |
+**Does.** No config → writes `.ctxoptimize/` (monorepos via scan) and gathers. Empty store + `remote.pull` → pull (failed pull gathers locally). No remote → gather. Stale vs HEAD → fast re-gather, adapters skipped. Fresh → no-op. Idempotent.
 
-### List & filter — no jq
+### init
 
-Three verbs read the graph as data. Table output by default, `--json`/`--ndjson` for scripts; at a monorepo root they federate across every module.
+**When.** You want to edit the config before the first gather, or write the pointer into `AGENTS.md` / `CLAUDE.md`.
 
-| command | what it does |
-|---|---|
-| nodes [--kind K] [--file-type FT] [--id-prefix P] [--label S] [--scope S] [--where k=v,k~v] [--select f1,f2] | List/filter graph **nodes** natively. e.g. `nodes --kind service --where namespace=prod`. |
-| edges [--relation R] [--confidence C] [--from ID] [--to ID] [--id-prefix P] [--where k=v] [--select f1,f2] | List/filter graph **edges**. e.g. `edges --relation resolves_to`, or `edges --relation calls --confidence AMBIGUOUS --to <id>` to see the shortlist a traversal verb held back. |
-| deps [--scope runtime\|dev\|peer\|…] [--importers] | Dependencies with their scope; `--importers` adds the files that import each — one command instead of a jq join. |
+**Do.** `ctx-optimize init` · `init --scan [--yes] [--depth N] [--modules "globs"]`
 
-**An impossible filter now says so.** `--kind` and `--relation` are OPEN vocabularies (adapters mint their own), so an unknown value is not an error — but when a filter value appears NOWHERE in the store, the verb discloses it and names what does exist: `(0 nodes)  — no node in this store has kind "route"; kinds present: file, function, method, port, section, …`. Exit code stays 0. A REAL value narrowed to nothing by the rest of your filter is a legitimate empty answer and is NOT decorated — so the note means something. Applies to `--kind`, `--file-type`, `--relation`, `--confidence`, `--producer`, `--scope` and `--where k=v` (both the key and the value) on `nodes`, `edges`, `deps`, `query`, `affected`, `hubs`, `report` and `export`. In `--json`/`--ndjson` mode stdout is left untouched and the disclosure arrives on **stderr** as one JSON line, `{"filter_disclosure":{"misses":[…]}}`.
+**Does.** Scaffolds `.ctxoptimize/` (config, adapter sample, `push.js.sample` / `pull.js.sample`). Does not clobber an existing config. `--scan` writes `modules[]`. A pull-declaring clone redirects to `up`. If you don't need control, use `up`.
 
-### Manage & share
+### scan
 
-| command | what it does |
-|---|---|
-| config [<key> [<value>]] [--project] | Get/set settings, git-style two levels: machine-global by default, `--project` writes the committable repo config. Project overrides global — see [settings](#global-config). |
-| remote push\|pull | Run the push/pull **commands you declared** in `.ctxoptimize/config.json` — the binary ships no transport of its own. Your command gets `CTX_STORE_DIR` / `CTX_STORE_KEY` / `CTX_SCOPE_PREFIX` / `CTX_DIRECTION` in env; a non-zero exit fails the verb. No URL argument — the config file is the single source of truth. Scope follows cwd. (`remote init` was removed in v0.4.) |
-| merge <module>... --into N | Combine module stores into one merged view. Always opt-in, never automatic. |
-| export [--format json\|dot\|graphml\|csv\|obsidian\|all] [--ndjson] [--kind K] [--relation R] [--where k=v] [--out F\|DIR] | Dump the graph for **other tools** — that is not team sharing. Filter flags narrow both streams (bare `export` is unchanged). `csv` with `--out DIR` writes `nodes.csv` + `edges.csv`; `obsidian` and `all` require `--out DIR`. |
-| store delete [--yes] | Delete **this repo's** stores — the root store and every module store at any depth, always the whole repo whichever directory you run it from; a sibling repo is never in scope. Prints the full blast radius, then **asks** `[y/N]`; off a terminal (pipe, CI) nothing is asked and nothing is deleted. `.ctxoptimize/` is never touched — it is committed config, not a cache. Audited. |
-| log [--json] | Print the mutation audit trail (`<store-root>/audit.ndjson`): timestamp, actor (`cli` or `dashboard`), action, target, before/after sha256. Append-only and sorted, so it diffs in git. |
-| languages add\|list\|remove | Grammar packs — see [languages](#languages). |
-| routes add\|list\|remove · manifests add\|list\|remove | Route and manifest packs — see [packs](#packs). |
-| save-result / reflect | The learning loop — see [below](#learning). |
-| version | Print the version. |
-| install / uninstall | Agent skill + prompt hooks per platform. Plain `uninstall` removes everything `install` wrote; stores and committed repo pointers stay. |
-| update [--check] | Self-update the binary (npm via npm; standalone via GitHub Releases, sha256-verified) then refresh skills + hooks + the global rule. `--check` reports only. User-invoked network only. |
+**When.** You want to see what `init --scan` would write, without writing it.
+
+**Do.** `ctx-optimize scan [--depth N] [--json]`
+
+**Does.** Prints every project found. Changes nothing.
+
+### add
+
+**When.** Gather or refresh this tree. Also the door for adapters and native sources.
+
+**Do.**
+```text
+ctx-optimize add [<path>] [--force] [--jobs N] [--no-adapters]
+ctx-optimize add --json -|FILE
+ctx-optimize add --rebuild
+ctx-optimize add BILLING_DB_URL
+```
+
+**Does.** Walks code, markdown, manifests, adapters (honors `.gitignore`). Incremental: prunes stale nodes; &gt;50% shrink refused without `--force`. `--json` upserts a validated Batch (fail-closed). `--rebuild` drops the store first (retired producers otherwise survive). `add NAME` dials the env var's URL, merges, records the **name** in config — never a raw URL on argv. Multi-module root: one worker per module.
+
+### sync
+
+**When.** You edited code and want the store current. Fast path.
+
+**Do.** `ctx-optimize sync`
+
+**Does.** Re-gathers code, docs, manifests, git. **Skips adapters.** Adapter nodes stay. Report says how many were skipped.
+
+### adapters
+
+**When.** The external system changed (schema, topics) or you want to see what's dropped in.
+
+**Do.** `ctx-optimize adapters list` · `adapters run` · `adapters run postgres` · `adapters help postgres`
+
+**Does.** `list` shows scripts. `run` re-runs all or one. Never touches the code graph. `help` prints the source setup card.
+
+### capture
+
+**When.** You want to see what a source would emit before it lands in the store.
+
+**Do.** `ctx-optimize capture BILLING_DB_URL`
+
+**Does.** One connector → Batch JSON on stdout. No write. Adapters call this back with their own env.
+
+### wiki
+
+**When.** You turned `"wiki": false` on gather but want the map now.
+
+**Do.** `ctx-optimize wiki`
+
+**Does.** Writes a complete `wiki/` from the graph. `add` already does this unless wiki is off.
+
+### query
+
+**When.** You have words, not a symbol name.
+
+**Do.** `ctx-optimize query "refund tax" [--budget N] [--modules all|a,b] [--root]`
+
+**Does.** Ranks nodes (IDF / prefix / trigram), attaches 1-hop neighbours, stops at the token budget (default 2000). Alias: `ask`. Scope follows cwd; zero hits escalate repo-wide. [How scoring works](/ctx-optimize/concepts/#why-query-is-not-grep).
+
+### card
+
+**When.** You have the name. You want callers without opening the file.
+
+**Do.** `ctx-optimize card Store.Merge`
+
+**Does.** Signature, doc, `file:line`, callers, callees. Id, exact label, or fuzzy. Strips invented qualifiers. Miss → nearest labels.
+
+### change-plan
+
+**When.** You are about to edit.
+
+**Do.** `ctx-optimize change-plan Store.Merge [--json]`
+
+**Does.** Signature + callers + blast + tests to run + co-change, with a confidence footer. Alias: `plan`.
+
+### explain
+
+**When.** You want a sentence, not a card.
+
+**Do.** `ctx-optimize explain PaymentService`
+
+**Does.** Plain-language node + neighbourhood.
+
+### affected
+
+**When.** Blast radius only.
+
+**Do.** `ctx-optimize affected Store.Merge [--depth N] [--relation R]`
+
+**Does.** Reverse impact. AMBIGUOUS callers excluded unless `--include-ambiguous`. Floor, not a census.
+
+### path
+
+**When.** You know two names and want the connection.
+
+**Do.** `ctx-optimize path cmdAdd Store.Merge`
+
+**Does.** Shortest path on real edges.
+
+### hubs
+
+**When.** Unfamiliar repo. Where to start.
+
+**Do.** `ctx-optimize hubs [--top N]`
+
+**Does.** Most-connected nodes.
+
+### report
+
+**When.** "Explain this repo" as one artifact.
+
+**Do.** `ctx-optimize report [--json]`
+
+**Does.** Subsystems, hubs, seams, and what could **not** resolve (with the grep that settles it). Never counts an AMBIGUOUS edge as structure.
+
+### verify
+
+**When.** A human is about to act on a citation.
+
+**Do.** `ctx-optimize verify "pay.go:L1-L5"` · `verify Store.Merge`
+
+**Does.** Node exists (exact id or label, never fuzzy), file exists, range in bounds, no drift vs gather HEAD. **Exit 0 only if every claim holds.**
+
+### status
+
+**When.** You want the store's facts.
+
+**Do.** `ctx-optimize status [--json]`
+
+**Does.** Counts, freshness vs HEAD, answers served. Names failed lanes if partial.
+
+### fresh
+
+**When.** A hook or script must decide whether to trust the store.
+
+**Do.** `ctx-optimize fresh [--json]` · check `$?`
+
+**Does.** **0** fresh · **1** stale · **2** unknown (no git) · **3** partial (a producer failed). `up` retries a partial store in full, adapters included.
+
+### serve
+
+**When.** You want the picture.
+
+**Do.** `ctx-optimize serve [--port 4747] [--host H]`
+
+**Does.** Dashboard on `127.0.0.1:4747`. Alias: `dashboard`. Writes stay loopback + token. [Lock](/ctx-optimize/dashboard/).
+
+### nodes
+
+**When.** List/filter without jq.
+
+**Do.** `ctx-optimize nodes --kind port --where transport=network.http`
+
+**Does.** Table of nodes. `--kind` `--file-type` `--id-prefix` `--label` `--scope` `--where k=v` `--select`. Federates at a monorepo root.
+
+### edges
+
+**When.** Same, for edges.
+
+**Do.** `ctx-optimize edges --relation calls --confidence AMBIGUOUS --to <id>`
+
+**Does.** Table of edges. `--relation` `--confidence` `--from` `--to` `--where`.
+
+### deps
+
+**When.** You want dependency scope, or who imports a package.
+
+**Do.** `ctx-optimize deps --scope runtime` · `deps --importers`
+
+**Does.** `dep:` nodes with scope. `--importers` adds the files.
+
+A filter value that exists **nowhere** in the store is disclosed (`no node has kind "route"; kinds present: …`). Exit 0. A real value narrowed to empty is silent. `--json`: disclosure on stderr.
+
+### config
+
+**When.** Read or set a setting.
+
+**Do.** `ctx-optimize config` · `config <key>` · `config <key> <value> [--project]`
+
+**Does.** Machine-global by default. `--project` writes `.ctxoptimize/config.json`. Project overrides global. [Settings](#global-config).
+
+### remote
+
+**When.** Push or pull the store. The binary has no transport.
+
+**Do.** `ctx-optimize remote push` · `remote pull`
+
+**Does.** Runs the command in config (`remote.push` / `remote.pull`). Env: `CTX_STORE_DIR` `CTX_STORE_KEY` `CTX_SCOPE_PREFIX` `CTX_DIRECTION`. Non-zero exit fails the verb. No URL argument.
+
+### merge
+
+**When.** You want one combined view of named modules.
+
+**Do.** `ctx-optimize merge api worker --into everything`
+
+**Does.** Writes a merged store. Opt-in, never automatic.
+
+### export
+
+**When.** Another tool needs the graph. Not team sharing (that's `remote`).
+
+**Do.** `ctx-optimize export [--format json|dot|graphml|csv|obsidian|all] [--out F|DIR]`
+
+**Does.** Dumps nodes/edges. `csv` / `obsidian` / `all` need `--out DIR`.
+
+### store
+
+**When.** Delete this repo's stores.
+
+**Do.** `ctx-optimize store delete [--yes]`
+
+**Does.** Root + every module store. Prints the blast radius, then `[y/N]`. Off a TTY: no ask, no delete. `.ctxoptimize/` stays. Audited.
+
+### log
+
+**When.** What mutated the store.
+
+**Do.** `ctx-optimize log [--json]`
+
+**Does.** Prints `audit.ndjson`: ts, actor (`cli`|`dashboard`), action, target, before/after sha256.
+
+### languages
+
+**When.** Add a language that is not embedded.
+
+**Do.** `ctx-optimize languages add|list|remove`
+
+**Does.** Grammar packs. [Languages](#languages).
+
+### routes
+
+**When.** A framework the core recognizers don't cover.
+
+**Do.** `ctx-optimize routes add|list|remove`
+
+**Does.** Route packs. [Packs](#packs).
+
+### manifests
+
+**When.** A build tool the core recognizers don't cover.
+
+**Do.** `ctx-optimize manifests add|list|remove`
+
+**Does.** Manifest packs. [Packs](#packs).
+
+### install
+
+**When.** Teach the agent CLI.
+
+**Do.** `ctx-optimize install [--claude|--codex|--copilot|--devin]` · `uninstall`
+
+**Does.** Writes skill + hooks. `uninstall` removes what `install` wrote. Stores and committed pointers stay.
+
+### update
+
+**When.** You want the new binary.
+
+**Do.** `ctx-optimize update` · `update --check`
+
+**Does.** npm channel → `npm i -g`. Standalone → GitHub Release, sha256 vs checksums.txt. Then refreshes skills/hooks. `--check` reports only. No background check.
+
+### version
+
+**When.** Which binary.
+
+**Do.** `ctx-optimize version`
+
+**Does.** Prints the version.
 
 ## `.ctxoptimize/config.json` — the only thing we put in your repo.
 
@@ -309,14 +534,55 @@ ctx-optimize up --strict                 # fail instead of skipping when a var i
 ctx-optimize up --prune-sources          # drop producers no longer declared in config
 ```
 
-| scheme | what lands in the graph |
-|---|---|
-| postgres · mysql · mssql | Tables, columns, foreign keys. System schemas skipped; a partitioned table collapses to one node carrying `partitions: N` rather than exploding into children. |
-| mongodb | Collections and inferred document shape from a **bounded** sample. |
-| redis | Key-space shape — patterns and types, not values. |
-| kafka · nats | Topics/subjects and partition counts. |
-| s3 | Buckets and prefixes, via stdlib SigV4 — no vendor SDK. |
-| openapi (http/https or a file path) | Operations, paths and schemas from a spec. |
+### postgres
+**When.** You want tables, columns, FKs in the graph.  
+**Do.** `adapters help postgres` then `add $BILLING_DB_URL` (`postgres://` or `postgresql://`).  
+**Does.** System schemas skipped. Partitions collapse to `partitions: N`.
+
+### mysql
+**When.** Same, MySQL.  
+**Do.** `add $MYSQL_URL` (`mysql://`).  
+**Does.** Tables, columns, FKs. System schemas skipped.
+
+### mssql
+**When.** Same, SQL Server.  
+**Do.** `add $MSSQL_URL` (`mssql://` or `sqlserver://`).  
+**Does.** Tables, columns, FKs.
+
+### mongodb
+**When.** Collections and document shape.  
+**Do.** `add $MONGO_URL` (`mongodb://` or `mongodb+srv://`).  
+**Does.** Bounded sample. Not a dump of every document.
+
+### redis
+**When.** Key-space shape, not values.  
+**Do.** `add $REDIS_URL` (`redis://` or `rediss://`).  
+**Does.** Patterns and types.
+
+### kafka
+**When.** Topics and partitions.  
+**Do.** `add $KAFKA_URL` (`kafka://`).  
+**Does.** Topic nodes, partition counts.
+
+### nats
+**When.** Subjects.  
+**Do.** `add $NATS_URL` (`nats://`).  
+**Does.** Subject nodes.
+
+### s3
+**When.** Buckets and prefixes.  
+**Do.** `add $S3_URL` (`s3://`).  
+**Does.** Stdlib SigV4. No SDK. Prefixes, not objects.
+
+### openapi
+**When.** An HTTP API spec.  
+**Do.** `add $SPEC_URL` (`http://` / `https://`) or `add ./openapi.json`.  
+**Does.** Operations, paths, schemas.
+
+### drop-in
+**When.** No connector for it (tickets, Firebase, a log).  
+**Do.** Drop `.js` / `.py` / `.sh` in `.ctxoptimize/adapters/`. Print one Batch.  
+**Does.** Runs on `add`. Invalid batch rejected whole. `sync` skips it. `adapters run` refreshes it.
 
 ### The logical-shape rule
 

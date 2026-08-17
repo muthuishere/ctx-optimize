@@ -1,13 +1,11 @@
 ---
 title: Quick start
-description: Three commands. No service, no API key, no MCP. Then the agent asks the graph instead of rediscovering the repo.
+description: Three commands. Then the verbs.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Three commands gather the repo into a local graph — nodes, edges, boundaries. After
-that a cheaper model can answer, and a bigger model spends the window coding instead
-of rediscovering who talks to what.
+Three commands. Then the agent asks the graph.
 
 <Tabs>
 <TabItem label="Claude Code">
@@ -42,51 +40,12 @@ Grok already reads the Claude skill. Devin already reads `~/.agents/skills`.
 </TabItem>
 </Tabs>
 
-If the agent still only searches files, say: *Use ctx-optimize for searching and all
-structural work.* [The full playbook →](/ctx-optimize/guide/)
+If it still only searches files: *Use ctx-optimize for searching and all structural
+work.* [How to use it](/ctx-optimize/guide/).
 
-What those commands did, if you want to type them yourself:
-
-## Install
-
-```bash
-npm install -g @muthuishere/ctx-optimize   # one static binary per platform
-```
-
-Or `go install github.com/muthuishere/ctx-optimize/cmd/ctx-optimize@latest`, or download a
-binary from [Releases](https://github.com/muthuishere/ctx-optimize/releases). There is no
-service, no daemon, no database and no API key.
-
-## Gather
-
-```bash
-cd your-repo
-ctx-optimize up
-```
-
-`up` is the one verb that always does the right thing: bootstrap a config if there is none
-(scanning for modules in a monorepo), gather the graph, or pull the team's prebuilt store
-when the config declares a remote. It is a safe no-op ever after.
-
-The store lands in `~/ctxoptimize/<repo-name>/` — outside your repo, one per machine. The
-only thing written **into** your repo is `.ctxoptimize/` (config, instructions card,
-optional adapters), which is meant to be committed.
-
-## Teach your agent
-
-```bash
-ctx-optimize install --skills     # Claude Code + Codex — only if you want the always-on rule
-```
-
-The first time any verb runs in a terminal (and no skill is present), the binary already
-installs the skill and the session hook, prints every path it wrote, and stays silent after
-that. It does **not** write the always-on rule into `~/.claude/CLAUDE.md` /
-`~/.codex/AGENTS.md` — that larger claim on the machine stays with the explicit `install`
-verb. It never runs in CI, and it never runs when stdout is not a terminal.
-
-`install --skills` is the step that also writes the pointer block into this repo's
-`AGENTS.md` / `CLAUDE.md`. The full usage card is committed at
-`.ctxoptimize/instructions.md` — teammates inherit it with zero installation.
+Also `go install github.com/muthuishere/ctx-optimize/cmd/ctx-optimize@latest`, or a
+[release](https://github.com/muthuishere/ctx-optimize/releases) binary. Store:
+`~/ctxoptimize/<name>/`. Into the repo: `.ctxoptimize/` (commit it).
 
 ## Ask
 
