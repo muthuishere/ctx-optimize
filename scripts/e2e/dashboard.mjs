@@ -255,7 +255,6 @@ async function run(page) {
   for (const [hash, marker, budget] of [
     ['#/overview', 'document.querySelectorAll(".screenwrap").length > 0', 25000],
     [`#/viewer/${encodeURIComponent(small.key)}?view=flow`, 'painted()', 20000],
-    [`#/viewer/${encodeURIComponent(small.key)}?view=house`, 'painted()', 20000],
     [`#/viewer/${encodeURIComponent(small.key)}?view=graph`, 'painted()', 20000],
   ]) {
     await page.blank()
@@ -330,11 +329,11 @@ async function run(page) {
   const deep = enterable[0]?.dir
   if (deep) {
     await page.blank()
-    await page.goto(`#/viewer/${encodeURIComponent(small.key)}?view=house&root=${encodeURIComponent(deep)}`)
+    await page.goto(`#/viewer/${encodeURIComponent(small.key)}?view=graph&root=${encodeURIComponent(deep)}`)
     await waitFor(page, 'painted()', 20000)
     const h = await page.ev('location.hash')
     check('a shared URL opens the right store, view AND level',
-      h.includes('view=house') && h.includes('root='), h)
+      h.includes('view=graph') && h.includes('root='), h)
   }
 
   // ---- MODULE GRAIN (ADR 22 D4): a repo scene whose cards are its modules,

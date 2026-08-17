@@ -1,6 +1,6 @@
 # ADR 30 — the globe: territories, not points, so nothing is a sample
 
-Status: DRAFT — design recorded, spike specified, build NOT started
+Status: REJECTED 2026-08-17 — prototyped, looked at, and turned down
 Date: 2026-08-17
 
 ## The ask
@@ -93,3 +93,41 @@ If the spike cannot produce a deterministic layout whose adjacency is
 meaningful, the globe does not ship — a flat treemap does. And if the drill
 cannot show ALL of a country at the next level, it does not ship at all: the
 entire point is that nothing is a top-N.
+
+
+## REJECTED — the prototype answered the question
+
+Built as a working prototype on real reqsume data (7 modules, 171 directories,
+1,003 files, 4,652 declarations; six real `network.http` links drawn as arcs),
+with ocean between coastlines, a fly-in camera and settlements previewing each
+country's children.
+
+The owner's verdict on seeing it: **"no seems bad."**
+
+That is the right call and the prototype is why it could be made cheaply. What
+the build exposed:
+
+- **Seven modules make seven ovals.** Weighted Voronoi needs many territories
+  before it reads as a map; at the scale most repos actually are, a globe is a
+  marble with stickers on it. The view only starts to pay at the-factory's 229
+  — and the reader who needs it least is the one with 229 modules, because they
+  drill rather than survey.
+- **Adjacency never became meaningful**, which was rule 2 and the stated kill
+  criterion. Seeds were a Fibonacci spread; a shared border was decoration
+  throughout.
+- **Half the data always faces away.** Inherent to a sphere, and no amount of
+  rendering fixes it.
+
+The good idea inside it survives and is not lost: **area instead of slots**, so
+"top 12 of 228" stops being the answer. That belongs in a flat treemap, which
+this ADR already named as the fallback, and which has none of the three
+problems above. Recorded there rather than here.
+
+Cost of finding out: one prototype, no product code, no gate touched.
+
+## Also decided, same session
+
+The **House** view is removed and **Flow is the default**. House was a second
+projection of the same scene that nobody reached for, and a viewer nothing
+opens is worse than one that does not exist. `houseLayout.ts` and its test go
+with it — an orphan left behind is the same defect in a quieter form.

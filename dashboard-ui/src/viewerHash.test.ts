@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_VIEWER } from './viewers'
 import { parseViewerHash, viewerHash } from './screens/ViewerShell'
 
 // The address is the product here: a viewer URL is only worth sending to
@@ -29,9 +30,15 @@ describe('viewer address', () => {
   })
 
   it('defaults a bare module URL instead of rendering nothing', () => {
+    // CHANGED with the House removal: the default is FLOW, not graph. A bare
+    // /viewer URL should open the view that answers the question people arrive
+    // with — what is this codebase, what talks to what — rather than every node
+    // at once. The assertion reads DEFAULT_VIEWER rather than a literal, so the
+    // order in VIEWERS stays the single place the default is decided.
     const p = parseViewerHash('myrepo')
     expect(p.module).toBe('myrepo')
-    expect(p.view).toBe('graph')
+    expect(p.view).toBe(DEFAULT_VIEWER)
+    expect(p.view).toBe('flow')
     expect(p.root).toBe('')
   })
 

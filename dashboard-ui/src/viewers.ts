@@ -1,7 +1,6 @@
 import type { ComponentType } from 'react'
 import GraphViewer from './screens/GraphViewer'
 import FlowViewer from './screens/FlowViewer'
-import HouseViewer from './screens/HouseViewer'
 
 // The VIEWER REGISTRY. Everything the switcher shows comes from this list, so a
 // third and fourth viewer is one entry each — ViewerShell renders the dropdown
@@ -41,13 +40,11 @@ export interface ViewerDef {
   Component: ComponentType<ViewerProps>
 }
 
+// Order is the default: VIEWERS[0] is what a bare /viewer URL opens. Flow is
+// first because it is the view that answers the question people arrive with —
+// what is this codebase and what talks to what. The force-directed graph stays
+// for "show me literally everything", which is a different question.
 export const VIEWERS: ViewerDef[] = [
-  {
-    id: 'graph',
-    label: 'Graph — force-directed',
-    blurb: 'every node, expanded on click',
-    Component: GraphViewer,
-  },
   {
     id: 'flow',
     label: 'Flow — derived architecture',
@@ -55,10 +52,10 @@ export const VIEWERS: ViewerDef[] = [
     Component: FlowViewer,
   },
   {
-    id: 'house',
-    label: 'House — the codebase as a building',
-    blurb: 'floors are dependency depth, doors are the boundary',
-    Component: HouseViewer,
+    id: 'graph',
+    label: 'Graph — force-directed',
+    blurb: 'every node, expanded on click',
+    Component: GraphViewer,
   },
 ]
 
