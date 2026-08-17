@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { api } from './api'
 import ErrorBoundary from './ErrorBoundary'
 import Overview from './screens/Overview'
 import Repos from './screens/Repos'
@@ -39,6 +40,15 @@ export default function App() {
   const route = (i < 0 ? h : h.slice(0, i)) || 'overview'
   const arg = i < 0 ? '' : h.slice(i + 1)
 
+  // Asked once per page load, and never blocking: a header that cannot say its
+  // version is a smaller problem than a header that will not render.
+  const [ver, setVer] = useState<{ version: string; commit: string; built: string } | null>(null)
+  useEffect(() => {
+    api<{ version: string; commit: string; built: string }>('/api/version')
+      .then(setVer)
+      .catch(() => setVer(null))
+  }, [])
+
   return (
     <div className="app">
       <header className="top">
@@ -46,6 +56,16 @@ export default function App() {
           <h1>ctx-<em>optimize</em></h1>
         </a>
         <span className="sub">gather once · answer from the store</span>
+        {/* WHICH BUILD is serving this page. It lives beside the title because
+            "is this even the version I just built?" is the question you ask
+            when something looks wrong — and the answer was unavailable when a
+            copy on PATH served a three-week-old binary for hours while every
+            screen looked correct. */}
+        {ver && (
+          <span className="ver" title={ver.commit ? `commit ${ver.commit} · built ${ver.built}` : undefined}>
+            {ver.version}
+          </span>
+        )}
         <nav className="tabs">
           {TABS.map(([r, label]) => (
             <a key={r} href={'#/' + r} className={route === r ? 'active' : ''}>

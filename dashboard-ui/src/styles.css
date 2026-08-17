@@ -366,3 +366,21 @@ table.list td.mono { font-family: var(--mono); font-size: .8rem; color: var(--te
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   color: var(--muted); font-size: .9rem; text-align: center; max-width: 60%;
 }
+
+/* The build serving this page, beside the title. Quiet by default — it is
+   reference, not news — and monospace because a version is read character by
+   character, not skimmed. A dev build says so in the accent colour: it is the
+   one case where "which binary is this" has a wrong answer worth noticing. */
+.top .ver {
+  font: 600 10.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .02em;
+  color: var(--dim);
+  background: color-mix(in srgb, var(--panel) 88%, var(--text));
+  border: 1px solid var(--line2);
+  border-radius: 999px;
+  padding: 4px 9px;
+  margin-left: 10px;
+  white-space: nowrap;
+  cursor: default;
+}
+.top .ver:hover { color: var(--muted); border-color: var(--accent); }

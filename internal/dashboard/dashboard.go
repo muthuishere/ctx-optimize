@@ -41,6 +41,7 @@ import (
 	"github.com/muthuishere/ctx-optimize/internal/schema"
 	"github.com/muthuishere/ctx-optimize/internal/store"
 	"github.com/muthuishere/ctx-optimize/internal/usage"
+	"github.com/muthuishere/ctx-optimize/internal/version"
 )
 
 //go:embed all:ui
@@ -127,6 +128,16 @@ func NewHandler(root string, ops *Ops) http.Handler {
 		jsonOK(w, mods)
 	})
 	mux.HandleFunc("/api/graph", s.handleGraph)
+	// Which binary is serving this page. A stale binary served silently for
+	// hours before this existed: the dashboard looked fine, and the copy on
+	// PATH was three weeks behind the repo it claimed to describe.
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		jsonOK(w, map[string]string{
+			"version": version.Version,
+			"commit":  version.Commit,
+			"built":   version.Date,
+		})
+	})
 	mux.HandleFunc("/api/scene", s.handleScene)
 	mux.HandleFunc("/api/repo/scene", s.handleRepoScene)
 	mux.HandleFunc("/api/query", s.handleQuery)
