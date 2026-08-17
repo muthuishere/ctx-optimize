@@ -3,15 +3,13 @@ title: What it is
 description: "Why query is not grep or embeddings, how the score is actually built, why each verb exists, and the schema — adapters, boundaries, confidence — underneath."
 ---
 
-The store is already a graph — **nodes** (files, symbols, sections, tables, buckets) and **edges** (contains, calls, imports, the outer world). You do not search the repo. You ask a verb. That is the whole product.
+Nodes and edges. You ask a verb. No embeddings, no model in this path.
 
-## Why query is not grep — and not a vector store
+## Why query is not grep
 
-Grep searches **lines in files**. You get a matching line. You still open the file, find the function, find who calls it, and stuff that into the window. A cheap model gets lost. A big model spends the session rediscovering the repo.
+Grep returns a line. You still open the file. Embeddings need a model and still cannot tell a caller from a comment.
 
-Embeddings search **meaning** in a vector index. That needs a model in the path, an index to build and keep fresh, and a similarity score that cannot tell a caller from a comment. We do not do that. There is no vector index and no model in this binary.
-
-`query` searches **the graph that is already there** — the names of symbols and files, not the bytes of every source file. Then it hangs the neighbours on the hit so you leave with a citation, not a line to chase.
+`query` ranks **names already in the graph**, then hangs neighbours on the hit.
 
 ```text
 ctx-optimize query "where is refund processing implemented"
@@ -104,154 +102,55 @@ ProcessRefund  [function]  refund_service.go L37-L80
     → calls PaymentGateway.Refund
 ```
 
-Those arrows are **shown**. They do not become extra hits. A callee with none of the query words cannot win today. AMBIGUOUS edges stay out unless you pass `--include-ambiguous`.
+Arrows are **shown**, not extra hits. AMBIGUOUS stays out unless `--include-ambiguous`. Budget ~2000 tokens (`chars/4`) or 20 hits.
 
-Then the **budget**: each complete hit has a token cost (`chars/4`). We stop at ~2000 (or `--budget N`), and at 20 hits. The agent is supposed to stop reading. Quality here is useful facts per token, not Recall@100.
+Grep still wins strings and config **values**. `card` is indexed (&lt;20 ms on linux). `query` still walks every node.
 
-Grep still wins exact strings, comments, and config **values**. We do not replace it. We answer structure.
+## Verbs
 
-`card` is a different engine — a fail-safe label/id index, under 20 ms on the kernel. `query` still walks every node. That is honest, and it is why the next ADR is postings, not embeddings.
-
-## Why every verb
-
-An agent that only has `query` will query for everything, the way it greps for everything. Each verb is one job, so a small model can pick the right one and a big model does not refill the window.
-
-| You want | Verb | Why it exists |
-|---|---|---|
-| Find something from **words** | `query` | You do not know the symbol yet. Ranked nodes + neighbors, under a budget. |
-| Inspect a **known** symbol | `card` | Signature, doc, callers, callees, `file:line` — without opening the file. |
-| **About to edit** | `change-plan` | The one composed call: card + callers + blast + which tests to run. |
-| Blast radius only | `affected` | What breaks if this changes. Floor, not a guess — ambiguous callers stay a shortlist. |
-| How A connects to B | `path` | A walk on real edges, not a story. |
-| Plain-language context | `explain` | For a human (or an agent) that has the node and needs the sentence. |
-| Orient in a new repo | `hubs` | What everything depends on. The load-bearing names. |
-| What this **talks to** | `boundaries` | Hosts, env **names**, spawned binaries — never a secret value. |
-| See it | `serve` | Same store, Flow picture. A card is a directory. An arrow is N real edges. |
-
-Pick by intent, not habit. The [cookbook](/ctx-optimize/cookbook/) is the question you would ask a teammate mapped to the one command.
-
-## Why extendable — why an adapter
-
-Code is not the system. The system is code **plus** the database, the bucket, the queue, the ticket list, the thing only your company has.
-
-Every producer emits the **same** shape: a `Batch` of nodes and edges, tagged with a producer name. Tree-sitter does that for Go and TypeScript. Goldmark does it for ADRs. A connector does it for Postgres and S3. Your script does it for everything else.
-
-```text
-.ctxoptimize/adapters/   # drop .js / .py / .sh — the file existing IS the registration
-```
-
-Print one JSON batch to stdout. The door validates it fail-closed and merges it. No fork. No MCP. No special “doc graph” versus “code graph.”
-
-Native sources are the same door with less work: an env-var **name** whose value is a URL (`postgres://…`, `s3://…`). The scheme picks the connector. Credentials stay in the environment; the committed config holds names, never values.
-
-That is why a repo like reqsume can show `public.applications`, Firebase Auth, and `reqsume-local` next to `Store.Merge`. Not because we hardcoded SaaS — because the store does not care who emitted the node.
-
-## Why boundaries
-
-A call graph that stops at your functions is a lie about the system. The thing that pages you is usually **outside**: `api.openai.com`, `POSTGRES_PASSWORD`, `s3://…`, a binary you spawn.
-
-`boundaries` is that outer surface, extracted while the parser already walks the tree — direction (consumes / provides), transport (`network.http`, `config.env`, `process.exec`), identifier by **name**. A secret is flagged as a name. The value never enters the store.
-
-Flow draws those as the dashed plates under the module cards. An architect sees what the service talks to. An agent running `change-plan` sees the same ports. One store, two doors.
-
-Without this row, we are another pretty graph of functions. With it, the graph is the system.
-
-## Two arrays. That is the schema.
-
-Every producer — code, markdown, routes, manifests, k8s, a Postgres connector, your adapter — emits the same `Batch`. There is no special-cased “code graph” versus “doc graph.”
-
-```text
-Batch {
-  producer: "code" | "markdown" | "firebase" | "source:BILLING_DB_URL" | …
-
-  nodes: [
-    { id, label, kind, file_type, source, location?, metadata? }
-  ]
-
-  edges: [
-    { source, target, relation, confidence: EXTRACTED | INFERRED | AMBIGUOUS }
-  ]
-}
-```
-
-A node is anything worth naming: a file, a function, a heading, a route, a k8s Service, a Postgres table, a bucket prefix, a ticket. `kind` is a string, not a closed enum — that is what keeps the adapter door open. An edge is a typed link: `contains`, `calls`, `imports`, `resolves_to`, or whatever your producer needs.
-
-The validator is fail-closed. Missing id, missing kind, a confidence outside the enum, a duplicate id — the whole batch is rejected. Nothing half-writes.
-
-**What actually fills a repo**
-
-| Family | What lands |
+| Want | Verb |
 |---|---|
-| Code | Every file, and every function / method / class / struct tree-sitter parses — signature, doc comment, `L#-L#`. |
-| Markdown | Headings as sections (goldmark AST, not a line regex). Fences are not sections. A link is an edge only if the target resolved in the walk. |
-| Routes | FastAPI / Flask / Express / Nest / React Router / Vue / OpenAPI / Ingress → the handler. |
-| Manifests | package.json, go.mod, pom, csproj, Gradle, Cargo — one `dep:` node federated across tools. |
-| k8s | Deployments, Services, Ingress, ConfigMaps; Secrets as nodes, **never their data**. |
-| Live sources | Tables, topics, buckets, operations — logical shape from a URL in an env var. |
-| Your adapter | Whatever you emit. Same door. |
+| Words, no name yet | `query` |
+| Known symbol | `card` |
+| About to edit | `change-plan` |
+| Blast only | `affected` |
+| A to B | `path` |
+| Plain language | `explain` |
+| Orient | `hubs` |
+| What it talks to | `boundaries` |
+| Picture | `serve` |
 
-`contains` nests a file → its declarations, or a doc → its sections. `calls` is module-wide, unique name. `imports` is file → module. `resolves_to` bridges an import to the `dep:` that ships it, so “what depends on lodash” is a graph answer, not a lockfile grep.
+[Cookbook](/ctx-optimize/cookbook/) maps the teammate question to the command.
 
-## EXTRACTED vs INFERRED — every edge says how sure it is
+## Adapter
 
-A graph that presents a guess as a fact is worse than no graph. An agent will cite it.
+Code is not the system. Drop `.js` / `.py` / `.sh` in `.ctxoptimize/adapters/` — the file *is* registration. Print one `Batch`. Fail-closed validate, merge.
 
-| confidence | means | example |
-|---|---|---|
-| **EXTRACTED** | Parsed from the AST, the manifest, or the live connector. Not a guess. | a `calls` edge from a resolved, unique call site |
-| **INFERRED** | Name-matched or heuristic. Plausible, not certified. | a route matched to a handler by naming convention |
-| **AMBIGUOUS** | Several candidates. **Kept, filtered out of every traversal by default.** | `Match` declared eight times — the call is a shortlist, not a caller |
+Native sources: an env-var **name** whose value is a URL (`postgres://…`, `s3://…`). Names in config, values only at dial time. Same door: reqsume can show `public.applications` and `reqsume-local` next to `Store.Merge`.
 
-`--include-ambiguous` on `card` / `affected` / `change-plan` / `path` / `hubs` widens the shortlist and marks those rows as candidates. A blast radius is a **floor**. `change-plan` prints a confidence footer so you know how much to trust each line.
+## Boundaries
 
-## Where it lives
+The call graph that stops at your functions is incomplete. `boundaries` is the outer surface: consumes / provides, transport (`network.http`, `config.env`, `process.exec`), identifier by **name**. Secrets flagged by name. Never a value. Flow draws them as plates.
 
-The graph is **not** in your repo. It is `~/ctxoptimize/<name>/` — basename, or `name` in config if two repos collide. Sorted ndjson, atomic rename, git-diffable even when you do not commit it.
+## Schema
 
 ```text
-~/ctxoptimize/<repo>/
-  graph/nodes.ndjson     # one object per line, sorted by id
-  graph/edges.ndjson
-  manifest.json          # content-hash per producer
-  sources.json           # native-source freshness (24h TTL)
-  audit.ndjson           # mutations: actor, action, before/after sha256
-  wiki/                  # opt-in markdown map (`ctx-optimize wiki`)
-
-# the ONLY committed thing:
-.ctxoptimize/
-  config.json            # name, modules[], sources[] (env-var NAMES), remote
-  instructions.md        # usage card agents read
-  adapters/              # drop-in scripts — existence is registration
+Batch { producer, nodes[], edges[] }
+edge.confidence = EXTRACTED | INFERRED | AMBIGUOUS
 ```
 
-Source URLs stay env-var **names**. Values resolve at dial time (process env → repo `.env` → `~/.config/ctx-optimize/.env`) and are never written or printed.
+EXTRACTED = parsed. INFERRED = name-matched. AMBIGUOUS = shortlist, filtered out of traversals by default. Blast radius is a floor.
 
-## The store knows when it is lying
+| Lands as | From |
+|---|---|
+| file / func / class | tree-sitter (`L#-L#`) |
+| heading | goldmark (fences are not sections) |
+| route → handler | FastAPI, Express, OpenAPI, Ingress… |
+| `dep:` | package.json, go.mod, pom, csproj… |
+| k8s | manifests; Secret **nodes**, never data |
+| table / bucket | live URL in an env var |
+| anything else | your adapter |
 
-It records the git commit it was gathered at. Every read can compare that to HEAD.
+Store: `~/ctxoptimize/<name>/` (ndjson). Commit: `.ctxoptimize/`. `status` / `fresh` vs git HEAD. Autosync **off**. One store per module; cwd is the scope.
 
-```text
-$ ctx-optimize status
-fresh:  ✗ STALE — store at 8a5057b, repo now at 03d0f49; run: ctx-optimize add .
-
-$ ctx-optimize fresh; echo $?
-# 0 = fresh · 1 = stale · 2 = unknown (no git HEAD)
-```
-
-`up` is the one verb that does the right thing: fresh → no-op, stale → incremental, missing → bootstrap or pull. Default autosync is **off**. After you edit, `ctx-optimize sync`. The agent may still grep.
-
-## Languages, and one store per module
-
-Code is tree-sitter compiled to WASI, hosted by wazero in pure Go. `CGO_ENABLED=0`, one static binary. Embedded: Go, Python, JS, TS/TSX, Java, C, C++, C#, Rust, Zig, SQL. Anything else is a **pack** (`<name>.wasm` + `<name>.json`) in `~/ctxoptimize/grammars/` or `.ctxoptimize/grammars/`. `languages add` builds one; Zig is downloaded once, sha256-checked. The gather machine, with numbers, is [how it works](/ctx-optimize/how-it-works/).
-
-A 300-module mega-graph helps nobody. Each declared module gets its own store. Cwd picks the scope. A miss escalates repo-wide and labels where it came from. `--modules all|a,b` or `--root` if you need to say so.
-
-```text
-~/ctxoptimize/acme/
-  services/api/       # full graph for that module
-  services/worker/
-  graph/              # residual: top-level files in no module
-  navigator.md        # path, counts, hubs per module
-```
-
-[How to use it](/ctx-optimize/guide/) · [Cookbook](/ctx-optimize/cookbook/) · [Boundaries](/ctx-optimize/boundaries/) · [See the picture](/ctx-optimize/see/) · [How it works](/ctx-optimize/how-it-works/)
+Embedded langs: Go, Python, JS, TS/TSX, Java, C, C++, C#, Rust, Zig, SQL. Others are packs. [How it works](/ctx-optimize/how-it-works/).

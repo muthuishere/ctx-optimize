@@ -1,72 +1,38 @@
 ---
 title: What we do not claim
-description: "The claims we killed, and why they are not coming back. Each was retired because a measurement said so."
+description: "The sentences we will not print. Each one died on a measurement, or was never ours."
 ---
 
-Each of these was on this site or in our own docs at some point. Each was retired because a
-measurement said so — not because someone objected.
+## We do not save you 79× tokens
 
-## ✗ "Saves you tokens", universally
+The category’s number. Independent 2026-08 session bench: **nobody hit 60%**. JetBrains on rtk: advertised 60–90%, measured **more expensive**. Us: **−0.2%** Claude Code, **+3.0%** Codex. A thin mini harness did cut tokens (−36%, 4 questions). That is not “saves tokens.” What moves every time is **15 tool calls vs 43**.
 
-The **universal** claim is dead; a **harness-specific** one survives, and we publish both
-because we measured both.
+## We are not the fastest query at kernel scale
 
-**Where it does not hold — frontier harnesses.** On Claude Code the store moved agent token
-usage by **−0.2%**, and on Codex by **+3.0%**: parity at equal quality. Agent fixed costs
-(system prompt, reasoning, the answer itself) dominate that bill and do not shrink with a
-better retrieval tool. Record in
-[CRITIQUE.md](https://github.com/muthuishere/ctx-optimize/blob/main/docs/CRITIQUE.md).
+CodeGraph answers in **0.79 s**, ripgrep in **1.59 s**, we in **3.70 s**. They get the line (or a type name) sooner. We get the **symbol**. On gather we are ahead of those graphs (118 s vs 290 s vs 528 s; GitNexus did not finish). “Fastest code graph” is not a sentence we use.
 
-**Where it does hold — a thin small-model loop.** `gpt-4o-mini` via OpenRouter, tokens and
-cost from OpenRouter's own accounting rather than estimated: **15,078 → 9,659 tokens
-(−36%)**, **$0.0024 → $0.0016 (−31%)**, **11 → 4 steps**. Sample, stated inline because it
-matters: **4 questions, one run, one corpus, one model** — much smaller than the correctness
-study (12 questions, 3 runs, n = 36 per arm). Summary:
-[SUMMARY-gorilla-mux.md](https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/results/SUMMARY-gorilla-mux.md).
+## We do not replace grep
 
-The mechanism is why both are true: in a thin loop retrieval *is* most of the context, so
-cutting steps cuts tokens with them; on a frontier harness the agent's own overhead is the
-bill. So the sentence we will say is **"36% fewer tokens on a small-model harness, parity on
-Claude Code and Codex"** — never "saves you tokens" with no harness named. What moves on
-every harness we measured is **tool calls per run — 15.0 against 42.7**.
+Exact strings, comments, config **values** stay ripgrep. Locate questions: grep **47%**, us **42%**. The store is callers, blast, what this talks to.
 
-## ✗ "The fastest code graph"
+## The agent will not always call us
 
-Retracted. CodeGraph answers kernel queries in **0.79 s to our 3.70 s**, and ripgrep in
-**1.59 s**. We are the slowest tool in our own headline table. Speed is their column;
-answering is ours.
+Claude often never looks at an MCP graph (Graphify 3/15, code-review-graph 0/15 on the same bench Codex used every time). We do not ship MCP. We do not block Grep. If it ignores the store, [say this](/ctx-optimize/guide/#if-claude-does-not-use-it).
 
-## ✗ Any un-run head-to-head
+## The store is not always fresh
 
-potpie and Serena have no measured row here because we have not run them. **A cell we did
-not measure stays empty rather than getting a plausible number.**
+Autosync default is **off**. A watcher you never invoke is not freshness. After you edit: `ctx-optimize sync` (no-change ~0.25 s). `"autosync": "lazy"` is a key, not the default.
 
-## ✗ "Fastest adapters"
+## We do not invent callers
 
-Never measured, so never claimed. What the native sources do is a *capability*: nine
-connectors, an env-var name on argv, and a secret value that is never read into config,
-stored, or printed.
+A name declared more than once is **AMBIGUOUS** — a shortlist, filtered out of `affected` / `change-plan` / `path` unless you ask. Blast radius is a **floor**. `Match` eight times in mux returns the file, not a guessed caller.
 
-## Known gaps in the current release
+## We have not beaten Serena or potpie on a clock
 
-- **`scope` on a consumed port is almost always absent, and there is no `external` value.**
-  It used to say `external` on every port of every repo — 56 of 56 here, 163 of 163 across a
-  seven-module monorepo — because the join compares a consumed *host* against a provided
-  *route path* and can never match. A constant that reads as a computation is worse than a
-  gap, so the field is now written only when the join genuinely fires. Absence means "not
-  proven internal", never "external".
-- **Concept phrasing does not retrieve.** "What does it shell out to" returns nothing from
-  lexical search; the routing table sends that question to `boundaries` instead. We will not
-  fix it with embeddings — that would cost the determinism the product rests on.
-- **A recorded recall can be wrong in either direction.** One shipped rule records 0.00
-  recall while demonstrably working, because its ground-truth sweep counted matches inside
-  comments. Numbers get re-measured, not quietly rounded.
+No row. Empty stays empty. Serena’s LSP edges are more precise than our name-resolve. That is their column.
 
-## Why publish this at all
+## `query` is not a concept engine and not embeddings
 
-Because the one thing we are asking you to believe — that a graph answers questions grep and
-a faster graph cannot — is only checkable if we also show the questions we failed and the
-columns we lose. The standing counter-weight to every value claim in this project lives in
-the repo:
-[VISION.md](https://github.com/muthuishere/ctx-optimize/blob/main/docs/VISION.md) and
-[CRITIQUE.md](https://github.com/muthuishere/ctx-optimize/blob/main/docs/CRITIQUE.md).
+“What does it shell out to” is `boundaries`, not a smarter embedding. Ranking sees **label + path**, not doc bodies. Neighbours are shown, not re-scored. The next retrieval ADR does not add a vector index.
+
+Standing counter-weight in the repo: [CRITIQUE.md](https://github.com/muthuishere/ctx-optimize/blob/main/docs/CRITIQUE.md).

@@ -3,9 +3,7 @@ title: Boundaries — the external surface
 description: "What this system calls out to, what it exposes, and which config values are credentials — one command, every line citable."
 ---
 
-A repo's **external surface** is spread across env reads, spawned binaries, URL literals and
-route decorators in five languages. Grep finds the strings. It cannot tell you the
-*direction*, the *transport*, or that a name is a credential.
+Grep finds the string. This command adds direction, transport, and whether the **name** is a credential.
 
 ```bash
 ctx-optimize boundaries
@@ -26,10 +24,16 @@ UNRESOLVED  3 ports carry a dynamic identifier — the SITE is certain,
             the value is not
 ```
 
-It is a C4-style system-context summary, not a node dump: CONSUMES and PROVIDES are split
-because they are different questions, entries are grouped by transport with counts, and the
-output is budgeted like `query` — it **always states how many entries were withheld**,
-because silent truncation reads as "that is everything".
+CONSUMES vs PROVIDES. Grouped by transport. Truncation is printed.
+
+### config.env
+Env **names** the code reads. `KEY|TOKEN|SECRET|PASSWORD|_PW` marked SECRET. Never the value.
+
+### network.http
+Hosts and routes: `api.openai.com`, `/orders`. Direction: consumes vs provides.
+
+### process.exec
+Binaries the process spawns. A variable argv is AMBIGUOUS, not missing.
 
 ## Narrowing it
 
@@ -41,23 +45,11 @@ ctx-optimize boundaries --all                          # including dynamic ident
 ctx-optimize boundaries --json                         # otel.* semconv keys pass through
 ```
 
-`--json` passes metadata through under its **OpenTelemetry semantic-convention** names
-(`otel.server.address`, `otel.http.route`), so a static boundary joins a runtime trace on the
-same key — no invented vocabulary.
+`--json` keeps OpenTelemetry names (`otel.server.address`, `otel.http.route`).
 
-## Credentials by name, never by value
+A value never enters the graph. `sensitive` is the **name** matching `KEY|TOKEN|SECRET|PASSWORD|_PW`.
 
-A value never enters the graph, is never printed, and is never stored. A rule flags
-`sensitive` when the identifier *name* matches `KEY|TOKEN|SECRET|PASSWORD|_PW`, so
-`STRIPE_SECRET_KEY` is marked without anything ever reading what it holds.
-
-## Sixteen rules, each carrying its own measurement
-
-Rules are **data, never code** — declarative AST shapes evaluated inside the code
-extractor's existing walk, so a rule costs a map probe rather than another pass over the
-bytes. Every shipped rule carries a `verified` block with its ground-truth command, corpora
-and known misses, and **the confidence tier is derived from the measured recall, never
-asserted**:
+Rules are JSON on the same AST walk. Tier comes from measured recall:
 
 | recall | tier |
 |---|---|
@@ -65,17 +57,18 @@ asserted**:
 | 0.70 – 0.95 | INFERRED |
 | < 0.70 | AMBIGUOUS, or reject the rule |
 
-Most shipped rules were *demoted* by their own numbers. That is the point of measuring.
+Most shipped rules were demoted by their own numbers.
 
 ## Related verbs
 
-- **`drift`** — where `provides`, `consumes` and *declared* disagree: dead contracts, env
-  read but never declared. `--strict` is the CI gate.
-- **`services`** — a 30-vendor registry for SDK-mediated egress, where the *dependency is
-  the boundary*: `stripe`, `openai`, `firebase` produce a port from a manifest declaration
-  even when no host literal exists in the source.
-- **`boundaries verify`** — re-runs each rule's ground truth and reports drift. Numbers only
-  move up.
+### drift
+Where provides, consumes, and declared disagree. `--strict` is the CI gate.
+
+### services
+SDK egress from the manifest: `stripe`, `openai`, `firebase` become ports even with no host literal.
+
+### boundaries-verify
+`boundaries verify` re-runs each rule's ground truth. Numbers only move up.
 
 ## Authoring your own
 
