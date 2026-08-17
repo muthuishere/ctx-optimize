@@ -10,6 +10,68 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-08-17
+
+- **The repo is the unit: a module grain, and the arrow that joins two
+  manifests.** Selecting a repo now draws its MODULES as cards, and an arrow
+  between two of them is one module declaring a package a sibling publishes —
+  both ends EXTRACTED from a manifest, no inference. Manifests record what a
+  module IS for the first time (`publishes` edges from npm `name`, go `module`,
+  Cargo `[package] name`, pyproject/poetry `name`), which was the missing half
+  of every cross-module join. A spike over 30 multi-module repos decided the
+  mechanism: package dependency **2,168** links, HTTP **0** — the opposite of
+  where the design started. Clicking a module opens its own store; the repo's
+  residual root store is a card like any other (on one repo it held 90% of the
+  code); a module scene carries a crumb back up.
+- **Three browser storages, not one.** `storage.local` named a coverage we do
+  not have — its single rule matches `localStorage`/`sessionStorage` and no
+  file or bucket rule exists — so it becomes `storage.browser.local`,
+  `.session` and `.cookie`. They differ in LIFETIME and in who else can see
+  them: a cookie goes to the server on every request, sessionStorage dies with
+  the tab. The split found a real site the old rule could not see —
+  `Cookies.set('lang', …)`. **A store gathered before this reports the old
+  transport until `add . --force`;** a plain `add` cannot see a rule change,
+  which is what the new DATED state exists to say.
+- **DATED — a store can sit exactly at git HEAD and still answer in a
+  vocabulary the binary dropped.** Stores now record the boundary rule
+  vocabulary they ran with, and `status` says when it has moved. A third kind
+  of out-of-date, named separately for the same reason `partial` is: stale
+  means the code moved on, partial means the gather broke, dated means the
+  words changed underneath a store the code never touched.
+- **`query` stopped building a whole-graph adjacency map to attach 12
+  neighbours.** It read all 5.5M of linux's edges and did 11M map appends on
+  every call — 2.37s of a 3.93s verb — while `card` has answered the same
+  question through `edges-by-source.idx` in under 20ms. Measured on linux:
+  **4.11s → 2.73s**, same top hit, judged floors unmoved. The indexed lane is
+  used only when nothing narrowed the graph, because a filtered query must see
+  neighbours from the NARROWED graph.
+- **Doc links are drawn.** `references` edges have been extracted all along and
+  no picture ever drew one, so an ADR half the repo points at looked like an
+  orphan. They now lift and draw in their own ink. A headingless markdown file
+  is not dead weight either: it contributes a document node findable by
+  filename AND an edge per link.
+- **The viewer says what it means.** A line is labelled with its TRANSPORT
+  rather than a verb (`BOTH CALL 12` between a ui and an api read as "the ui
+  calls the api"; it was twelve third parties they both call). Colour carries
+  the mode, line style carries the strength of the claim, and the key is one
+  row per mode with the shape explained once. A transport plate with no arrow
+  names the directories that open it. A level with subsystems but no edges
+  between them draws its cards instead of a paragraph explaining that there are
+  two. **House is removed and Flow is the default**; the arrangement you drag
+  is remembered per scene.
+- **The dashboard says which build is serving it.** A stale copy of the binary
+  on PATH served for hours while every screen looked correct.
+
+### Corrected
+
+- **The competitor table's CodeGraph column was measured on an easier
+  question.** The harness passed only the first word to CodeGraph while every
+  other tool got the whole phrase. Re-measured against the same pinned index:
+  median 0.79s → **0.86s**, ratio 4.7× → **4.2×**. Its answers are unchanged —
+  still `struct request` / `struct tcp`, 0 of 5. Ours was re-taken at the same
+  time on a loaded machine, so that column is pessimistic if anything.
+
+
 - **A filter that cannot possibly match now says so, instead of returning a
   plausible empty answer.** Third instance of the same defect class (after the
   silently-ignored unknown flag and the silently-dropped repeated `--where`, both

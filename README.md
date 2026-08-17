@@ -226,17 +226,17 @@ with `file:line`?** The hit is shown so you can judge it yourself.
 
 | question | ctx-optimize | CodeGraph | graphify |
 |---|---|---|---|
-| mq deadline dispatch request | **3.92s** ✅ `dd_dispatch_prio_aged_requests` block/mq-deadline.c:564 | 0.88s ❌ `struct request` | 23.10s ❌ `u64` |
-| ext4 write iter | **3.54s** ✅ `ext4_buffered_write_iter` fs/ext4/file.c:285 | 0.78s ❌ `function iter` | 22.45s ❌ `u32` |
-| spinlock irqsave | **3.80s** ✅ `__raw_spin_lock_irqsave` | 0.59s ❌ `struct spinlock` | 23.07s ❌ `u32` |
-| tcp congestion control | **3.70s** ✅ `proc_tcp_available_congestion_control` | 0.79s ❌ `struct tcp` | 23.69s ❌ `u64` |
-| page allocation failure | 3.60s ❌ `MLX5_…ALLOCATION_FAIL` | 0.81s ❌ *(empty)* | 22.77s ❌ `kcalloc()` |
-| **median / useful top hit** | **3.70s · 4 of 5** | 0.79s · **0 of 5** | 23.07s · **0 of 5** |
+| mq deadline dispatch request | **3.20s** ✅ `dd_dispatch_prio_aged_requests` block/mq-deadline.c:564 | 0.99s ❌ `struct request` | 23.10s ❌ `u64` |
+| ext4 write iter | **3.28s** ✅ `ext4_buffered_write_iter` fs/ext4/file.c:285 | 0.90s ❌ `function iter` | 22.45s ❌ `u32` |
+| spinlock irqsave | **3.64s** ✅ `__raw_spin_lock_irqsave` | 0.66s ❌ `type_alias SpinLock` | 23.07s ❌ `u32` |
+| tcp congestion control | **3.79s** ✅ `proc_tcp_available_congestion_control` | 0.86s ❌ `struct tcp` | 23.69s ❌ `u64` |
+| page allocation failure | 4.31s ❌ `enum …` | 0.85s ❌ `constant page` | 22.77s ❌ `kcalloc()` |
+| **median / useful top hit** | **3.64s · 4 of 5** | 0.86s · **0 of 5** | 23.07s · **0 of 5** |
 
 ripgrep runs these in 1.59s and returns matching **lines** — genuinely useful,
 a different artifact, so it isn't scored against a symbol rule.
 
-**CodeGraph is 4.7× faster and got none of them.** FTS5 OR-matches each word and
+**CodeGraph is 4.2× faster and got none of them.** FTS5 OR-matches each word and
 ranks by frequency, so a multi-word question returns the generic struct literally
 named `request` / `tcp` / `spinlock`. graphify returns `u64`/`u32` from
 `netfilter/x_tables.h` for four different questions — a constant, not an answer.
@@ -244,6 +244,19 @@ named `request` / `tcp` / `spinlock`. graphify returns `u64`/`u32` from
 We are the slowest graph tool that answers the question. Caveats: this is a
 5-question judged sample against a stated rule, not a blind graded run like the
 one below — and **we got one of five wrong too.**
+
+> **The CodeGraph column was re-measured on 2026-08-16 and these numbers
+> replace the earlier ones.** The first harness passed only the FIRST WORD of
+> each question to CodeGraph while every other tool got the whole phrase, so
+> its timings were taken on an easier question than ours — the bug is recorded
+> at `benchmarks/bench_multi.py`'s codegraph spec. Re-run against the same
+> pinned index (sha `572d22bf`, `versions.json pinned:true`) with the full
+> phrase, its median moves 0.79s → 0.86s and the ratio 4.7× → 4.2×. Its
+> ANSWERS are unchanged: still `struct request`, `function iter`,
+> `type_alias SpinLock`, `struct tcp` — 0 of 5.
+>
+> Our column was re-taken at the same time on a machine at load average 15.5,
+> so if anything it is pessimistic. Neither column is a quiet-box number.
 
 ### Answer quality — graded, not asserted
 
