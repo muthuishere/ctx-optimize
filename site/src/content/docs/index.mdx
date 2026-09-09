@@ -1,32 +1,47 @@
 ---
 title: ctx-optimize
-description: "Fast answers on a cheaper model. A bigger model with less context for the whole job — not one grep. The graph is already there: nodes, edges, boundaries."
+description: "A code knowledge graph your agent queries instead of grepping. Built fastest, answered cheapest — one Go binary, no server, no model, no MCP."
 template: splash
 hero:
   title: ctx-<em>optimize</em>
-  tagline: "Fast answers on a cheaper model. A bigger model with less context for the whole job — not one grep. The graph is already there: nodes, edges, boundaries."
+  tagline: "Your agent stops re-exploring the repo. One local binary builds the graph — nodes, edges, and what your system talks to — and answers with an exact file:line."
   actions:
     - text: Install
       link: '#install'
       icon: right-arrow
-    - text: How to use it
-      link: /ctx-optimize/guide/
+    - text: See the numbers
+      link: /ctx-optimize/benchmarks/
       variant: minimal
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-The store already has the nodes, edges, and boundaries. The agent asks the CLI and
-cites a `file:line`. A small model can answer. A big model keeps the window for the
-edit.
+## Built fastest. Answered cheapest.
 
-Graded (mux, same model): **67% in 15 calls** vs grep **35% in 43**. Not 79× tokens —
-we measured that and dropped it. No DB, no server, no model in the gather, **no MCP**.
-`card` is milliseconds. After you edit, `sync`.
+The fastest graph build of any agent-context graph tool on real repos — **≈2× CodeGraph, 7–16× Graphify, 10–23× GitNexus** across six repositories in four languages.
+
+And once it is built, a cheaper model gets the same answer: on the Linux kernel, **Haiku 4.5 scored 72/80 where Opus 4.8 scored 79** — at half the wall time.
+
+The graph does the structural work once, up front. The model stops paying to re-derive it on every question.
+
+### The short version
+
+| | ctx-optimize | best of the rest |
+|---|---|---|
+| Build · java-spring, 10,142 files | <span class="win">10.1 s</span> | 19.2 s · CodeGraph |
+| Build · Linux kernel, 144,011 files | <span class="win">118 s</span> | 290 s · CodeGraph |
+| Query · Linux kernel | <span class="lose">4.11 s</span> | <span class="win">0.98 s</span> · CodeGraph |
+| Re-gather after an edit · big repos | <span class="lose">1.4–11.7 s</span> | <span class="win">0.2–0.4 s</span> · CodeGraph |
+| Store on disk · java-spring | <span class="win">142 MB</span> | 720 MB · CodeGraph |
+| Added to your repo | <span class="win">52 KB</span> | 3.6 MB in-tree · Graphify |
+
+Two of those are losses. Both are on the roadmap and neither is buried — [full tables, every corpus, and the provenance of each run →](/ctx-optimize/benchmarks/)
+
+Against the field — CodeGraph, GitNexus, Graphify, Serena, potpie — including who to pick instead of us: [compare →](/ctx-optimize/compare/)
 
 ## Install
 
-Pick your agent and paste. Three commands.
+Pick your agent. Three commands.
 
 <Tabs>
 <TabItem label="Claude Code">
@@ -35,8 +50,6 @@ npm install -g @muthuishere/ctx-optimize
 cd your-repo && ctx-optimize up
 ctx-optimize install --claude
 ```
-Then: answer code questions with `query`, `card`, `change-plan`, `affected`, `boundaries`.
-Cite the `file:line`. Grep stays for exact strings.
 </TabItem>
 <TabItem label="Codex">
 ```text
@@ -44,7 +57,7 @@ npm install -g @muthuishere/ctx-optimize
 cd your-repo && ctx-optimize up
 ctx-optimize install --codex
 ```
-Trust the hook once with `/hooks`. Same verbs. Cite the `file:line`.
+Trust the hook once with `/hooks`.
 </TabItem>
 <TabItem label="Copilot">
 ```text
@@ -52,7 +65,6 @@ npm install -g @muthuishere/ctx-optimize
 cd your-repo && ctx-optimize up
 ctx-optimize install --copilot
 ```
-Same verbs. Cite the `file:line`.
 </TabItem>
 <TabItem label="Any / Grok / Devin">
 ```text
@@ -60,21 +72,32 @@ npm install -g @muthuishere/ctx-optimize
 cd your-repo && ctx-optimize up
 ctx-optimize install
 ```
-Grok already reads the Claude skill dir. Devin reads `~/.agents/skills`. `init` is only
-if you want the committed pointer in the repo.
+Grok reads the Claude skill dir; Devin reads `~/.agents/skills`.
 </TabItem>
 </Tabs>
 
-The agent **may still grep**. We do not block it. After you edit, `ctx-optimize sync`.
-Lazy autosync is opt-in (`"autosync": "lazy"`), not on. [Walkthrough →](/ctx-optimize/quickstart/)
+`up` detects monorepos, writes the config, and gathers — seconds, not minutes. Your agent then answers with `query`, `card`, `change-plan`, `affected` and `boundaries`, citing `file:line`. It may still grep; we do not block it. After you edit, `sync`.
 
-## Same store, two doors
+## Or do the whole thing in a browser
 
-`change-plan Store.Merge` is the agent door. `ctx-optimize serve` is yours — Flow draws
-directories, real call counts, the hub, and the outer world (hosts and env **names**,
-never a value).
+```bash
+ctx-optimize serve      # http://127.0.0.1:4747
+```
 
-![Flow — travelling dots on real call curves. Hub is the most depended-on directory. Plates are ports.](/ctx-optimize/media/flow-reqsume-api.gif)
+Onboard a repo, watch it gather, run queries, and read the graph — without touching the CLI. Binds loopback only; writes need a per-process token and land in an audit log. The UI is compiled into the binary, so **no CDN and no external request, ever**.
 
-[How to use it](/ctx-optimize/guide/) · [Read the picture](/ctx-optimize/see/) ·
-[`boundaries`](/ctx-optimize/boundaries/) · [What we do not claim](/ctx-optimize/limits/)
+![Flow — travelling dots on real call curves. The hub is the most depended-on directory; the plates around it are ports.](/ctx-optimize/media/flow-reqsume-api.gif)
+
+[The dashboard](/ctx-optimize/dashboard/) · [Read the picture](/ctx-optimize/see/)
+
+## What makes it different
+
+**It knows what your system talks to.** `boundaries` answers what no other tool has a row for — env vars, hosts, spawned binaries, served routes, each cited and flagged for secrets by *name*, never by value. On this repo: 94 ports.
+
+**It extends without a release.** 12 languages embedded; any other language from its tree-sitter grammar URL, compiled in pure Go. Same drop-in door for your framework's routes, your build tool's manifests, and adapters for anything else — Postgres, Kafka, S3 and OpenAPI ship as native connectors.
+
+**It stays out of your repo.** The store lives outside the tree. What gets committed is 52 KB of config. Your teammate pulls that, not a gigabyte of index.
+
+**Monorepos are the designed case.** One store per module plus a federating navigator, so editing one service re-gathers that service — not the whole tree.
+
+[What we do not claim](/ctx-optimize/limits/) · [Compared with other tools](/ctx-optimize/compare/)

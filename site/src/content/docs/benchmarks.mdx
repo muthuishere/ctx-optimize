@@ -1,0 +1,151 @@
+---
+title: Benchmarks
+description: "Built fastest, answered cheapest — and the things no other tool has a row for. Every number names its provenance, including the ones we lose."
+---
+
+import DropInLayer from '../../components/DropInLayer.astro';
+
+## Built fastest. Answered cheapest.
+
+The fastest graph build of any agent-context graph tool on real repos — **≈2× CodeGraph, 7–16× Graphify, 10–23× GitNexus**, six repos, four languages, no DNF.
+
+And once it is built, **a cheaper model gets the same answer**: on the Linux kernel, Haiku 4.5 scores **72/80** where Opus 4.8 scores 79 — at half the wall time and the fewest tool calls of any arm.
+
+Neither half stands alone. The graph does the structural reasoning once, up front, quickly — so the model stops paying to re-derive it on every question. That is why you can drop a tier.
+
+Everything below names where it came from, including [where we lose](#where-we-lose).
+
+:::caution[Read the provenance before you quote a number]
+The two headline tables are **re-runs in flight**. The build sweep was measured on our **v0.8.0** (HEAD is v0.15.0, and v0.14 roughly halved gather — so these numbers understate us), single cold run, on an arena that predates our pinning harness. The model ladder was run 2026-07-17 against that date's tiers. [Full provenance](#provenance).
+:::
+
+## 1. Faster to build than every graph tool
+
+Cold gather, seconds. Six real repositories, four languages, every tool on its own fastest deterministic path — no embeddings, no LLM, no strawman flags.
+
+| corpus | files | <span class="win">ctx-optimize</span> | CodeGraph | Graphify | GitNexus |
+|---|---|---|---|---|---|
+| java-spring | 10,142 | <span class="win">10.1</span> | 19.2 | 160.2 | 234.5 |
+| c-postgres | 5,245 | <span class="win">4.5</span> | 8.7 | 26.4 | 44.7 |
+| go-kubernetes | 3,125 | <span class="win">4.5</span> | 8.4 | 27.1 | 44.4 |
+| py-django | 3,647 | <span class="win">1.4</span> | 1.8 | 9.9 | 13.3 |
+| csharp-efcore | 2,677 | <span class="win">2.0</span> | 6.2 | 29.0 | 19.7 |
+| ts-typescript | 723 | <span class="win">1.8</span> | 3.6 | 21.0 | 17.8 |
+
+Six for six. At kernel scale the ordering holds and the field thins out:
+
+| Linux v6.9 · 144,011 files | gather |
+|---|---|
+| <span class="win">ctx-optimize</span> | <span class="win">118.2 s</span> — 2.85M nodes, 5.54M edges |
+| CodeGraph | 289.9 s |
+| Graphify | 527.7 s — emits 910k nodes, then refuses to read them at default cap |
+| GitNexus | <span class="lose">did not finish</span> (45 min) |
+
+We are the only tool that produces a complete kernel graph at all.
+
+## 2. A cheaper model gets the same answer
+
+Same store, same 8 block-layer questions on the Linux kernel, blind-judged against withheld golden keys (`benchmarks/agent-model-bench/`).
+
+| model | score /80 | s/question | tool calls (8 q) |
+|---|---|---|---|
+| fable 5 | 80 | 24.6 | 23 |
+| sonnet 5 | 80 | 17.5 | 25 |
+| opus 4.8 | 79 | 19.0 | 22 |
+| <span class="win">haiku 4.5</span> | <span class="win">72</span> | <span class="win">13.6</span> | <span class="win">18</span> |
+
+**The cheapest tier lands 90% of frontier quality at half the wall time and the fewest tool calls of any arm.** With the protocol pinned in the system prompt, gpt-4o-mini reaches ~70% of frontier for **$0.015 across 8 questions** — and **23/80 without it**, which is why that protocol ships in the committed usage card at `.ctxoptimize/instructions.md`.
+
+What frontier still buys: canonical-symbol precision, re-crafting a query when the first hit is noise, and honest abstention under near-matches.
+
+:::note
+This is **model-tier economy** — a cheaper model reaching the same answer. It is *not* a token-savings claim. Measured on frontier models the same store moves tokens −0.2% / +3.0%: noise. We killed that headline ourselves and it stays dead.
+:::
+
+## 3. Fewer calls to the answer
+
+gorilla/mux · `gpt-4o-mini` · 12 questions · 3 runs · n = 36 per arm · no LLM judge · committed harness.
+
+| | <span class="win">ctx-optimize</span> | Graphify |
+|---|---|---|
+| Correct | <span class="win">67%</span> | 40% |
+| Who calls this / what breaks (8 q) | <span class="win">79%</span> | 42% |
+| Tool calls per session | <span class="win">15.0</span> | 26.0 |
+| Wall | <span class="win">40.1 s</span> | 43.1 s |
+| False claims | <span class="win">0</span> | 1 |
+
+[Transcripts](https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/RESULTS-QUALITY.md).
+
+## Where we lose
+
+The position here is the honest entrant, so these sit in the same section as the wins, not in a footnote.
+
+**Warm re-gather — we lose 6/6 to CodeGraph.** Ours re-gathers; their `sync` is a true incremental. On five of six corpora our warm run is *slower than our own cold run*.
+
+| corpus | ctx-optimize cold | ctx-optimize warm | CodeGraph warm |
+|---|---|---|---|
+| java-spring | 10.14 | <span class="lose">11.74</span> | 0.373 |
+| c-postgres | 4.53 | <span class="lose">4.94</span> | 0.206 |
+| go-kubernetes | 4.53 | <span class="lose">4.93</span> | 0.290 |
+| csharp-efcore | 2.03 | <span class="lose">2.23</span> | 0.191 |
+| ts-typescript | 1.77 | <span class="lose">1.96</span> | 0.230 |
+| py-django | 1.39 | <span class="lose">1.39</span> | 0.210 |
+
+A cold gather is paid once. A warm one is paid on every edit. This is the biggest open item on the roadmap and we are not going to bury it.
+
+**Query at kernel scale — CodeGraph's, not ours.** 4.04 s vs ~0.98 s on the fair question. CodeGraph indexes into SQLite and seeks; we deserialize the whole graph per invocation, and ~97% of our 4 s is parsing 2.85M nodes and 5.54M edges before the question is even known. (`card` on that same store is under 20 ms — the fail-safe index.)
+
+**Locate.** A line matcher wins "where is the string." We do not compete there and we say so.
+
+## What no other tool has a row for
+
+<DropInLayer />
+
+Everything above is speed and cost — axes where competitors at least have a number. These five have **no competing row** in [our own field manifest](https://github.com/muthuishere/ctx-optimize/blob/main/benchmarks/suite/tools.json). They share one doctrine:
+
+> **Every extension point is a drop-in file, so we never have to ship a release for your stack.**
+
+**`boundaries` — the outer surface.** No other tool answers *what does this system talk to*. On this repo: **94 ports** — 35 env vars (1 flagged SENSITIVE), 24 network hosts, plus spawned binaries and served routes, each cited to `file:line` with EXTRACTED / INFERRED provenance.
+
+**Any language on earth, compiled on the fly.** 12 embedded; 17 more by name; anything else from its grammar URL:
+
+```sh
+ctx-optimize languages add kotlin
+ctx-optimize languages add https://github.com/tree-sitter/tree-sitter-haskell
+```
+
+Compiled **in pure Go**. Zig comes from PATH or is downloaded once, sha256-verified against ziglang.org's index — at your command, never as a background check. The node-type mapping auto-drafts from the grammar's own `node-types.json`.
+
+**Route packs and manifest packs.** The same door for your framework's URL→handler wiring and your build tool's dependency files. Plus `decl_rules`, where a project's own defining macros become declared symbols.
+
+**Custom adapters.** Nine native connectors (16 schemes: postgres, mysql, mongo, mssql, redis, kafka, nats, s3, openapi, http) plus a validated `add --json` door — drop a `.js`, `.py` or `.sh` into `.ctxoptimize/adapters/` and **registration is the file existing**. Ticketing systems, log shapes, proprietary tools: you emit a batch, the binary validates and merges. It never has to understand your system.
+
+**We do not pollute your repo.** The store lives *outside* the tree. What gets committed is `.ctxoptimize/` — on this repo **52 KB across 9 files**. Graphify writes `graphify-out/` **into** the working tree: 3.6 MB on a 265-file corpus. And compared like for like the artifact is 4–30× smaller:
+
+| store size (MB) | <span class="win">ctx-optimize</span> | CodeGraph | Graphify | GitNexus |
+|---|---|---|---|---|
+| java-spring | <span class="win">142</span> | 720 | 726 | 1,747 |
+| c-postgres | <span class="win">44</span> | 183 | 166 | 1,031 |
+| go-kubernetes | <span class="win">40</span> | 223 | 165 | 898 |
+| py-django | <span class="win">9</span> | 39 | 34 | 282 |
+
+Your teammate pulls a 52 KB config, not a gigabyte of index.
+
+**Monorepos are the designed case.** One store per module plus a federating navigator: refresh cost tracks the change (edit one service, ~1–2 s, not the whole tree), scope follows your cwd and escalates repo-wide on zero hits, and `merge` still materializes one combined artifact on demand. `scan` honours `.gitignore` with git's own semantics, so build output never becomes a module. Curated in a committed `config.json`. [How that works](/ctx-optimize/monorepos/).
+
+## Provenance
+
+Every number above is measured by a command actually run, on its tool's own fastest deterministic path. What is not yet clean:
+
+| dataset | state |
+|---|---|
+| Build sweep (§1, six repos) | our <span class="win">v0.8.0</span> (HEAD v0.15.0), single cold run not best-of-3, no load average, <span class="win">unpinned</span> — predates `benchmarks/suite/setup.py` |
+| Model ladder (§2) | run 2026-07-17 against that date's model tiers |
+| Kernel rows | our v0.12.0, best-of-1; CodeGraph's query re-measured 2026-08-16 on the fair question (the 536 ms figure was a single word and is not comparable) |
+| Small corpora | genuinely pin-verified 2026-08-15 — but recorded at load average 8.77 |
+
+Both headline tables are being re-run at HEAD, pinned, best-of-3, on an idle box, across all 12 built corpora. Until that lands, treat §1 and §2 as directionally measured rather than launch-grade — and note that the drift runs *against* us, since v0.14 roughly halved our gather.
+
+## Re-run it yourself
+
+`benchmarks/suite/tools.json` is the field — every tool we test and every tool we deliberately do not, with the reason. `bench.py` / `bench_multi.py` are one pass; `session/session.py` is the build → ask → edit → re-index → ask session an agent actually pays; `internal/golden/` holds the floors, which may only move up.

@@ -138,3 +138,36 @@
 .card {
 	border-color: var(--sl-color-hairline);
 }
+
+/* --------------------------------------------------------------------------
+   Winning cells in comparison tables. Bold alone reads as shouting and gets
+   lost among the competitor names; the accent says "this is the row you came
+   for" without changing the type weight. Kept as a class rather than styling
+   <strong> so a bolded word in prose stays plain bold.
+   -------------------------------------------------------------------------- */
+.win {
+	color: var(--sl-color-accent);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+/* A number we lose. Not red — losing honestly is the point of the page, not
+   an error state. Muted, so the eye reads it as information. */
+.lose {
+	color: var(--sl-color-gray-3);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Provenance markers (ᴬ ᴮ ᶜ) — visible, not decorative. */
+.prov {
+	color: var(--sl-color-accent);
+	font-size: 0.85em;
+	vertical-align: super;
+	margin-inline-start: 0.15em;
+}
+
+/* Tables carry numbers; align them so columns compare at a glance. */
+.sl-markdown-content table td:not(:first-child),
+.sl-markdown-content table th:not(:first-child) {
+	font-variant-numeric: tabular-nums;
+}

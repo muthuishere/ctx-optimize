@@ -1,0 +1,190 @@
+---
+// The intermediate layer, ADR 31 addendum (2026-09-09). A code graph stops at
+// the repo edge; this one does not. Inline SVG so it inherits the Starlight
+// theme tokens in both light and dark — no library, no external request.
+---
+<figure class="dropin">
+	<svg viewBox="0 0 940 470" role="img" aria-labelledby="dropin-title dropin-desc" xmlns="http://www.w3.org/2000/svg">
+		<title id="dropin-title">How the graph reaches past the repo edge</title>
+		<desc id="dropin-desc">
+			Source files on the left are parsed into declaration nodes in the store
+			in the middle. The store also holds port nodes — environment variables,
+			hosts, spawned binaries and served routes — which connect to the outside
+			systems on the right: Postgres, Kafka, S3 and OpenAPI. Underneath, four
+			kinds of drop-in file (grammar, route, manifest and adapter packs) add
+			new inputs without a new release of the binary.
+		</desc>
+
+		<defs>
+			<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+				<path d="M 0 0 L 10 5 L 0 10 z" class="ar-head" />
+			</marker>
+			<marker id="ar-i" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+				<path d="M 0 0 L 10 5 L 0 10 z" class="ar-head-i" />
+			</marker>
+		</defs>
+
+		<!-- ============ column headings ============ -->
+		<text x="105" y="30" class="col">YOUR REPO</text>
+		<text x="470" y="30" class="col">THE STORE — outside your tree</text>
+		<text x="838" y="30" class="col">THE WORLD</text>
+
+		<!-- ============ left: sources ============ -->
+		<g class="box">
+			<rect x="20" y="48" width="170" height="54" rx="7" />
+			<text x="105" y="70" class="lbl">source files</text>
+			<text x="105" y="88" class="sub">12 languages embedded</text>
+		</g>
+		<g class="box">
+			<rect x="20" y="116" width="170" height="54" rx="7" />
+			<text x="105" y="138" class="lbl">markdown &amp; docs</text>
+			<text x="105" y="156" class="sub">headings · wikilinks</text>
+		</g>
+		<g class="box">
+			<rect x="20" y="184" width="170" height="54" rx="7" />
+			<text x="105" y="206" class="lbl">config &amp; manifests</text>
+			<text x="105" y="224" class="sub">deps · routes · env</text>
+		</g>
+
+		<!-- committed marker -->
+		<g class="box ghost">
+			<rect x="20" y="256" width="170" height="42" rx="7" />
+			<text x="105" y="274" class="lbl sm">.ctxoptimize/</text>
+			<text x="105" y="289" class="sub">52 KB committed</text>
+		</g>
+
+		<!-- ============ middle: the store ============ -->
+		<g class="store">
+			<rect x="262" y="48" width="416" height="250" rx="10" />
+		</g>
+
+		<g class="box node">
+			<rect x="290" y="76" width="164" height="50" rx="7" />
+			<text x="372" y="97" class="lbl">decl nodes</text>
+			<text x="372" y="114" class="sub">symbol · file:line</text>
+		</g>
+		<g class="box node">
+			<rect x="290" y="146" width="164" height="50" rx="7" />
+			<text x="372" y="167" class="lbl">edges</text>
+			<text x="372" y="184" class="sub">calls · contains · imports</text>
+		</g>
+
+		<g class="box port">
+			<rect x="486" y="76" width="164" height="120" rx="7" />
+			<text x="568" y="98" class="lbl">port nodes</text>
+			<text x="568" y="120" class="sub">env vars</text>
+			<text x="568" y="138" class="sub">hosts</text>
+			<text x="568" y="156" class="sub">spawned binaries</text>
+			<text x="568" y="174" class="sub">served routes</text>
+		</g>
+
+		<text x="470" y="232" class="mid">every node cited <tspan class="mono">file:line</tspan></text>
+		<text x="470" y="254" class="mid dim">no model · no MCP · no credentials at rest</text>
+		<text x="470" y="278" class="mid dim">4–30× smaller than the other graph tools</text>
+
+		<!-- ============ right: the world ============ -->
+		<g class="box world"><rect x="756" y="52" width="164" height="38" rx="7" /><text x="838" y="76" class="lbl">Postgres · MySQL</text></g>
+		<g class="box world"><rect x="756" y="100" width="164" height="38" rx="7" /><text x="838" y="124" class="lbl">Kafka · NATS</text></g>
+		<g class="box world"><rect x="756" y="148" width="164" height="38" rx="7" /><text x="838" y="172" class="lbl">S3 · buckets</text></g>
+		<g class="box world"><rect x="756" y="196" width="164" height="38" rx="7" /><text x="838" y="220" class="lbl">OpenAPI · HTTP</text></g>
+
+		<!-- ============ arrows in ============ -->
+		<path d="M 190 75 H 288" class="edge" marker-end="url(#ar)" />
+		<path d="M 190 143 H 288" class="edge" marker-end="url(#ar)" />
+		<path d="M 190 211 C 240 211, 240 171, 288 171" class="edge" marker-end="url(#ar)" />
+
+		<!-- store internal -->
+		<path d="M 454 101 H 484" class="edge" marker-end="url(#ar)" />
+
+		<!-- arrows out to the world -->
+		<path d="M 650 108 C 706 108, 700 71, 754 71" class="edge inferred" marker-end="url(#ar-i)" />
+		<path d="M 650 122 C 706 122, 704 119, 754 119" class="edge inferred" marker-end="url(#ar-i)" />
+		<path d="M 650 140 C 706 140, 704 167, 754 167" class="edge inferred" marker-end="url(#ar-i)" />
+		<path d="M 650 162 C 706 162, 700 215, 754 215" class="edge inferred" marker-end="url(#ar-i)" />
+
+		<!-- ============ the drop-in strip ============ -->
+		<text x="470" y="344" class="col">DROP-IN FILES — no release of the binary required</text>
+
+		<g class="box drop"><rect x="112" y="360" width="164" height="56" rx="7" /><text x="194" y="382" class="lbl">grammar pack</text><text x="194" y="400" class="sub">any tree-sitter grammar</text></g>
+		<g class="box drop"><rect x="292" y="360" width="164" height="56" rx="7" /><text x="374" y="382" class="lbl">route pack</text><text x="374" y="400" class="sub">your framework's wiring</text></g>
+		<g class="box drop"><rect x="472" y="360" width="164" height="56" rx="7" /><text x="554" y="382" class="lbl">manifest pack</text><text x="554" y="400" class="sub">your build tool's deps</text></g>
+		<g class="box drop"><rect x="652" y="360" width="164" height="56" rx="7" /><text x="734" y="382" class="lbl">adapter script</text><text x="734" y="400" class="sub">anything else you own</text></g>
+
+		<path d="M 194 358 V 300" class="edge drop-edge" marker-end="url(#ar)" />
+		<path d="M 374 358 V 300" class="edge drop-edge" marker-end="url(#ar)" />
+		<path d="M 554 358 V 300" class="edge drop-edge" marker-end="url(#ar)" />
+		<path d="M 734 358 V 300" class="edge drop-edge" marker-end="url(#ar)" />
+
+		<!-- ============ legend ============ -->
+		<path d="M 300 442 H 340" class="edge" />
+		<text x="348" y="446" class="sub lg">EXTRACTED — parsed fact</text>
+		<path d="M 530 442 H 570" class="edge inferred" />
+		<text x="578" y="446" class="sub lg">INFERRED — name-matched</text>
+	</svg>
+	<figcaption>
+		A code graph stops at the repo edge. This one keeps going — the port layer
+		is what <code>boundaries</code> answers from, and every arrow into the
+		store is a file you can drop in yourself.
+	</figcaption>
+</figure>
+
+<style>
+	.dropin { margin: 2rem 0; }
+	.dropin svg { width: 100%; height: auto; display: block; }
+
+	.dropin .col {
+		fill: var(--sl-color-gray-3); font-size: 12px; font-weight: 600;
+		letter-spacing: 0.09em; text-anchor: middle;
+		font-family: var(--sl-font-mono);
+	}
+	.dropin .lbl {
+		fill: var(--sl-color-white); font-size: 14px; font-weight: 600;
+		text-anchor: middle;
+	}
+	.dropin .lbl.sm { font-size: 12.5px; }
+	.dropin .sub {
+		fill: var(--sl-color-gray-3); font-size: 11.5px; text-anchor: middle;
+	}
+	.dropin .sub.lg { text-anchor: start; }
+	.dropin .mid {
+		fill: var(--sl-color-gray-2); font-size: 12.5px; text-anchor: middle;
+	}
+	.dropin .mid.dim { fill: var(--sl-color-gray-4); font-size: 11.5px; }
+	.dropin .mono { font-family: var(--sl-font-mono); fill: var(--sl-color-accent); }
+
+	.dropin .box rect {
+		fill: var(--sl-color-bg-nav);
+		stroke: var(--sl-color-hairline);
+		stroke-width: 1;
+	}
+	.dropin .box.node rect { stroke: var(--sl-color-gray-4); }
+	.dropin .box.port rect {
+		stroke: var(--sl-color-accent);
+		fill: var(--sl-color-accent-low);
+	}
+	.dropin .box.port .lbl { fill: var(--sl-color-accent-high); }
+	.dropin .box.world rect { stroke: var(--sl-color-gray-4); stroke-dasharray: 4 3; }
+	.dropin .box.drop rect { stroke: var(--sl-color-accent); }
+	.dropin .box.ghost rect { fill: none; stroke-dasharray: 3 3; }
+
+	.dropin .store rect {
+		fill: none; stroke: var(--sl-color-gray-5); stroke-width: 1.5;
+	}
+
+	.dropin .edge { stroke: var(--sl-color-gray-4); stroke-width: 1.4; fill: none; }
+	.dropin .edge.inferred { stroke-dasharray: 5 4; }
+	.dropin .edge.drop-edge { stroke: var(--sl-color-accent); }
+	.dropin .ar-head { fill: var(--sl-color-gray-4); }
+	.dropin .ar-head-i { fill: var(--sl-color-gray-4); }
+
+	.dropin figcaption {
+		margin-top: 0.9rem; font-size: 0.875rem; line-height: 1.6;
+		color: var(--sl-color-gray-3); text-align: center;
+		max-width: 46rem; margin-inline: auto;
+	}
+
+	@media (max-width: 42rem) {
+		.dropin svg { min-width: 640px; }
+		.dropin { overflow-x: auto; }
+	}
+</style>
