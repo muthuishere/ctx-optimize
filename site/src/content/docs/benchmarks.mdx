@@ -139,12 +139,14 @@ Every number above is measured by a command actually run, on its tool's own fast
 
 | dataset | state |
 |---|---|
-| Build sweep (§1, six repos) | our <span class="win">v0.8.0</span> (HEAD v0.15.0), single cold run not best-of-3, no load average, <span class="win">unpinned</span> — predates `benchmarks/suite/setup.py` |
+| Build sweep (§1, six repos) | our **v0.8.0** (HEAD v0.15.0), single cold run not best-of-3, no load average, **unpinned** — predates `benchmarks/suite/setup.py`. **Our column included wiki generation**, removed from the default path in v0.12 (`benchmarks/bench_multi.py:97`) — it measures work the tool no longer does |
 | Model ladder (§2) | run 2026-07-17 against that date's model tiers |
-| Kernel rows | our v0.12.0, best-of-1; CodeGraph's query re-measured 2026-08-16 on the fair question (the 536 ms figure was a single word and is not comparable) |
+| Kernel rows | our v0.12.0, best-of-1, wiki included; CodeGraph's query re-measured 2026-08-16 on the fair question (the 536 ms figure was a single word and is not comparable). Re-measured on HEAD 2026-09-09: gather **61.2 s median**, query **2.96 s** — both better than published |
 | Small corpora | genuinely pin-verified 2026-08-15 — but recorded at load average 8.77 |
 
-Both headline tables are being re-run at HEAD, pinned, best-of-3, on an idle box, across all 12 built corpora. Until that lands, treat §1 and §2 as directionally measured rather than launch-grade — and note that the drift runs *against* us, since v0.14 roughly halved our gather.
+Both headline tables are being re-run at HEAD, pinned, best-of-3, on an idle box, across all 12 built corpora. Until that lands, treat §1 and §2 as directionally measured rather than launch-grade.
+
+Every known error in them runs **against** us. v0.14 roughly halved gather, and our column in the 2026-07-24 runs was carrying wiki generation the tool no longer does. Where HEAD has been re-measured it is faster than what is published here — **61.2 s not 118.2 s** on the kernel gather, **2.96 s not 4.11 s** on the kernel query. Those numbers are not in the comparison tables above, because the competitor figures beside them come from the older run, and pairing a fresh number of ours with a stale one of theirs is the exact methodology error our own contributor guide warns about.
 
 ## Re-run it yourself
 

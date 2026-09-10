@@ -29,13 +29,15 @@ The graph does the structural work once, up front. The model stops paying to re-
 | | ctx-optimize | best of the rest |
 |---|---|---|
 | Build · java-spring, 10,142 files | <span class="win">10.1 s</span> | 19.2 s · CodeGraph |
-| Build · Linux kernel, 144,011 files | <span class="win">118 s</span> | 290 s · CodeGraph |
+| Build · Linux kernel, 144,011 files | <span class="win">118 s</span>* | 290 s · CodeGraph |
 | Query · Linux kernel | <span class="lose">4.11 s</span> | <span class="win">0.98 s</span> · CodeGraph |
 | Re-gather after an edit · big repos | <span class="lose">1.4–11.7 s</span> | <span class="win">0.2–0.4 s</span> · CodeGraph |
 | Store on disk · java-spring | <span class="win">142 MB</span> | 720 MB · CodeGraph |
 | Added to your repo | <span class="win">52 KB</span> | 3.6 MB in-tree · Graphify |
 
-Two of those are losses. Both are on the roadmap and neither is buried — [full tables, every corpus, and the provenance of each run →](/ctx-optimize/benchmarks/)
+Two of those are losses. Both are on the roadmap and neither is buried.
+
+\* That kernel figure is conservative: it was measured on an older build whose gather still produced the markdown wiki, dropped from the default path in v0.12. HEAD does the same gather in **61.2 s**. We leave 118 s in the table because the CodeGraph figure beside it is from that same older run, and mixing a fresh number of ours with a stale one of theirs would flatter us. [Full tables and the provenance of every run →](/ctx-optimize/benchmarks/)
 
 Against the field — CodeGraph, GitNexus, Graphify, Serena, potpie — including who to pick instead of us: [compare →](/ctx-optimize/compare/)
 

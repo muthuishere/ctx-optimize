@@ -34,7 +34,7 @@ Serena and potpie have no rows below — we have not run them, and an empty cell
 | Graphify | 527.7 s | 22.8 s — only after raising its 512 MB cap |
 | GitNexus | did not finish within 45 min | — |
 
-We build the graph 2.5× faster and are the only tool that produces a complete kernel graph. CodeGraph answers **~4.2× faster than we do** at this scale: it seeks in SQLite, we deserialize the whole graph per invocation. (An earlier version of this page said 0.79 s and 7.5×. That came from a single-word query against everyone else's full phrase; re-measured fairly on 2026-08-16 it is 0.98 s and 4.2×. The original figure is left in the result file so the error stays visible.)
+On that run we built the graph 2.5× faster, and we are the only tool that produces a complete kernel graph. CodeGraph answers **~4.2× faster than we do** at this scale: it seeks in SQLite, we deserialize the whole graph per invocation. (An earlier version of this page said 0.79 s and 7.5×. That came from a single-word query against everyone else's full phrase; re-measured fairly on 2026-08-16 it is 0.98 s and 4.2×. The original figure is left in the result file so the error stays visible.)
 
 ### Small corpora · 253–1,474 files <span class="prov">ᴮ</span>
 
@@ -53,7 +53,7 @@ Cold gather: we lead all six. **Warm re-gather: we lose all six to CodeGraph**, 
 
 ---
 
-ᴬ **Unpinned.** Kernel and big-repo runs predate our pinning harness and were measured on ctx-optimize v0.8.0–v0.12.0 (HEAD is v0.15.0); single run, not best-of-3. Being re-run — the drift runs against us, since v0.14 roughly halved gather.
+ᴬ **Unpinned.** Kernel and big-repo runs predate our pinning harness and were measured on ctx-optimize v0.8.0–v0.12.0 (HEAD is v0.15.0); single run, not best-of-3. Being re-run — the drift runs against us, since v0.14 roughly halved gather. **Our column in that run included wiki generation**, which left the default path in v0.12 — so it measures work the tool no longer does. Re-measured on HEAD, the same kernel gather is **61.2 s median** (60.13 / 61.17 / 63.24, byte-identical output). Competitors have not been re-run, so we state no new ratio until they are.
 ᴮ **Pin-verified** 2026-08-15 (CodeGraph `572d22bf`, Graphify `2fa6cd3d`, GitNexus `91b22676`), but recorded at load average 8.77.
 ᶜ 12 questions × 3 runs, n = 36, no LLM judge, one small repo. [Transcripts](https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/RESULTS-QUALITY.md).
 
