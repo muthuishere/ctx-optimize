@@ -10,6 +10,35 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.15.1] — 2026-09-13
+
+- **The literal sweep agents were told not to use.** `ctx-optimize search` —
+  a regex sweep over the extractor's own file set, no `rg`/`grep` needed on
+  any OS — was documented as a fallback "where grep is absent", and the
+  prompt injected into every agent turn said "grep directly". So on Windows
+  agents wrote PowerShell scripts to search, next to a built-in that does it.
+  The per-turn hook text (all three variants), the skill, the routing rules
+  and the usage card now route literals to `search` first, with its own row
+  in the intent table. It is not faster than ripgrep (kernel: 3.18 s vs
+  2.06 s) and says so; the rule is to use what is already here unless the
+  alternative is dramatically faster — a second tool costs a file set that no
+  longer matches the store.
+- **Onboarding researches the repo before it builds.** The skill's setup row
+  led with "fastest: `ctx-optimize up`", so agents bootstrapped a default
+  config on monorepos where the default is wrong. It now requires detecting
+  the build system, parsing it, cross-checking `scan`, and grouping src+tests
+  into multi-path modules before `init` + `add .`; `up` alone is scoped to a
+  verified single-build-root repo or a clone with a committed config. The
+  onboarding loop was reordered so that research is step 1 — previously the
+  build-system section sat below a numbered loop that finished without it —
+  and gained a final check that a test→source edge actually resolved.
+- ADRs 32 (from finding to changing) and 33 (market recon) drafted.
+- Perf gate note: the corpus tier's wall-clock gate failed on a machine at
+  load 84-91. An A/B against the commit that recorded the baseline, same
+  machine and window, shows no regression (linux-block CPU 1.51 s → 1.49 s,
+  newtonsoft 5.67 s → 5.38 s); the baseline commit itself now misses its own
+  314 ms. Baseline left unchanged.
+
 ## [0.15.0] — 2026-08-17
 
 - **The repo is the unit: a module grain, and the arrow that joins two

@@ -37,21 +37,42 @@ Confirm with `ctx-optimize status --json` (nodes > 0) and one `query`.
 ## Monorepo — you MUST scan and confirm before you build
 
 Never init a monorepo blind: one giant graph is wrong, and you don't know the
-module list. Drive this exact loop:
+module list. Drive this exact loop — **step 1 is research, not a command.**
 
-1. **Scan (read-only):** `ctx-optimize scan --json` (`--depth N` if the tree
+1. **Detect the build system FIRST** (before any scan). Look at the repo root
+   for `*.sln`, `settings.gradle[.kts]`, a root `pom.xml` with `<modules>`,
+   `nx.json` / `pnpm-workspace.yaml` / `package.json` `"workspaces"`,
+   `go.work`, `Cargo.toml` `[workspace]`. Several may coexist in a polyglot
+   monorepo — run every relevant parser and concatenate. Route through
+   `./modules/index.md`. **Skipping this is how the wrong graph gets built:**
+   `scan` mirrors FOLDERS, the build system defines MODULES, and where they
+   disagree the build system is right.
+2. **Scan (read-only):** `ctx-optimize scan --json` (`--depth N` if the tree
    is deep; default 5). It finds every project by build-file markers —
-   nothing is written.
-2. **Show the user the FULL found list** — every module, not a sample — and
-   ask them to confirm. If something's missing, re-scan deeper or add globs;
-   if something's noise, they'll drop it from the config after. Do NOT skip
-   this and do NOT silently build a single graph.
-3. **On their okay:** `ctx-optimize init --scan --yes` — writes every found
-   module into `config.json` `modules[]` (the user owns the list afterward)
-   and scaffolds the root.
-4. **Gather:** `ctx-optimize add .` at the root fans out one worker per
+   nothing is written. Treat it as a CROSS-CHECK on step 1, not a substitute:
+   it cannot group scattered folders, so a src/tests split appears as two
+   modules and would sever the test→source call edges.
+3. **Reconcile into `modules[]`.** For every logical unit the build system
+   names, decide the shape: single-path `{"name","path"}` for an independent
+   deployable, multi-path `{"name","paths":[...]}` for one module living in
+   several folders (src + tests). Paths may glob. Schema: `./config-json.md`.
+   **This grouping is the whole point of the research** — it is the one thing
+   `scan` and `up` can never do for you.
+4. **Show the user the FULL list** — every module, not a sample, with the
+   shape you chose and why any were grouped. Ask them to confirm. If something
+   is missing, re-scan deeper or add globs. Do NOT skip this and do NOT
+   silently build a single graph.
+5. **On their okay:** write `.ctxoptimize/config.json` with your reconciled
+   `modules[]`, then `ctx-optimize init`. (`init --scan --yes` is the shortcut
+   that writes the RAW scan list — correct only when step 1 found no grouping
+   to do.)
+6. **Gather:** `ctx-optimize add .` at the root fans out one worker per
    module in parallel (`--jobs N` to tune), building one store per module
    plus the root navigator (`modules.json` + `navigator.md`).
+7. **Verify before declaring done:** `ctx-optimize status --json` (nodes > 0
+   per module), then one `query` and one `card` on a symbol you expect. For a
+   grouped module, confirm a test→source edge resolved — that is the proof
+   the grouping worked.
 
 ## Multi-project repos — the build system defines the module (not folders)
 
