@@ -1,0 +1,16 @@
+{
+  "ast_method": "ast.dump(ast.parse(src), annotate_fields=True) then sha256",
+  "categories_overlap": {
+    "aggregation": 9,
+    "filesystem": 5,
+    "json": 470,
+    "other": 58,
+    "text": 20,
+    "verification": 33
+  },
+  "note": "newest 400 jsonl only; program text never printed; not the original 30-day 14596 census",
+  "ok": true,
+  "programs": 530,
+  "transcript_files_scanned": 400,
+  "unique_ast": 280
+}

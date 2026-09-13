@@ -1,0 +1,145 @@
+{
+  "agent_authoring": false,
+  "equivalence": 1.0,
+  "false_supported": 0,
+  "historical_census_replayed": false,
+  "n": 13,
+  "occurrence_weighted_replaceable": 0.7692307692307693,
+  "rejected_unsupported": 3,
+  "rows": [
+    {
+      "ast": "26723e7402967a7c",
+      "category": "json",
+      "id": "json-pluck-ids",
+      "match": true,
+      "python_exit": 0,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 0
+    },
+    {
+      "ast": "00a2d05dfd184772",
+      "category": "json",
+      "id": "json-filter-eq",
+      "match": true,
+      "python_exit": 0,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 0
+    },
+    {
+      "ast": "532d3e47fe056f8f",
+      "category": "json",
+      "id": "json-null-vs-missing",
+      "match": true,
+      "python_exit": 0,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 0
+    },
+    {
+      "ast": "19e908a9a44b8d99",
+      "category": "json",
+      "id": "ndjson-malformed",
+      "match": true,
+      "python_exit": 1,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 1
+    },
+    {
+      "ast": "1d9f336a518f35dc",
+      "category": "aggregation",
+      "id": "sort-unique",
+      "match": true,
+      "python_exit": 0,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 0
+    },
+    {
+      "ast": "1b89200d9e008f02",
+      "category": "aggregation",
+      "id": "group-count",
+      "match": true,
+      "python_exit": 0,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 0
+    },
+    {
+      "ast": "d42852ec44ad451a",
+      "category": "text",
+      "id": "regex-extract",
+      "match": true,
+      "python_exit": 0,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 0
+    },
+    {
+      "ast": "ffd73249f9a67082",
+      "category": "verification",
+      "id": "assert-min",
+      "match": true,
+      "python_exit": 1,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 1
+    },
+    {
+      "ast": "4b21720f6ffae250",
+      "category": "general",
+      "id": "eval-forbidden",
+      "replaceable": false,
+      "status": "rejected"
+    },
+    {
+      "ast": "048b3afd52d924ac",
+      "category": "writes",
+      "id": "write-forbidden",
+      "replaceable": false,
+      "status": "rejected"
+    },
+    {
+      "ast": "e3de997a9a399628",
+      "category": "filesystem",
+      "id": "import-os-forbidden",
+      "replaceable": false,
+      "status": "rejected"
+    },
+    {
+      "ast": "6a7d1c5dfedf7020",
+      "category": "json",
+      "id": "json-unicode-pluck",
+      "match": true,
+      "python_exit": 0,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 0
+    },
+    {
+      "ast": "8c95ea7914eb0b8d",
+      "category": "aggregation",
+      "id": "empty-group",
+      "match": true,
+      "python_exit": 0,
+      "replaceable": true,
+      "status": "ok",
+      "transform_exit": 0
+    }
+  ],
+  "supported_n": 10,
+  "supported_ok": 10,
+  "unique_ast": 13,
+  "verdict": {
+    "coverage_gate_met": false,
+    "eval_rejected": true,
+    "malformed_ndjson_fails": true,
+    "null_vs_missing": "ok",
+    "read_only_prototype_equivalent": true,
+    "reason": "constructed N=11; 50% occurrence-weighted gate needs the 14596 census replay",
+    "write_rejected": true
+  },
+  "write_gate": "not-run"
+}
