@@ -86,12 +86,15 @@ def check_design() -> None:
     for d in [f"### D{i} " for i in range(1, 10)]:
         if d not in text:
             fail(f"design.md missing {d.strip()}")
-    for needle in ["direct argv", "non-interactive", "no durable raw recall",
-                   "graph impact is an optional", "separate acceptance gate"]:
-        if needle.lower() not in text.lower() and needle not in text:
+    # Needles track ADR 34's wording (the draft said "non-interactive",
+    # "no durable raw recall", ... before it was rewritten as SPIKED).
+    for needle in ["direct argv", "terminal-attached stdin", "no recall handle",
+                   "graph impact off", "separate gate"]:
+        if needle.lower() not in text.lower():
             fail(f"design.md missing decision text: {needle}")
-    if "Status: PROPOSED" not in text:
-        fail("design.md: status is not PROPOSED")
+    status = next((l for l in text.splitlines() if l.startswith("Status:")), "")
+    if not any(s in status for s in ("PROPOSED", "SPIKED", "ACCEPTED")):
+        fail(f"design.md: unexpected status line {status!r}")
     if "P1" not in text or "P2" not in text:
         fail("design.md: missing spike gates")
     print("  design: D1-D9 present")

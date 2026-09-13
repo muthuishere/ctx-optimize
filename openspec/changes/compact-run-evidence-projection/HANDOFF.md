@@ -9,8 +9,16 @@ A measured ADR + throwaway spikes for `ctx-optimize compact run -- argv…`:
 project command output as canonicalized evidence blocks under a budget, without
 becoming a shell, a secret store, or a second Python.
 
-Worktree: this folder is untracked on branch `ctx-additional`, based on
-`main` @ `170d24b`. No commits yet.
+Committed on `main` as `dde702a` (ADR 34). Re-verified 2026-09-13 on main:
+`results-p1.json` and `results-p2.json` reproduce byte-identical, every P1
+contract passes, `openspec validate --strict` ok. `stress_test.py`'s decision
+needles were updated to ADR 34's wording (they still asserted the pre-rewrite
+draft's phrasing and "Status: PROPOSED", so the documented rerun failed 5
+checks with no change to any decision).
+
+`census.py` is NOT reproducible by construction: it scans the newest 400
+transcripts in `~/.claude/projects`, so its count drifts as sessions accrue
+(530 when committed, 563 on re-run). The committed JSON is the record.
 
 ## Rerun (scratch only)
 
