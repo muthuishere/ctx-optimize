@@ -157,3 +157,17 @@ Why this and not the speed pitch:
    method + harness and invite re-runs, or recruit a third party to run it.
 3. Cross-agent is the wedge — is it actually true in practice, or does each
    harness need per-agent tuning we have not measured?
+
+
+## Addendum — 2026-09-14: the honest-entrant seat is also taken
+
+Section 5's position assumed nobody else publishes their losses. repowise
+(`repowise-dev/repowise`, 6,423 stars) does, in its README: "the rows we lose
+printed beside the rows we win", "We ran the first head-to-head against the
+field and came last." It also runs the only independent benchmark of this
+category (`repowise-dev/repowise-bench`, 261 runs, harness public), where
+CodeGraph cut output tokens 24.4% vs baseline on Codex — and ctx-optimize does
+not appear. Action 5 ("publish the neutral comparison nobody has") is therefore
+wrong as written: enter the existing one first. Under Claude Code the MCP arms
+were barely invoked; our hook-injected, non-MCP design is a plausible edge there
+that we have not measured. Evidence: `compact-run-evidence-projection/research-2026-09-14.md`.

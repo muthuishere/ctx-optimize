@@ -75,3 +75,8 @@ Numbers live in `spike/RESULTS.md`, `spike/results-p1.json`,
 
 Owner question: accept the ADR as the contract and keep waiting on historical
 evidence, or kill the feature as complexity without a session-benchmark win.
+
+**2026-09-14:** external research (`research-2026-09-14.md`) recommends KILL
+for P1 and PARK for P2, and surfaced two items outside this ADR: ctx-optimize is
+absent from the only independent category benchmark (repowise-bench), and the
+S16 token result may share a prompt-cache arm-order confound.

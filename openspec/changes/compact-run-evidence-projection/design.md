@@ -97,6 +97,15 @@ the design. Do not quote 512-token scores as compression evidence.
 The feature is **not** ready to implement. Complexity without a session-level
 win is the standing critique (`docs/CRITIQUE.md`).
 
+**Field evidence, 2026-09-14 (`research-2026-09-14.md`) — recommends KILL for P1.**
+JetBrains measured RTK, the shipped analog of this verb: +7.6% more expensive
+(p=0.004), because only ~20% of tool-result characters pass a Bash hook (~3%
+input-token ceiling) and cached re-reads dominate cost. This spike's ~6%
+reduction on that slice is ~0.2% of a session. Claude Code already applies
+head-and-tail to failing output and offloads large valid output to a file it
+reads on demand. The field's real failure is silent loss causing re-runs —
+which D3/D4/D7 answer correctly, and which this spike never measured.
+
 ## 3. Decisions
 
 ### D1 — direct argv execution, not shell emulation — ACCEPTED
