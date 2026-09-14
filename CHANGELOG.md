@@ -10,6 +10,30 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.15.2] — 2026-09-14
+
+- **`affected` answers from the index.** The verb an agent runs right before
+  editing used to load the whole graph first — 3.3-3.6 s on the linux store,
+  slower than ripgrep. It now reads only what the blast radius touches, the
+  same contract `card` already had: linux `blk_mq_submit_bio` 3.54 s → 13 ms,
+  `submit_bio --ndjson` 3.73 s → 65 ms, `kfree` 4.20 s → 95 ms. Output is
+  byte-identical to the full load (stdout, stderr and exit code, 20 cases).
+  Giant walks break even rather than regress: a per-level budget, checked
+  before a level is paid for, hands anything like `kfree
+  --include-ambiguous` (71,519 rows) to the full load.
+- **Fixed: the index could answer for the wrong symbol on small stores.** When
+  a binary-search probe landed inside one long index line that dominated a
+  small index file — a hub with thousands of callers — the lookup returned the
+  whole file as one line, giving the hub's edges to a neighbouring key and
+  none to the hub. `card`, `query`, `explain` and `affected` could all answer
+  wrongly. Kernel-scale stores could not reach it. Also: index probes now start
+  at 512 bytes and double instead of reading 16 KB each.
+- Benchmark harnesses alternate / rotate arm order per question, so an arm
+  warming the prompt cache for the next can no longer bias token results.
+- Measured and not shipped: parallel index lookups (slower on macOS — concurrent
+  reads of one file serialize in the kernel) and `compact run` (field research:
+  ~3% input-token ceiling; RTK measured more expensive). See ADRs 32 and 34.
+
 ## [0.15.1] — 2026-09-13
 
 - **The literal sweep agents were told not to use.** `ctx-optimize search` —
