@@ -10,6 +10,15 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.15.3] — 2026-09-14
+
+- **Docs-only release so the npm page stops quoting retracted numbers.** The
+  README bundled into 0.15.2 still led with "kernel in 118 seconds, 2.5x
+  faster than the next tool" (recorded while gather still built the markdown
+  wiki; v0.15 does it in 61 s, competitors not re-run) and query timings that
+  had been retracted (ripgrep 1.59 s vs 3.70 s; CodeGraph 880 ms vs 4.0 s).
+  They are replaced with sourced side-by-side numbers. No code changes.
+
 ## [0.15.2] — 2026-09-14
 
 - **`affected` answers from the index.** The verb an agent runs right before
