@@ -53,7 +53,7 @@ Cold gather: we lead all six. **Warm re-gather: we lose all six to CodeGraph**, 
 
 ---
 
-ᴬ **Unpinned.** Kernel and big-repo runs predate our pinning harness and were measured on ctx-optimize v0.8.0–v0.12.0 (HEAD is v0.15.0); single run, not best-of-3. Being re-run — the drift runs against us, since v0.14 roughly halved gather. **Our column in that run included wiki generation**, which left the default path in v0.12 — so it measures work the tool no longer does. Re-measured on HEAD, the same kernel gather is **61.2 s median** (60.13 / 61.17 / 63.24, byte-identical output). Competitors have not been re-run, so we state no new ratio until they are.
+ᴬ **Unpinned.** Kernel and big-repo runs predate our pinning harness and were measured on ctx-optimize v0.8.0–v0.12.0 (HEAD is v0.15.2); single run, not best-of-3. Being re-run — the drift runs against us, since v0.14 roughly halved gather. **Our column in that run included wiki generation**, which left the default path in v0.12 — so it measures work the tool no longer does. Re-measured on HEAD, the same kernel gather is **61.2 s median** (60.13 / 61.17 / 63.24, byte-identical output). Competitors have not been re-run, so we state no new ratio until they are.
 ᴮ **Pin-verified** 2026-08-15 (CodeGraph `572d22bf`, Graphify `2fa6cd3d`, GitNexus `91b22676`), but recorded at load average 8.77.
 ᶜ 12 questions × 3 runs, n = 36, no LLM judge, one small repo. [Transcripts](https://github.com/muthuishere/ctx-optimize/blob/main/proof/agent/RESULTS-QUALITY.md).
 

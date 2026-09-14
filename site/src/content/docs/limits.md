@@ -9,7 +9,7 @@ The category’s number. Independent 2026-08 session bench: **nobody hit 60%**. 
 
 ## We are not the fastest query at kernel scale
 
-CodeGraph answers in **0.79 s**, ripgrep in **1.59 s**, we in **3.70 s**. They get the line (or a type name) sooner. We get the **symbol**. On gather we are ahead of those graphs (118 s vs 290 s vs 528 s; GitNexus did not finish). “Fastest code graph” is not a sentence we use.
+CodeGraph answers about **4× faster**: **0.86 s** against our **3.64 s** median on five kernel questions, measured side by side. ripgrep returns matching lines sooner still. They get the line (or a type name) sooner. We get the **symbol** — 4 of 5 useful top hits on that set, against CodeGraph’s 0. On gather we are ahead of those graphs (recorded together at 118 s vs 290 s vs 528 s, when our gather still built the markdown wiki; **61 s** on v0.15 alone; GitNexus did not finish). “Fastest code graph” is not a sentence we use.
 
 ## We do not replace grep
 

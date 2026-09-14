@@ -16,7 +16,7 @@ Neither half stands alone. The graph does the structural reasoning once, up fron
 Everything below names where it came from, including [where we lose](#where-we-lose).
 
 :::caution[Read the provenance before you quote a number]
-The two headline tables are **re-runs in flight**. The build sweep was measured on our **v0.8.0** (HEAD is v0.15.0, and v0.14 roughly halved gather — so these numbers understate us), single cold run, on an arena that predates our pinning harness. The model ladder was run 2026-07-17 against that date's tiers. [Full provenance](#provenance).
+The two headline tables are **re-runs in flight**. The build sweep was measured on our **v0.8.0** (HEAD is v0.15.2, and v0.14 roughly halved gather — so these numbers understate us), single cold run, on an arena that predates our pinning harness. The model ladder was run 2026-07-17 against that date's tiers. [Full provenance](#provenance).
 :::
 
 ## 1. Faster to build than every graph tool
@@ -93,7 +93,7 @@ The position here is the honest entrant, so these sit in the same section as the
 
 A cold gather is paid once. A warm one is paid on every edit. This is the biggest open item on the roadmap and we are not going to bury it.
 
-**Query at kernel scale — CodeGraph's, not ours.** 4.04 s vs ~0.98 s on the fair question. CodeGraph indexes into SQLite and seeks; we deserialize the whole graph per invocation, and ~97% of our 4 s is parsing 2.85M nodes and 5.54M edges before the question is even known. (`card` on that same store is under 20 ms — the fail-safe index.)
+**Query at kernel scale — CodeGraph's, not ours.** 4.04 s vs ~0.98 s on the fair question. CodeGraph indexes into SQLite and seeks; we deserialize the whole graph per invocation, and ~97% of our 4 s is parsing 2.85M nodes and 5.54M edges before the question is even known. (`card` on that same store is under 20 ms, and since v0.15.2 `affected` answers an ordinary blast radius in 7–95 ms from the same index — byte-identical to the full load.)
 
 **Locate.** A line matcher wins "where is the string." We do not compete there and we say so.
 
@@ -139,7 +139,7 @@ Every number above is measured by a command actually run, on its tool's own fast
 
 | dataset | state |
 |---|---|
-| Build sweep (§1, six repos) | our **v0.8.0** (HEAD v0.15.0), single cold run not best-of-3, no load average, **unpinned** — predates `benchmarks/suite/setup.py`. **Our column included wiki generation**, removed from the default path in v0.12 (`benchmarks/bench_multi.py:97`) — it measures work the tool no longer does |
+| Build sweep (§1, six repos) | our **v0.8.0** (HEAD v0.15.2), single cold run not best-of-3, no load average, **unpinned** — predates `benchmarks/suite/setup.py`. **Our column included wiki generation**, removed from the default path in v0.12 (`benchmarks/bench_multi.py:97`) — it measures work the tool no longer does |
 | Model ladder (§2) | run 2026-07-17 against that date's model tiers |
 | Kernel rows | our v0.12.0, best-of-1, wiki included; CodeGraph's query re-measured 2026-08-16 on the fair question (the 536 ms figure was a single word and is not comparable). Re-measured on HEAD 2026-09-09: gather **61.2 s median**, query **2.96 s** — both better than published |
 | Small corpora | genuinely pin-verified 2026-08-15 — but recorded at load average 8.77 |

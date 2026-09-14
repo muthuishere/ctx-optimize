@@ -16,14 +16,15 @@ buckets, queues and APIs — into a local knowledge graph your agent answers
 from in one call instead of a grep-and-read chain. On a graded benchmark it
 answered **79% of "what calls this / what breaks if I change this" questions
 correctly, against 29% for a grep-armed agent**. It indexes the **linux
-kernel — 84,300 files — in 118 seconds**, 2.5x faster than the next tool, and
-is the only one of four that produces a usable kernel graph at all.
+kernel — 84,300 files — in about a minute** (61 s median on v0.15), and is the
+only one of the four tools we tested that produces a usable kernel graph at all.
 Deterministic: no LLM, no embeddings, no database, no MCP, no credentials at
 rest. The only intelligence in the system is the agent you already run.
 
 Where it does **not** win: `ripgrep` is faster at finding a string and better
 at "where is X" (47% vs 42%), and CodeGraph answers free-text kernel queries
-in 880ms against our 4.0s — though on five kernel questions its top hit was
+about 4× faster than we do (0.86s vs ~3.6s, measured side by side on
+2026-08-16) — though on five kernel questions its top hit was
 useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
 
 ## Why
@@ -33,7 +34,8 @@ useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
    Zero false claims and zero empty answers, in 15 tool calls per run against
    grep's 42.7. [Full method + failures](proof/agent/RESULTS-QUALITY.md).
 2. **The agent finishes sooner even though each query is slower** — ripgrep
-   answers a single lookup faster than we do (1.59s vs 3.70s on the kernel).
+   answers a single lookup faster than we do (2.06s for `rg` on one kernel
+   symbol against 2.96s for our free-text `query`, same machine, 2026-09-10).
    But an agent does not make one call: on the graded run it made **42.7 tool
    calls per question with grep against our 15.0** — grep, read a file, grep
    again, chase a caller, re-read. End to end it finished in **40.1s with
@@ -41,12 +43,16 @@ useful 0 times to our 4. Numbers for all of it in [Proof](#proof).
    67% correctly against 35%. Per-call latency is not the unit; the question is.
 3. **Fastest to build, by a wide margin** — linux v6.9 in **118.18s** vs
    CodeGraph's 289.86s and graphify's 527.72s; GitNexus did not finish in 45
-   minutes. A 1,476-file repo in **0.648s** vs 5.123s / 1.323s / 10.649s. And
+   minutes. Those four were measured together, when our gather still generated
+   the markdown wiki (off by default since v0.12); re-measured alone on v0.15
+   our kernel gather is **61.2s** median. The competitors were not re-run, so
+   no newer ratio is claimed. A 1,476-file repo in **0.648s** vs 5.123s / 1.323s / 10.649s. And
    the graph is the most complete: 2,849,719 nodes in 2.0GB, against
    CodeGraph's 1,838,442 in 4.1GB.
 4. **Instant symbol lookup** — `card` on the kernel resolves an exact symbol in
    **under 20ms** (it was 1.8s), via a plain-text index that is 20% of the
-   graph. Fuzzy and ambiguous names still cost a full scan, deliberately: they
+   graph. Since v0.15.2 `affected` answers a blast radius from the same index:
+   **3.5s → 7-95ms** on ordinary kernel walks, byte-identical output. Fuzzy and ambiguous names still cost a full scan, deliberately: they
    rank against every node, and refusing to guess is the point.
 5. **Complete answers, not pointer lists** — `card` returns signature + doc +
    callers/callees with `file:line`, so the agent doesn't reopen the file.
@@ -197,6 +203,11 @@ query median-of-5.
 | flask · 344 files | **0.314s** / 12ms | 0.438s / 102ms | 0.845s / 106ms | 6.355s / 794ms |
 | gin · 253 files | **0.342s** / 11ms | 0.593s / — | 0.777s / 110ms | 7.56s / — |
 
+Kernel gather on v0.15, re-measured alone on 2026-09-09: **61.2s median**
+(60.13 / 61.17 / 63.24, byte-identical output). The 118.18s row above was taken
+when our gather still built the markdown wiki; the other columns were not re-run
+alongside, so the row is kept as recorded rather than mixed with a newer number.
+
 *gather / free-text query. `—` = not measured. GitNexus burned 137 CPU-minutes
 with a 36 GB heap on the kernel and produced no index; that is recorded as a
 non-finish, not as a win for anyone.*
@@ -205,7 +216,8 @@ On the kernel, ctx-optimize emits **2,849,719 nodes in a 2.0 GB store**;
 CodeGraph 1,838,442 in 4.1 GB; graphify 910,778 in 3.1 GB.
 
 **Where we lose: free-text query LATENCY at scale.** CodeGraph answers a kernel
-query in 880ms against our 4,039ms — 4.6x — because 54% of their 4.1 GB is
+query about 4.2× faster than we do — 0.86s against 3.64s median on the five
+questions below, measured side by side — because 54% of their 4.1 GB is
 B-tree index. (An earlier draft said 536ms; that was CodeGraph answering a
 single word while every other tool answered the full phrase. Fixed in the
 harness.) They are faster and, on the five kernel questions below, less useful:
@@ -233,8 +245,8 @@ with `file:line`?** The hit is shown so you can judge it yourself.
 | page allocation failure | 4.31s ❌ `enum …` | 0.85s ❌ `constant page` | 22.77s ❌ `kcalloc()` |
 | **median / useful top hit** | **3.64s · 4 of 5** | 0.86s · **0 of 5** | 23.07s · **0 of 5** |
 
-ripgrep runs these in 1.59s and returns matching **lines** — genuinely useful,
-a different artifact, so it isn't scored against a symbol rule.
+ripgrep returns matching **lines** for these, sooner than any graph — genuinely
+useful, a different artifact, so it isn't scored against a symbol rule.
 
 **CodeGraph is 4.2× faster and got none of them.** FTS5 OR-matches each word and
 ranks by frequency, so a multi-word question returns the generic struct literally
