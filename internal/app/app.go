@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -2219,20 +2220,107 @@ func cmdHookContext(args []string, stdout io.Writer) error {
 	}
 }
 
+// affectedIndexBudget caps the index lookups (EdgesTo + NodeByID calls) an
+// indexed blast-radius walk may make before it hands the question to the full
+// path. The check runs per level BEFORE the level is paid for (analyze's plan
+// hook), so an oversized walk is refused as soon as a level reveals its size,
+// having spent only the earlier, under-budget levels. Measured on linux
+// (2026-09-14), ~12-20 µs per lookup against a ~3.4 s full load: a
+// post-payment 150k cap had sent `affected kfree --include-ambiguous --depth 3`
+// (109,860 rows) from 3.6 s to 6.9 s. Walks under the cap answer in
+// milliseconds; walks over it pay at most what their earlier levels cost.
+const affectedIndexBudget = 25000
+
+var errIndexBudget = errors.New("indexed walk exceeded its budget")
+
+// affectedViaIndex answers `affected` from the store index when it can do so
+// provably identically to the full scan, and refuses (ok=false) otherwise.
+//
+// Refuses for everything cardViaIndex refuses — a federated or --root scope, a
+// missing or stale index, a name that does not resolve at the exact-id or
+// exact-label tier — plus a node filter (--kind and friends): its disclosure
+// is measured against every node in the store, which a point lookup never
+// reads. Identity rests on store.EdgesTo returning edges in file order, the
+// order the full path builds; analyze.AffectedFrom documents why that matters.
+func affectedViaIndex(f *flags, depth int, relations []string) (*schema.Node, []analyze.Impact, *scope, string, bool) {
+	if pred, err := graphfilter.ParsePred(f.strs); err != nil || !pred.Empty() {
+		return nil, nil, nil, "", false
+	}
+	sc, err := resolveScope(f)
+	if err != nil {
+		return nil, nil, nil, "", false
+	}
+	if f.bools["root"] || (sc.kind == scopeRoot && len(sc.modules) > 0) {
+		return nil, nil, nil, "", false
+	}
+	storeRoot, err := store.Root(f.strs["store"])
+	if err != nil {
+		return nil, nil, nil, "", false
+	}
+	s, err := store.Open(storeRoot, sc.storeKey)
+	if err != nil || !s.IndexCurrent() {
+		return nil, nil, nil, "", false
+	}
+	target, _, ok := s.ResolveExact(f.args[0])
+	if !ok || target == nil {
+		return nil, nil, nil, "", false
+	}
+	// One session for the whole walk: a blast radius can visit tens of
+	// thousands of nodes, and per-call lookups reopen files every time.
+	lk, ok := s.OpenLookup()
+	if !ok {
+		return nil, nil, nil, "", false
+	}
+	defer lk.Close()
+	// Point lookups win by orders of magnitude on an ordinary blast radius, but
+	// each costs a binary search while a full load is a flat cost, so a big
+	// enough walk would lose. The walk therefore carries a budget
+	// of LOOKUPS (binary searches), checked per level before that level is
+	// paid for (see plan below).
+	//
+	// Count lookups, not decoded records: one EdgesTo on a hub decodes
+	// thousands of edges almost for free (plain `affected kfree`, 14 rows, reads
+	// its whole in-degree in ~80 ms), while the binary search per lookup is
+	// what a 71k-row walk actually pays for.
+	lookups := 0
+	incoming := func(id string) ([]schema.Edge, error) {
+		lookups++
+		return lk.EdgesTo(id)
+	}
+	node := func(id string) (schema.Node, error) {
+		lookups++
+		n, err := lk.NodeByID(id)
+		if err != nil || n == nil {
+			return schema.Node{}, err
+		}
+		return *n, nil
+	}
+	// Refuse a level before paying for it: this level's node lookups, plus as
+	// many edge lookups again if another level follows. A hub reveals its size
+	// on the FIRST level, so a giant walk is abandoned after one lookup rather
+	// than after the budget's worth.
+	plan := func(pending int, more bool) error {
+		need := pending
+		if more {
+			need += pending
+		}
+		if lookups+need > affectedIndexBudget {
+			return errIndexBudget
+		}
+		return nil
+	}
+	impacts, err := analyze.AffectedFrom(target, depth, relations, incoming, node, plan, ambOpts(f)...)
+	if err != nil {
+		return nil, nil, nil, "", false
+	}
+	return target, impacts, sc, storeRoot, true
+}
+
 func cmdAffected(args []string, stdout, stderr io.Writer) error {
 	f := parseFlags(args)
 	if len(f.args) != 1 {
 		return fmt.Errorf(`usage: ctx-optimize affected "X" [--depth N] [--relation R] [--root]`)
 	}
-	nodes, edges, sc, storeRoot, err := loadGraphScoped(f)
-	if err != nil {
-		return err
-	}
-	t0 := time.Now()
-	cw := &countingWriter{w: stdout}
-	stdout = cw
-	st, _ := openStore(f)
-	defer func() { served(st, "affected", f.args[0], 1, cw, t0) }()
 	depth := 2
 	if v, ok := f.strs["depth"]; ok {
 		if d, err := strconv.Atoi(v); err == nil {
@@ -2243,9 +2331,38 @@ func cmdAffected(args []string, stdout, stderr io.Writer) error {
 	if r, ok := f.strs["relation"]; ok {
 		relations = append(relations, r)
 	}
-	target, impacts, aerr := analyze.Affected(nodes, edges, f.args[0], depth, relations, ambOpts(f)...)
-	if id, ok := fuzzyPick(aerr, f); ok {
-		target, impacts, aerr = analyze.Affected(nodes, edges, id, depth, relations, ambOpts(f)...)
+
+	// Index fast path — same contract as cardViaIndex: answer only what it can
+	// prove identical, hand everything else to the full load below unchanged.
+	// The blast radius is a reverse walk from ONE node, so on linux it needs a
+	// few hundred edge lookups, not 2.85M nodes and 5.5M edges parsed first.
+	var nodes []schema.Node
+	var edges []schema.Edge
+	var sc *scope
+	var storeRoot string
+	var target *schema.Node
+	var impacts []analyze.Impact
+	var aerr error
+	fast := false
+	if ft, fi, fsc, froot, ok := affectedViaIndex(f, depth, relations); ok {
+		target, impacts, sc, storeRoot, fast = ft, fi, fsc, froot, true
+	} else {
+		var err error
+		nodes, edges, sc, storeRoot, err = loadGraphScoped(f)
+		if err != nil {
+			return err
+		}
+	}
+	t0 := time.Now()
+	cw := &countingWriter{w: stdout}
+	stdout = cw
+	st, _ := openStore(f)
+	defer func() { served(st, "affected", f.args[0], 1, cw, t0) }()
+	if !fast {
+		target, impacts, aerr = analyze.Affected(nodes, edges, f.args[0], depth, relations, ambOpts(f)...)
+		if id, ok := fuzzyPick(aerr, f); ok {
+			target, impacts, aerr = analyze.Affected(nodes, edges, id, depth, relations, ambOpts(f)...)
+		}
 	}
 	scopeNote := ""
 	// Module-scope miss: the symbol likely lives in a sibling module —

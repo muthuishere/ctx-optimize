@@ -327,7 +327,12 @@ func min64(a, b int64) int64 {
 // It grows a window until both boundaries are found, so a long line (a label
 // with thousands of offsets) is still read whole.
 func readLineAround(f *os.File, pos, body, size int64) (line []byte, start int64, err error) {
-	const win = 8 << 10
+	// Start small and DOUBLE: an index line is usually well under 1 KB, so a
+	// fixed 8 KB-each-side window read 16 KB per binary-search probe for a few
+	// hundred bytes of answer. A hub's line can hold tens of thousands of
+	// offsets; doubling reaches it in a handful of retries where a fixed step
+	// grew linearly.
+	win := int64(512)
 	lo := pos - win
 	if lo < body {
 		lo = body
@@ -363,6 +368,7 @@ func readLineAround(f *os.File, pos, body, size int64) (line []byte, start int64
 			return buf[st:en], lo + st, nil
 		}
 		// Widen and retry — bounded by the file, so this terminates.
+		win *= 2
 		if !haveStart {
 			lo -= win
 			if lo < body {
@@ -375,12 +381,14 @@ func readLineAround(f *os.File, pos, body, size int64) (line []byte, start int64
 				hi = size
 			}
 		}
-		if lo == body && hi == size {
-			// Whole body already in the window; take what we have.
-			buf2 := make([]byte, size-body)
-			n2, _ := f.ReadAt(buf2, body)
-			return buf2[:n2], body, nil
-		}
+		// No early "whole body" return here. It used to hand back the ENTIRE index
+		// body as one line once the window reached both ends, so a probe landing
+		// inside a long line (a hub's thousands of offsets) decoded the FIRST key
+		// in the file and every offset in it: EdgesTo gave a hub's callers to its
+		// neighbouring key and returned none for the hub. Only small indexes could
+		// reach it — a line must dominate the file — so kernel-scale stores never
+		// showed it. Looping again is enough: once lo == body and hi == size, both
+		// line ends count as found and the check above returns the right line.
 	}
 }
 

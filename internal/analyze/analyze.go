@@ -497,26 +497,96 @@ func Affected(nodes []schema.Node, edges []schema.Edge, name string, depth int, 
 	for _, n := range nodes {
 		byID[n.ID] = n
 	}
+	out, err := walkAffected(target, depth, relOK,
+		func(id string) ([]schema.Edge, error) { return incoming[id], nil },
+		func(id string) (schema.Node, error) { return byID[id], nil }, nil)
+	return target, out, err
+}
+
+// AffectedFrom computes the same blast radius as Affected for a target that is
+// already resolved, reading the graph through two lookups instead of loading
+// it: incoming(id) must return every edge whose target is id IN EDGE-FILE
+// ORDER, and node(id) the node with that id (the zero Node when absent).
+//
+// It exists for the store's index (store.EdgesTo / store.NodeByID), and it is
+// only correct under that file-order contract: the walk below sorts each
+// node's incoming edges with an UNSTABLE sort keyed on Source, and the first
+// edge per source decides the reported relation. Same input order, same
+// answer — which is what TestAffectedFromMatchesAffected pins.
+//
+// plan, when non-nil, is consulted once per level BEFORE that level's node
+// lookups are paid for: pending is how many nodes the level will look up and
+// more is whether another level of edge lookups follows. Returning an error
+// abandons the walk there, having spent only what earlier levels cost — the
+// caller's way to refuse a walk that is revealing itself as too large.
+func AffectedFrom(target *schema.Node, depth int, relations []string, incoming func(id string) ([]schema.Edge, error), node func(id string) (schema.Node, error), plan func(pending int, more bool) error, opts ...Option) ([]Impact, error) {
+	if depth <= 0 {
+		depth = 2
+	}
+	relOK := func(r string) bool {
+		if len(relations) == 0 {
+			return true
+		}
+		for _, want := range relations {
+			if r == want {
+				return true
+			}
+		}
+		return false
+	}
+	filtered := func(id string) ([]schema.Edge, error) {
+		es, err := incoming(id)
+		if err != nil {
+			return nil, err
+		}
+		return forTraversal(es, opts), nil
+	}
+	return walkAffected(target, depth, relOK, filtered, node, plan)
+}
+
+// walkAffected is the one breadth-first reverse walk behind Affected and
+// AffectedFrom, so the two can never drift apart.
+//
+// Each level runs in two passes: the traversal needs only edges, so the level's
+// rows are collected first (in their final order) and their nodes filled in
+// after. That split is what lets plan see a level's size before paying for it.
+func walkAffected(target *schema.Node, depth int, relOK func(string) bool, incoming func(id string) ([]schema.Edge, error), node func(id string) (schema.Node, error), plan func(pending int, more bool) error) ([]Impact, error) {
 	seen := map[string]bool{target.ID: true}
 	frontier := []string{target.ID}
 	var out []Impact
 	for d := 1; d <= depth && len(frontier) > 0; d++ {
 		var next []string
+		start := len(out)
 		for _, id := range frontier {
-			es := incoming[id]
+			es, err := incoming(id)
+			if err != nil {
+				return nil, err
+			}
 			sort.Slice(es, func(i, j int) bool { return es[i].Source < es[j].Source })
 			for _, e := range es {
 				if seen[e.Source] || !relOK(e.Relation) {
 					continue
 				}
 				seen[e.Source] = true
-				out = append(out, Impact{Node: byID[e.Source], Depth: d, Via: e.Relation, DependsOn: id, Confidence: e.Confidence})
+				out = append(out, Impact{Depth: d, Via: e.Relation, DependsOn: id, Confidence: e.Confidence, Node: schema.Node{ID: e.Source}})
 				next = append(next, e.Source)
 			}
 		}
+		if plan != nil {
+			if err := plan(len(out)-start, d < depth && len(next) > 0); err != nil {
+				return nil, err
+			}
+		}
+		for i := start; i < len(out); i++ {
+			n, err := node(out[i].Node.ID)
+			if err != nil {
+				return nil, err
+			}
+			out[i].Node = n
+		}
 		frontier = next
 	}
-	return target, out, nil
+	return out, nil
 }
 
 // ---- explain ----
