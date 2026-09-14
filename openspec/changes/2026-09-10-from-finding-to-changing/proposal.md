@@ -290,3 +290,28 @@ ship.
 5. Do we ship a tiny `--exec` applier (still not us writing — a documented
    loop the agent runs), or only document the one-liner per platform? Decide
    on whether agents reliably write the loop correctly when told to.
+
+
+## Addendum — 2026-09-14: P0 shipped; parallel lookups measured and rejected
+
+P0 landed in `c0e68c5`: `affected` answers from the index (linux, interleaved
+medians: 3.5 s → 7-95 ms on ordinary walks; the 71k- and 110k-row
+`--include-ambiguous` walks break even via a per-level pre-payment budget).
+Output is byte-identical to the full load across 20 cases.
+
+**Do not retry parallel lookups on a shared file without mmap.** Fanning a
+level out across goroutines (results slotted by position, race-clean) made the
+71,519-row walk slower, measured side by side on linux:
+
+| workers | wall | user | sys |
+|---|---|---|---|
+| 1 | 1.64 s | 1.74 s | 0.74 s |
+| 4 | 1.61-1.75 s | 2.36-2.61 s | 4.09-4.81 s |
+| 16 | 2.94-3.17 s | 3.41-3.49 s | 34.5-36.0 s |
+
+The cost is kernel time, not Go: GOGC=800 cut GC cycles 100 → 11 with no CPU
+change, and giving each worker its OWN file descriptors (a pool of Lookup
+sessions) left sys time at 36 s — concurrent preads of one file serialize per
+vnode on macOS, not per descriptor. The remaining lever is memory-mapping the
+index files, which is platform-specific (Windows needs its own path) and was not
+justified for walks that already break even. Reverted; serial walk kept.
