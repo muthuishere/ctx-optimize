@@ -159,9 +159,18 @@ echo
 T_START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; T0="$(date +%s)"
 LOAD_START="$(uptime | sed 's/.*load average[s]*: //')"
 QIDS="${ONLY:-$(node -e 'require(process.argv[1]).questions.forEach(q=>console.log(q.id))' "$QFILE")}"
+# Arm order ROTATES per question (a b c, b c a, c a b, ...) so no arm always
+# runs first. A fixed order can let one arm warm a prompt cache for the next;
+# here each arm's prefix starts with a different tool schema, so cross-arm cache
+# hits are unlikely, but position must not be a variable either way.
+QN=0
 for qid in $QIDS; do
   QTEXT="$(node -e 'const q=require(process.argv[1]).questions.find(x=>x.id===process.argv[2]);if(!q){process.exit(3)}console.log(q.prompt)' "$QFILE" "$qid")"
-  for arm in $ARMS; do
+  set -- $ARMS; NARMS=$#; SHIFT=$(( QN % NARMS )); ROT=""
+  i=0; for a in $ARMS; do [ $i -ge $SHIFT ] && ROT="$ROT $a"; i=$((i+1)); done
+  i=0; for a in $ARMS; do [ $i -lt $SHIFT ] && ROT="$ROT $a"; i=$((i+1)); done
+  QN=$((QN + 1))
+  for arm in $ROT; do
     dest="$OUT/${NAME}-${arm}-${qid}.json"
     printf "  %-4s arm %s ... " "$qid" "$arm"
     if node "$HERE/agent.mjs" --repo "$WORK/repo-$arm" --bin "$BIN" --arm "$arm" \

@@ -131,9 +131,17 @@ def main():
     out_dir = pathlib.Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Arm order ALTERNATES per question (AB, BA, AB, ...). A fixed AB order lets
+    # the first arm warm the prompt cache for the second: cache creation counts
+    # as fresh tokens, cache reads do not, so the second arm looks cheaper for a
+    # reason unrelated to the tool. repowise-bench measured this confound at
+    # -0.487 correlation between arm position and cost (2026-08). The first
+    # S16 run (2026-07-12) used a fixed AB order; see RESULTS.md.
+    arms = args.arm.split(",")
     for harness in args.harness.split(","):
-        for q in questions:
-            for arm in args.arm.split(","):
+        for i, q in enumerate(questions):
+            order = arms if i % 2 == 0 else list(reversed(arms))
+            for arm in order:
                 print(f"[{harness} {arm} {q['id']}]", flush=True)
                 run_one(harness, arm, q, args.corpus, out_dir)
 

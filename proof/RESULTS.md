@@ -21,6 +21,15 @@ counted.
 ¹ Devin daily quota exhausted mid-matrix; 6 complete pairs only. High
 variance (q4: −82%, q6: +103%).
 
+> **Order caveat (added 2026-09-14).** This run executed arm A before arm B for
+> every question (`run.py` then looped `for q: for arm in a,b`). The first arm
+> can warm the prompt cache for the second; cache creation counts toward fresh
+> tokens and cache reads do not, so a fixed order tilts **toward arm B (the
+> store)**. The per-run metrics cannot isolate the size of that tilt from arm
+> B's fewer turns. The direction makes the verdict below conservative — parity
+> despite a possible advantage — but it means these numbers must never be
+> quoted as a saving. `run.py` now alternates arm order per question.
+
 **Composite verdict: the 25% bar is NOT cleared on frontier harnesses.**
 On Claude Code and Codex — agents with excellent built-in search — the store
 arm costs the same or more tokens than plain grep at equal answer quality.
