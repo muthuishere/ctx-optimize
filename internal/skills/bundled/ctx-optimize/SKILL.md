@@ -1,65 +1,18 @@
 ---
 name: ctx-optimize
-description: >
-  ctx-optimize is a SHELL COMMAND (a CLI on PATH), not a callable tool: run
-  every verb through your shell/bash tool, e.g. `ctx-optimize query "invoice
-  tax" --json`. NEVER call a tool named ctx_optimize — no such tool exists.
-  If the repo has a `.ctxoptimize/config.json` — at the root or any parent of
-  your cwd (the CLI walks up to find it) — INVOKE this skill before any
-  Grep/rg/Read. CONFIRM/CHECK a claim or citation — "is X really at
-  file.go L10-L20?", "does this still hold?", verify before acting on a
-  location — → `ctx-optimize verify "<label or file:L10-L20>"`. That file is the marker: a pre-built knowledge graph of this
-  codebase already exists, so use it.
-  REQUIRED before Grep/rg/Read when exploring code in any repo that contains
-  a `.ctxoptimize/` directory — that marker means a pre-built knowledge graph
-  of this codebase already exists, and one `ctx-optimize` call answers what a
-  grep-and-read chain would: `query "<terms>"` (ranked, cited, signatures),
-  `card <symbol>` (signature + doc + callers + callees, no file read),
-  `change-plan <symbol>` (ONE composed answer for "I'm about to change X":
-  callers + blast radius + which tests to run + confidence — use it whenever
-  the intent is modifying code), `affected <symbol>` (impact/blast radius),
-  `path <a> <b>`, `explain`, plus an opt-in generated wiki (`ctx-optimize wiki`). Use it for ANY question about code: where is X,
-  how does Y work, who calls Z, what breaks if I change W, architecture,
-  onboarding. Fall back to Grep/Read only for what the store lacks. Also
-  builds/refreshes/shares the store ("gather this repo", "add the schema /
-  kafka topics / docs", "push the store", "pull the store", "share the
-  graph", "publish the store", "export to the team", "import/load a
-  teammate's store", "sync the graph with the code"). GET A DATABASE /
-  BUCKET / QUEUE / EXTERNAL API into the store — "add our postgres/mysql/
-  mongo schema", "index the kafka topics / nats streams", "add the S3
-  bucket", "capture the OpenAPI spec", "connect the DB" — native sources:
-  an env var holding a URL is the whole contract; answer catalog/setup
-  questions by RUNNING `ctx-optimize adapters list` / `adapters help
-  <scheme>` and quoting the output — not from memory; deep guide: the
-  skill reference sources.md (load it via this skill, not the repo cwd) (`adapters help <scheme>` → export the var →
-  `ctx-optimize add <ENV_NAME>`; names only on argv, never a raw URL). NO STORE, fresh clone, or
-  bare repo? ONE command: `ctx-optimize up` — bootstraps the config when none
-  exists (monorepos via scan), pulls the team's prebuilt store when declared,
-  gathers otherwise, no-ops when fresh. `init` is for authors wanting control. ONBOARDING a repo or
-  monorepo — "set up ctx-optimize on this repo", "onboard this repo/monorepo",
-  "index this project" — follow the skill reference onboarding.md (via this skill, not the repo cwd): monorepos
-  `scan` first, confirm the FULL found list with the user, then
-  `init --scan --yes && add .` builds one store per module + a navigator.
-  Want to SEE the store or manage it visually — "open the dashboard", "see the
-  graph", "manage packs/config visually", "onboard repos interactively" —
-  `ctx-optimize serve` opens a local 127.0.0.1:4747 UI (Overview / Repos /
-  Onboard / Query / Viewer / Settings / Changes); follow the skill reference dashboard.md (via this skill).
-  ALSO the first-class helper for CUSTOMIZING extraction: "add my framework's
-  routes", "extract our custom router / registerRoute", "index our k8s / helm
-  / ingress", "add build-tool dependencies / gradle / pom / csproj", "support
-  language X", "the graph is missing my routes/deps" — routes/manifests/
-  grammar PACKS (drop-in JSON, `routes add` / `manifests add` / `languages
-  add`, name or GitHub URL) plus adapters. Follow `./references/customize.md`.
-  BOUNDARIES — "what external APIs do we call", "which env vars or secrets
-  does this read", "what processes do we spawn", "what do we expose", "our
-  egress footprint", "is anything documented but not implemented" — are
-  `port` nodes: read them with `boundaries` (the answer-shaped verb —
-  CONSUMES/PROVIDES with `file:line`), then `nodes --kind port`, `drift`,
-  `services`. Note `query` cannot retrieve these; a hostname scores as prose.
-  AUTHORING new boundary rules for a stack we don't cover is a MEASURED loop
-  emitting data (`.ctxoptimize/boundaries.json`), never code, and a rule
-  without its `verified` block is invalid — follow
-  `./references/boundaries-authoring.md`.
+description: >-
+  Use this skill for any question about code you have not fully read: where
+  something is, how it works, who calls it, what breaks if you change it,
+  whether a cited file:line still holds, or how a repo is laid out. REQUIRED
+  before Grep, rg, Glob or Read whenever a .ctxoptimize directory sits at
+  the repo root or any parent of the cwd — that marker means a knowledge
+  graph of this code is already built, and one command answers, with cited
+  locations, what a grep-and-read chain would. Use it too for: building,
+  refreshing, inspecting, publishing or pulling that graph; onboarding a
+  repo or monorepo; indexing a database, bucket, queue or OpenAPI schema;
+  asking what the code calls, reads, spawns or exposes; and teaching it your
+  framework's routes, manifests or language. Run every verb through your
+  shell — ctx-optimize is a CLI on PATH, never a callable tool.
 ---
 
 # ctx-optimize
