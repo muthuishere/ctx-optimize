@@ -1,4 +1,4 @@
-# ADR 34 — the skill description is rent, not documentation
+# ADR 35 — the skill description is rent, not documentation
 
 Status: DRAFT — 2026-09-21. Opened from GitHub issue #18 (deemwario).
 Numbers below re-measured this session on this machine, not taken from
