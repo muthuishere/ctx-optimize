@@ -10,6 +10,21 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.15.4] — 2026-09-21
+
+- **The bundled skill description is 4,443 -> 858 characters.** It was the
+  largest of the 64 skills installed on the author's machine (median 695 B)
+  and it was being silently cut: measured off the wire with a capture proxy,
+  Claude Code truncates a skill description at 1,535 characters plus an
+  ellipsis, so roughly two thirds of ours had never reached a model.
+  Anthropic's own `skill-creator` states a 1,024-character hard limit and
+  rejects angle brackets — we failed both. The body (~30 KB, loaded only on
+  invoke) is unchanged, so nothing the skill can do has changed.
+  Verified by 5 runs x 25 queries per arm against a real store: recall
+  85/85 on both the old and the new description, all 13 lanes green. Hosts
+  that do NOT truncate (toolnexus and other opencode-style runtimes send the
+  description verbatim) save the full ~3,600 characters every turn. ADR 35.
+
 ## [0.15.3] — 2026-09-14
 
 - **Docs-only release so the npm page stops quoting retracted numbers.** The

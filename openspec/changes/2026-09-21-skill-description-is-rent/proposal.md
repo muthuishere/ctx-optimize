@@ -129,6 +129,9 @@ Two consequences, both load-bearing:
   bug**, not only a cost bug — and it means the "is the bloat load-bearing
   for triggering?" risk in section 5 is much smaller than feared: the
   bloat cannot be load-bearing, because it is not loaded.
+  **CORRECTED 2026-09-21 by section 13** — those lanes do trigger, at 100%,
+  on the SURVIVING prefix alone. The post-cut text was dead, but the lanes
+  were never dark. This section's capability claim was wrong.
 
 **8.3 The official validator currently FAILS our skill on a second count.**
 `python3 scripts/quick_validate.py internal/skills/bundled/ctx-optimize`
@@ -257,3 +260,51 @@ IMPLEMENTED 2026-09-21. `internal/skills/bundled/ctx-optimize/SKILL.md`
 description: 4,443 -> 858 chars, no angle brackets, passes
 `skill-creator/scripts/quick_validate.py` (it failed before, on the angle
 brackets). Body unchanged; `task ci` green.
+
+
+## 13. Stress test (2026-09-21) — 5 runs x 25 queries per arm
+
+The official `skill-creator/run_eval.py` cannot score a CLI skill: it counts
+a trigger only if the FIRST tool call is `Skill` or `Read` of a command
+file, and a shell-command skill correctly routes through `Bash`. It returned
+0/20 on BOTH arms. Discarded rather than reported.
+
+Replacement harness (`scratchpad/skilleval/stress.py`): drive a real
+`claude -p` session inside a sandbox repo that has a real store, and count a
+hit when the session actually runs a `ctx-optimize` command. 25 queries —
+17 positives across 13 lanes (in a store repo, plus 2 onboarding queries in
+a store-less repo) and 8 negatives including two edit traps.
+
+Pooled, n=85 positive runs and 40 negative runs per arm:
+
+| metric | OLD (1,536, truncated) | NEW (858) | v3 (943) |
+|---|---|---|---|
+| recall | 85/85 = **1.000** | 85/85 = **1.000** | 51/51 = **1.000** |
+| all 13 lanes | green | green | green |
+| first-call rate | 75/85 = 0.882 | 66/85 = 0.776 | 40/51 = 0.784 |
+| false-fire | 5/40 = 0.125 | 6/40 = 0.150 | 5/40 = 0.125 |
+
+**Finding A — the trim costs no triggering.** Recall is perfect and
+lane-for-lane identical on every arm. The rewrite is safe.
+
+**Finding B — section 8.2 was wrong about consequences.** The OLD arm hit
+all five "invisible" lanes at 100%, because the text that SURVIVES the cut
+contains `INVOKE this skill before any Grep/rg/Read` and the
+`.ctxoptimize/` marker. That clause alone routes nearly anything in a store
+repo; the lane-specific trigger text past the cut was never doing the work.
+The bytes past 1,535 were dead, but no capability was dark. The honest case
+for this change is cost plus spec compliance, not recovered capability.
+
+**Finding C — first-call is ~10 points lower, and it is not the wording.**
+0.882 -> 0.776 is 9 events at n=85 (z~1.8, p~0.07) — under the 0.05 line
+but on the metric that IS the thesis. v3 added the primacy language back
+("REQUIRED as the FIRST tool you reach for", "fall back to grep only for
+what it does not hold") for +85 chars and moved it 0.776 -> 0.784: inside
+noise. So the emphasis was not the cause and buying it back is not worth
+the bytes.
+
+**Decision: ship the 858-char v2.** v3 is indistinguishable on every metric
+and costs more. Recorded here so a future session does not re-litigate it:
+if first-call is ever shown to matter at a larger n, the lever to try is NOT
+more description — it is the repo-level `instructions.md` and the hook,
+which are loaded only in repos that actually have a store.
