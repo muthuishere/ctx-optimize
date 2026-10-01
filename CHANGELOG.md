@@ -10,6 +10,22 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.15.5] — 2026-10-01
+
+- **The bundled skill description is 858 -> 198 characters, and it routes
+  BETTER.** v0.15.4 cut it from 4,443 to 858 on the grounds that hosts
+  truncate at 1,535 anyway. This release takes it to 198 — roughly 50
+  resident tokens, against a 695-character median across the 64 skills on
+  the author's machine. Measured the same way (real sessions, 25 queries x 3
+  runs, a hit counted only when the session actually runs a ctx-optimize
+  command): recall is 1.000 at every size tested, all 13 lanes green, and
+  **first-call rate — the store verb being the first tool reached for —
+  rises from 0.776 at 858 characters to 0.941 at 198**. Five lanes (sources,
+  onboarding, dashboard, customization, boundaries) hold at 100% with no
+  vocabulary of their own at all: the `.ctxoptimize` marker plus one clear
+  framing does the routing, not the enumeration. The ~30 KB body is
+  unchanged, so every lane keeps its full instructions once invoked. ADR 37.
+
 ## [0.15.4] — 2026-09-21
 
 - **The bundled skill description is 4,443 -> 858 characters.** It was the

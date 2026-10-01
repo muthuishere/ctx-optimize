@@ -1,18 +1,9 @@
 ---
 name: ctx-optimize
 description: >-
-  Use this skill for any question about code you have not fully read: where
-  something is, how it works, who calls it, what breaks if you change it,
-  whether a cited file:line still holds, or how a repo is laid out. REQUIRED
-  before Grep, rg, Glob or Read whenever a .ctxoptimize directory sits at
-  the repo root or any parent of the cwd — that marker means a knowledge
-  graph of this code is already built, and one command answers, with cited
-  locations, what a grep-and-read chain would. Use it too for: building,
-  refreshing, inspecting, publishing or pulling that graph; onboarding a
-  repo or monorepo; indexing a database, bucket, queue or OpenAPI schema;
-  asking what the code calls, reads, spawns or exposes; and teaching it your
-  framework's routes, manifests or language. Run every verb through your
-  shell — ctx-optimize is a CLI on PATH, never a callable tool.
+  Answers any code question from a prebuilt knowledge graph, cited
+  file:line: find, callers, impact, architecture, onboarding, schemas,
+  boundaries. REQUIRED before grep/Read where .ctxoptimize exists.
 ---
 
 # ctx-optimize
