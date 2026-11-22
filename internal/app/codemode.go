@@ -24,13 +24,9 @@ func cmdCode(args []string, stdout, stderr io.Writer) int {
 func codeRegistry() *codemode.Registry {
 	reg := codemode.NewRegistry(version.Version)
 	ro := func(name, desc string, run cmdtree.Runner) {
-		// cmdtree would PREPEND --json; these verbs parse positionals first, so
-		// the flag is appended here and WithJSONResult gets "" (parse-only).
-		withJSON := func(ctx context.Context, a []string, o, e io.Writer) error {
-			return run(ctx, append(append([]string{}, a...), "--json"), o, e)
-		}
-		reg.MustRegister(cmdtree.FromRunner(name, desc, withJSON,
-			cmdtree.WithJSONResult(""),
+		reg.MustRegister(cmdtree.FromRunner(name, desc, run,
+			cmdtree.WithJSONResult("--json"),
+			cmdtree.WithFlagsLast(), // these verbs parse positionals first
 			cmdtree.WithSideEffects(codemode.SideEffectNone)))
 	}
 	ro("ctx.query", "Find symbols/docs by 2-4 terms. args: [\"<terms>\", \"--budget\", \"N\"].",

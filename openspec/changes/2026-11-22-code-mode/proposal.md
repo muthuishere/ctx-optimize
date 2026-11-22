@@ -9,7 +9,7 @@ and return only the filtered result.
 
 ## Decision
 Add `ctx-optimize code <operations|describe|check|run|eval|skill|...>` using
-`github.com/muthuishere/clicodemode` (pinned to a commit, never `@main`; MIT, pure Go).
+`github.com/muthuishere/clicodemode` (pinned to a tag (v0.5.2), never `@main`; MIT, pure Go).
 Each READ-ONLY verb is wrapped with `cmdtree.FromRunner(..., WithJSONResult("--json"),
 WithSideEffects(SideEffectNone))` over the existing `cmdX` functions: no handler is duplicated.
 Operations: `ctx.query`, `ctx.card`, `ctx.change-plan`, `ctx.affected`, `ctx.path`, `ctx.hubs`.
