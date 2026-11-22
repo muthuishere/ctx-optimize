@@ -88,6 +88,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	maybeAutosync(cmd, rest, stderr)
 	var err error
 	switch cmd {
+	case "code": // CLI Code Mode over the read-only verbs (ADR 2026-11-22-code-mode)
+		return cmdCode(rest, stdout, stderr)
 	case "version", "--version", "-v":
 		fmt.Fprintf(stdout, "ctx-optimize %s (%s, %s)\n", version.Version, version.Commit, version.Date)
 	case "init":
