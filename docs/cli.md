@@ -180,6 +180,14 @@ const plan = await ops.ctx.change_plan({args: [hits[0].node.label]});
 ({symbols: cards.map(c => c.signature), plan})
 ```
 
+Guard rails (a program cannot see the stderr notes the CLI prints, so these
+are errors, not warnings): a mistyped flag throws (`unknown flag --bogus ...,
+accepted: ...`), and a name that is not found exactly throws with the nearest
+match (`"X" was not found exactly; the nearest match is "..."`); pass `--fuzzy`
+to accept a near match. `check` catches syntax errors and a typo'd operation
+(`did you mean "ctx.query"?`) without running anything; argument types and
+unknown properties are checked when the call runs.
+
 Use it for 3+ dependent calls; a single question stays a plain verb. Also
 `code operations`, `code describe <op>`, `code check <file|->` (validates, runs
 nothing), `code docs`. `--json` prints one object `{ok, value, error?,
