@@ -36,6 +36,13 @@
       <note>Alias: `node`. Wants the node's LABEL exactly. Unsure? `query` the short name, copy the label from the hit, then `card` it. `--include-content` returns the full verbatim body inline (read from the source file at answer time) — use it instead of opening the file. Credential-shaped lines are `[redacted]`, including without the flag; that is the hard rule that a secret's VALUE must never reach model context, so do not route around it with a file read.</note>
     </route>
 
+    <route id="code" group="answer">
+      <when>about to chain 3+ dependent verb calls, query then card on the top hits then change-plan, fan out over many symbols, want only a filtered slice of several answers</when>
+      <goal>ONE process, one program: the six read-only verbs as operations, results as JSON objects, only what you return comes back (measured 27x less output, ~2x faster than separate processes).</goal>
+      <cmd>ctx-optimize code run - --input '{"terms":"..."}' --json  (also: code operations | describe &lt;op&gt; | check &lt;file|-&gt; | docs)</cmd>
+      <note>Operations: ops.ctx.query card change_plan affected path hubs, each `await ops.ctx.card({args: ["&lt;label&gt;"]})` resolving to the verb's JSON (args are strings; never pass --json). Return only what you will cite. `code check` first for non-trivial programs (validates, runs nothing; did-you-mean on a typo). A mistyped flag or a name not found EXACTLY throws (pass "--fuzzy" to accept a near match). Exit 0 ok / 1 failed / 2 nothing ran. Read-only: add/sync/search/boundaries are not operations. Full guide: references/code-mode.md.</note>
+    </route>
+
     <route id="change-plan" group="answer">
       <when>about to change X, plan a change, what should I touch and which tests do I run, impact + tests in one shot</when>
       <goal>ONE composed call replacing the query+card+affected+grep chain (~90% fewer answer tokens, measured): signature, callers, blast radius, WHICH TESTS TO RUN (derived tests-for), co-change history, and a confidence footer (extracted vs inferred vs co-change evidence).</goal>

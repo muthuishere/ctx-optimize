@@ -122,6 +122,12 @@ func TestNewSurfacesReachTheAgent(t *testing.T) {
 		what, needle, why string
 		in                []string
 	}{
+		{"code mode", "code run",
+			"without it an agent spends seven processes and ~22 KB of output on a query-card-change-plan chain that one program answers in 825 bytes",
+			[]string{skill, routing, card}},
+		{"code mode returns only what is cited", "ops.ctx.",
+			"the saving comes from filtering inside the program; an agent that does not know the operation names writes plain verb calls instead",
+			[]string{skill, routing, card}},
 		{"store delete", "store delete",
 			"without it an agent reaches for `rm -rf ~/ctxoptimize/...`, aimed at a root holding every repo's store",
 			[]string{skill, routing}},
