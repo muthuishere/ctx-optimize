@@ -17,16 +17,16 @@ func fixture() ([]schema.Node, []schema.Edge) {
 	}
 	// api -> service -> db ; worker -> service ; orphan
 	return []schema.Node{
-			n("api", "ApiHandler", "function"),
-			n("service", "RefundService", "class"),
-			n("db", "refunds_table", "table"),
-			n("worker", "RetryWorker", "function"),
-			n("orphan", "Orphan", "function"),
-		}, []schema.Edge{
-			e("api", "service", "calls"),
-			e("service", "db", "references"),
-			e("worker", "service", "calls"),
-		}
+		n("api", "ApiHandler", "function"),
+		n("service", "RefundService", "class"),
+		n("db", "refunds_table", "table"),
+		n("worker", "RetryWorker", "function"),
+		n("orphan", "Orphan", "function"),
+	}, []schema.Edge{
+		e("api", "service", "calls"),
+		e("service", "db", "references"),
+		e("worker", "service", "calls"),
+	}
 }
 
 func TestResolve(t *testing.T) {
