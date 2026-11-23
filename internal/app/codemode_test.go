@@ -2,8 +2,6 @@ package app
 
 import (
 	"bytes"
-	"context"
-	"io"
 	"strings"
 	"testing"
 )
@@ -39,35 +37,24 @@ func TestCodeModeExitCodes(t *testing.T) {
 	}
 }
 
-func TestStrictVerbRefusesFuzzyAndBadFlags(t *testing.T) {
-	fuzzy := func(_ context.Context, _ []string, o, _ io.Writer) error {
-		_, err := o.Write([]byte(`{"resolved_via":"fuzzy","node":{"id":"near::x"}}`))
-		return err
-	}
-	exact := func(_ context.Context, _ []string, o, _ io.Writer) error {
-		_, err := o.Write([]byte(`{"resolved_via":"exact-label","node":{"id":"a::b"}}`))
-		return err
-	}
-	var out bytes.Buffer
-	if err := strictVerb("ctx.card", fuzzy)(context.Background(), []string{"Nope"}, &out, io.Discard); err == nil ||
+func TestCodeGuardsRefuseFuzzyAndBadFlags(t *testing.T) {
+	fuzzy := []byte(`{"resolved_via":"fuzzy","node":{"id":"near::x"}}`)
+	exact := []byte(`{"resolved_via":"exact-label","node":{"id":"a::b"}}`)
+	if err := rejectFuzzy()([]string{"Nope", "--json"}, fuzzy); err == nil ||
 		!strings.Contains(err.Error(), "not found exactly") || !strings.Contains(err.Error(), "near::x") {
 		t.Fatalf("fuzzy must be refused with the nearest id, got %v", err)
 	}
-	if out.Len() != 0 {
-		t.Fatalf("a refused answer must write nothing, got %q", out.String())
-	}
-	if err := strictVerb("ctx.card", fuzzy)(context.Background(), []string{"Nope", "--fuzzy"}, &out, io.Discard); err != nil {
+	if err := rejectFuzzy()([]string{"Nope", "--fuzzy", "--json"}, fuzzy); err != nil {
 		t.Fatalf("--fuzzy opts in, got %v", err)
 	}
-	out.Reset()
-	if err := strictVerb("ctx.card", exact)(context.Background(), []string{"A"}, &out, io.Discard); err != nil || out.Len() == 0 {
-		t.Fatalf("exact must pass through, err=%v out=%q", err, out.String())
+	if err := rejectFuzzy()([]string{"A", "--json"}, exact); err != nil {
+		t.Fatalf("exact must pass, got %v", err)
 	}
-	if err := strictVerb("ctx.hubs", exact)(context.Background(), []string{"--bogus"}, io.Discard, io.Discard); err == nil ||
+	if err := validateFlags("ctx.hubs")([]string{"--bogus", "--json"}); err == nil ||
 		!strings.Contains(err.Error(), "unknown flag --bogus") {
 		t.Fatalf("a mistyped flag must be rejected, got %v", err)
 	}
-	if err := strictVerb("ctx.change_plan", exact)(context.Background(), []string{"X", "--depth", "2"}, io.Discard, io.Discard); err != nil {
+	if err := validateFlags("ctx.change_plan")([]string{"X", "--depth", "2", "--json"}); err != nil {
 		t.Fatalf("change_plan maps to the change-plan flag set, got %v", err)
 	}
 }

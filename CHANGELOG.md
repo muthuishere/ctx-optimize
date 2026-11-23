@@ -11,7 +11,7 @@ embeddings, no MCP, no network except your configured remote.**
 ## [Unreleased]
 
 - **`ctx-optimize code` — one program instead of seven processes.** Embeds
-  [clicodemode](https://github.com/muthuishere/clicodemode) v0.5.2 (MIT, pure
+  [clicodemode](https://github.com/muthuishere/clicodemode) v0.6.1 (MIT, pure
   Go, deterministic JS-subset interpreter, no network) over the six read-only
   verbs: `ctx.query`, `ctx.card`, `ctx.change_plan`, `ctx.affected`, `ctx.path`,
   `ctx.hubs`. Nothing that writes the store is exposed. Each call resolves to the

@@ -56,15 +56,16 @@ const out = await Promise.all(input.symbols.map(async n => {
 - A **name not found exactly** throws: `"X" was not found exactly; the nearest match is "..."`.
   The CLI would have silently answered with the near node; a program cannot see that stderr
   note, so Code Mode refuses. Pass `"--fuzzy"` in `args` only if a near match is acceptable.
-- `check` catches syntax errors and unknown operations (exit 2). Argument types (`args` must be
-  strings) and unknown properties are rejected when the call runs: `args[0] must be string`.
+- `check` catches syntax errors, unknown operations, hyphenated names, and wrong literal argument
+  types or unknown properties (`args[0] must be string`) without running anything (exit 2).
+  Non-literal arguments are validated when the call runs.
 - Exit codes: 0 ok, 1 ran and failed, 2 nothing ran (diagnostics or bad `--input`).
   `--json` prints one object `{ok, value, error?, diagnostics?, ms}`.
 - The abstention rules still hold: `card`/`affected` on a METHOD can carry `unattributed
   callers`, so a caller list inside a program is a FLOOR unless you pass `--include-ambiguous`.
 
 ## Gotchas
-- Operation names have no hyphen (`change_plan`): `ops.ctx.change-plan` parses as subtraction
-  and `check` reports it as zero operations, not an error.
+- Operation names have no hyphen (`change_plan`). `ops.ctx.change-plan` parses as subtraction;
+  `check` reports it as an error with the fix (`ops.ctx["change-plan"]`), so it can no longer pass silently.
 - Discover with `code operations`, `code describe <op>`, `code docs`. Claude Code Code Mode:
   call `ctx-optimize code run - --input ... --json` once per task.
