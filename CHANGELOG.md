@@ -10,6 +10,19 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+- **`ctx-optimize code` — one program instead of seven processes.** Embeds
+  [clicodemode](https://github.com/muthuishere/clicodemode) v0.5.2 (MIT, pure
+  Go, deterministic JS-subset interpreter, no network) over the six read-only
+  verbs: `ctx.query`, `ctx.card`, `ctx.change_plan`, `ctx.affected`, `ctx.path`,
+  `ctx.hubs`. Nothing that writes the store is exposed. Each call resolves to the
+  verb's parsed JSON, so an agent filters inside the program and only the
+  answer comes back. Measured on this repo (query -> card on the top 5 ->
+  change-plan; best of 5; Mac under load average 5.5): **seven processes 63 ms
+  and 22,538 bytes back; one `code run` 29 ms and 825 bytes back — 2.2x faster,
+  27x less output (about 5,600 -> 200 tokens).** Cost: +1.45 MB binary
+  (51.26 -> 52.72 MB unstripped) and one new dependency (`gopkg.in/yaml.v3`).
+  Skill gains `references/code-mode.md`. ADR 2026-11-22-code-mode.
+
 ## [0.15.5] — 2026-10-01
 
 - **The bundled skill description is 858 -> 198 characters, and it routes

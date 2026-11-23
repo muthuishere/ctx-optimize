@@ -72,7 +72,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	// `install --help` INSTALLED and `uninstall --help` uninstalled. Answer the
 	// question here, before dispatch and before autosync, and touch nothing. See
 	// wantsHelp in flagcheck.go.
-	if wantsHelp(rest) {
+	if wantsHelp(rest) && cmd != "code" { // `code` prints its own, fuller help
 		verbHelp(stdout, cmd)
 		return 0
 	}
@@ -3613,6 +3613,10 @@ commands:
                               TO RUN + co-change history + confidence footer
                               (extracted vs inferred). Replaces a query/card/
                               affected/grep chain  [--depth N] [--json]
+  code <run|operations|...>   ONE program chains the read-only verbs in one
+                              process (query -> card x N -> change-plan) and
+                              returns only what you filter. Ops: ctx.query
+                              card change_plan affected path hubs. See: code help
   verify "<claim>" ...        citation check before acting on one: node exists
                               (exact id/label — never fuzzy), file exists, line
                               range in bounds, drift vs gather-time git HEAD.

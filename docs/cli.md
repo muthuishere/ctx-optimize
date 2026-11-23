@@ -151,6 +151,7 @@ what's registered; get the paste-ready setup card for a source scheme.
 | **Find** — you have words, want locations | `query "<2-4 terms>"` | ranked, cited, signatures; complete hits under a token budget |
 | **Inspect** a known symbol | `card X` | signature + doc + callers + callees, no file read |
 | **About to EDIT** | `change-plan X` | ONE call: signature + callers + blast radius + which tests to run + co-change history; replaces a query/card/affected/grep chain |
+| **Chain 3+ calls** | `code run -` | ONE process, one program: query, then card on the hits, then change-plan; returns only what you filter (see [`code`](#code--one-program-instead-of-many-verb-calls)) |
 | **Blast radius** only | `affected X [--depth N]` | reverse impact: what breaks if X changes |
 | **Connection** | `path "A" "B"` | shortest path between two nodes |
 | **Orient** in a new repo | `hubs --top 10` | most-connected nodes; also read the generated `wiki/` |
@@ -162,6 +163,30 @@ Scope follows your cwd: inside a module dir you get that module (zero hits
 escalate repo-wide); at a monorepo root, queries federate via the navigator
 (`--modules all|a,b`, `--root`). Name resolution is honest: fuzzy matches
 announce themselves, fuzzy ties refuse with candidates (`--fuzzy` overrides).
+
+### `code` — one program instead of many verb calls
+
+`ctx-optimize code run - --input '{"terms":"refund"}' --json` runs a small
+JavaScript-subset program in ONE process. The six read-only verbs are
+operations (`ops.ctx.query`, `card`, `change_plan`, `affected`, `path`, `hubs`);
+each `await`ed call resolves to the verb's JSON object, so you filter inside the
+program and only the result is printed. Nothing that writes the store is exposed.
+
+```js
+const q = await ops.ctx.query({args: [input.terms, "--budget", "1500"]});
+const hits = q.hits.slice(0, 5);
+const cards = await Promise.all(hits.map(h => ops.ctx.card({args: [h.node.label]})));
+const plan = await ops.ctx.change_plan({args: [hits[0].node.label]});
+({symbols: cards.map(c => c.signature), plan})
+```
+
+Use it for 3+ dependent calls; a single question stays a plain verb. Also
+`code operations`, `code describe <op>`, `code check <file|->` (validates, runs
+nothing), `code docs`. `--json` prints one object `{ok, value, error?,
+diagnostics?, ms}`. Exit codes: 0 ok, 1 ran and failed, 2 nothing ran. A
+failing verb throws, so use try/catch. Measured (query, card x5, change-plan;
+best of 5 on this repo): seven processes 63 ms / 22,538 bytes back, one
+`code run` 29 ms / 825 bytes back.
 
 ### A filter that cannot possibly match says so
 

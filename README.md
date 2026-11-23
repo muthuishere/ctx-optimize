@@ -174,6 +174,7 @@ ctx-optimize serve                     # → 127.0.0.1:4747, embedded dashboard,
 | how are these two connected | `path <a> <b>` |
 | why does this node exist / where from | `explain <node>` |
 | the load-bearing symbols | `hubs` |
+| chain several of the above in one process, return only the filtered answer | `code run - --input ... --json` ([docs/cli.md](docs/cli.md#code--one-program-instead-of-many-verb-calls)) |
 | what this calls out to & exposes — hosts, env vars, secrets, spawned binaries, routes | `boundaries` |
 | list & filter without jq | `nodes --kind K` · `edges --relation R` · `deps --scope dev` |
 | add a database / bucket / queue / API | `add BILLING_DB_URL` |
