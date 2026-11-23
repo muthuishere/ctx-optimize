@@ -10,6 +10,16 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-11-23
+
+- **`code`: clicodemode v0.6.1 -> v0.6.2 (security).** Upstream fixed a symlink
+  inside the module root that let an `import` in a Code Mode program read files
+  outside it, and added uncatchable resource limits (strings 64 MiB, arrays 10M
+  elements, optional op budget). Programs reach ctx-optimize only through its six
+  read-only operations, but an agent-written program can still `import`, so take
+  the patch. No ctx-optimize behavior changes; the Code Mode tests and `task ci`
+  pass on the new version.
+
 ## [0.16.0] — 2026-11-23
 
 - **`ctx-optimize code` — one program instead of seven processes.** Embeds
