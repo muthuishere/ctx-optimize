@@ -6,6 +6,27 @@ Measured on this repo (query, card x5, change-plan; best of 5): seven processes
 63 ms and 22,538 bytes back; one `code run` 29 ms and 825 bytes back — the win is
 **27x less output**, because the program filters before anything reaches you.
 
+## Modules first — import a recipe, do not compose raw ops
+Shipped inside the binary, checked against the real operations, and tested. `ctx-optimize code modules`
+lists them; `code describe ctx:edit` shows every export with its doc.
+
+| module | exports | use it to |
+|---|---|---|
+| `ctx:edit` | `planEdit(symbol)`, `planEdits(symbols)` | before changing code: signature, callers, impacted files, tests to run, co-changed files; `planEdits` merges many symbols into one `testsToRun` + `filesTouched` and reports a misspelled name under `missing` instead of throwing |
+| `ctx:find` | `findCards(terms, limit=5)` | find by words and get a compact card (label, file, location, signature, calledBy) per hit |
+| `ctx:impact` | `blastRadius(symbols, depth=2)` | files that break across several symbols, merged and ranked by how many symbols reach them |
+| `ctx:orient` | `orient(top=10)`, `connect(a, b)` | first reads in an unfamiliar repo (repo hubs only); how two symbols connect, one line per hop |
+
+```
+import { planEdits } from "ctx:edit"
+const p = await planEdits(input.symbols);
+({testsToRun: p.testsToRun, files: p.filesTouched, missing: p.missing})
+```
+Run it as `ctx-optimize code run - --input '{"symbols":["Foo","Bar"]}' --json`. Fall back to the raw operations
+below only for something no module covers. `callers` and `blastRadius` are FLOORS for methods (unattributed
+callers are not counted). Names must be exact labels.
+
+## Operations (the primitives modules are built on)
 | operation | wraps | args (all strings) |
 |---|---|---|
 | `ops.ctx.query` | `query` | `["<2-4 terms>", "--budget", "N"]` |

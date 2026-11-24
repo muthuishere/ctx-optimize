@@ -189,6 +189,14 @@ to accept a near match. `check` catches syntax errors and a typo'd operation
 types or unknown properties, all without running anything; non-literal arguments are
 checked when the call runs.
 
+**Modules first.** The binary ships four tested JS modules so an agent imports a
+recipe instead of composing raw ops: `ctx:edit` (`planEdit`, `planEdits`: signature,
+callers, impacted files, tests to run, co-changed files; many symbols merged),
+`ctx:find` (`findCards`), `ctx:impact` (`blastRadius`) and `ctx:orient` (`orient`,
+`connect`). `code modules` lists them and `code describe ctx:edit` shows each export's
+doc. Example: `import { planEdits } from "ctx:edit"` then `await planEdits(input.symbols)`.
+Modules can only call the six operations, so they add no privilege.
+
 Use it for 3+ dependent calls; a single question stays a plain verb. Also
 `code operations`, `code describe <op>`, `code check <file|->` (validates, runs
 nothing), `code docs`. `--json` prints one object `{ok, value, error?,
