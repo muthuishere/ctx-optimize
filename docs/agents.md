@@ -99,7 +99,7 @@ Full numbers: [`benchmarks/agent-model-bench/`](../benchmarks/agent-model-bench/
 edit: callers + blast radius + which tests) · `affected` (impact) · `path` ·
 `verify` (check a citation before a human acts on it) · `fresh` (exit-code
 gate: 0 fresh / 1 stale / 2 unknown / 3 partial — see below). Everything `--json`.
-When a task needs 3+ dependent calls, send ONE program with `code run -`
+When a task needs 3+ dependent calls, send ONE program with `code run -`, importing a shipped module (`ctx:edit`, `ctx:find`, `ctx:impact`, `ctx:orient`; `code modules`) before composing raw operations
 (see [cli.md](cli.md#code--one-program-instead-of-many-verb-calls)): about 2x
 faster and ~27x less output than separate processes.
 

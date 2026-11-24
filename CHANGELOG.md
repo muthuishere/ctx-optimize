@@ -10,6 +10,19 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-11-25
+
+- **`code`: ships four JS modules agents import instead of composing raw ops.**
+  clicodemode v0.6.2 -> v0.8.0 (modules). `ctx:edit` (`planEdit`, `planEdits`:
+  signature, callers, impacted files, tests to run, co-changed files; many symbols
+  merged, a misspelled one reported under `missing`), `ctx:find` (`findCards`),
+  `ctx:impact` (`blastRadius`), `ctx:orient` (`orient`, `connect`), plus an internal
+  `ctx:safe`. Embedded with `go:embed`, checked by `engine.CheckModules()` in the
+  tests, one run test per module against a real gathered store. Operations stay
+  primitives; modules can only call them, so no new privilege. The bundled skill,
+  routing, the committed usage card, README and docs now say "import a module first"
+  (`code modules`, `code describe ctx:edit`). ADR 37.
+
 ## [0.16.1] — 2026-11-23
 
 - **`code`: clicodemode v0.6.1 -> v0.6.2 (security).** Upstream fixed a symlink

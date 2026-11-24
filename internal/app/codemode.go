@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,6 +24,12 @@ func cmdCode(args []string, stdout, stderr io.Writer) int {
 	cli.Stdin, cli.Stdout, cli.Stderr = os.Stdin, stdout, stderr
 	return cli.Main(context.Background(), args)
 }
+
+// jsFiles are the shipped Code Mode modules: js/x.js is imported as "ctx:x".
+// They compose the read-only ops into recipes agents otherwise rebuild by hand.
+//
+//go:embed js
+var jsFiles embed.FS
 
 func codeRegistry() *codemode.Registry {
 	reg := codemode.NewRegistry(version.Version)
@@ -46,6 +53,7 @@ func codeRegistry() *codemode.Registry {
 		func(_ context.Context, a []string, o, _ io.Writer) error { return cmdPath(a, o) })
 	ro("ctx.hubs", "Most-connected nodes. args: [\"--top\", \"10\"].",
 		func(_ context.Context, a []string, o, e io.Writer) error { return cmdHubs(a, o, e) })
+	reg.MustRegisterModules("ctx", jsFiles, "js")
 	return reg
 }
 
