@@ -24,13 +24,13 @@ func TestCodeModulesAreListedAndDocumented(t *testing.T) {
 	if rc != 0 {
 		t.Fatalf("rc=%d err=%s", rc, errb)
 	}
-	for _, m := range []string{"ctx:find", "ctx:edit", "ctx:impact", "ctx:orient"} {
+	for _, m := range []string{"ctx:find", "ctx:edit", "ctx:impact", "ctx:orient", "ctx:sweep", "ctx:investigate", "ctx:cite"} {
 		if !strings.Contains(out, m) {
 			t.Errorf("`code modules` must list %s:\n%s", m, out)
 		}
 	}
 	// Every export carries a /** doc */ (it is what describe and skill show).
-	for _, m := range []string{"ctx:find", "ctx:edit", "ctx:impact", "ctx:orient", "ctx:safe"} {
+	for _, m := range []string{"ctx:find", "ctx:edit", "ctx:impact", "ctx:orient", "ctx:safe", "ctx:sweep", "ctx:investigate", "ctx:cite"} {
 		_, d, _ := runCode(t, "", "describe", m)
 		for _, line := range strings.Split(d, "\n") {
 			if strings.HasPrefix(line, "  export ") && !strings.Contains(line, ": ") {
@@ -141,5 +141,58 @@ func TestCodeModulesCannotReachBeyondOps(t *testing.T) {
 	rc, out, _ := runCode(t, "", "eval", `import { orient } from "ctx:orient"; typeof ops.ctx.add`, "--json")
 	if rc == 0 && strings.Contains(out, `"function"`) {
 		t.Fatalf("no write op may exist: %s", out)
+	}
+}
+
+func TestCodeModuleSweep(t *testing.T) {
+	t.Chdir(codeFixture(t))
+	v := runModuleProg(t, `import { sweep, sweepMany } from "ctx:sweep"
+const one = await sweep("Decorate", {ext: ".go"});
+const many = await sweepMany(["Greet", "(bad"], {ext: ".go"});
+({one, many})`)
+	var one struct {
+		Count, FileCount int
+		Files            []struct{ File string }
+	}
+	if err := json.Unmarshal(v["one"], &one); err != nil || one.Count < 2 || one.FileCount != 1 || one.Files[0].File != "main.go" {
+		t.Fatalf("sweep(Decorate) = %s (%v)", v["one"], err)
+	}
+	var many struct {
+		Results map[string]struct {
+			Count int
+			Error string
+		}
+	}
+	if err := json.Unmarshal(v["many"], &many); err != nil || many.Results["Greet"].Count == 0 || many.Results["(bad"].Error == "" {
+		t.Errorf("a bad regex must be reported per pattern, not thrown: %s", v["many"])
+	}
+}
+
+func TestCodeModuleInvestigate(t *testing.T) {
+	t.Chdir(codeFixture(t))
+	v := runModuleProg(t, `import { investigate } from "ctx:investigate"
+const r = await investigate({terms: "Greet", pattern: "Decorate", ext: ".go", limit: 2});
+({r})`)
+	var r struct {
+		Symbols []struct{ Label string }
+		Plan    struct{ Symbol string }
+		Sweep   struct{ Count int }
+	}
+	if err := json.Unmarshal(v["r"], &r); err != nil || len(r.Symbols) == 0 || r.Plan.Symbol == "" || r.Sweep.Count == 0 {
+		t.Fatalf("investigate = %s (%v)", v["r"], err)
+	}
+}
+
+func TestCodeModuleCite(t *testing.T) {
+	t.Chdir(codeFixture(t))
+	v := runModuleProg(t, `import { verifyClaims } from "ctx:cite"
+const r = await verifyClaims(["main.go:L1-L3", "nope.go:L1-L2"]);
+({r})`)
+	var r struct {
+		OK     bool
+		Claims []struct{ Holds bool }
+	}
+	if err := json.Unmarshal(v["r"], &r); err != nil || r.OK || len(r.Claims) != 2 || !r.Claims[0].Holds || r.Claims[1].Holds {
+		t.Fatalf("verifyClaims = %s (%v)", v["r"], err)
 	}
 }

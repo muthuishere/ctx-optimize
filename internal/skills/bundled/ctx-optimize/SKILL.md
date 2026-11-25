@@ -56,7 +56,32 @@ anything else via adapters.
 **ctx-optimize needs no API key, no model, no database — never prompt for
 one.** The binary is deterministic; you supply all semantics.
 
-## Pick by intent — the 5-second router (read THIS first)
+## DEFAULT: write ONE program, not a chain of verbs
+
+Measured over 60 real sessions that used ctx-optimize: `query` was the first verb 3x as
+often as any other, the next calls were more `query`/`card`/`search` runs of the same verb, and
+after every store call the agent went back to `grep` (about 60 grep/bash calls for each store
+call). Each of those is a process, a model turn and unfiltered output. So for any question that
+needs MORE THAN ONE lookup (understand a feature, plan an edit, find every use of something,
+check citations), send ONE program that does the whole investigation and returns only what you
+will cite:
+
+```
+ctx-optimize code run - --input '{"terms":"refund total","pattern":"RefundTotal"}' --json <<'JS'
+import { investigate } from "ctx:investigate"
+await investigate({terms: input.terms, pattern: input.pattern, ext: ".go"})
+JS
+```
+`investigate` = query + a card per hit + the edit plan (callers, blast radius, tests) for the best
+hit + a capped literal sweep (the grep you would have run next). Shipped modules (`code modules`,
+`code describe ctx:edit`): `ctx:investigate` investigate · `ctx:edit` planEdit/planEdits ·
+`ctx:find` findCards · `ctx:impact` blastRadius · `ctx:sweep` sweep/sweepMany (several regexes at
+once) · `ctx:cite` verifyClaims · `ctx:orient` orient/connect. Read-only operations include
+`ops.ctx.search` and `ops.ctx.verify`, so literal sweeps and citation checks run INSIDE the
+program. It cannot run shell commands or write anything — that is deliberate. A SINGLE
+lookup is still a plain `query`/`card`; the router below is for those. Guide: `./references/code-mode.md`.
+
+## Pick by intent — the 5-second router (single lookups; read THIS first)
 
 Do NOT default to `query` for everything. The verb follows the intent:
 
@@ -68,7 +93,7 @@ Do NOT default to `query` for everything. The verb follows the intent:
 | **Blast radius** only — is it safe to change | `ctx-optimize affected <symbol> --depth 2 --json` (alias: `impact`) |
 | **Connection** — how are A and B related | `ctx-optimize path "A" "B" --json` |
 | **Orient** — where do I start in this repo | `ctx-optimize hubs --top 10 --json` |
-| About to chain 3+ dependent verb calls (query, then card on the hits, then change-plan) | ONE program: `ctx-optimize code run - --input '{...}' --json` — read `./references/code-mode.md`. **IMPORT a shipped module first, do not compose raw ops:** `import {...} from "ctx:<module>"`: ctx:find findCards · ctx:edit planEdit/planEdits · ctx:impact blastRadius · ctx:orient orient/connect (`code modules`, `code describe ctx:edit`). Read-only ops `ops.ctx.query/card/change_plan/affected/path/hubs`, each resolving to the verb's JSON; RETURN ONLY WHAT YOU WILL CITE (27x less output measured). `code check` first; a mistyped flag or inexact name throws |
+| About to chain 3+ dependent verb calls (query, then card on the hits, then change-plan) | ONE program: `ctx-optimize code run - --input '{...}' --json` — read `./references/code-mode.md`. **IMPORT a shipped module first, do not compose raw ops:** `import {...} from "ctx:<module>"`: ctx:investigate investigate · ctx:edit planEdit/planEdits · ctx:find findCards · ctx:impact blastRadius · ctx:sweep sweep/sweepMany · ctx:cite verifyClaims · ctx:orient orient/connect (`code modules`, `code describe ctx:edit`). Read-only ops `ops.ctx.query/card/change_plan/affected/path/hubs`, each resolving to the verb's JSON; RETURN ONLY WHAT YOU WILL CITE (27x less output measured). `code check` first; a mistyped flag or inexact name throws |
 | **Explain the whole repo** — architecture in one call | `ctx-optimize report --json` — subsystems, hubs, the seams between subsystems, and what the graph could NOT resolve. Read the gaps section before claiming any caller list is complete |
 | **Need the actual code body inline** — not just the pointer | add `--include-content` to `query`/`card` — hydrates each hit's verbatim source from the file at answer time (nothing stored; default stays terse). Lines that look like credentials come back `[redacted]` — deliberate, and it applies to plain `card` too. Do NOT open the file to read around it: the point is that a secret's VALUE never enters your context. Cite the key, not the value. |
 | **`card` says `unattributed callers: N`** — is the caller list complete? | It is NOT, and the line says WHY. *"defined more than once"* → several declarations share the name. *"on a receiver whose type this store never established"* → this is a **method**, and the store holds only this repo's declarations, so it can never tell `err.Error()` from a call to your own `Error`. Either way the card prints the shortlist (`edges --relation calls --confidence AMBIGUOUS --to <id>`) and the exact grep. **Run the grep** — do not report `called by` as complete when this line is present |

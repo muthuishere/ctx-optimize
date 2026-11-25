@@ -53,6 +53,10 @@ func codeRegistry() *codemode.Registry {
 		func(_ context.Context, a []string, o, _ io.Writer) error { return cmdPath(a, o) })
 	ro("ctx.hubs", "Most-connected nodes. args: [\"--top\", \"10\"].",
 		func(_ context.Context, a []string, o, e io.Writer) error { return cmdHubs(a, o, e) })
+	ro("ctx.search", "Literal/regex sweep of the SOURCE TREE under the cwd (Go RE2); same file set as the extractor. args: [\"<regex>\", \"--ext\", \".go,.ts\", \"--path\", \"dir/\"]; returns [{file,line,text}] (with \"--count\" a number).",
+		func(_ context.Context, a []string, o, _ io.Writer) error { return cmdSearch(a, o) })
+	ro("ctx.verify", "Check citations before acting on them: node id/exact label or file:L10-L20. args: [\"<claim>\", ...]; throws when a claim does not hold.",
+		func(_ context.Context, a []string, o, _ io.Writer) error { return cmdVerify(a, o) })
 	reg.MustRegisterModules("ctx", jsFiles, "js")
 	return reg
 }

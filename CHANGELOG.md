@@ -10,6 +10,20 @@ embeddings, no MCP, no network except your configured remote.**
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-11-25
+
+- **Agents now default to ONE program instead of a query-then-card-then-grep chain.**
+  Mined 60 real agent sessions that used ctx-optimize: `query` was the first verb 3x as
+  often as any other, runs of the same verb followed (`query`,`query`; `search`,`search`,
+  `search`; `card`,`card`,`card`), and after each store call the agent returned to grep
+  (~60 grep/bash calls per store call). Changes: the bundled skill opens with a
+  "DEFAULT: write ONE program" section; the pointer block `init` writes, the hook context
+  and the usage card all lead with "PROGRAM FIRST"; two more read-only operations,
+  `ops.ctx.search` (literal sweep) and `ops.ctx.verify` (citation check), so the grep an agent
+  runs next happens inside the program; three more modules: `ctx:investigate` (query + cards +
+  edit plan + capped sweep), `ctx:sweep` (`sweep`, `sweepMany`), `ctx:cite` (`verifyClaims`).
+  Still no shell and no writes from a program, on purpose. ADR 38.
+
 ## [0.17.0] — 2026-11-25
 
 - **`code`: ships four JS modules agents import instead of composing raw ops.**

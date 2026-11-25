@@ -397,7 +397,7 @@ func pointerBlock(name string, modules int) string {
 			pointerGate +
 			"  <store>MULTI-MODULE repo, pre-built knowledge store at `~/ctxoptimize/" + name + "/` — " +
 			fmt.Sprintf("one graph per module + a navigator, %d modules declared in `.ctxoptimize/config.json`.</store>\n", modules) +
-			"  <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
+			"  <use>Use it INSTEAD of grep-and-read chains — PROGRAM FIRST: a question needing 2+ lookups (find, inspect, plan an edit, sweep) → ONE `ctx-optimize code run -` program that imports `ctx:investigate` / `ctx:edit` (`code modules`), not a query-then-card chain; a SINGLE lookup, PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
 			"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one\n" +
 			"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·\n" +
 			"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps --scope dev`.\n" +
@@ -415,7 +415,7 @@ func pointerBlock(name string, modules int) string {
 		"<ctx-optimize>\n" +
 		pointerGate +
 		"  <store>Pre-built knowledge store at `~/ctxoptimize/" + name + "/` (config in `.ctxoptimize/` here).</store>\n" +
-		"  <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
+		"  <use>Use it INSTEAD of grep-and-read chains — PROGRAM FIRST: a question needing 2+ lookups (find, inspect, plan an edit, sweep) → ONE `ctx-optimize code run -` program that imports `ctx:investigate` / `ctx:edit` (`code modules`), not a query-then-card chain; a SINGLE lookup, PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
 		"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one\n" +
 		"  call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·\n" +
 		"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps`.\n" +
@@ -575,7 +575,7 @@ func globalBlock() string {
 		"If `command -v ctx-optimize` succeeds, then in ANY repo you work in:\n\n" +
 		"- **Store present** — a `.ctxoptimize/` directory at the repo root or any parent of your cwd\n" +
 		"  means a pre-built knowledge graph of that codebase already exists. Use it BEFORE any\n" +
-		"  Grep/rg/Glob/find or exploratory Read — PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
+		"  Grep/rg/Glob/find or exploratory Read — PROGRAM FIRST: a question needing 2+ lookups (find, inspect, plan an edit, sweep) → ONE `ctx-optimize code run -` program that imports `ctx:investigate` / `ctx:edit` (`code modules`), not a query-then-card chain; a SINGLE lookup, PICK BY INTENT: find → `ctx-optimize query \"<terms>\"` ·\n" +
 		"  inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests,\n" +
 		"  one call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` ·\n" +
 		"  list/filter (no jq): `nodes --kind K` / `edges --relation R` / `deps --scope dev`.\n" +

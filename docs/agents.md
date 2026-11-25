@@ -46,7 +46,7 @@ Installs, per platform:
     (install later with `npm install -g @muthuishere/ctx-optimize`, or download the binary). Everything
     below applies ONLY when the command exists.</precondition>
     <store>Pre-built knowledge store at `~/ctxoptimize/myrepo/` (config in `.ctxoptimize/` here).</store>
-    <use>Use it INSTEAD of grep-and-read chains — PICK BY INTENT: find → `ctx-optimize query "<terms>"` ·
+    <use>Use it INSTEAD of grep-and-read chains — PROGRAM FIRST: a question needing 2+ lookups (find, inspect, plan an edit, sweep) → ONE `ctx-optimize code run -` program that imports `ctx:investigate` / `ctx:edit` (`code modules`), not a query-then-card chain; a SINGLE lookup, PICK BY INTENT: find → `ctx-optimize query "<terms>"` ·
     inspect a symbol → `card <symbol>` · about to EDIT → `change-plan <symbol>` (callers+impact+tests, one
     call) · blast radius → `affected <symbol>` · connection → `path <a> <b>` · wiki at
     `~/ctxoptimize/myrepo/wiki/`. Output is parsed fact with exact file:line — cite it directly, do
