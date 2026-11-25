@@ -13,7 +13,7 @@ func TestCodeModeOperationsAreReadOnly(t *testing.T) {
 	if rc := Run([]string{"code", "operations"}, &out, &errb); rc != 0 {
 		t.Fatalf("operations rc=%d stderr=%s", rc, errb.String())
 	}
-	for _, want := range []string{"ctx.query", "ctx.card", "ctx.change_plan", "ctx.affected", "ctx.path", "ctx.hubs"} {
+	for _, want := range []string{"ctx.query", "ctx.card", "ctx.change_plan", "ctx.affected", "ctx.path", "ctx.hubs", "ctx.search", "ctx.verify"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("operation %s missing:\n%s", want, out.String())
 		}

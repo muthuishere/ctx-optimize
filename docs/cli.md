@@ -167,8 +167,8 @@ announce themselves, fuzzy ties refuse with candidates (`--fuzzy` overrides).
 ### `code` — one program instead of many verb calls
 
 `ctx-optimize code run - --input '{"terms":"refund"}' --json` runs a small
-JavaScript-subset program in ONE process. The six read-only verbs are
-operations (`ops.ctx.query`, `card`, `change_plan`, `affected`, `path`, `hubs`);
+JavaScript-subset program in ONE process. Eight read-only verbs are
+operations (`ops.ctx.query`, `card`, `change_plan`, `affected`, `path`, `hubs`, `search`, `verify`);
 each `await`ed call resolves to the verb's JSON object, so you filter inside the
 program and only the result is printed. Nothing that writes the store is exposed.
 
@@ -189,13 +189,13 @@ to accept a near match. `check` catches syntax errors and a typo'd operation
 types or unknown properties, all without running anything; non-literal arguments are
 checked when the call runs.
 
-**Modules first.** The binary ships four tested JS modules so an agent imports a
+**A program is the default for any question needing 2+ lookups.** `ctx:investigate` runs query, a card per hit, the edit plan for the best hit and a capped literal sweep in one call; `ctx:sweep` runs several regexes in parallel and `ctx:cite` checks citations. **Modules first.** The binary ships tested JS modules so an agent imports a
 recipe instead of composing raw ops: `ctx:edit` (`planEdit`, `planEdits`: signature,
 callers, impacted files, tests to run, co-changed files; many symbols merged),
 `ctx:find` (`findCards`), `ctx:impact` (`blastRadius`) and `ctx:orient` (`orient`,
 `connect`). `code modules` lists them and `code describe ctx:edit` shows each export's
 doc. Example: `import { planEdits } from "ctx:edit"` then `await planEdits(input.symbols)`.
-Modules can only call the six operations, so they add no privilege.
+Modules can only call the eight read-only operations (no shell, no writes), so they add no privilege.
 
 Use it for 3+ dependent calls; a single question stays a plain verb. Also
 `code operations`, `code describe <op>`, `code check <file|->` (validates, runs

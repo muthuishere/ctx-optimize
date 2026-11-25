@@ -265,8 +265,8 @@ func TestCodeMutatingVerbsAreNotOperations(t *testing.T) {
 		}
 		names = wrapped.Operations
 	}
-	if len(names) != 6 {
-		t.Fatalf("exactly six operations expected, got %d:\n%s", len(names), out)
+	if len(names) != 8 {
+		t.Fatalf("exactly eight read-only operations expected, got %d:\n%s", len(names), out)
 	}
 	for _, n := range names {
 		if n.SideEffects != "" && n.SideEffects != "none" {

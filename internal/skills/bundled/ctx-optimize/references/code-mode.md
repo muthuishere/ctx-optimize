@@ -1,6 +1,6 @@
 # Code Mode — one program instead of many verb calls
 
-`ctx-optimize code` runs a small JavaScript-subset program in ONE process. The six
+`ctx-optimize code` runs a small JavaScript-subset program in ONE process. The eight
 READ-ONLY verbs are operations; nothing can gather, sync or write the store.
 Measured on this repo (query, card x5, change-plan; best of 5): seven processes
 63 ms and 22,538 bytes back; one `code run` 29 ms and 825 bytes back — the win is
@@ -12,6 +12,9 @@ lists them; `code describe ctx:edit` shows every export with its doc.
 
 | module | exports | use it to |
 |---|---|---|
+| `ctx:investigate` | `investigate({terms, pattern?, ext?, path?, limit?})` | THE default first move for "how does X work / where is X / what do I touch": query + card per hit + edit plan for the best hit + (with `pattern`) a capped literal sweep, in one call |
+| `ctx:sweep` | `sweep(regex, opts)`, `sweepMany(regexes, opts)` | literal/regex sweeps grouped by file, capped (`maxFiles`, `maxLines`), several patterns in parallel; a bad regex is reported per pattern |
+| `ctx:cite` | `verifyClaims(claims)` | check node labels or `file:L10-L20` ranges before you hand a citation to a human; failures are reported, not thrown |
 | `ctx:edit` | `planEdit(symbol)`, `planEdits(symbols)` | before changing code: signature, callers, impacted files, tests to run, co-changed files; `planEdits` merges many symbols into one `testsToRun` + `filesTouched` and reports a misspelled name under `missing` instead of throwing |
 | `ctx:find` | `findCards(terms, limit=5)` | find by words and get a compact card (label, file, location, signature, calledBy) per hit |
 | `ctx:impact` | `blastRadius(symbols, depth=2)` | files that break across several symbols, merged and ranked by how many symbols reach them |
@@ -35,6 +38,8 @@ callers are not counted). Names must be exact labels.
 | `ops.ctx.affected` | `affected` | `["<symbol>", "--depth", "2"]` |
 | `ops.ctx.path` | `path` | `["<a>", "<b>"]` |
 | `ops.ctx.hubs` | `hubs` | `["--top", "10"]` |
+| `ops.ctx.search` | `search` | `["<regex>", "--ext", ".go", "--path", "dir/"]` — literal sweep of the source tree under the cwd, returns `[{file,line,text}]` |
+| `ops.ctx.verify` | `verify` | `["<label or file:L10-L20>"]` — throws when the claim does not hold |
 
 Every call is `await ops.ctx.<op>({args: [...]})` and **resolves to the verb's parsed JSON
 object**. Do not pass `--json` (it is added). The program's LAST EXPRESSION is its result.

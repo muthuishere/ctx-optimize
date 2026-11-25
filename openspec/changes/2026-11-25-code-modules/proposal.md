@@ -17,3 +17,11 @@ operations, so there is no new privilege and the six operations stay read-only.
 ## Verification
 `engine.CheckModules()` returns no diagnostics; one run test per module on a gathered fixture store; every export
 documented; the drift test requires "ctx:edit" on all three agent surfaces. `task ci` green.
+
+# ADR 38 — program-first default (2026-11-25, owner: "by default its going for query")
+
+Evidence (60 sessions, 2026-09/11 transcripts): first verb `query` 48 vs `up` 16, `card` 14, `change-plan` 14;
+same-verb runs dominate (query,query 52; search,search 44; card,card 40); after a store call the next call is bash/grep
+in ~85% of cases. Decision: lead every agent surface with a program, add `ops.ctx.search` and `ops.ctx.verify` (both read-only),
+and ship `ctx:investigate`, `ctx:sweep`, `ctx:cite`. Declined: arbitrary shell execution from a program (breaks the
+read-only guarantee and the deterministic-binary doctrine); the search op covers the grep a program needs.
